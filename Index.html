@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>문서 보관소 · Ssuuks</title>
+<style>
+:root {
+  --bg: #F8FAFC;
+  --card: #FFFFFF;
+  --text: #0F172A;
+  --sub: #64748B;
+  --border: #E2E8F0;
+  --primary: #0F766E;
+  --primary-bg: #F0FDFA;
+  --f: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", Pretendard, Roboto, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--f);
+  background: var(--bg);
+  color: var(--text);
+  padding: 28px 18px 60px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 640px; margin: 0 auto; }
+header { margin-bottom: 24px; }
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--primary-bg);
+  color: var(--primary);
+  border: 1px solid #CCFBF1;
+  border-radius: 6px;
+  padding: 2px 7px;
+  margin-bottom: 8px;
+}
+h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.03em; }
+p.desc { font-size: 13.5px; color: var(--sub); margin-top: 4px; }
+
+.searchbox {
+  margin-bottom: 18px;
+}
+.searchbox input {
+  width: 100%;
+  padding: 11px 14px;
+  font-size: 14.5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+}
+.searchbox input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
+}
+
+.list { display: flex; flex-direction: column; gap: 10px; }
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.15s ease;
+}
+.item:active { transform: scale(0.985); background: #F1F5F9; }
+.info { min-width: 0; flex: 1; padding-right: 12px; }
+.title { font-size: 15.5px; font-weight: 700; letter-spacing: -0.02em; word-break: break-all; }
+.meta { font-size: 12px; color: var(--sub); margin-top: 2px; }
+.arrow {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-bg);
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.empty, .loading, .error {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--sub);
+  font-size: 14px;
+}
+.error { color: #DC2626; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <span class="badge">GitHub Directory</span>
+    <h1>웹 문서 모음</h1>
+    <p class="desc">저장소에 업로드된 HTML 문서 목록을 자동으로 동기화합니다.</p>
+  </header>
+
+  <div class="searchbox">
+    <input type="text" id="searchInput" placeholder="문서 이름 검색..." autocomplete="off">
+  </div>
+
+  <div id="fileList" class="list">
+    <div class="loading">저장소 파일 목록 불러오는 중...</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var OWNER = 'Ssuuks';
+  var REPO = 'Webpages';
+  var CACHE_KEY = 'gh_contents_cache';
+  var CACHE_TIME_KEY = 'gh_contents_time';
+  var CACHE_DURATION = 5 * 60 * 1000; // 5분 캐시 (API 한도 방어)
+
+  var listEl = document.getElementById('fileList');
+  var searchInput = document.getElementById('searchInput');
+  var fileItems = [];
+
+  function formatTitle(name) {
+    // .html 확장자 제거 및 하이픈/언더스코어 공백 치환
+    var clean = name.replace(/\.html$/i, '');
+    if (clean === 'nhatrang-itinerary') return '나트랑 여행 일정표 (2026.10)';
+    return clean.replace(/[-_]/g, ' ');
+  }
+
+  function render(items) {
+    if (!items.length) {
+      listEl.innerHTML = '<div class="empty">표시할 HTML 파일이 없습니다.</div>';
+      return;
+    }
+    var html = '';
+    items.forEach(function(f){
+      var displayTitle = formatTitle(f.name);
+      html += '<a class="item" href="./' + encodeURIComponent(f.name) + '">'
+            + '  <div class="info">'
+            + '    <div class="title">' + displayTitle + '</div>'
+            + '    <div class="meta">' + f.name + ' · ' + (f.size ? (f.size / 1024).toFixed(1) + ' KB' : '') + '</div>'
+            + '  </div>'
+            + '  <span class="arrow">열기 →</span>'
+            + '</a>';
+    });
+    listEl.innerHTML = html;
+  }
+
+  function filterList(query) {
+    var q = query.toLowerCase().trim();
+    var filtered = fileItems.filter(function(item){
+      return item.name.toLowerCase().includes(q) || formatTitle(item.name).toLowerCase().includes(q);
+    });
+    render(filtered);
+  }
+
+  async function loadFiles() {
+    var now = Date.now();
+    var cached = sessionStorage.getItem(CACHE_KEY);
+    var cachedTime = sessionStorage.getItem(CACHE_TIME_KEY);
+
+    if (cached && cachedTime && (now - parseInt(cachedTime, 10) < CACHE_DURATION)) {
+      try {
+        fileItems = JSON.parse(cached);
+        render(fileItems);
+        return;
+      } catch(e) {}
+    }
+
+    var url = 'https://api.github.com/repos/' + OWNER + '/' + REPO + '/contents/';
+    try {
+      var res = await fetch(url);
+      if (!res.ok) {
+        if (res.status === 403) throw new Error('API 호출 한도 초과(잠시 후 다시 시도)');
+        throw new Error('파일 목록을 가져오지 못했습니다 (' + res.status + ')');
+      }
+      var data = await res.json();
+      
+      // HTML 파일만 추출 (index.html 제외)
+      fileItems = data.filter(function(item){
+        return item.type === 'file' && 
+               item.name.toLowerCase().endsWith('.html') && 
+               item.name.toLowerCase() !== 'index.html';
+      });
+
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(fileItems));
+      sessionStorage.setItem(CACHE_TIME_KEY, now.toString());
+      render(fileItems);
+    } catch(err) {
+      // 캐시가 있다면 장애 시 캐시 우선 표시
+      if (cached) {
+        fileItems = JSON.parse(cached);
+        render(fileItems);
+      } else {
+        listEl.innerHTML = '<div class="error">' + err.message + '</div>';
+      }
+    }
+  }
+
+  searchInput.addEventListener('input', function(e){
+    filterList(e.target.value);
+  });
+
+  loadFiles();
+})();
+</script>
+</body>
+</html>
