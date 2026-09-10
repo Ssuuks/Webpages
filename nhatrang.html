@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0D201E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="나트랑">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png">
+<title>나트랑 2026.10.02–10.11</title>
+<style>
+:root{
+  --paper:#F3F6F4; --card:#FFFFFF;
+  --ink:#16211F; --ink2:#4C5C57; --ink3:#83918C;
+  --rule:#DCE3E0; --rule2:#EDF1EF;
+  --city:#1C5C5A; --isle:#2F7FA0; --dune:#A9762F;
+  --night:#0D201E; --night2:#153330; --night3:#1D423E;
+  --nightink:#E4EEEA; --nightink2:#9DB4AE; --signal:#EDB350;
+  --danger:#9B3B2C;
+  --gut:52px; --pad:18px;
+  --f:"Apple SD Gothic Neo",Pretendard,"Noto Sans KR","Malgun Gothic",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f);
+  font-size:15.5px;line-height:1.62;letter-spacing:-.011em;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+button{font-family:inherit}
+:focus-visible{outline:2px solid var(--city);outline-offset:2px;border-radius:4px}
+
+.top-nav-group{position:sticky;top:0;z-index:45;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.top{background:var(--night);color:var(--nightink);
+  padding:calc(env(safe-area-inset-top) + 11px) var(--pad) 0}
+.brandrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.brand{font-size:16px;font-weight:800;letter-spacing:-.02em}
+.brand span{font-weight:500;color:var(--nightink2)}
+.dday{font-size:12.5px;font-weight:700;color:var(--night);background:var(--signal);
+  border-radius:999px;padding:2px 9px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tabs{display:flex;gap:20px;margin-top:11px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{appearance:none;background:none;border:0;padding:0 0 10px;color:var(--nightink2);
+  font-size:15px;font-weight:600;letter-spacing:-.015em;cursor:pointer;position:relative;
+  white-space:nowrap;flex:0 0 auto}
+.tab[aria-selected="true"]{color:var(--nightink)}
+.tab[aria-selected="true"]::after{content:"";position:absolute;left:0;right:0;bottom:0;
+  height:2.5px;background:var(--signal);border-radius:2px 2px 0 0}
+.tab:focus-visible{outline-color:var(--signal)}
+
+.chipbar{display:flex;align-items:center;gap:9px;
+  background:var(--paper);border-bottom:1px solid var(--rule);padding:8px var(--pad)}
+.chips{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;appearance:none;border:1px solid var(--rule);background:var(--card);
+  color:var(--ink2);border-radius:999px;padding:4px 11px;font-size:13px;font-weight:650;
+  letter-spacing:-.02em;cursor:pointer;font-variant-numeric:tabular-nums}
+.chip[data-on="1"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.chip[data-today="1"]{border-color:var(--signal);box-shadow:inset 0 0 0 1px var(--signal)}
+.editbtn{position:relative;flex:0 0 auto;appearance:none;border:1px solid var(--city);
+  background:var(--card);color:var(--city);border-radius:999px;padding:4px 13px;
+  font-size:13px;font-weight:750;cursor:pointer}
+.editing .editbtn{background:var(--city);color:#fff}
+.editbtn[data-dirty="1"]::after{content:"";position:absolute;top:-2px;right:-2px;width:8px;height:8px;
+  border-radius:50%;background:var(--signal);border:1.5px solid var(--paper)}
+
+.panel{display:none;padding:0 0 64px}
+.panel[data-on="1"]{display:block}
+.wrap{padding:0 var(--pad)}
+
+.route{background:var(--card);border:1px solid var(--rule);border-radius:14px;
+  margin:16px 0 6px;padding:15px 16px 8px}
+.route h2{margin:0 0 12px;font-size:14px;font-weight:750;color:var(--ink2);letter-spacing:-.02em}
+.leg{display:flex;gap:12px;align-items:flex-start;padding-bottom:13px}
+.leg:last-child{padding-bottom:4px}
+.leg .bar{flex:0 0 4px;border-radius:2px;align-self:stretch;min-height:26px}
+.leg .bar[data-z="city"]{background:var(--city)}
+.leg .bar[data-z="isle"]{background:var(--isle)}
+.leg .bar[data-z="dune"]{background:var(--dune)}
+.leg .bar[data-z="air"]{background:repeating-linear-gradient(180deg,var(--ink3) 0 3px,transparent 3px 7px)}
+.leg .who{flex:1;min-width:0}
+.leg .who b{display:block;font-size:15px;font-weight:700;letter-spacing:-.02em}
+.leg .who i{display:block;font-style:normal;font-size:13px;color:var(--ink3);margin-top:1px}
+.leg .when{flex:0 0 auto;font-size:12.5px;color:var(--ink3);font-weight:650;
+  font-variant-numeric:tabular-nums;padding-top:2px;text-align:right}
+
+.day{scroll-margin-top:140px;padding-top:22px}
+.dayhead{display:flex;align-items:flex-end;gap:9px;padding-bottom:2px;flex-wrap:wrap}
+.dnum{font-size:33px;font-weight:800;letter-spacing:-.045em;line-height:.9;font-variant-numeric:tabular-nums}
+.day[data-today="1"] .dnum{color:var(--city)}
+.dwk{font-size:14px;font-weight:700;color:var(--ink3);padding-bottom:2px}
+.todaypill{font-size:11px;font-weight:800;color:var(--night);background:var(--signal);
+  border-radius:5px;padding:1px 7px;margin-bottom:3px}
+.edited{font-size:11px;font-weight:700;color:var(--dune);background:#F6EDDF;
+  border-radius:5px;padding:1px 6px;margin-bottom:3px}
+.dtag{margin-left:auto;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;
+  color:#fff;letter-spacing:-.02em;white-space:nowrap}
+.dtag[data-z="city"]{background:var(--city)}
+.dtag[data-z="isle"]{background:var(--isle)}
+.dtag[data-z="dune"]{background:var(--dune)}
+.dsub{font-size:13.5px;color:var(--ink2);margin:3px 0 14px}
+
+.tl{margin:0;padding:0;list-style:none;position:relative}
+.tl::before{content:"";position:absolute;left:var(--gut);top:6px;bottom:8px;width:1px;background:var(--rule)}
+.tl>li{position:relative;padding:0 0 15px calc(var(--gut) + 16px);min-height:24px}
+.tl>li::after{content:"";position:absolute;left:calc(var(--gut) - 3px);top:8px;width:7px;height:7px;
+  border-radius:50%;background:var(--rule);border:1.5px solid var(--paper)}
+.tl>li[data-k="1"]::after{background:var(--ink);width:9px;height:9px;left:calc(var(--gut) - 4px)}
+.tl>li[data-past="1"]{opacity:.42}
+.tl>li[data-next="1"]::after{background:var(--signal);width:11px;height:11px;
+  left:calc(var(--gut) - 5px);top:7px;box-shadow:0 0 0 4px rgba(237,179,80,.25)}
+.tl>li[data-next="1"] .t{color:var(--dune)}
+.nextpill{display:inline-block;margin-left:6px;font-size:10.5px;font-weight:800;vertical-align:2px;
+  color:var(--night);background:var(--signal);border-radius:5px;padding:0 6px}
+.tl .t{position:absolute;left:0;top:0;width:var(--gut);text-align:right;padding-right:13px;
+  font-size:12.5px;font-weight:700;color:var(--ink3);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.tl .h{font-size:15.5px;font-weight:650;letter-spacing:-.02em}
+.tl>li[data-k="1"] .h{font-weight:780}
+.tl .d{font-size:13.5px;color:var(--ink2);margin-top:2px;line-height:1.55}
+.miss{color:var(--danger);font-weight:700}
+
+.poilinks{display:inline-flex;align-items:center;gap:6px;margin-top:5px}
+.poilink-btn{appearance:none;border:1px solid var(--rule);background:var(--card);color:var(--ink2);
+  border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:650;cursor:pointer;line-height:1.4}
+.poilink-map{display:inline-flex;align-items:center;text-decoration:none;border:1px solid #CDE4DE;
+  background:#EAF4F1;color:var(--city);border-radius:6px;padding:2px 8px;font-size:11.5px;
+  font-weight:700;line-height:1.4}
+.editing .poilinks{display:none}
+
+.note{position:relative;margin:0 0 15px calc(var(--gut) + 16px);background:var(--card);
+  border:1px solid var(--rule);border-left:3px solid var(--ink);border-radius:0 10px 10px 0;
+  padding:10px 13px;font-size:13.5px;line-height:1.55;color:var(--ink2)}
+.note b{color:var(--ink);font-weight:700}
+.note[data-kind="elite"]{border-left-color:var(--city)}
+.note[data-kind="warn"]{border-left-color:var(--dune)}
+hr.sep{border:0;border-top:1px solid var(--rule);margin:26px 0 0}
+
+.rowctl{position:absolute;right:0;top:0;display:none;gap:3px}
+.editing .rowctl{display:flex}
+.editing .tl>li,.editing .note{padding-right:96px}
+.editing .tl>li{cursor:pointer}
+.editing .tl>li[data-past="1"]{opacity:1}
+.mini{appearance:none;border:1px solid var(--rule);background:var(--card);color:var(--ink2);
+  width:28px;height:26px;border-radius:7px;font-size:13px;line-height:1;cursor:pointer;padding:0}
+.mini[data-x="1"]{color:var(--danger);border-color:#E7D2CC}
+.mini:disabled{opacity:.35}
+.dayadd{display:none;gap:7px;flex-wrap:wrap;margin:0 0 4px calc(var(--gut) + 16px)}
+.editing .dayadd{display:flex}
+.dayadd button{appearance:none;border:1px dashed var(--ink3);background:transparent;color:var(--ink2);
+  border-radius:9px;padding:6px 12px;font-size:13px;font-weight:650;cursor:pointer}
+
+.editbar{position:fixed;left:0;right:0;bottom:0;z-index:45;display:none;
+  align-items:center;gap:8px;background:var(--night);color:var(--nightink);
+  padding:11px var(--pad) calc(11px + env(safe-area-inset-bottom))}
+.editing .editbar{display:flex}
+.editbar .st{flex:1;min-width:0;font-size:12px;color:var(--nightink2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.editbar button{appearance:none;border:1px solid var(--night3);background:var(--night2);
+  color:var(--nightink);border-radius:9px;padding:7px 11px;font-size:13px;font-weight:700;cursor:pointer}
+.editbar button[data-sync="1"]{background:var(--city);border-color:var(--city);color:#fff}
+.editbar button[data-p="1"]{background:var(--signal);border-color:var(--signal);color:var(--night)}
+.editbar button:disabled{opacity:.5}
+.editing #plan{padding-bottom:110px}
+
+.backbtn{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom));
+  z-index:50;display:none;appearance:none;border:0;background:var(--ink);color:#fff;
+  border-radius:999px;padding:10px 18px;font-size:14px;font-weight:750;cursor:pointer;
+  box-shadow:0 6px 18px rgba(13,32,30,.3)}
+.backbtn[data-on="1"]{display:block}
+
+.sheet{position:fixed;inset:0;z-index:60;display:none}
+.sheet[data-on="1"]{display:block}
+.scrim{position:absolute;inset:0;background:rgba(13,32,30,.5)}
+.sheetcard{position:absolute;left:0;right:0;bottom:0;background:var(--card);
+  border-radius:18px 18px 0 0;padding:8px 18px calc(18px + env(safe-area-inset-bottom));
+  max-height:90vh;overflow:auto}
+.grab{width:38px;height:4px;border-radius:2px;background:var(--rule);margin:0 auto 14px}
+.sheetcard h4{margin:0 0 14px;font-size:17px;font-weight:780;letter-spacing:-.025em}
+.fld{margin-bottom:12px}
+.fld label{display:block;font-size:12.5px;font-weight:650;color:var(--ink3);margin-bottom:5px}
+.fld label i{font-style:normal;font-weight:400}
+.fld input,.fld textarea,.fld select{width:100%;font-family:inherit;font-size:15.5px;
+  color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:10px;
+  padding:10px 12px;line-height:1.5}
+.fld textarea{min-height:72px;resize:vertical}
+.tog{display:flex;align-items:center;gap:9px;font-size:14.5px;font-weight:600;padding:4px 0 2px}
+.tog input{width:19px;height:19px;accent-color:var(--city)}
+.sheetact{display:flex;gap:9px;margin-top:16px}
+.sheetact button{flex:1;appearance:none;border:1px solid var(--rule);background:var(--card);
+  color:var(--ink);border-radius:11px;padding:12px;font-size:15px;font-weight:700;cursor:pointer}
+.sheetact button[data-p="1"]{background:var(--city);border-color:var(--city);color:#fff;flex:1.4}
+.sheetact button[data-x="1"]{color:var(--danger);border-color:#E7D2CC;flex:.7}
+
+.grp{margin:24px 0 8px;display:flex;align-items:baseline;gap:9px}
+.grp h4{margin:0;font-size:15px;font-weight:780;letter-spacing:-.025em}
+.grp span{font-size:12.5px;color:var(--ink3);font-weight:550}
+.plist{background:var(--card);border:1px solid var(--rule);border-radius:13px;overflow:hidden}
+.poi{display:flex;gap:11px;align-items:flex-start;padding:12px 14px;text-decoration:none;
+  border-top:1px solid var(--rule2);scroll-margin-top:120px}
+.poi:first-child{border-top:0}
+.poi-flash{background:#FFF9E6;box-shadow:inset 0 0 0 2px var(--signal)}
+.pn{flex:1;min-width:0;font-size:14.5px;font-weight:680;letter-spacing:-.022em;line-height:1.4}
+.pn u{display:block;text-decoration:none;font-size:12.5px;font-weight:500;color:var(--ink3);
+  margin-top:3px;line-height:1.5}
+.pn u b{color:var(--ink2);font-weight:650}
+.ps{flex:0 0 auto;font-size:12.5px;font-weight:750;color:var(--city);
+  font-variant-numeric:tabular-nums;padding-top:2px;text-align:right;line-height:1.35}
+.ps s{display:block;text-decoration:none;color:var(--ink3);font-weight:500;font-size:11px}
+.tg{display:inline-block;vertical-align:1px;margin-left:5px;font-size:10.5px;font-weight:700;
+  padding:1px 6px;border-radius:5px;letter-spacing:-.01em}
+.tg[data-t="good"]{background:#E3EFEC;color:var(--city)}
+.tg[data-t="short"]{background:#EFEEE8;color:#7A6B45}
+.tg[data-t="rain"]{background:#E4EEF3;color:#25647C}
+.tg[data-t="care"]{background:#F5E7DC;color:#8A5327}
+
+#emergency{background:var(--night);color:var(--nightink);min-height:100vh;padding-bottom:80px}
+#emergency .wrap{padding-top:20px}
+.sos{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:22px}
+.sos a{display:block;text-decoration:none;background:var(--night2);border:1px solid var(--night3);
+  border-radius:12px;padding:11px 13px}
+.sos a:first-child{grid-column:1 / -1;background:var(--signal);border-color:var(--signal)}
+.sos a:first-child .k,.sos a:first-child .v{color:var(--night)}
+.sos .k{display:block;font-size:12px;color:var(--nightink2);font-weight:600}
+.sos .v{display:block;font-size:17px;font-weight:780;letter-spacing:-.02em;margin-top:1px;
+  font-variant-numeric:tabular-nums}
+.eblock{border-top:1px solid var(--night3);padding:18px 0 2px}
+.eblock:first-of-type{border-top:0;padding-top:0}
+.eblock h3{margin:0 0 4px;font-size:17px;font-weight:750;letter-spacing:-.025em;
+  display:flex;align-items:center;gap:8px}
+.eblock h3 s{text-decoration:none;flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--signal)}
+.eblock p{margin:0 0 10px;font-size:13.5px;color:var(--nightink2);line-height:1.6}
+.steps{margin:0 0 14px;padding:0;list-style:none;counter-reset:s}
+.steps li{counter-increment:s;position:relative;padding:0 0 9px 26px;font-size:14px;line-height:1.55}
+.steps li::before{content:counter(s);position:absolute;left:0;top:1px;width:18px;height:18px;
+  border-radius:50%;background:var(--night3);color:var(--nightink);font-size:11px;font-weight:700;
+  display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.steps li b{font-weight:700;color:#fff}
+.dial{display:inline-flex;align-items:center;gap:6px;text-decoration:none;background:var(--night3);
+  border-radius:7px;padding:1px 8px;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.hotels{margin:0;padding:0;list-style:none}
+.hotels li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;
+  border-bottom:1px solid var(--night3);font-size:14px}
+.hotels li:last-child{border-bottom:0}
+.hotels span{color:var(--nightink2);font-size:12.5px;display:block;font-weight:500}
+
+.pblock{padding:22px 0 0}
+.pblock h3{margin:0 0 3px;font-size:18px;font-weight:780;letter-spacing:-.028em}
+.pblock .lede{margin:0 0 13px;font-size:13.5px;color:var(--ink2)}
+.list{margin:0;padding:0;list-style:none;background:var(--card);border:1px solid var(--rule);
+  border-radius:13px;overflow:hidden}
+.list li{border-top:1px solid var(--rule2)}
+.list li:first-child{border-top:0}
+.ck{display:flex;gap:11px;align-items:flex-start;padding:11px 14px;cursor:pointer}
+.ck input{appearance:none;flex:0 0 auto;width:19px;height:19px;margin:2px 0 0;
+  border:1.5px solid var(--ink3);border-radius:6px;background:var(--card);cursor:pointer}
+.ck input:checked{background:var(--city);border-color:var(--city)}
+.ck input:checked::after{content:"";display:block;width:5px;height:9px;margin:2px auto 0;
+  border:solid #fff;border-width:0 2px 2px 0;transform:rotate(42deg)}
+.ck .lb{font-size:14.5px;line-height:1.5;letter-spacing:-.015em}
+.ck .lb u{display:block;text-decoration:none;font-size:12.5px;color:var(--ink3);margin-top:1px}
+.ck input:checked + .lb{color:var(--ink3);text-decoration:line-through;text-decoration-color:var(--rule)}
+.ck input:checked + .lb u{text-decoration:none}
+.fact{background:var(--card);border:1px solid var(--rule);border-radius:13px;padding:14px 16px;
+  font-size:14px;line-height:1.6}
+.fact p{margin:0 0 9px}
+.fact p:last-child{margin-bottom:0}
+.fact b{font-weight:750}
+.fact.warnbox{border-color:#E7D2CC;background:#FDF6F3}
+.fact.warnbox b{color:var(--danger)}
+.bkp{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.bkp button{flex:1;min-width:110px;appearance:none;border:1px solid var(--rule);background:var(--card);
+  color:var(--ink);border-radius:10px;padding:10px;font-size:14px;font-weight:700;cursor:pointer}
+.bkp button[data-p="1"]{background:var(--city);border-color:var(--city);color:#fff}
+.bkp button[data-x="1"]{color:var(--danger);border-color:#E7D2CC}
+.stat{font-size:12px;color:var(--ink3);margin:9px 0 0;line-height:1.6}
+
+.intro{padding:18px 0 0;font-size:13.5px;color:var(--ink2);line-height:1.65}
+.intro b{color:var(--ink);font-weight:700}
+.foot{padding:34px var(--pad) 46px;font-size:12px;color:var(--ink3);line-height:1.7}
+#emergency .foot{color:var(--nightink2)}
+
+@media (max-width:340px){:root{--gut:46px;--pad:14px} body{font-size:15px}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto !important}}
+</style>
+</head>
+<body>
+
+<div class="top-nav-group">
+  <header class="top">
+    <div class="brandrow">
+      <div class="brand">나트랑 <span>10.02 – 10.11 · 8박 10일</span></div>
+      <div class="dday" id="dday">D-—</div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true"  data-go="plan">일정</button>
+      <button class="tab" role="tab" aria-selected="false" data-go="see">관광</button>
+      <button class="tab" role="tab" aria-selected="false" data-go="eat">맛집</button>
+      <button class="tab" role="tab" aria-selected="false" data-go="emergency">비상</button>
+      <button class="tab" role="tab" aria-selected="false" data-go="prep">준비</button>
+    </nav>
+  </header>
+  <div class="chipbar" id="chipbar">
+    <div class="chips" id="chips"></div>
+    <button class="editbtn" id="editbtn">편집</button>
+  </div>
+</div>
+
+<section class="panel" id="plan" data-on="1">
+  <div class="wrap">
+    <div class="route">
+      <h2>전체 흐름 — 시내에서 섬으로, 섬에서 공항 쪽으로</h2>
+      <div class="leg"><div class="bar" data-z="air"></div><div class="who"><b>ICN → CXR</b><i>에어서울 · 5시간 5분</i></div><div class="when">10.02<br>19:50</div></div>
+      <div class="leg"><div class="bar" data-z="city"></div><div class="who"><b>포포인츠 나트랑</b><i>시내 · 쉐라톤과 도보 5분</i></div><div class="when">1박</div></div>
+      <div class="leg"><div class="bar" data-z="city"></div><div class="who"><b>쉐라톤 나트랑</b><i>25층 클럽라운지 — 이번 여행 유일</i></div><div class="when">2박</div></div>
+      <div class="leg"><div class="bar" data-z="isle"></div><div class="who"><b>메리어트 혼트레</b><i>케이블카 10분 · 빈원더스 옆</i></div><div class="when">2박</div></div>
+      <div class="leg"><div class="bar" data-z="dune"></div><div class="who"><b>JW 메리어트 깜란</b><i>공항 15분 · 판랑 1시간 30분</i></div><div class="when">3박</div></div>
+      <div class="leg"><div class="bar" data-z="air"></div><div class="who"><b>CXR → ICN</b><i>심야 출발 · 07:10 도착</i></div><div class="when">10.11<br>00:05</div></div>
+    </div>
+    <div id="days"></div>
+    <p class="foot">플래티넘 레이트체크아웃은 포포인츠와 쉐라톤만 16시가 보장됩니다. 혼트레와 JW는 리조트라 요청 사항이니, 출발 3–4일 전에 Bonvoy 앱 채팅으로 네 곳 모두 미리 넣어두세요.</p>
+  </div>
+</section>
+
+<button class="backbtn" id="backbtn">← 일정으로</button>
+
+<div class="editbar">
+  <span class="st" id="editstat">편집 모드 · 기기 자동 저장</span>
+  <button data-sync="1" id="pushbtn">커밋 ☁</button>
+  <button id="resetall">되돌리기</button>
+  <button data-p="1" id="donebtn">완료</button>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="scrim" data-close="1"></div>
+  <div class="sheetcard" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="grab"></div>
+    <h4 id="sheetTitle">일정 수정</h4>
+    <div class="fld" id="fTimeWrap"><label for="fTime">시간 <i>— 9:00 이나 0900 으로 써도 09:00 으로 정리됩니다</i></label>
+      <input id="fTime" type="text" inputmode="numeric" placeholder="09:00" autocomplete="off"></div>
+    <div class="fld" id="fKindWrap" hidden><label for="fKind">메모 종류</label>
+      <select id="fKind">
+        <option value="">일반</option>
+        <option value="elite">플래티넘 · 호텔</option>
+        <option value="warn">주의 · 대안</option>
+      </select></div>
+    <div class="fld"><label for="fHead">제목</label>
+      <input id="fHead" type="text" autocomplete="off"></div>
+    <div class="fld"><label for="fDetail">설명 <i>— *별표*로 감싸면 굵게</i></label>
+      <textarea id="fDetail"></textarea></div>
+    <label class="tog" id="fKeyWrap"><input id="fKey" type="checkbox"> 중요 표시 (점을 진하게)</label>
+    <div class="sheetact">
+      <button data-x="1" id="sDel">삭제</button>
+      <button id="sCancel">취소</button>
+      <button data-p="1" id="sSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<section class="panel" id="see">
+<div class="wrap">
+  <p class="intro">거리는 모두 <b>쉐라톤 기준</b>입니다. 3세·5세를 데리고 다니는 걸 전제로 체류 시간을 적었습니다. 나트랑 관광지는 대부분 30분에서 한 시간이면 끝나니, 하루에 두 개 넘게 넣지 마세요.</p>
+
+  <div class="grp"><h4>북쪽</h4><span>차 8–12분 · 둘을 묶어 오전 한 번에</span></div>
+  <div class="plist">
+    <a class="poi" id="poi-ponagar" href="https://www.google.com/maps/search/?api=1&amp;query=12.2653665,109.1953678" target="_blank" rel="noopener">
+      <span class="pn">뽀나가르 참탑<b class="tg" data-t="good">아이 좋음</b><u>차 8분 · 06:00–18:00 · <b>3만동</b>, 아이도 동일 · 40분<br>언덕 위 붉은 벽돌탑. 계단이 짧고 강과 어선이 내려다보입니다. 복장 규정이 있는데 가리개를 무료로 빌려줍니다</u></span>
+      <span class="ps">4.5<s>32,238</s></span></a>
+    <a class="poi" id="poi-honchong" href="https://www.google.com/maps/search/?api=1&amp;query=12.27292,109.2064934" target="_blank" rel="noopener">
+      <span class="pn">혼쫑곶<b class="tg" data-t="short">짧게</b><u>참탑에서 차 5분 · 06:00–18:00 · 3만동 · 30분<br>바다로 튀어나온 바위 무더기. 물때가 높으면 건너가는 길이 잠기니 미끄럼 주의. 옆에 바다 보이는 카페가 있습니다</u></span>
+      <span class="ps">4.3<s>7,928</s></span></a>
+  </div>
+
+  <div class="grp"><h4>도보권</h4><span>쉐라톤에서 걸어서</span></div>
+  <div class="plist">
+    <a class="poi" id="poi-tramhuong" href="https://www.google.com/maps/search/?api=1&amp;query=12.240404,109.1969225" target="_blank" rel="noopener">
+      <span class="pn">침향탑 · 2/4 광장<b class="tg" data-t="good">아이 좋음</b><u>도보 12분 · 24시간 · 무료<br>탑 자체는 볼 게 없습니다. 목적은 광장이에요. 저녁이면 현지 가족들이 연을 날리고 아이 놀이기구가 섭니다</u></span>
+      <span class="ps">4.4<s>13,158</s></span></a>
+    <a class="poi" id="poi-nightmarket" href="https://www.google.com/maps/search/?api=1&amp;query=12.2397172,109.1964422" target="_blank" rel="noopener">
+      <span class="pn">야시장<b class="tg" data-t="short">짧게</b><u>침향탑 바로 옆 · 17:00–23:00<br>400m 남짓. 기념품 위주라 한 바퀴면 끝나고 흥정은 필수입니다. 저녁 먹고 소화 삼아</u></span>
+      <span class="ps">3.8<s>6,691</s></span></a>
+    <a class="poi" id="poi-yersin" href="https://www.google.com/maps/search/?api=1&amp;query=12.2509604,109.195996" target="_blank" rel="noopener">
+      <span class="pn">예르생 박물관<u>도보 6분 · 평일 07:30–11:30 / 14:00–17:00 · <b>일요일 휴무</b> · 2만동<br>페스트균을 찾아낸 그 예르생. 작고 조용합니다. 아이보다 어른용</u></span>
+      <span class="ps">4.5<s>470</s></span></a>
+    <a class="poi" id="poi-cathedral" href="https://www.google.com/maps/search/?api=1&amp;query=12.2467309,109.1881257" target="_blank" rel="noopener">
+      <span class="pn">나트랑 대성당<b class="tg" data-t="short">짧게</b><u>차 5분 · 언덕 위 석조 고딕 · 입장료 1만동<br>사진 한 장 찍고 나오는 곳입니다. 입장료 실랑이가 잦다는 후기가 많아요</u></span>
+      <span class="ps">4.1<s>3,184</s></span></a>
+    <a class="poi" id="poi-dammarket" href="https://www.google.com/maps/search/?api=1&amp;query=12.2549514,109.1918164" target="_blank" rel="noopener">
+      <span class="pn">담시장<b class="tg" data-t="care">유아 비추</b><u>차 5분 · 05:00–18:30<br>과일·커피·건어물은 여기가 제일 쌉니다. 다만 좁고 붐비고 더워서 유모차는 불가능합니다</u></span>
+      <span class="ps">3.9<s>18,979</s></span></a>
+  </div>
+
+  <div class="grp"><h4>남쪽 · 케이블카 방면</h4><span>10.05 입도 또는 10.07 복귀 때 끼우기 좋음</span></div>
+  <div class="plist">
+    <a class="poi" id="poi-ocean" href="https://www.google.com/maps/search/?api=1&amp;query=12.2073287,109.2146547" target="_blank" rel="noopener">
+      <span class="pn">국립해양박물관<b class="tg" data-t="rain">비 와도</b><u>케이블카 터미널에서 500m · 06:00–18:00 · 4만동 · 1시간<br>거대한 고래 골격과 수조 터널이 볼거리. 일부 사육 환경이 열악하다는 지적이 리뷰에 반복되니 민감하시면 건너뛰세요</u></span>
+      <span class="ps">4.2<s>2,791</s></span></a>
+    <a class="poi" id="poi-100egg" href="https://www.google.com/maps/search/?api=1&amp;query=12.1852992,109.1614966" target="_blank" rel="noopener">
+      <span class="pn">100 Egg 머드온천<b class="tg" data-t="good">아이 좋음</b><u>차 20분 · 08:30–18:00 · 반나절<br>아이리조트 대신 굳이 머드를 한다면 여기. 시설이 새것이고 어린이 풀이 따로 있으며 주말에도 안 붐빈다는 후기가 많습니다. 개별 머드탕을 잡으면 대중탕 요소를 피할 수 있어요</u></span>
+      <span class="ps">4.7<s>1,247</s></span></a>
+    <a class="poi" id="poi-hontam" href="https://www.google.com/maps/search/?api=1&amp;query=12.1758908,109.24301" target="_blank" rel="noopener">
+      <span class="pn">혼땀섬<u>보트 필요 · 머드탕 · 워터스포츠<br>빈원더스를 두 번 가는 일정에는 자리가 없습니다. 참고용</u></span>
+      <span class="ps">4.5<s>888</s></span></a>
+  </div>
+
+  <div class="grp"><h4>비 올 때</h4><span>실내로 도망갈 곳</span></div>
+  <div class="plist">
+    <a class="poi" id="poi-bigfun" href="https://www.google.com/maps/search/?api=1&amp;query=12.233452,109.1974312" target="_blank" rel="noopener">
+      <span class="pn">Big Fun 빈컴 쩐푸<b class="tg" data-t="rain">1순위</b><u>차 5분 · 평일 10:00–22:00, 주말 09:30– · 화·수 할인<br>큰 실내 놀이터. 1–12세용이라 3세도 문제없고 두 시간이면 체력이 소진됩니다. 커피와 감자튀김 코너가 있어 부모도 앉아 있을 수 있어요</u></span>
+      <span class="ps">4.9<s>1,789</s></span></a>
+    <a class="poi" id="poi-playtime" href="https://www.google.com/maps/search/?api=1&amp;query=12.2430917,109.1935386" target="_blank" rel="noopener">
+      <span class="pn">Playtime 빈컴 레탄톤<u>차 4분 · 10:00–22:00 · 3층<br>Big Fun보다 작지만 더 가깝습니다. 주말엔 붐빔</u></span>
+      <span class="ps">4.6<s>123</s></span></a>
+    <a class="poi" id="poi-goldcoast" href="https://www.google.com/maps/search/?api=1&amp;query=12.248145,109.1948614" target="_blank" rel="noopener">
+      <span class="pn">골드코스트몰 · 롯데마트<b class="tg" data-t="rain">도보 5분</b><u>08:30–22:00 · 롯데마트 3–4층, 쿠우쿠우 12층, 포세이돈 5층<br>비를 안 맞고 갈 수 있는 유일한 실내. 마트·뷔페·쇼핑이 한 건물에 있습니다</u></span>
+      <span class="ps">4.5<s>4,266</s></span></a>
+  </div>
+
+  <div class="grp"><h4>섬 · 판랑</h4><span>일정 핵심 코스</span></div>
+  <div class="plist">
+    <a class="poi" id="poi-vinwonders" href="https://www.google.com/maps/search/?api=1&amp;query=12.2170491,109.2408716" target="_blank" rel="noopener">
+      <span class="pn">빈원더스 나트랑<b class="tg" data-t="good">10.05 · 10.06</b><u>08:30–20:00, 입장 마감 19:00 · 성인 105만동, 100–140cm 80만동, 100cm 미만 무료<br>오후 4시 이후 티켓은 55만–70만동. 워터파크 스릴 슬라이드는 130cm부터라 키즈존 위주가 됩니다</u></span>
+      <span class="ps">4.7<s>19,325</s></span></a>
+    <a class="poi" id="poi-namcuong" href="https://www.google.com/maps/search/?api=1&amp;query=11.5087904,108.9971041" target="_blank" rel="noopener">
+      <span class="pn">남끄엉 사구<b class="tg" data-t="good">10.08</b><u>깜란에서 차 1시간 30분 · 지프 30–40분에 60만동<br>후기에 "아이 동반 좋음"이 반복됩니다. 얇은 긴바지 필수</u></span>
+      <span class="ps">4.3<s>1,232</s></span></a>
+    <a class="poi" id="poi-poklonggarai" href="https://www.google.com/maps/search/?api=1&amp;query=11.6019055,108.946504" target="_blank" rel="noopener">
+      <span class="pn">포클롱가라이 참탑<b class="tg" data-t="short">선택</b><u>판랑 투어에 흔히 포함 · 3만동<br>뽀나가르를 이미 봤다면 아이들에게는 반복입니다. 시간을 사막에 몰아주는 편이 낫습니다</u></span>
+      <span class="ps">4.6<s>1,282</s></span></a>
+  </div>
+
+  <p class="foot">평점과 리뷰 수는 구글 기준입니다. 베트남 미쉐린 가이드는 하노이·호치민·다낭 세 도시만 다루기 때문에 나트랑에는 미쉐린 등재 업소가 없습니다.</p>
+</div>
+</section>
+
+<section class="panel" id="eat">
+<div class="wrap">
+  <p class="intro">별점은 구글, 괄호는 리뷰 수입니다. 리뷰가 적은 집은 그만큼 표본이 작다는 뜻이니 감안하세요. <b>4P's와 쿠우쿠우, 스파 예약은 미리</b> 잡아두는 게 안전합니다.</p>
+
+  <div class="grp"><h4>쉐라톤 도보권</h4><span>10.03 – 10.05</span></div>
+  <div class="plist">
+    <a class="poi" id="poi-4ps" href="https://www.google.com/maps/search/?api=1&amp;query=12.2462509,109.1961947" target="_blank" rel="noopener">
+      <span class="pn">Pizza 4P's 쉐라톤점<b class="tg" data-t="good">예약 필수</b><u>호텔 1층 · 11:00–22:30 · 피자 25만–40만동<br>자체 생산 모짜렐라, 오픈키친 도우 쇼. 4.9는 후하고 체감 4.2라는 냉정한 후기도 있지만 아이 동반 저녁으로는 최고 카드</u></span>
+      <span class="ps">4.9<s>15,507</s></span></a>
+    <a class="poi" id="poi-ngoc" href="https://www.google.com/maps/search/?api=1&amp;query=12.2459023,109.1940379" target="_blank" rel="noopener">
+      <span class="pn">Ngọc — 반깐 · 반쎄오<b class="tg" data-t="good">도보 3분</b><u>07:00–22:30<br>랍스터 반깐국수가 간판이고 주인이 영어를 합니다</u></span>
+      <span class="ps">4.6<s>1,316</s></span></a>
+    <a class="poi" id="poi-aga" href="https://www.google.com/maps/search/?api=1&amp;query=12.2506756,109.195137" target="_blank" rel="noopener">
+      <span class="pn">Cơm gà A Gà — 치킨라이스<b class="tg" data-t="good">아이 좋음</b><u>도보 7분 · 10:00–22:00 · 에어컨<br>자극적이지 않아 아이가 잘 먹습니다. 리뷰 수가 적은 게 유일한 리스크</u></span>
+      <span class="ps">4.9<s>43</s></span></a>
+    <a class="poi" id="poi-qooqoo" href="https://www.google.com/maps/search/?api=1&amp;query=12.248145,109.1948614" target="_blank" rel="noopener">
+      <span class="pn">쿠우쿠우 골드코스트 12층<b class="tg" data-t="good">아이 좋음</b><u>도보 5분 · 평일 11–16 / 17–22, 주말 통영업<br>초밥·해산물 프리미엄 뷔페. 호불호 없는 안전 카드</u></span>
+      <span class="ps">4.9<s>1,947</s></span></a>
+    <a class="poi" id="poi-poseidon" href="https://www.google.com/maps/search/?api=1&amp;query=12.2481450,109.1948614" target="_blank" rel="noopener">
+      <span class="pn">Buffet Poseidon 골드코스트 5층<u>도보 5분 · 11:00–14:00 / 17:30–22:00<br>해산물 뷔페. 쿠우쿠우 만석 시 대안이고 게가 좋다는 평</u></span>
+      <span class="ps">4.5<s>619</s></span></a>
+    <a class="poi" id="poi-bread1" href="https://www.google.com/maps/search/?api=1&amp;query=12.2399322,109.1922902" target="_blank" rel="noopener">
+      <span class="pn">BREAD 1 · My Bakery<u>차 4분 · 06:30–23:30<br>반미와 크루아상 샌드위치. 아침 일찍 나갈 때 포장용</u></span>
+      <span class="ps">4.6<s>510</s></span></a>
+  </div>
+
+  <div class="grp"><h4>시내 · 차로 10분 이내</h4></div>
+  <div class="plist">
+    <a class="poi" id="poi-cohong" href="https://www.google.com/maps/search/?api=1&amp;query=12.2574472,109.1627809" target="_blank" rel="noopener">
+      <span class="pn">Bánh xèo Cô Hồng<b class="tg" data-t="good">위생 안심</b><u>차 10분 · 11:00–21:00<br>"카페처럼 넓고 깨끗", "기름지지 않고 바삭"이 후기에 반복됩니다. 나트랑식 미니 반쎄오</u></span>
+      <span class="ps">4.9<s>476</s></span></a>
+    <a class="poi" id="poi-luongsoncang" href="https://www.google.com/maps/search/?api=1&amp;query=12.234691,109.1956648" target="_blank" rel="noopener">
+      <span class="pn">Lương Sơn Cảng — 해산물<u>차 5분 · 10:00–23:00<br>테이블에서 새우 껍질을 까주는 가성비 로컬 해산물집</u></span>
+      <span class="ps">4.9<s>7,140</s></span></a>
+    <a class="poi" id="poi-redcrab" href="https://www.google.com/maps/search/?api=1&amp;query=12.2389272,109.1952007" target="_blank" rel="noopener">
+      <span class="pn">Red Crab Seafood Grill<u>도보 12분 · 11:30–23:00 · 가격대 높음<br>칠리크랩·후추크랩. 한국인이 많고 볶음밥 평이 좋습니다</u></span>
+      <span class="ps">4.7<s>4,891</s></span></a>
+    <a class="poi" id="poi-dangvanquyen" href="https://www.google.com/maps/search/?api=1&amp;query=12.2537197,109.1938289" target="_blank" rel="noopener">
+      <span class="pn">넴느엉 Đặng Văn Quyên<b class="tg" data-t="care">평 갈림</b><u>차 4분 · 07:30–20:30 · 1인분 5.8만동<br>원조격이나 관광지화. 바로 옆 <b>Hoàng Văn Thụ</b>가 같은 맛에 덜 붐빈다는 평</u></span>
+      <span class="ps">4.1<s>5,911</s></span></a>
+    <a class="poi" id="poi-galangal" href="https://www.google.com/maps/search/?api=1&amp;query=12.2357634,109.1967537" target="_blank" rel="noopener">
+      <span class="pn">Galangal<u>차 5분 · 10:00–22:00<br>넴루이와 해산물 반쎄오. 외국인 대상이라 깔끔하고 설명이 친절합니다</u></span>
+      <span class="ps">4.2<s>2,576</s></span></a>
+    <a class="poi" id="poi-madamphuong" href="https://www.google.com/maps/search/?api=1&amp;query=12.2392868,109.1913021" target="_blank" rel="noopener">
+      <span class="pn">Madam Phuong<b class="tg" data-t="care">계산서 확인</b><u>차 5분 · 11:00–22:00<br>넓어서 아이 동반은 편하나 "가격 대비 맛" 지적과 <b>할인 누락 청구</b> 후기가 반복됩니다</u></span>
+      <span class="ps">4.4<s>5,827</s></span></a>
+    <a class="poi" id="poi-oldvillage" href="https://www.google.com/maps/search/?api=1&amp;query=12.2466911,109.1558934" target="_blank" rel="noopener">
+      <span class="pn">나트랑 옛마을<b class="tg" data-t="good">아이 좋음</b><u>차 12분 · 09:00–21:00<br>연꽃 연못에 둘러싸인 민속촌형. 음식은 평범하지만 아이가 뛸 공간이 넓습니다</u></span>
+      <span class="ps">4.6<s>4,317</s></span></a>
+  </div>
+
+  <div class="grp"><h4>안전 카드</h4><span>아이가 현지식을 거부할 때</span></div>
+  <div class="plist">
+    <a class="poi" id="poi-jejuga" href="https://www.google.com/maps/search/?api=1&amp;query=12.236677,109.1871338" target="_blank" rel="noopener">
+      <span class="pn">제주가 — 한식<u>차 5분 · 10:00–23:00 · 에어컨<br>고기와 찌개. 한식당 중 평이 가장 안정적입니다</u></span>
+      <span class="ps">4.8<s>2,527</s></span></a>
+    <a class="poi" id="poi-wangttukkung" href="https://www.google.com/maps/search/?api=1&amp;query=12.2346969,109.1946057" target="_blank" rel="noopener">
+      <span class="pn">왕뚜껑 — 솥뚜껑 삼겹살<u>차 6분 · 11:00–14:30 / 16:30–24:00<br>브레이크 타임 있으니 시간 확인</u></span>
+      <span class="ps">4.9<s>858</s></span></a>
+    <a class="poi" id="poi-lumiere" href="https://www.google.com/maps/search/?api=1&amp;query=12.2409053,109.1952284" target="_blank" rel="noopener">
+      <span class="pn">Lumiere Texas BBQ<u>A&amp;B 센트럴스퀘어 1층 · 07:00–23:00<br>버거와 립. 실내 에어컨에 아이 메뉴가 무난합니다</u></span>
+      <span class="ps">4.7<s>931</s></span></a>
+    <a class="poi" id="poi-phohong" href="https://www.google.com/maps/search/?api=1&amp;query=12.2439527,109.1924189" target="_blank" rel="noopener">
+      <span class="pn">Phở Hồng<u>도보 10분 · 06:00–22:30 · 작은 그릇 6만동<br>면 뽑는 걸 유리 너머로 봅니다. 국물이 달지 않아 아이도 먹습니다</u></span>
+      <span class="ps">4.1<s>3,211</s></span></a>
+  </div>
+
+  <div class="grp"><h4>깜란 · 깜득</h4><span>10.07 – 10.10</span></div>
+  <div class="plist">
+    <a class="poi" id="poi-cotuyet" href="https://www.google.com/maps/search/?api=1&amp;query=12.056814,109.1580589" target="_blank" rel="noopener">
+      <span class="pn">Bánh xèo Cô Tuyết — 할머니 반쎄오<b class="tg" data-t="care">30분만</b><u>JW에서 차 15–20분 · 11:00–18:00 · <b>일요일 휴무</b> · 1장 2만동대<br>갓 구운 반쎄오는 훌륭하나 한국인 대상 불친절·위생 지적 리뷰가 섞여 있습니다. 먹고 바로 나오는 코스로</u></span>
+      <span class="ps">4.9<s>1,801</s></span></a>
+    <a class="poi" id="poi-jwdining" href="https://www.google.com/maps/search/?api=1&amp;query=12.0937532,109.1904073" target="_blank" rel="noopener">
+      <span class="pn">JW 리조트 내 다이닝<u>Clay Craft 조식 · Seafood Grill 저녁 · Bayside Bistro 풀사이드 · 룸서비스 24시간<br>주변에 대안이 거의 없습니다. 시푸드 그릴은 세팅 대비 합리적이라는 평</u></span>
+      <span class="ps">4.7<s>718</s></span></a>
+    <a class="poi" id="poi-spamoc" href="https://www.google.com/maps/search/?api=1&amp;query=12.0818882,109.1901479" target="_blank" rel="noopener">
+      <span class="pn">Spa Moc<b class="tg" data-t="good">10.10</b><u>차 5분 · 24시간 · 리조트 무료 픽업·드랍<br>가족 넷이 마사지·네일·페이셜 받고 픽드랍까지 무료였다는 후기</u></span>
+      <span class="ps">4.9<s>1,019</s></span></a>
+    <a class="poi" id="poi-kingspa" href="https://www.google.com/maps/search/?api=1&amp;query=12.0492246,109.1944987" target="_blank" rel="noopener">
+      <span class="pn">King Spa Cam Lâm<u>차 10분 · 09:00–23:00 · 한국 마사지 표방</u></span>
+      <span class="ps">5.0<s>203</s></span></a>
+    <a class="poi" id="poi-nhudang" href="https://www.google.com/maps/search/?api=1&amp;query=12.0759905,109.1705797" target="_blank" rel="noopener">
+      <span class="pn">Như Đăng Spa<u>차 7분 · 24시간 · 무료 호텔 픽업</u></span>
+      <span class="ps">5.0<s>1,705</s></span></a>
+  </div>
+
+  <p class="foot">깜득에서 돌아올 때 택시가 잘 안 잡힙니다. 식사나 마사지가 끝날 무렵 직원에게 호출을 부탁하세요. 그랩 배달은 리조트 정문 경비실까지만 옵니다.</p>
+</div>
+</section>
+
+<section class="panel" id="emergency">
+<div class="wrap">
+  <div class="sos">
+    <a href="tel:115"><span class="k">베트남 구급</span><span class="v">115</span></a>
+    <a href="tel:113"><span class="k">베트남 경찰</span><span class="v">113</span></a>
+    <a href="tel:+82232100404"><span class="k">영사콜센터</span><span class="v">+82 2-3210-0404</span></a>
+  </div>
+
+  <div class="eblock">
+    <h3><s></s>아이가 아플 때</h3>
+    <p>빈멕 나트랑 국제병원이 1순위입니다. 24시간, 영어가 통하고, 시내와 혼트레 양쪽에서 20분입니다.</p>
+    <ol class="steps">
+      <li><b>깜란에 있을 때는 리조트 프런트 닥터 온콜부터.</b> 빈멕까지는 40분입니다</li>
+      <li>가벼운 열·배탈이면 상비약으로. 해열시럽은 체중 기준으로 계량</li>
+      <li>카드 결제 후 영수증·진단서를 챙겨 귀국 후 보험 청구</li>
+    </ol>
+    <a class="dial" href="tel:+842583900168">빈멕 나트랑 +84 258 3900 168</a>
+    <p style="margin-top:8px">42A Trần Phú · 24시간 응급실</p>
+  </div>
+
+  <div class="eblock">
+    <h3><s></s>태풍이나 폭우</h3>
+    <p>10월은 나트랑 우기의 한복판입니다. 강수일이 20일 안팎이지만 종일 내리는 비는 드물고, 오전이 맑고 오후에 쏟아지는 패턴입니다.</p>
+    <ol class="steps">
+      <li><b>케이블카가 멈추면 스피드보트로 대체 운항합니다.</b> 추가 요금 없고, 섬에 갇히는 상황은 아닙니다</li>
+      <li>빈원더스는 야외만 닫힙니다. 아쿠아리움·실내존·타타쇼로 하루가 채워집니다</li>
+      <li>시내에서 비를 만나면 <b>Big Fun 빈컴 쩐푸</b> 실내 놀이터, 또는 도보 5분 골드코스트몰</li>
+      <li><b>판랑은 오히려 탈출구입니다.</b> 닌투언성은 베트남에서 가장 건조해서, 깜란에 비가 와도 남쪽은 맑을 수 있습니다</li>
+      <li>10.07 혼트레→깜란 이동일은 오전에 움직여 여유를 두세요</li>
+    </ol>
+  </div>
+
+  <div class="eblock">
+    <h3><s></s>항공 지연이나 결항</h3>
+    <p>심야 단독편이라 대체편 잡기가 어렵습니다. 출발 전에 항공기 지연 특약이 들어간 여행자보험을 반드시 넣어두세요.</p>
+    <ol class="steps">
+      <li>결항 통보를 받으면 <b>JW 깜란 재투숙부터 문의</b>합니다. 공항 15분이라 가장 빠릅니다</li>
+      <li>에어서울 예약센터로 재배정 요청 · 예약번호 <b data-secret="pnr">···</b></li>
+      <li>인천 예약주차 출차가 늦어지면 주차장에 연락해 연장 처리</li>
+      <li>지연·결항 확인서를 현장에서 발급받으세요. 보험 청구에 필요합니다</li>
+    </ol>
+  </div>
+
+  <div class="eblock">
+    <h3><s></s>아이를 놓쳤을 때</h3>
+    <p>혼트레 리조트는 829실, 빈원더스는 도보로 다 못 도는 규모입니다. 사고보다 미아가 훨씬 현실적인 위험입니다.</p>
+    <ol class="steps">
+      <li><b>매일 아침 아이 전신 사진을 찍어두세요.</b> 그날 입은 옷 그대로 검색 요청이 가능해집니다</li>
+      <li>손목밴드에 객실번호와 부모 번호. 리조트 로고 밴드는 직원이 바로 알아봅니다</li>
+      <li>흩어지지 말고 한 명은 마지막으로 본 자리에 남습니다</li>
+      <li>파크 안이면 가장 가까운 직원에게 즉시. 자체 방송 체계가 있습니다</li>
+    </ol>
+  </div>
+
+  <div class="eblock">
+    <h3><s></s>여권·카드 분실</h3>
+    <ol class="steps">
+      <li>여권 사본과 여권용 사진을 따로 챙겨두면 재발급이 훨씬 빠릅니다</li>
+      <li>영사콜센터로 먼저 연락해 관할 공관과 절차를 확인하세요</li>
+      <li>카드는 앱에서 즉시 정지. 현금은 나눠서 보관</li>
+    </ol>
+    <a class="dial" href="tel:+82232100404">영사콜센터 +82 2-3210-0404</a>
+  </div>
+
+  <div class="eblock">
+    <h3><s></s>숙소 연락처</h3>
+    <ul class="hotels">
+      <li><div>포포인츠 나트랑<span>10.02 · 06 Nguyễn Chánh</span></div><a class="dial" href="tel:+842583522666">전화</a></li>
+      <li><div>쉐라톤 나트랑<span>10.03–05 · 26-28 Trần Phú</span></div><a class="dial" href="tel:+842583880000">전화</a></li>
+      <li><div>메리어트 혼트레<span>10.05–07 · Hòn Tre Island</span></div><a class="dial" href="tel:+842583598888">전화</a></li>
+      <li><div>JW 메리어트 깜란<span>10.07–10 · Cam Lâm</span></div><a class="dial" href="tel:+842583995999">전화</a></li>
+    </ul>
+  </div>
+
+  <p class="foot">비상 상황에서는 Bonvoy 앱 채팅이 전화보다 빠를 때가 많습니다. 네 곳 모두 한국어 응대 직원이 있거나 영어가 통합니다.</p>
+</div>
+</section>
+
+<section class="panel" id="prep">
+<div class="wrap">
+
+  <div class="pblock">
+    <h3>예약 정보</h3>
+    <p class="lede">여기 입력한 값은 <b>이 기기에만</b> 저장되고 GitHub에는 절대 올라가지 않습니다. 일정과 비상 탭의 <b>···</b> 자리에 자동으로 채워집니다.</p>
+    <div class="fact">
+      <div class="fld"><label for="sPnr">항공 예약번호 (PNR)</label>
+        <input id="sPnr" type="text" autocomplete="off" placeholder="예: ABC123"></div>
+      <div class="fld"><label for="sParking">주차 예약번호</label>
+        <input id="sParking" type="text" autocomplete="off"></div>
+      <div class="fld" style="margin-bottom:0"><label for="sCar">차량번호</label>
+        <input id="sCar" type="text" autocomplete="off"></div>
+      <div class="bkp"><button data-p="1" id="secSave">저장</button><button data-x="1" id="secClear">지우기</button></div>
+      <p class="stat" id="secStat"></p>
+    </div>
+  </div>
+
+  <div class="pblock">
+    <h3>GitHub 동기화</h3>
+    <p class="lede">토큰은 이 기기의 브라우저에만 보관됩니다. <b>Fine-grained · 이 저장소만 · Contents 읽기/쓰기 · 만료 90일</b>로 발급하세요.</p>
+    <div class="fact">
+      <div class="fld" style="margin-bottom:8px">
+        <label for="ghToken">Personal Access Token</label>
+        <input type="password" id="ghToken" placeholder="github_pat_..." autocomplete="off">
+      </div>
+      <div class="bkp">
+        <button data-p="1" id="saveTokenBtn">토큰 저장</button>
+        <button id="pullNowBtn">저장소 불러오기</button>
+        <button data-x="1" id="clearTokenBtn">토큰 삭제</button>
+      </div>
+      <p class="stat" id="tokenStatus"></p>
+    </div>
+  </div>
+
+  <div class="pblock">
+    <h3>출발 전에 넣어둘 요청</h3>
+    <p class="lede">대부분 하루면 늦습니다. 3–4일 전에 몰아서 처리하세요.</p>
+    <ul class="list">
+      <li><label class="ck"><input type="checkbox" data-id="p1"><span class="lb">네 호텔 레이트체크아웃 요청<u>Bonvoy 앱 채팅 · 포포인츠 16시, 쉐라톤 16시, 혼트레 13시, JW 16시</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p2"><span class="lb">포포인츠에 자정 도착 통보<u>통보 없으면 객실이 풀릴 수 있습니다</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p3"><span class="lb">공항 픽업 차량 · 카시트 요청<u>그랩에는 카시트가 없습니다</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p4"><span class="lb">피자 4P's 쉐라톤점 예약<u>10.04 저녁</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p5"><span class="lb">판랑 선셋투어 예약<u>깜란 픽업 포함 확인 · 저녁 스톱 제외 요청</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p6"><span class="lb">Spa Moc 예약<u>10.10 17시 · 리조트 픽업 요청</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p7"><span class="lb">JW 디파처룸 이용 문의<u>10.10 · 체크아웃 후 샤워시설</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p8"><span class="lb">혼트레 Solare 조식 문의<u>업그레이드 시 별도 조식장 이용 가능한지</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p9"><span class="lb">에어서울 사전좌석 4석 인접 지정</span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p10"><span class="lb">위탁 15kg이 1인 기준인지 확인<u>주류 4병만 약 5kg입니다</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p11"><span class="lb">여행자보험 · 항공기 지연 특약 포함</span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p12"><span class="lb">라운지 이용권 아동 차감 방식 확인<u>보통 만 2세 이상은 성인과 동일 차감</u></span></label></li>
+    </ul>
+  </div>
+
+  <div class="pblock">
+    <h3>주류 4병</h3>
+    <div class="fact">
+      <p><b>가져갈 때.</b> 베트남은 20도 이상 주류를 성인 1인당 1.5리터까지 면세 통관합니다. 만 18세 미만은 배정이 없으니 <b>성인 2명 = 3.0리터</b>가 상한입니다. 700ml 4병은 2.8리터로 통과, 750ml 4병은 정확히 한도선입니다.</p>
+      <p><b>기내 반입은 안 됩니다.</b> 위탁수하물로만. 다만 인천 면세점에서 산 것은 STEB 봉인 상태 그대로면 기내에 들고 탈 수 있습니다.</p>
+      <p><b>돌아올 때가 딱 맞습니다.</b> 한국 면세한도는 1인 2병·총 2리터·미화 400달러. 현지에서 2병 비우고 2병 들고 오면 정확히 한도 안입니다.</p>
+      <p><b>세팅.</b> 탄산수·얼음·잔은 롯데마트 골드코스트에서. 객실 음용은 문제없지만 레스토랑 반입은 코키지가 붙습니다.</p>
+    </div>
+  </div>
+
+  <div class="pblock">
+    <h3>짐</h3>
+    <ul class="list">
+      <li><label class="ck"><input type="checkbox" data-id="k1"><span class="lb">여권 4개<u>유효기간 6개월 이상</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k2"><span class="lb">여권 사본 · 여권용 사진<u>분실 대비, 짐과 분리 보관</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k3"><span class="lb">아이 손목밴드<u>객실번호 + 부모 연락처</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k4"><span class="lb">상비약<u>체중별 해열시럽, 지사제, 경구수액, 밴드</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k5"><span class="lb">모기기피제 · 자외선차단제</span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k6"><span class="lb">수영복 · 아쿠아슈즈 · 3세 구명조끼</span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k7"><span class="lb">얇은 긴바지<u>판랑 사막용. 반바지로 가면 모래에 맞습니다</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k8"><span class="lb">우비 또는 작은 우산<u>10월 우기</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k9"><span class="lb">휴대용 부스터 시트<u>카시트 요청이 안 될 경우</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k10"><span class="lb">보조배터리<u>1인 2개까지 기내 휴대 · 위탁 불가 · 기내 사용 및 충전 금지</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k11"><span class="lb">유심 또는 eSIM</span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="k12"><span class="lb">동 환전 · 카드<u>깜득 로컬과 참탑 입장료는 현금만 받는 곳이 있습니다</u></span></label></li>
+    </ul>
+  </div>
+
+  <div class="pblock">
+    <h3>기기 간 백업</h3>
+    <p class="lede">GitHub 동기화를 안 쓸 때의 수동 방법입니다. <b>예약 정보가 포함되니 외부에 공유하지 마세요.</b></p>
+    <div class="fact">
+      <div class="fld" style="margin:0"><textarea id="bkpBox" placeholder="[코드 만들기]를 누르면 여기에 코드가 나옵니다. 다른 기기에서는 코드를 붙여넣고 [불러오기]."></textarea></div>
+      <div class="bkp">
+        <button id="bkpCopy">코드 만들기 · 복사</button>
+        <button id="bkpLoad">불러오기</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pblock">
+    <h3>알아두면 편한 것</h3>
+    <div class="fact">
+      <p><b>포포인츠와 쉐라톤은 300m입니다.</b> 10.03 호텔 이동은 짐만 옮기면 끝이고, 그래서 포포인츠 방을 오후까지 붙잡아둘 수 있습니다.</p>
+      <p><b>깜란은 판랑에 30분 더 가깝습니다.</b> 나트랑 시내에서 편도 2시간, 깜란에서 1시간 30분. 같은 조인투어를 타도 왕복 1시간 20분이 줄어듭니다.</p>
+      <p><b>나트랑 관광지는 대부분 30분에서 한 시간짜리입니다.</b> 하루에 두 개 넘게 넣으면 아이들이 먼저 지칩니다.</p>
+      <p><b>깜란 배달은 정문까지만 옵니다.</b> 기사가 리조트 근처에 들어온 걸 앱에서 보고 버기를 부르면 대기 없이 받습니다.</p>
+      <p><b>홈 화면에 추가하면 오프라인에서도 열립니다.</b> 사파리 공유 → 홈 화면에 추가. 한 번 열어둔 뒤에는 데이터 없이도 전체가 뜹니다.</p>
+    </div>
+  </div>
+
+  <p class="foot">체크박스·일정 수정·예약 정보는 모두 이 기기에 저장됩니다. 예약 정보만은 GitHub 커밋에서 제외됩니다.</p>
+</div>
+</section>
+
+<script>
+(function(){
+'use strict';
+
+var GH_OWNER='Ssuuks', GH_REPO='Webpages', GH_FILE='data.json', GH_BRANCH='main';
+var K_PLAN='nhatrang2026:plan', K_CHK='nhatrang2026:checks',
+    K_SEC='nhatrang2026:secrets', K_TS='nhatrang2026:updatedAt', K_TOKEN='gh_sync_token';
+
+/* localStorage 폴백 — 프라이빗 모드나 제한 환경에서도 죽지 않게 */
+var mem={};
+var LS={
+  get:function(k){ try{ return localStorage.getItem(k); }catch(e){ return k in mem ? mem[k] : null; } },
+  set:function(k,v){ try{ localStorage.setItem(k,v); }catch(e){ mem[k]=v; } },
+  del:function(k){ try{ localStorage.removeItem(k); }catch(e){ delete mem[k]; } }
+};
+
+var POI_DB=[
+  {key:'뽀나가르',   id:'poi-ponagar',  tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.2653665,109.1953678'},
+  {key:'혼쫑곶',     id:'poi-honchong', tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.27292,109.2064934'},
+  {key:'침향탑',     id:'poi-tramhuong',tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.240404,109.1969225'},
+  {key:'야시장',     id:'poi-nightmarket',tab:'see',map:'https://www.google.com/maps/search/?api=1&query=12.2397172,109.1964422'},
+  {key:'해양박물관', id:'poi-ocean',    tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.2073287,109.2146547'},
+  {key:'100 Egg',    id:'poi-100egg',   tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.1852992,109.1614966'},
+  {key:'빈원더스',   id:'poi-vinwonders',tab:'see',map:'https://www.google.com/maps/search/?api=1&query=12.2170491,109.2408716'},
+  {key:'남끄엉',     id:'poi-namcuong', tab:'see', map:'https://www.google.com/maps/search/?api=1&query=11.5087904,108.9971041'},
+  {key:'Big Fun',    id:'poi-bigfun',   tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.233452,109.1974312'},
+  {key:'골드코스트', id:'poi-goldcoast',tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.248145,109.1948614'},
+  {key:'롯데마트',   id:'poi-goldcoast',tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.248145,109.1948614'},
+  {key:"4P's",       id:'poi-4ps',      tab:'eat', map:'https://www.google.com/maps/search/?api=1&query=12.2462509,109.1961947'},
+  {key:'Ngọc',       id:'poi-ngoc',     tab:'eat', map:'https://www.google.com/maps/search/?api=1&query=12.2459023,109.1940379'},
+  {key:'Cô Hồng',    id:'poi-cohong',   tab:'eat', map:'https://www.google.com/maps/search/?api=1&query=12.2574472,109.1627809'},
+  {key:'쿠우쿠우',   id:'poi-qooqoo',   tab:'eat', map:'https://www.google.com/maps/search/?api=1&query=12.248145,109.1948614'},
+  {key:'꼬 뚜엣',    id:'poi-cotuyet',  tab:'eat', map:'https://www.google.com/maps/search/?api=1&query=12.056814,109.1580589'},
+  {key:'Seafood Grill',id:'poi-jwdining',tab:'eat',map:'https://www.google.com/maps/search/?api=1&query=12.0937532,109.1904073'},
+  {key:'Spa Moc',    id:'poi-spamoc',   tab:'eat', map:'https://www.google.com/maps/search/?api=1&query=12.0818882,109.1901479'}
+];
+function matchPoi(s){ if(!s) return null;
+  for(var i=0;i<POI_DB.length;i++) if(s.indexOf(POI_DB[i].key)!==-1) return POI_DB[i];
+  return null; }
+
+var BASE={v:2,days:[
+{id:'d02',date:'10.02',wk:'금',zone:'city',tag:'포포인츠',
+ sub:'이동만 하는 날. 도착이 늦으니 무리하지 않습니다.',
+ items:[
+  {t:'15:30',h:'집 출발',d:''},
+  {t:'17:00',h:'인천 T2 예약주차장 발렛 입고',d:'주차 {{parking}} · 차량 {{car}} · 보증금 1만원',k:1},
+  {t:'17:30',h:'에어서울 체크인',d:'예약번호 {{pnr}} · 위탁 15kg · 주류 4병은 위탁으로'},
+  {t:'18:15',h:'T2 라운지 식사',d:'왕복 이용권 1회차 · 2회차는 10.10 깜란'},
+  {t:'19:50',h:'ICN → CXR 이륙',d:'22:55 도착 · 비행 5시간 5분 · 시차 −2시간',k:1},
+  {t:'23:40',h:'픽업 차량 → 시내 45분',d:'카시트 사전 요청 필수. 그랩에는 없습니다'},
+  {t:'00:20',h:'포포인츠 체크인',d:''}],
+ notes:[{kind:'warn',h:'체크포인트',d:'포포인츠에 자정 도착을 미리 알려두어야 노쇼로 취소되지 않습니다. 한국 여권은 베트남 45일 무비자입니다.'}]},
+
+{id:'d03',date:'10.03',wk:'토',zone:'city',tag:'→ 쉐라톤',
+ sub:'도착 다음 날. 컨디션 조절과 라운지 활용.',
+ items:[
+  {t:'08:30',h:'포포인츠 조식',d:'플래티넘 조식'},
+  {t:'10:00',h:'쉐라톤에 짐 맡기기',d:'도보 5분 · 얼리 체크인도 같이 신청'},
+  {t:'11:00',h:'포포인츠 객실에서 아이 낮잠',d:'플래티넘 16시 레이트체크아웃 보장',k:1},
+  {t:'12:30',h:'점심 · Ngọc 반깐',d:'도보 3분 · 랍스터 반깐국수'},
+  {t:'15:00',h:'쉐라톤 체크인',d:''},
+  {t:'16:00',h:'호텔 수영장 · 앞 해변',d:''},
+  {t:'17:00',h:'25층 클럽라운지 해피아워',d:'푸드 17:00–19:00 · 음료 17:00–20:00',k:1},
+  {t:'19:00',h:'침향탑 · 2/4 광장 저녁 산책',d:'도보 12분 · 연날리기와 아이 놀이기구 · 바로 옆이 야시장'},
+  {t:'20:30',h:'복귀길에 롯데마트 5분',d:'탄산수, 얼음, 컵. 하이볼 세팅만'}],
+ notes:[]},
+
+{id:'d04',date:'10.04',wk:'일',zone:'city',tag:'쉐라톤',
+ sub:'시내 유일한 통짜 하루. 오전에 북쪽을 찍고 오후는 라운지에 붙습니다.',
+ items:[
+  {t:'07:30',h:'25층 라운지 조식',d:'06:30–11:00',k:1},
+  {t:'09:00',h:'뽀나가르 참탑',d:'차 8분 · 3만동 · 아이도 같은 요금 · 40분',k:1},
+  {t:'10:30',h:'혼쫑곶',d:'참탑에서 차 5분 · 3만동 · 30분 · 물때 높으면 길이 잠깁니다'},
+  {t:'12:00',h:'점심 · Bánh xèo Cô Hồng',d:'위생 안심 카페형 (호텔 쪽이면 쿠우쿠우)'},
+  {t:'13:30',h:'객실 낮잠',d:''},
+  {t:'16:00',h:'마사지 교대 또는 수영장',d:''},
+  {t:'17:30',h:'라운지 해피아워',d:''},
+  {t:'19:00',h:"저녁 · Pizza 4P's 쉐라톤점",d:'호텔 1층 · *예약 필수*',k:1},
+  {t:'20:30',h:'야시장 잠깐',d:'17:00–23:00 · 400m라 한 바퀴면 끝. 흥정 필수'}],
+ notes:[{kind:'warn',h:'비 오면',d:'오전을 접고 *Big Fun 빈컴 쩐푸* 실내 놀이터로. 차 5분, 평점 4.9, 화·수 할인. 두 시간이면 체력이 소진됩니다.'}]},
+
+{id:'d05',date:'10.05',wk:'월',zone:'isle',tag:'→ 혼트레',
+ sub:'섬으로. 빈원더스 첫 번째 — 저렴한 저녁 티켓으로 맛보기.',
+ items:[
+  {t:'07:30',h:'라운지 조식',d:''},
+  {t:'09:30',h:'마지막 수영',d:''},
+  {t:'12:00',h:'점심',d:''},
+  {t:'13:30',h:'쉐라톤 체크아웃',d:'16시 보장이나 혼트레 15시 체크인에 맞춰 출발',k:1},
+  {t:'14:00',h:'빈펄 케이블카 터미널',d:'차 15분'},
+  {t:'14:20',h:'케이블카 10분 → 버기',d:'투숙객 무료 · 강풍이면 스피드보트로 대체'},
+  {t:'15:00',h:'혼트레 체크인',d:'',k:1},
+  {t:'16:00',h:'빈원더스 — 애프터4 입장',d:'55만–70만동 (정가 105만동) · 100cm 미만 무료 · 입장 마감 19:00',k:1},
+  {t:'20:00',h:'폐장 · 리조트 복귀',d:''}],
+ notes:[{kind:'elite',h:'체크인 때 물어볼 것',d:'혼트레는 리조트라 클럽라운지가 없습니다. 플래티넘 웰컴기프트를 *조식으로 선택*하고, 업그레이드 시 *Solare 동 조식* 이용 가능 여부를 확인하세요.'}]},
+
+{id:'d06',date:'10.06',wk:'화',zone:'isle',tag:'혼트레',
+ sub:'빈원더스 본편. 평일이라 케이블카 줄이 짧습니다.',
+ items:[
+  {t:'07:00',h:'조식 — 일찍',d:'9시 넘으면 자리 찾기가 어렵습니다'},
+  {t:'09:30',h:'빈원더스 입장',d:'',k:1},
+  {t:'09:45',h:'워터파크 키즈존',d:'130cm 미만은 스릴 슬라이드 불가'},
+  {t:'12:00',h:'파크 내 점심',d:''},
+  {t:'13:30',h:'아쿠아리움 · 실내존',d:''},
+  {t:'15:00',h:'버기 10분 → 리조트 낮잠',d:'힘들면 언제든 돌아올 수 있는 게 섬 숙박의 전부입니다',k:1},
+  {t:'17:00',h:'재입장 또는 리조트 풀',d:''},
+  {t:'19:00',h:'저녁',d:''}],
+ notes:[{kind:'warn',h:'비 오면',d:'아쿠아리움·실내존·타타쇼로 하루가 채워집니다. 야외와 워터파크만 접으면 됩니다.'}]},
+
+{id:'d07',date:'10.07',wk:'수',zone:'dune',tag:'→ JW 깜란',
+ sub:'이동일. 케이블카 내리는 자리에 볼 게 하나 있습니다.',
+ items:[
+  {t:'07:30',h:'조식',d:''},
+  {t:'09:00',h:'리조트 풀 마지막',d:''},
+  {t:'13:00',h:'혼트레 체크아웃',d:'리조트라 레이트 미보장. 안 되면 짐 맡기고 풀 계속',k:1},
+  {t:'13:20',h:'케이블카 → 육지',d:''},
+  {t:'13:45',h:'국립해양박물관 (선택)',d:'터미널에서 500m · 4만동 · 1시간'},
+  {t:'14:50',h:'차량 이동 50분',d:''},
+  {t:'15:50',h:'JW 깜란 체크인',d:'',k:1},
+  {t:'16:30',h:'인피니티풀 · 라군풀 · 키즈클럽',d:''},
+  {t:'18:30',h:'저녁 · Seafood Grill',d:'리조트 내 · 저녁만 운영'}],
+ notes:[]},
+
+{id:'d08',date:'10.08',wk:'목',zone:'dune',tag:'판랑',
+ sub:'사막 선셋 투어. 깜란 출발이라 왕복 1시간 20분이 줄어듭니다.',
+ items:[
+  {t:'07:30',h:'Clay Craft 조식',d:''},
+  {t:'09:00',h:'오전 수영',d:'오후에 나가니 조식과 수영장은 온전히 씁니다'},
+  {t:'12:50',h:'판랑 선셋투어 픽업',d:'조인투어 · 한인 대상 · 깜란 픽업 포함 상품으로',k:1},
+  {t:'14:30',h:'양떼목장',d:''},
+  {t:'16:00',h:'남끄엉 사구 · 지프 · 샌드보드',d:'일몰 17:25 · 한낮 땡볕을 피하고 빛이 가장 좋을 때',k:1},
+  {t:'18:30',h:'출발',d:'저녁 스톱은 빼달라고 요청 — 복귀가 1시간 이상 늦어집니다'},
+  {t:'20:10',h:'리조트 복귀 · 룸서비스나 배달',d:''},
+  {t:'21:00',h:'취침',d:''}],
+ notes:[{kind:'',h:'준비물',d:'얇은 긴바지(모래가 살에 정통으로 박힙니다), 모자, 선글라스, 물티슈, 갈아입을 옷 한 벌, 벗기 쉬운 신발. 조인투어에 카시트는 없습니다.'}]},
+
+{id:'d09',date:'10.09',wk:'금',zone:'dune',tag:'JW 깜란',
+ sub:'리조트 데이. 동시에 판랑 예비일입니다.',
+ items:[
+  {t:'07:30',h:'조식',d:''},
+  {t:'09:00',h:'풀 · 비치',d:'10월은 파도가 셀 수 있으니 바다는 상태 보고'},
+  {t:'11:30',h:'점심 · 깜득 반쎄오 꼬 뚜엣',d:'차 15–20분 · 11:00–18:00 · *일요일 휴무* · 30분만',k:1},
+  {t:'13:30',h:'복귀 · 낮잠',d:''},
+  {t:'15:30',h:'클레이 스튜디오 도자기 페인팅',d:'구운 뒤 완성품을 돌려줍니다. 5세에게 딱'},
+  {t:'18:30',h:'저녁 · 리조트 또는 그랩 배달',d:'기사는 정문 경비실까지만. 근처 진입 확인하고 버기 호출'}],
+ notes:[]},
+
+{id:'d10',date:'10.10',wk:'토',zone:'dune',tag:'출국',
+ sub:'체크아웃하고도 하루가 남습니다. 디파처룸이 그 하루를 받아줍니다.',
+ items:[
+  {t:'07:30',h:'조식',d:''},
+  {t:'09:00',h:'마지막 수영',d:''},
+  {t:'16:00',h:'체크아웃 · 짐은 벨데스크',d:'리조트라 미보장 · 3–4일 전 앱으로 16시 요청',k:1},
+  {t:'17:00',h:'Spa Moc 마사지',d:'차 5분 · 24시간 · 리조트 무료 픽업·드랍',k:1},
+  {t:'19:00',h:'복귀 → 디파처룸 샤워',d:'체크아웃 후에도 쓰는 별도 공간'},
+  {t:'19:30',h:'저녁',d:''},
+  {t:'21:00',h:'리조트 출발 → 21:20 공항',d:'',k:1},
+  {t:'21:40',h:'에어서울 체크인',d:'예약번호 {{pnr}} · 카운터 오픈 시각 미리 확인'},
+  {t:'22:00',h:'출국심사 · 보안',d:''},
+  {t:'22:20',h:'SunCoast 라운지',d:'1–3번 게이트 맞은편 · 08:00–02:30 · *3시간 초과 시 재과금* · 왕복권 2회차',k:1},
+  {t:'23:45',h:'게이트',d:''}],
+ notes:[]},
+
+{id:'d11',date:'10.11',wk:'일',zone:'city',tag:'귀국',sub:'',
+ items:[
+  {t:'00:05',h:'CXR → ICN 이륙',d:'07:10 인천 도착',k:1},
+  {t:'08:00',h:'T2 예약주차장 출차',d:'주차 예약번호 {{parking}}'}],
+ notes:[]}
+]};
+
+var plan=JSON.parse(JSON.stringify(BASE));
+var checks={}, secrets={}, localTs=0, remoteTs=0, remoteSnapshot=null;
+var currentFileSha=null, editing=false, target=null, lastTab='plan';
+
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function subst(s){ return String(s==null?'':s).replace(/\{\{(\w+)\}\}/g,function(_,k){
+  return secrets[k] ? secrets[k] : '\u0001MISS\u0001'; }); }
+function fmt(s){ return esc(subst(s))
+  .replace(/\u0001MISS\u0001/g,'<span class="miss">···</span>')
+  .replace(/\*([^*]+)\*/g,'<b>$1</b>').replace(/\n/g,'<br>'); }
+function baseDay(id){ for(var i=0;i<BASE.days.length;i++) if(BASE.days[i].id===id) return BASE.days[i]; return null; }
+function isEdited(d){ var b=baseDay(d.id);
+  return !b || JSON.stringify({i:d.items,n:d.notes})!==JSON.stringify({i:b.items,n:b.notes}); }
+
+function mins(t){ var m=/^\s*(\d{1,2})\s*[:.]?\s*(\d{2})\s*$/.exec(t||''); return m?(+m[1])*60+(+m[2]):null; }
+function isOvernight(items){ for(var i=0;i<items.length;i++){ var v=mins(items[i].t); if(v!=null&&v>=720) return true; } return false; }
+function sortKey(t,ov){ var v=mins(t); return v==null?null:((ov&&v<300)?v+1440:v); }
+function normTime(t){ var m=/^\s*(\d{1,2})\s*[:.]?\s*(\d{2})\s*$/.exec(t||'');
+  return m?('0'+m[1]).slice(-2)+':'+m[2]:(t||'').trim(); }
+
+function todayInfo(){
+  var n=new Date();
+  if(n.getFullYear()!==2026) return null;
+  var key=('0'+(n.getMonth()+1)).slice(-2)+'.'+('0'+n.getDate()).slice(-2);
+  for(var i=0;i<plan.days.length;i++) if(plan.days[i].date===key)
+    return {id:plan.days[i].id, now:n.getHours()*60+n.getMinutes()};
+  return null;
+}
+
+function payload(){ return {v:2, updatedAt:new Date().toISOString(), plan:plan, checks:checks}; }
+function touch(){ localTs=Date.now(); LS.set(K_TS,String(localTs)); }
+function saveLocal(){
+  LS.set(K_PLAN,JSON.stringify(plan));
+  LS.set(K_CHK,JSON.stringify(checks));
+  touch(); refreshStatus();
+}
+function dirty(){
+  if(!remoteSnapshot) return isEdited({id:'',items:[],notes:[]}) ? false : hasAnyEdit();
+  return JSON.stringify({p:plan,c:checks})!==remoteSnapshot;
+}
+function hasAnyEdit(){ for(var i=0;i<plan.days.length;i++) if(isEdited(plan.days[i])) return true; return false; }
+
+function refreshStatus(){
+  var n=0; for(var i=0;i<plan.days.length;i++) if(isEdited(plan.days[i])) n++;
+  var d=dirty();
+  document.getElementById('editbtn').dataset.dirty = d?'1':'0';
+  var st=document.getElementById('editstat');
+  st.textContent = (n?(n+'일 수정됨 · '):'') + (d?'커밋 안 됨':'저장소와 동일');
+  var ts=document.getElementById('tokenStatus');
+  var tok=LS.get(K_TOKEN);
+  ts.textContent = (tok?'토큰 등록됨. ':'토큰 없음 — 읽기만 가능합니다. ')
+    + (remoteTs?('저장소 최종 갱신 '+new Date(remoteTs).toLocaleString()+'. '):'')
+    + (d?'이 기기에 커밋 안 된 변경이 있습니다.':'');
+}
+
+function render(){
+  var td=todayInfo(), out='';
+  plan.days.forEach(function(d,di){
+    var isToday = td && td.id===d.id;
+    var ov=isOvernight(d.items), nextDone=false;
+    out+='<article class="day" id="'+esc(d.id)+'"'+(isToday?' data-today="1"':'')+'>'
+      +'<div class="dayhead"><div class="dnum">'+esc(d.date)+'</div><div class="dwk">'+esc(d.wk)+'</div>'
+      +(isToday?'<span class="todaypill">오늘</span>':'')
+      +(isEdited(d)?'<span class="edited">수정됨</span>':'')
+      +'<div class="dtag" data-z="'+esc(d.zone)+'">'+esc(d.tag)+'</div></div>';
+    if(d.sub) out+='<p class="dsub">'+fmt(d.sub)+'</p>';
+
+    out+='<ul class="tl">';
+    d.items.forEach(function(it,ii){
+      var poi=matchPoi(it.h+' '+(it.d||'')), mark='';
+      if(isToday){
+        var k=sortKey(it.t,ov);
+        if(k!=null){
+          if(k<=td.now) mark=' data-past="1"';
+          else if(!nextDone){ mark=' data-next="1"'; nextDone=true; }
+        }
+      }
+      out+='<li data-k="'+(it.k?1:0)+'" data-di="'+di+'" data-ii="'+ii+'" data-type="item"'+mark+'>'
+        +'<span class="t">'+esc(it.t)+'</span>'
+        +'<div class="h">'+fmt(it.h)+(mark.indexOf('next')>-1?'<span class="nextpill">다음</span>':'')+'</div>'
+        +(it.d?'<div class="d">'+fmt(it.d)+'</div>':'');
+      if(poi) out+='<div class="poilinks">'
+        +'<button type="button" class="poilink-btn" data-jump-tab="'+poi.tab+'" data-jump-id="'+poi.id+'">상세</button>'
+        +'<a class="poilink-map" href="'+poi.map+'" target="_blank" rel="noopener">지도</a></div>';
+      out+='<span class="rowctl">'
+        +'<button class="mini" data-act="up" aria-label="위로"'+(ii===0?' disabled':'')+'>↑</button>'
+        +'<button class="mini" data-act="down" aria-label="아래로"'+(ii===d.items.length-1?' disabled':'')+'>↓</button>'
+        +'<button class="mini" data-x="1" data-act="del" aria-label="삭제">✕</button>'
+        +'</span></li>';
+    });
+    out+='</ul>';
+
+    out+='<div class="dayadd"><button data-act="additem" data-di="'+di+'">＋ 일정</button>'
+      +'<button data-act="sort" data-di="'+di+'">시간순 정렬</button>'
+      +'<button data-act="addnote" data-di="'+di+'">＋ 메모</button>'
+      +(isEdited(d)?'<button data-act="resetday" data-di="'+di+'">이 날 되돌리기</button>':'')+'</div>';
+
+    (d.notes||[]).forEach(function(n,ni){
+      out+='<div class="note" data-kind="'+esc(n.kind||'')+'" data-di="'+di+'" data-ii="'+ni+'" data-type="note">'
+        +(n.h?'<b>'+fmt(n.h)+'</b><br>':'')+fmt(n.d)
+        +'<span class="rowctl"><button class="mini" data-act="editnote" aria-label="메모 수정">✎</button>'
+        +'<button class="mini" data-x="1" data-act="delnote" aria-label="메모 삭제">✕</button></span></div>';
+    });
+
+    if(di<plan.days.length-1) out+='<hr class="sep">';
+    out+='</article>';
+  });
+  document.getElementById('days').innerHTML=out;
+  document.querySelectorAll('[data-secret]').forEach(function(el){
+    var v=secrets[el.dataset.secret];
+    el.textContent=v||'···'; el.className=v?'':'miss';
+  });
+  buildChips(td);
+  refreshStatus();
+}
+
+function buildChips(td){
+  var chips=document.getElementById('chips'); chips.innerHTML='';
+  plan.days.forEach(function(d){
+    var b=document.createElement('button');
+    b.className='chip'; b.type='button';
+    b.textContent=d.date.replace('10.','');
+    b.dataset.for=d.id;
+    if(td&&td.id===d.id) b.dataset.today='1';
+    b.addEventListener('click',function(){
+      var el=document.getElementById(d.id);
+      if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+    });
+    chips.appendChild(b);
+  });
+  observeDays();
+}
+var io=null;
+function observeDays(){
+  if(!('IntersectionObserver' in window)) return;
+  if(io) io.disconnect();
+  io=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(!e.isIntersecting) return;
+      document.querySelectorAll('.chip').forEach(function(c){
+        c.dataset.on=(c.dataset.for===e.target.id)?'1':'0'; });
+    });
+  },{rootMargin:'-140px 0px -60% 0px'});
+  document.querySelectorAll('.day').forEach(function(d){ io.observe(d); });
+}
+
+/* sheet */
+var sheet=document.getElementById('sheet');
+function openSheet(kind,di,ii){
+  target={kind:kind,di:di,ii:ii};
+  var isNote=kind==='note', d=plan.days[di];
+  var o=isNote?(ii==null?{kind:'',h:'',d:''}:d.notes[ii]):(ii==null?{t:'',h:'',d:'',k:0}:d.items[ii]);
+  document.getElementById('sheetTitle').textContent=
+    (ii==null?(isNote?'메모 추가':'일정 추가'):(isNote?'메모 수정':'일정 수정'))+' · '+d.date;
+  document.getElementById('fTimeWrap').hidden=isNote;
+  document.getElementById('fKindWrap').hidden=!isNote;
+  document.getElementById('fKeyWrap').style.display=isNote?'none':'flex';
+  document.getElementById('sDel').style.display=(ii==null)?'none':'block';
+  document.getElementById('fTime').value=isNote?'':(o.t||'');
+  document.getElementById('fKind').value=isNote?(o.kind||''):'';
+  document.getElementById('fHead').value=o.h||'';
+  document.getElementById('fDetail').value=o.d||'';
+  document.getElementById('fKey').checked=!isNote&&!!o.k;
+  sheet.dataset.on='1';
+  setTimeout(function(){ document.getElementById(isNote?'fHead':'fTime').focus(); },60);
+}
+function closeSheet(){ sheet.dataset.on='0'; target=null; }
+document.getElementById('sCancel').addEventListener('click',closeSheet);
+sheet.querySelector('.scrim').addEventListener('click',closeSheet);
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&sheet.dataset.on==='1') closeSheet(); });
+
+document.getElementById('sSave').addEventListener('click',function(){
+  if(!target) return;
+  var d=plan.days[target.di];
+  var h=document.getElementById('fHead').value.trim();
+  var dd=document.getElementById('fDetail').value.trim();
+  if(!h){ document.getElementById('fHead').focus(); return; }
+  if(target.kind==='note'){
+    var n={kind:document.getElementById('fKind').value,h:h,d:dd};
+    if(target.ii==null) d.notes.push(n); else d.notes[target.ii]=n;
+  }else{
+    var it={t:normTime(document.getElementById('fTime').value),h:h,d:dd,
+            k:document.getElementById('fKey').checked?1:0};
+    if(target.ii==null) d.items.push(it); else d.items[target.ii]=it;
+  }
+  closeSheet(); render(); saveLocal();
+});
+document.getElementById('sDel').addEventListener('click',function(){
+  if(!target||target.ii==null) return;
+  var d=plan.days[target.di];
+  if(target.kind==='note') d.notes.splice(target.ii,1); else d.items.splice(target.ii,1);
+  closeSheet(); render(); saveLocal();
+});
+
+/* POI jump + back */
+var backbtn=document.getElementById('backbtn');
+var backTo=null;
+function jumpToPoi(tab,id){
+  backTo={tab:'plan',y:window.pageYOffset};
+  switchTab(tab);
+  setTimeout(function(){
+    var el=document.getElementById(id);
+    if(el){ el.scrollIntoView({behavior:'auto',block:'center'});
+      el.classList.add('poi-flash');
+      setTimeout(function(){ el.classList.remove('poi-flash'); },1400); }
+    backbtn.dataset.on='1';
+  },20);
+}
+backbtn.addEventListener('click',function(){
+  var y=backTo?backTo.y:0;
+  switchTab('plan'); backbtn.dataset.on='0';
+  setTimeout(function(){ window.scrollTo(0,y); },20);
+});
+
+document.getElementById('days').addEventListener('click',function(e){
+  var jb=e.target.closest('.poilink-btn');
+  if(jb){ jumpToPoi(jb.dataset.jumpTab,jb.dataset.jumpId); return; }
+  var btn=e.target.closest('button');
+  if(btn){
+    var act=btn.dataset.act;
+    if(act==='additem'){ openSheet('item',+btn.dataset.di,null); return; }
+    if(act==='addnote'){ openSheet('note',+btn.dataset.di,null); return; }
+    if(act==='sort'){
+      var day=plan.days[+btn.dataset.di], ov=isOvernight(day.items);
+      day.items.sort(function(a,b){ var x=sortKey(a.t,ov),y=sortKey(b.t,ov);
+        if(x==null) return 1; if(y==null) return -1; return x-y; });
+      render(); saveLocal(); return;
+    }
+    if(act==='resetday'){
+      var i=+btn.dataset.di, b=baseDay(plan.days[i].id);
+      if(b) plan.days[i]=JSON.parse(JSON.stringify(b));
+      render(); saveLocal(); return;
+    }
+    var host=btn.closest('[data-type]'); if(!host) return;
+    var di=+host.dataset.di, ii=+host.dataset.ii, day2=plan.days[di];
+    if(act==='up'&&ii>0){ var a=day2.items.splice(ii,1)[0]; day2.items.splice(ii-1,0,a); render(); saveLocal(); }
+    else if(act==='down'){ var c=day2.items.splice(ii,1)[0]; day2.items.splice(ii+1,0,c); render(); saveLocal(); }
+    else if(act==='del'){ day2.items.splice(ii,1); render(); saveLocal(); }
+    else if(act==='delnote'){ day2.notes.splice(ii,1); render(); saveLocal(); }
+    else if(act==='editnote'){ openSheet('note',di,ii); }
+    return;
+  }
+  if(!editing) return;
+  var row=e.target.closest('li[data-type="item"]');
+  if(row) openSheet('item',+row.dataset.di,+row.dataset.ii);
+});
+
+function setEdit(v){
+  editing=v;
+  document.body.classList.toggle('editing',v);
+  document.getElementById('editbtn').textContent=v?'보기':'편집';
+  if(v) refreshStatus();
+}
+document.getElementById('editbtn').addEventListener('click',function(){ setEdit(!editing); });
+document.getElementById('donebtn').addEventListener('click',function(){ setEdit(false); });
+document.getElementById('resetall').addEventListener('click',function(){
+  if(!confirm('수정한 일정을 모두 원래대로 되돌립니다. 계속할까요?')) return;
+  plan=JSON.parse(JSON.stringify(BASE)); render(); saveLocal();
+});
+
+function switchTab(name){
+  lastTab=name;
+  document.querySelectorAll('.tab').forEach(function(x){
+    x.setAttribute('aria-selected',x.dataset.go===name?'true':'false'); });
+  document.querySelectorAll('.panel').forEach(function(p){
+    p.setAttribute('data-on',p.id===name?'1':'0'); });
+  document.getElementById('chipbar').style.display=(name==='plan')?'flex':'none';
+  if(name!=='plan') setEdit(false);
+  if(name==='plan') backbtn.dataset.on='0';
+}
+document.querySelectorAll('.tab').forEach(function(t){
+  t.addEventListener('click',function(){ switchTab(t.dataset.go); window.scrollTo(0,0); });
+});
+
+/* GitHub sync */
+function ghHeaders(){
+  var t=LS.get(K_TOKEN), h={'Accept':'application/vnd.github+json'};
+  if(t) h['Authorization']='Bearer '+t;
+  return h;
+}
+function applyRemote(parsed){
+  if(parsed&&parsed.plan&&parsed.plan.days){ plan=parsed.plan; }
+  if(parsed&&parsed.checks){ checks=parsed.checks;
+    document.querySelectorAll('.ck input').forEach(function(b){ b.checked=!!checks[b.dataset.id]; }); }
+  remoteSnapshot=JSON.stringify({p:plan,c:checks});
+  LS.set(K_PLAN,JSON.stringify(plan)); LS.set(K_CHK,JSON.stringify(checks));
+  localTs=remoteTs; LS.set(K_TS,String(localTs));
+  render();
+}
+async function pullFromGitHub(manual){
+  var st=document.getElementById('tokenStatus');
+  try{
+    var url='https://api.github.com/repos/'+GH_OWNER+'/'+GH_REPO+'/contents/'+GH_FILE
+           +'?ref='+GH_BRANCH+'&t='+Date.now();
+    var res=await fetch(url,{headers:ghHeaders()});
+    if(res.status===404){ if(manual) st.textContent='저장소에 '+GH_FILE+'이 아직 없습니다. 한 번 커밋하면 생성됩니다.'; return; }
+    if(!res.ok) throw new Error('불러오기 실패 ('+res.status+')');
+    var data=await res.json();
+    currentFileSha=data.sha;
+    var parsed=JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g,'')))));
+    remoteTs=parsed.updatedAt?Date.parse(parsed.updatedAt):0;
+    var remoteStr=JSON.stringify({p:parsed.plan||plan,c:parsed.checks||checks});
+    var localStr=JSON.stringify({p:plan,c:checks});
+
+    if(remoteStr===localStr){ remoteSnapshot=remoteStr; refreshStatus();
+      if(manual) st.textContent='이미 최신입니다.'; return; }
+
+    if(!localTs || (remoteTs && remoteTs>localTs)){
+      applyRemote(parsed);
+      if(manual) st.textContent='저장소 내용을 불러왔습니다.';
+      return;
+    }
+    /* 로컬이 더 최신 — 함부로 덮지 않는다 */
+    remoteSnapshot=null; refreshStatus();
+    if(manual){
+      if(confirm('이 기기의 수정본이 저장소보다 최신입니다.\n저장소 내용으로 덮어쓸까요?\n(취소하면 이 기기 내용을 유지합니다)')){
+        applyRemote(parsed); st.textContent='저장소 내용으로 덮어썼습니다.';
+      }else{ st.textContent='이 기기 내용을 유지했습니다. 커밋하면 저장소에 반영됩니다.'; }
+    }else{
+      st.textContent='이 기기에 커밋 안 된 변경이 있어 저장소 내용을 자동 반영하지 않았습니다.';
+    }
+  }catch(err){
+    if(st) st.textContent='동기화 실패: '+err.message+' (오프라인이면 정상입니다)';
+  }
+}
+async function pushToGitHub(){
+  var token=LS.get(K_TOKEN);
+  if(!token){ alert('[준비] 탭의 GitHub 동기화에서 토큰을 먼저 등록하세요.'); return; }
+  var btn=document.getElementById('pushbtn');
+  btn.textContent='커밋 중'; btn.disabled=true;
+  try{
+    var getUrl='https://api.github.com/repos/'+GH_OWNER+'/'+GH_REPO+'/contents/'+GH_FILE
+              +'?ref='+GH_BRANCH+'&t='+Date.now();
+    var g=await fetch(getUrl,{headers:ghHeaders()});
+    if(g.ok){ currentFileSha=(await g.json()).sha; }
+    else if(g.status===404){ currentFileSha=null; }
+    else throw new Error('조회 실패 ('+g.status+')');
+
+    var body={ message:'일정 갱신 '+new Date().toLocaleString(),
+      content:btoa(unescape(encodeURIComponent(JSON.stringify(payload(),null,2)))),
+      branch:GH_BRANCH };
+    if(currentFileSha) body.sha=currentFileSha;
+
+    var p=await fetch('https://api.github.com/repos/'+GH_OWNER+'/'+GH_REPO+'/contents/'+GH_FILE,{
+      method:'PUT',headers:Object.assign({'Content-Type':'application/json'},ghHeaders()),
+      body:JSON.stringify(body)});
+    if(!p.ok){ var e=await p.text(); throw new Error('커밋 실패 ('+p.status+') '+e.slice(0,120)); }
+    currentFileSha=(await p.json()).content.sha;
+    remoteSnapshot=JSON.stringify({p:plan,c:checks});
+    remoteTs=Date.now(); localTs=remoteTs; LS.set(K_TS,String(localTs));
+    refreshStatus();
+    alert('저장소에 커밋되었습니다.');
+  }catch(err){ alert(err.message); }
+  finally{ btn.textContent='커밋 ☁'; btn.disabled=false; }
+}
+document.getElementById('pushbtn').addEventListener('click',pushToGitHub);
+document.getElementById('pullNowBtn').addEventListener('click',function(){ pullFromGitHub(true); });
+document.getElementById('saveTokenBtn').addEventListener('click',function(){
+  var v=document.getElementById('ghToken').value.trim(); if(!v) return;
+  LS.set(K_TOKEN,v); document.getElementById('ghToken').value='';
+  refreshStatus(); alert('토큰이 이 기기에 저장되었습니다.');
+});
+document.getElementById('clearTokenBtn').addEventListener('click',function(){
+  LS.del(K_TOKEN); refreshStatus(); alert('토큰을 삭제했습니다.');
+});
+
+/* secrets */
+function loadSecretFields(){
+  document.getElementById('sPnr').value=secrets.pnr||'';
+  document.getElementById('sParking').value=secrets.parking||'';
+  document.getElementById('sCar').value=secrets.car||'';
+  var n=['pnr','parking','car'].filter(function(k){ return !!secrets[k]; }).length;
+  document.getElementById('secStat').textContent=n?(n+'개 항목이 이 기기에 저장되어 있습니다.')
+    :'아직 비어 있습니다. 일정에는 ··· 으로 표시됩니다.';
+}
+document.getElementById('secSave').addEventListener('click',function(){
+  secrets={ pnr:document.getElementById('sPnr').value.trim(),
+            parking:document.getElementById('sParking').value.trim(),
+            car:document.getElementById('sCar').value.trim() };
+  LS.set(K_SEC,JSON.stringify(secrets)); loadSecretFields(); render();
+});
+document.getElementById('secClear').addEventListener('click',function(){
+  if(!confirm('예약 정보를 이 기기에서 지웁니다.')) return;
+  secrets={}; LS.del(K_SEC); loadSecretFields(); render();
+});
+
+/* D-day */
+(function(){
+  var dep=new Date('2026-10-02T19:50:00+09:00'), end=new Date('2026-10-11T07:10:00+09:00');
+  var now=new Date(), el=document.getElementById('dday');
+  if(now<dep){ var n=Math.ceil((dep-now)/86400000); el.textContent=n===0?'오늘 출발':'D-'+n; }
+  else if(now<=end) el.textContent='여행 중';
+  else el.textContent='완료';
+})();
+
+/* checklist */
+document.querySelectorAll('.ck input').forEach(function(b){
+  b.addEventListener('change',function(){ checks[b.dataset.id]=b.checked; saveLocal(); });
+});
+
+/* backup */
+document.getElementById('bkpCopy').addEventListener('click',function(){
+  var code=btoa(unescape(encodeURIComponent(JSON.stringify({plan:plan,checks:checks,secrets:secrets}))));
+  var box=document.getElementById('bkpBox'); box.value=code; box.select();
+  if(navigator.clipboard) navigator.clipboard.writeText(code).catch(function(){});
+  var self=this; self.textContent='복사됨';
+  setTimeout(function(){ self.textContent='코드 만들기 · 복사'; },1600);
+});
+document.getElementById('bkpLoad').addEventListener('click',function(){
+  var v=document.getElementById('bkpBox').value.trim(); if(!v) return;
+  var self=this;
+  try{
+    var o=JSON.parse(decodeURIComponent(escape(atob(v))));
+    if(o.plan&&o.plan.days) plan=o.plan;
+    if(o.checks){ checks=o.checks;
+      document.querySelectorAll('.ck input').forEach(function(b){ b.checked=!!checks[b.dataset.id]; }); }
+    if(o.secrets){ secrets=o.secrets; LS.set(K_SEC,JSON.stringify(secrets)); loadSecretFields(); }
+    render(); saveLocal(); self.textContent='불러왔습니다';
+  }catch(err){ self.textContent='코드가 올바르지 않습니다'; }
+  setTimeout(function(){ self.textContent='불러오기'; },2000);
+});
+
+/* boot — 로컬 먼저, 그 다음 원격 */
+(function(){
+  try{ var s=LS.get(K_SEC); if(s) secrets=JSON.parse(s)||{}; }catch(e){}
+  try{ var p=LS.get(K_PLAN); if(p){ var o=JSON.parse(p); if(o&&o.days) plan=o; } }catch(e){}
+  try{ var c=LS.get(K_CHK); if(c) checks=JSON.parse(c)||{}; }catch(e){}
+  try{ localTs=parseInt(LS.get(K_TS)||'0',10)||0; }catch(e){}
+})();
+render();
+loadSecretFields();
+document.querySelectorAll('.ck input').forEach(function(b){ b.checked=!!checks[b.dataset.id]; });
+pullFromGitHub(false);
+
+/* 여행 기간이면 오늘로 이동 */
+(function(){
+  var td=todayInfo(); if(!td) return;
+  setTimeout(function(){
+    var el=document.getElementById(td.id);
+    if(el) el.scrollIntoView({behavior:'auto',block:'start'});
+  },80);
+})();
+
+/* 오프라인 지원 */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
+  });
+}
+
+})();
+</script>
+</body>
+</html>
