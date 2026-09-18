@@ -739,7 +739,7 @@ table.cost tr:last-child td{border-bottom:0}
     <ol class="steps">
       <li>결항 통보를 받으면 <b>JW 깜란 재투숙부터 문의</b>합니다. 공항 15분이라 가장 빠릅니다</li>
       <li>에어서울 예약센터로 재배정 요청 · 예약번호 <b data-secret="pnr">···</b></li>
-      <li>인천 예약주차 출차가 늦어지면 주차장에 연락해 연장 처리</li>
+      <li>인천 발렛 출차가 늦어지면 아마노코리아 <a class="dial" href="tel:0327430750">032-743-0750</a>에 연락해 조정</li>
       <li>지연·결항 확인서를 현장에서 발급받으세요. 보험 청구에 필요합니다</li>
     </ol>
   </div>
@@ -788,8 +788,8 @@ table.cost tr:last-child td{border-bottom:0}
     <div class="fact">
       <div class="fld"><label for="sPnr">항공 예약번호 (PNR)</label>
         <input id="sPnr" type="text" autocomplete="off" placeholder="예: ABC123"></div>
-      <div class="fld"><label for="sParking">주차 예약번호</label>
-        <input id="sParking" type="text" autocomplete="off"></div>
+      <div class="fld"><label for="sParking">주차 예약번호 <i>— 발렛이면 예약확인번호</i></label>
+        <input id="sParking" type="text" autocomplete="off" placeholder="예: 12345678"></div>
       <div class="fld" style="margin-bottom:0"><label for="sCar">차량번호</label>
         <input id="sCar" type="text" autocomplete="off"></div>
       <div class="bkp"><button data-p="1" id="secSave">저장</button><button data-x="1" id="secClear">지우기</button></div>
@@ -1001,7 +1001,7 @@ var BASE={v:2,days:[
  sub:'오늘 밤은 자지 않습니다. 공항 라운지에서 기다렸다가 새벽 2시에 사막으로 출발.',
  items:[
   {t:'15:30',h:'집 출발',d:''},
-  {t:'17:00',h:'인천 T2 예약주차장 발렛 입고',d:'주차 {{parking}} · 차량 {{car}} · 보증금 1만원',k:1},
+  {t:'17:00',h:'T2 발렛 입고 — 아마노코리아',d:'예약번호 {{parking}} · 차량 {{car}} · 단기주차장 지하1층 서편 진입부 접수장',k:1},
   {t:'17:30',h:'에어서울 체크인 · RS527',d:'예약번호 {{pnr}} · 위탁 15kg · 주류 4병은 인천 면세점에서 구매해 핸드캐리(STEB 봉인)'},
   {t:'18:15',h:'T2 라운지 식사',d:'이안·현수 — 본보이 카드\n소담 — 베브5카드(더라운지 제외, 기본 혜택)\n이담 — 무료'},
   {t:'19:50',h:'ICN → CXR 이륙',d:'22:55 도착 · 비행 5시간 5분 · 시차 −2시간. *기내에서 아이들 재우는 게 오늘의 임무입니다*',k:1},
@@ -1009,6 +1009,8 @@ var BASE={v:2,days:[
   {t:'23:40',h:'베나자 트레블 라운지',d:'공항 출구 나와서 우측 · 출구를 바라보면 왼편.',k:1},
   {t:'02:00',h:'무이네 해돋이 투어 출발',d:'차량 4시간. 아이들은 차에서 자게 됩니다',k:1}],
  notes:[
+  {kind:'warn',h:'발렛은 접수장에서, 아무나에게 안 맡깁니다',d:'단기주차장 지하1층 서편 진입부의 공식 접수장으로 가세요. *파란 유니폼에 "공식주차대행" 표시*가 있는 직원에게만 차를 맡기세요 — 공항 주변에서 호객하는 사설 대행업체는 인천공항공사와 무관하고 사고 책임도 못 집니다.'},
+  {kind:'',h:'요금은 귀국 때 한 번에',d:'주차료(장기주차장 요금 적용)와 발렛 서비스료 모두 *예약금 없이 귀국 때 후불 정산*입니다. 미리 결제할 건 없어요.'},
   {kind:'warn',h:'오늘 밤 호텔이 없습니다',d:'포포인츠 10.02는 취소 대상입니다. 다만 *항공이 지연되면 갈 곳이 사라지므로* 무료 취소 기한 직전까지 붙잡아두었다가 정리하세요. 투어는 이용일 3일 전 오후 6시(한국시간)까지만 전액 환불됩니다.'},
   {kind:'',h:'대기 두 시간 반',d:'도착층이라 출국장 SunCoast 라운지는 못 씁니다. 베나자 라운지에서 버티는 시간이에요. *얇은 담요, 목베개, 갈아입을 옷, 간식*을 데이백에 미리 빼두세요.'}]},{id:'d03',date:'10.03',wk:'토',zone:'dune',tag:'무이네 → 쉐라톤',
  sub:'화이트샌듄 일출. 오후는 통째로 회복에 쓰고, 저녁은 라운지에서.',
@@ -1117,7 +1119,7 @@ var BASE={v:2,days:[
 {id:'d11',date:'10.11',wk:'일',zone:'city',tag:'귀국',sub:'',
  items:[
   {t:'00:05',h:'CXR → ICN 이륙',d:'07:10 인천 도착',k:1},
-  {t:'08:00',h:'T2 예약주차장 출차',d:'주차 예약번호 {{parking}}'}],
+  {t:'08:00',h:'T2 발렛 출차 — 아마노코리아',d:'예약번호 {{parking}} · 접수증에 적힌 출차 장소로 이동 후 주차료+서비스료 결제'}],
  notes:[]}
 ]};
 
