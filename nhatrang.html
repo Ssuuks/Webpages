@@ -253,6 +253,28 @@ hr.sep{border:0;border-top:1px solid var(--rule);margin:26px 0 0}
   border-radius:9px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer}
 .linkrow button[data-p="1"]{border-style:dashed;border-color:var(--city);color:var(--city);flex:1}
 .poidetail .krline{margin-top:10px}
+.ptools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:18px 0 2px}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden;background:var(--card)}
+.seg button{appearance:none;border:0;background:none;padding:5px 11px;font-size:12.5px;font-weight:650;color:var(--ink2);cursor:pointer;font-family:inherit}
+.seg button[data-on="1"]{background:var(--ink);color:#fff}
+.segf{flex-basis:100%;width:max-content}
+.refsel{font-family:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--rule);border-radius:999px;background:var(--card);color:var(--ink2);max-width:160px}
+.pedit{margin-left:auto;appearance:none;border:1px solid var(--city);background:var(--card);color:var(--city);border-radius:999px;padding:4px 13px;font-size:13px;font-weight:750;cursor:pointer;font-family:inherit}
+.pedit[data-on="1"]{background:var(--city);color:#fff}
+.padd{flex-basis:100%;display:flex;gap:7px;flex-wrap:wrap}
+.padd button{appearance:none;border:1px dashed var(--ink3);background:transparent;color:var(--ink2);border-radius:9px;padding:6px 12px;font-size:13px;font-weight:650;cursor:pointer;font-family:inherit}
+.dist{display:inline-block;margin-right:6px;font-size:11px;font-weight:750;color:var(--city);font-variant-numeric:tabular-nums}
+.pgrp{display:inline-block;margin-right:6px;font-size:11px;font-weight:650;color:var(--ink3)}
+.dl{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:5px;vertical-align:1px;background:#EEE7F6;color:#5B3E7A}
+.dl[data-d="pickup"]{background:#E5F0E2;color:#3F6B35}
+.pctl{display:none;gap:3px;flex:0 0 auto;align-self:center}
+.pedit-on .pctl{display:flex}
+.pedit-on .ps{display:none}
+.fld2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fld .linkrow input{flex:1;min-width:0}
+.vtog{display:inline-flex;margin:4px 0 2px;border:1px solid var(--rule);border-radius:999px;overflow:hidden;background:var(--card)}
+.vtog button{appearance:none;border:0;background:none;padding:5px 12px;font-size:12.5px;font-weight:700;color:var(--ink2);cursor:pointer;font-family:inherit}
+.vtog button[data-on="1"]{background:var(--dune);color:#fff}
 
 #emergency{background:var(--night);color:var(--nightink);min-height:100vh;padding-bottom:80px}
 #emergency .wrap{padding-top:20px}
@@ -425,6 +447,60 @@ table.cost tr:last-child td{border-bottom:0}
   </div>
 </div>
 
+<div class="sheet" id="placesheet">
+  <div class="scrim" data-close="1"></div>
+  <div class="sheetcard" role="dialog" aria-modal="true" aria-labelledby="plTitle">
+    <div class="grab"></div>
+    <h4 id="plTitle">장소 추가</h4>
+    <div class="fld"><label for="plUrl">구글 지도 링크 <i>— 붙여넣고 [불러오기]</i></label>
+      <div class="linkrow"><input id="plUrl" type="url" autocomplete="off" placeholder="https://www.google.com/maps/place/..."><button type="button" id="plParse">불러오기</button></div>
+      <p class="stat" id="plMsg"></p></div>
+    <div class="fld"><label for="plName">이름</label><input id="plName" type="text" autocomplete="off"></div>
+    <div class="fld2">
+      <div class="fld"><label for="plTab">탭</label><select id="plTab"><option value="see">관광</option><option value="eat">맛집</option></select></div>
+      <div class="fld"><label for="plGrp">그룹</label><input id="plGrp" type="text" list="plGrpList" autocomplete="off"><datalist id="plGrpList"></datalist></div>
+    </div>
+    <div class="fld2">
+      <div class="fld"><label for="plTag">태그</label><input id="plTag" type="text" autocomplete="off" placeholder="예: 아이 좋음"></div>
+      <div class="fld"><label for="plTagT">태그 색</label><select id="plTagT"><option value="good">초록</option><option value="short">베이지</option><option value="rain">파랑</option><option value="care">주의</option></select></div>
+    </div>
+    <div class="fld2">
+      <div class="fld"><label for="plKr">한국인</label><select id="plKr"><option value="">표시 없음</option><option value="hi">한국인 많음</option><option value="local">현지 전용</option><option value="warn">한국인 주의</option></select></div>
+      <div class="fld"><label for="plDel">배달 · 픽업</label><select id="plDel"><option value="">—</option><option value="bdk">배달K 깜란까지</option><option value="local">깜란 배달</option><option value="ask">배달 카톡 문의</option><option value="pickup">무료 픽업</option></select></div>
+    </div>
+    <div class="fld"><label for="plDesc">설명 <i>— 첫 줄은 거리·시간 요약, *별표*로 굵게</i></label><textarea id="plDesc"></textarea></div>
+    <div class="fld2">
+      <div class="fld"><label for="plRate">평점</label><input id="plRate" type="text" inputmode="decimal" placeholder="4.5"></div>
+      <div class="fld"><label for="plCnt">리뷰 수</label><input id="plCnt" type="text" inputmode="numeric" placeholder="1,234"></div>
+    </div>
+    <div class="fld2">
+      <div class="fld"><label for="plLat">위도</label><input id="plLat" type="text" inputmode="decimal"></div>
+      <div class="fld"><label for="plLng">경도</label><input id="plLng" type="text" inputmode="decimal"></div>
+    </div>
+    <div class="sheetact">
+      <button data-x="1" id="plDelBtn">삭제</button>
+      <button id="plCancel">취소</button>
+      <button data-p="1" id="plSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="importsheet">
+  <div class="scrim" data-close="1"></div>
+  <div class="sheetcard" role="dialog" aria-modal="true" aria-labelledby="impTitle">
+    <div class="grab"></div>
+    <h4 id="impTitle">여러 곳 한 번에 추가</h4>
+    <p class="stat" style="margin-top:0">구글 지도 링크 여러 개를 AI(Claude 등)에게 주고 <b>[형식 복사]</b>한 요청문을 같이 보내세요. AI가 돌려준 결과를 아래에 붙여넣고 [추가]하면 됩니다.</p>
+    <div class="fld"><textarea id="impBox" style="min-height:150px;font-size:13px" placeholder='[{"name":"가게 이름","tab":"eat","grp":"깜란 · 깜득","lat":12.08,"lng":109.18,"rating":"4.7","count":"649","desc":"JW에서 차 8분 · 11:00–22:00\n특징과 주의점"}]'></textarea></div>
+    <p class="stat" id="impMsg"></p>
+    <div class="sheetact">
+      <button id="impTpl">형식 복사</button>
+      <button id="impCancel">닫기</button>
+      <button data-p="1" id="impGo">추가</button>
+    </div>
+  </div>
+</div>
+
 <div class="sheet" id="picksheet">
   <div class="scrim" data-close="1"></div>
   <div class="sheetcard" role="dialog" aria-modal="true" aria-labelledby="pickTitle">
@@ -439,265 +515,24 @@ table.cost tr:last-child td{border-bottom:0}
 
 <section class="panel" id="see">
 <div class="wrap">
-  <p class="intro">거리는 모두 <b>쉐라톤 기준</b>입니다. 3세·5세를 데리고 다니는 걸 전제로 체류 시간을 적었습니다. 나트랑 관광지는 대부분 30분에서 한 시간이면 끝나니, 하루에 두 개 넘게 넣지 마세요.</p>
+  <p class="intro">초록색 거리는 위에서 고른 <b>기준점에서의 직선거리</b>입니다(기본: 오늘 숙소). 설명 속 "차 n분"은 쉐라톤 기준이고요. 3세·5세 기준으로 체류 시간을 적었으니, 하루에 두 곳 넘게 넣지 마세요.</p>
   <div class="krlegend">
     <b class="kr" data-k="hi">한국인 많음</b><b class="kr" data-k="local">현지 전용</b><b class="kr" data-k="warn">한국인 주의</b>
   </div>
-  <p class="intro" style="padding-top:8px"><b>한국인 많음</b>은 한국어 메뉴·간판·직원이 있거나 한국 손님이 압도적이면서 평이 좋은 곳. <b>현지 전용</b>은 베트남어만 되니 사진 보고 손짓으로 주문하는 곳. <b>한국인 주의</b>는 한국인 대상 불친절이나 바가지 리뷰가 실제로 올라와 있는 곳입니다. 아무 표시가 없으면 영어가 통하고 관광객에 익숙한 곳이에요.</p>
-
-  <div class="grp"><h4>북쪽</h4><span>차 8–12분 · 둘을 묶어 오전 한 번에</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-ponagar" href="https://www.google.com/maps/search/?api=1&amp;query=Po%20Nagar%20Temple%20Nha%20Trang&amp;query_place_id=ChIJUfK4YYxncDERfB2v8ZdvXxE" target="_blank" rel="noopener">
-      <span class="pn">뽀나가르 참탑<b class="tg" data-t="good">아이 좋음</b><u><b class="kr" data-k="hi">한국인 많음</b>차 8분 · 06:00–18:00 · <b>3만동</b>, 아이도 동일 · 40분<br>언덕 위 붉은 벽돌탑. 계단이 짧고 강과 어선이 내려다보입니다. 복장 규정이 있는데 가리개를 무료로 빌려줍니다</u></span>
-      <span class="ps">4.5<s>32,238</s></span></a>
-    <a class="poi" id="poi-honchong" href="https://www.google.com/maps/search/?api=1&amp;query=Hon%20Chong%20Nha%20Trang&amp;query_place_id=ChIJ4fNk9-tncDEREaH8DVQWkmY" target="_blank" rel="noopener">
-      <span class="pn">혼쫑곶<b class="tg" data-t="short">짧게</b><u>참탑에서 차 5분 · 06:00–18:00 · 3만동 · 30분<br>바다로 튀어나온 바위 무더기. 물때가 높으면 건너가는 길이 잠기니 미끄럼 주의. 옆에 바다 보이는 카페가 있습니다</u></span>
-      <span class="ps">4.3<s>7,928</s></span></a>
-    <a class="poi" id="poi-anamarina" href="https://www.google.com/maps/search/?api=1&amp;query=Ana%20Marina%20Nha%20Trang&amp;query_place_id=ChIJ3T4_oHBocDERGezGEnl115g" target="_blank" rel="noopener">
-      <span class="pn">아나 마리나<b class="tg" data-t="good">아이 좋음</b><u>차 15분 · 07:00–23:00 · 입장 무료<br>베트남 첫 국제 규격 요트 마리나. 요트 구경하며 걷기 좋고 <b>놀이터</b>가 있습니다. 다만 푸드코트는 값에 비해 평이 박하니 밥은 다른 데서</u></span>
-      <span class="ps">4.5<s>1,766</s></span></a>
-  </div>
-
-  <div class="grp"><h4>도보권</h4><span>쉐라톤에서 걸어서</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-tramhuong" href="https://www.google.com/maps/search/?api=1&amp;query=Tram%20Huong%20Tower%20Nha%20Trang&amp;query_place_id=ChIJEwTU1HtncDERBl13UGJnQ3Y" target="_blank" rel="noopener">
-      <span class="pn">침향탑 · 2/4 광장<b class="tg" data-t="good">아이 좋음</b><u>도보 12분 · 24시간 · 무료<br>탑 자체는 볼 게 없습니다. 목적은 광장이에요. 저녁이면 현지 가족들이 연을 날리고 아이 놀이기구가 섭니다</u></span>
-      <span class="ps">4.4<s>13,158</s></span></a>
-    <a class="poi" id="poi-nightmarket" href="https://www.google.com/maps/search/?api=1&amp;query=Night%20Market%20Nha%20Trang&amp;query_place_id=ChIJ2TBhifdncDER-bv_z5RkrGo" target="_blank" rel="noopener">
-      <span class="pn">야시장<b class="tg" data-t="short">짧게</b><u>침향탑 바로 옆 · 17:00–23:00<br>400m 남짓. 기념품 위주라 한 바퀴면 끝나고 흥정은 필수입니다. 저녁 먹고 소화 삼아</u></span>
-      <span class="ps">3.8<s>6,691</s></span></a>
-    <a class="poi" id="poi-skylight" href="https://www.google.com/maps/search/?api=1&amp;query=Skylight%20Nha%20Trang&amp;query_place_id=ChIJXeYWDXlncDERdz6NupXSzTo" target="_blank" rel="noopener">
-      <span class="pn">스카이라이트 루프탑<b class="tg" data-t="care">월요일 휴무</b><u>도보 4분 · 화–일 17:00–00:45 · 입장료 있음<br>유리 전망대에서 나트랑 야경 한 바퀴. 아이들은 유리 바닥과 망원경을 좋아합니다. 늦어질수록 클럽으로 바뀌니 <b>18–19시</b>에 올라가서 짧게</u></span>
-      <span class="ps">4.6<s>7,346</s></span></a>
-    <a class="poi" id="poi-yersin" href="https://www.google.com/maps/search/?api=1&amp;query=Yersin%20Museum%20Nha%20Trang&amp;query_place_id=ChIJWyKliYNncDERb7oXX4efWCM" target="_blank" rel="noopener">
-      <span class="pn">예르생 박물관<u><b class="kr" data-k="local">현지 전용</b>도보 6분 · 평일 07:30–11:30 / 14:00–17:00 · <b>일요일 휴무</b> · 2만동<br>페스트균을 찾아낸 그 예르생. 작고 조용합니다. 아이보다 어른용</u></span>
-      <span class="ps">4.5<s>470</s></span></a>
-    <a class="poi" id="poi-cathedral" href="https://www.google.com/maps/search/?api=1&amp;query=Nha%20Trang%20Cathedral&amp;query_place_id=ChIJR0Cr4n9dcDERhrCYXyjifKQ" target="_blank" rel="noopener">
-      <span class="pn">나트랑 대성당<b class="tg" data-t="short">짧게</b><u>차 5분 · 언덕 위 석조 고딕 · 입장료 1만동<br>사진 한 장 찍고 나오는 곳입니다. 입장료 실랑이가 잦다는 후기가 많아요</u></span>
-      <span class="ps">4.1<s>3,184</s></span></a>
-    <a class="poi" id="poi-dammarket" href="https://www.google.com/maps/search/?api=1&amp;query=Dam%20Market%20Nha%20Trang&amp;query_place_id=ChIJjz9TQYZncDERdYcVnKtZn-c" target="_blank" rel="noopener">
-      <span class="pn">담시장<b class="tg" data-t="care">유아 비추</b><u><b class="kr" data-k="local">현지 전용</b>차 5분 · 05:00–18:30<br>과일·커피·건어물은 여기가 제일 쌉니다. 다만 좁고 붐비고 더워서 유모차는 불가능합니다</u></span>
-      <span class="ps">3.9<s>18,979</s></span></a>
-  </div>
-
-  <div class="grp"><h4>남쪽 · 케이블카 방면</h4><span>10.05 입도 또는 10.07 복귀 때 끼우기 좋음</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-ocean" href="https://www.google.com/maps/search/?api=1&amp;query=Museum%20of%20Oceanography%20Nha%20Trang&amp;query_place_id=ChIJ____YjZncDERGNP0e4TWvWw" target="_blank" rel="noopener">
-      <span class="pn">국립해양박물관<b class="tg" data-t="rain">비 와도</b><u>케이블카 터미널에서 500m · 06:00–18:00 · 4만동 · 1시간<br>거대한 고래 골격과 수조 터널이 볼거리. 일부 사육 환경이 열악하다는 지적이 리뷰에 반복되니 민감하시면 건너뛰세요</u></span>
-      <span class="ps">4.2<s>2,791</s></span></a>
-    <a class="poi" id="poi-100egg" href="https://www.google.com/maps/search/?api=1&amp;query=Tram%20Trung%20100%20Egg%20Nha%20Trang&amp;query_place_id=ChIJBzWpKwFfcDERKmYjvw4Ximo" target="_blank" rel="noopener">
-      <span class="pn">100 Egg 머드온천<b class="tg" data-t="good">아이 좋음</b><u><b class="kr" data-k="hi">한국인 많음</b>차 20분 · 08:30–18:00 · 반나절<br>아이리조트 대신 굳이 머드를 한다면 여기. 시설이 새것이고 어린이 풀이 따로 있으며 주말에도 안 붐빈다는 후기가 많습니다. 개별 머드탕을 잡으면 대중탕 요소를 피할 수 있어요</u></span>
-      <span class="ps">4.7<s>1,247</s></span></a>
-    <a class="poi" id="poi-hontam" href="https://www.google.com/maps/search/?api=1&amp;query=Hon%20Tam%20Nha%20Trang&amp;query_place_id=ChIJlfht4RhhcDERVPCZseDMs0k" target="_blank" rel="noopener">
-      <span class="pn">혼땀섬<u>보트 필요 · 머드탕 · 워터스포츠<br>빈원더스를 두 번 가는 일정에는 자리가 없습니다. 참고용</u></span>
-      <span class="ps">4.5<s>888</s></span></a>
-  </div>
-
-  <div class="grp"><h4>비 올 때</h4><span>실내로 도망갈 곳</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-bigfun" href="https://www.google.com/maps/search/?api=1&amp;query=Big%20Fun%20Vincom%20Tran%20Phu%20Nha%20Trang&amp;query_place_id=ChIJgdPCIOVncDERSPs_A0Rwpfo" target="_blank" rel="noopener">
-      <span class="pn">Big Fun 빈컴 쩐푸<b class="tg" data-t="rain">1순위</b><u>차 5분 · 평일 10:00–22:00, 주말 09:30– · 화·수 할인<br>큰 실내 놀이터. 1–12세용이라 3세도 문제없고 두 시간이면 체력이 소진됩니다. 커피와 감자튀김 코너가 있어 부모도 앉아 있을 수 있어요</u></span>
-      <span class="ps">4.9<s>1,789</s></span></a>
-    <a class="poi" id="poi-playtime" href="https://www.google.com/maps/search/?api=1&amp;query=Playtime%20Vincom%20Le%20Thanh%20Ton%20Nha%20Trang&amp;query_place_id=ChIJ79TYj99ncDERjXsIYsl8sII" target="_blank" rel="noopener">
-      <span class="pn">Playtime 빈컴 레탄톤<u><b class="kr" data-k="local">현지 전용</b>차 4분 · 10:00–22:00 · 3층<br>Big Fun보다 작지만 더 가깝습니다. 주말엔 붐빔</u></span>
-      <span class="ps">4.6<s>123</s></span></a>
-    <a class="poi" id="poi-ntcenter" href="https://www.google.com/maps/search/?api=1&amp;query=Nha%20Trang%20Center&amp;query_place_id=ChIJn6DURYJncDERMx8H-KRgn-I" target="_blank" rel="noopener">
-      <span class="pn">나트랑 센터<b class="tg" data-t="rain">영화관</b><u>쉐라톤 도보 3분 · 09:00–22:00 · 4층 영화관과 푸드코트<br>골드코스트보다 낡았다는 평이지만 <b>쉐라톤에서 제일 가깝습니다</b>. 소나기 20분 피하기에 딱이고, 앞에 스타벅스와 하이랜드가 있습니다</u></span>
-      <span class="ps">4.2<s>11,909</s></span></a>
-    <a class="poi" id="poi-goldcoast" href="https://www.google.com/maps/search/?api=1&amp;query=Lotte%20Mart%20Gold%20Coast%20Nha%20Trang&amp;query_place_id=ChIJG4gauzFncDERZWbWVLZUXa4" target="_blank" rel="noopener">
-      <span class="pn">골드코스트몰 · 롯데마트<b class="tg" data-t="rain">도보 5분</b><u><b class="kr" data-k="hi">한국인 많음</b>08:30–22:00 · 롯데마트 3–4층, 쿠우쿠우 12층, 포세이돈 5층<br>비를 안 맞고 갈 수 있는 유일한 실내. 마트·뷔페·쇼핑이 한 건물에 있습니다</u></span>
-      <span class="ps">4.5<s>4,266</s></span></a>
-  </div>
-
-  <div class="grp"><h4>무이네</h4><span>10.03 새벽 · 공항에서 차 4시간</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-whitedune" href="https://www.google.com/maps/search/?api=1&amp;query=Bau%20Trang%20White%20Sand%20Dunes&amp;query_place_id=ChIJ19TutTTrdjERpo5mAMYmLsU" target="_blank" rel="noopener">
-      <span class="pn">화이트샌듄 (바우짱)<b class="tg" data-t="good">일출</b><u><b class="kr" data-k="hi">한국인 많음</b>05:00–18:00 · 입장 1.5만동 · 지프는 투어 포함<br>이번 일정의 하이라이트. 호수와 풍력발전기를 낀 흰 모래언덕입니다. <b>낙타·타조·기니피그가 있는 작은 농장</b>이 붙어 있어 아이들이 좋아해요. 모래썰매는 현장 5만동 별도. 유아 동반이면 고속 지프 코스는 어차피 못 타니 그건 포기</u></span>
-      <span class="ps">4.2<s>3,540</s></span></a>
-    <a class="poi" id="poi-reddune" href="https://www.google.com/maps/search/?api=1&amp;query=Red%20Sand%20Dunes%20Mui%20Ne&amp;query_place_id=ChIJG0sCU6yPdjERGKRMrcgkOxU" target="_blank" rel="noopener">
-      <span class="pn">레드샌듄<b class="tg" data-t="short">짧게</b><u>24시간 · 입장 무료<br>붉은 모래언덕. 규모가 작아 15–30분이면 충분하다는 평이 대부분입니다. 언덕을 걸어 올라가야 하니 신발보다 맨발이 편해요</u></span>
-      <span class="ps">4.1<s>6,984</s></span></a>
-    <a class="poi" id="poi-fairystream" href="https://www.google.com/maps/search/?api=1&amp;query=Fairy%20Stream%20Mui%20Ne&amp;query_place_id=ChIJSd7YIr-PdjERga3IkK6gHXg" target="_blank" rel="noopener">
-      <span class="pn">요정의샘<b class="tg" data-t="good">아이 좋음</b><u>06:30–17:30 · 입장 무료<br>붉고 흰 사암 협곡 사이를 맨발로 걷는 개울. 물이 얕아 아이들이 제일 신나는 구간입니다. <b>바위가 미끄러우니 아쿠아슈즈</b>를 챙기세요. 끝의 폭포는 기대하지 마시고요</u></span>
-      <span class="ps">3.8<s>3,990</s></span></a>
-    <a class="poi" id="poi-fishingvillage" href="https://www.google.com/maps/search/?api=1&amp;query=Mui%20Ne%20Fishing%20Village&amp;query_place_id=ChIJCV30U8mPdjERU-pbq4g5q34" target="_blank" rel="noopener">
-      <span class="pn">무이네 피싱빌리지<b class="tg" data-t="care">냄새·쓰레기</b><u>이른 아침이 절정<br>바구니배가 가득한 사진 명소인데, "모래도 물도 더럽다"는 지적이 상위 리뷰에 반복됩니다. 차에서 내려 사진만 찍고 오는 정도로</u></span>
-      <span class="ps">4.0<s>3,450</s></span></a>
-  </div>
-
-  <div class="grp"><h4>섬 · 판랑</h4><span>판랑은 이번엔 안 갑니다 — 참고용</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-vinwonders" href="https://www.google.com/maps/search/?api=1&amp;query=VinWonders%20Nha%20Trang&amp;query_place_id=ChIJUXQmxMdncDERI-V3_g5la4I" target="_blank" rel="noopener">
-      <span class="pn">빈원더스 나트랑<b class="tg" data-t="good">10.05 · 10.06</b><u><b class="kr" data-k="hi">한국인 많음</b>08:30–20:00, 입장 마감 19:00 · 성인 105만동, 100–140cm 80만동, 100cm 미만 무료<br>오후 4시 이후 티켓은 55만–70만동. 워터파크 스릴 슬라이드는 130cm부터라 키즈존 위주가 됩니다</u></span>
-      <span class="ps">4.7<s>19,325</s></span></a>
-    <a class="poi" id="poi-namcuong" href="https://www.google.com/maps/search/?api=1&amp;query=Nam%20Cuong%20Sand%20Dunes&amp;query_place_id=ChIJB7lErgfOcDERalvOQ5LnDSo" target="_blank" rel="noopener">
-      <span class="pn">남끄엉 사구<b class="tg" data-t="good">10.08</b><u>깜란에서 차 1시간 30분 · 지프 30–40분에 60만동<br>후기에 "아이 동반 좋음"이 반복됩니다. 얇은 긴바지 필수</u></span>
-      <span class="ps">4.3<s>1,232</s></span></a>
-    <a class="poi" id="poi-poklonggarai" href="https://www.google.com/maps/search/?api=1&amp;query=11.6019055,108.946504" target="_blank" rel="noopener">
-      <span class="pn">포클롱가라이 참탑<b class="tg" data-t="short">선택</b><u><b class="kr" data-k="local">현지 전용</b>판랑 투어에 흔히 포함 · 3만동<br>뽀나가르를 이미 봤다면 아이들에게는 반복입니다. 시간을 사막에 몰아주는 편이 낫습니다</u></span>
-      <span class="ps">4.6<s>1,282</s></span></a>
-    <a class="poi" id="poi-hangrai" href="https://www.google.com/maps/search/?api=1&amp;query=Hang%20Rai%20Ninh%20Thuan&amp;query_place_id=ChIJpWzMr7bHcDERHGtd6Voifr4" target="_blank" rel="noopener">
-      <span class="pn">항라이<b class="tg" data-t="short">선택</b><u><b class="kr" data-k="local">현지 전용</b>05:30–17:30 · 입장+버기 2인 12만동<br>고대 산호가 드러난 바위 해안. 사진은 잘 나오지만 계단 34개를 올라야 하고 그늘이 없습니다. 유아 둘이면 사막과 둘 중 하나만</u></span>
-      <span class="ps">4.4<s>1,349</s></span></a>
-    <a class="poi" id="poi-vinhhy" href="https://www.google.com/maps/search/?api=1&amp;query=Vinh%20Hy%20Bay&amp;query_place_id=ChIJ-dWpoXe_cDERTrsz8yWPVTw" target="_blank" rel="noopener">
-      <span class="pn">빈히만<b class="tg" data-t="short">멀다</b><u><b class="kr" data-k="local">현지 전용</b>깜란에서 차 1시간 20분<br>베트남에서 손꼽히는 만. 다만 판랑 사막과 반대 방향이라 하루에 둘 다는 무리입니다. 참고용</u></span>
-      <span class="ps">4.5<s>1,388</s></span></a>
-  </div>
-
-  <div class="grp"><h4>깜란 근처</h4><span>JW에서 차 10–35분 · 판랑까지 안 가도 되는 것들</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-sheepfarm" href="https://www.google.com/maps/search/?api=1&amp;query=Fairy%20Stream%20Sheep%20Farm%20Cam%20Ranh&amp;query_place_id=ChIJ8eGG9orrcDERG4RCmyddZt0" target="_blank" rel="noopener">
-      <span class="pn">수오이띠엔 양떼목장<b class="tg" data-t="good">아이 좋음</b><u><b class="kr" data-k="local">현지 전용</b>JW에서 차 35분 · 07:30–17:30 · 입장 5만동<br>남깜란, 판랑 가는 길목에 있습니다. 풀을 사서 양에게 먹입니다. <b>판랑 투어가 무산됐을 때의 대체재</b>로 딱이고, 판랑 조인투어가 서는 양떼목장도 대개 이 근방입니다</u></span>
-      <span class="ps">4.2<s>1,941</s></span></a>
-    <a class="poi" id="poi-camducmarket" href="https://www.google.com/maps/search/?api=1&amp;query=Cho%20Cam%20Duc&amp;query_place_id=ChIJ5Xlhmev0cDERKUzC5cCjeQw" target="_blank" rel="noopener">
-      <span class="pn">깜득 시장<b class="tg" data-t="short">짧게</b><u><b class="kr" data-k="local">현지 전용</b>JW에서 차 15분 · 06:00–18:00<br>망고와 과일이 쌉니다. 반쎄오 꼬 뚜엣에서 걸어서 5분이니 <b>10.09에 묶어서</b>. 좁고 더워서 유모차는 어렵습니다</u></span>
-      <span class="ps">4.1<s>1,022</s></span></a>
-    <a class="poi" id="poi-baidai" href="https://www.google.com/maps/search/?api=1&amp;query=Bai%20Dai%20Beach%20Cam%20Lam&amp;query_place_id=ChIJY0lvU6mKcDER_3E9y1onU7M" target="_blank" rel="noopener">
-      <span class="pn">바이다이 공용 해변<b class="tg" data-t="care">쓰레기</b><u><b class="kr" data-k="local">현지 전용</b>JW 북쪽 · 리조트 구간 밖<br>모래는 곱지만 공용 구간은 쓰레기와 호객 지적이 반복됩니다. <b>리조트 전용 비치가 훨씬 낫습니다.</b> 북쪽 끝 해산물 식당가 갈 때만</u></span>
-      <span class="ps">4.0<s>2,282</s></span></a>
-  </div>
-
-  <p class="foot">평점과 리뷰 수는 구글 기준입니다. 베트남 미쉐린 가이드는 하노이·호치민·다낭 세 도시만 다루기 때문에 나트랑에는 미쉐린 등재 업소가 없습니다.</p>
+  <p class="intro" style="padding-top:8px"><b>한국인 많음</b>은 한국어 메뉴·간판·직원이 있거나 한국 손님이 압도적이면서 평이 좋은 곳, <b>현지 전용</b>은 사진 보고 손짓으로 주문하는 곳, <b>한국인 주의</b>는 한국인 대상 불친절·바가지 리뷰가 실제로 있는 곳입니다.</p>
+  <div class="ptools" data-tab="see"></div>
+  <div class="plistwrap" id="list-see"></div>
+  <p class="foot">평점과 리뷰 수는 구글 기준입니다. 나트랑은 미쉐린 가이드 대상 지역이 아니며, 안토이의 빕구르망 간판은 체인 기준으로 보입니다. [편집]에서 구글 지도 링크로 장소를 직접 추가할 수 있습니다.</p>
 </div>
 </section>
 
 <section class="panel" id="eat">
 <div class="wrap">
-  <p class="intro">별점은 구글, 괄호는 리뷰 수입니다. 리뷰가 적은 집은 그만큼 표본이 작다는 뜻이니 감안하세요. <b>4P's와 쿠우쿠우, 스파 예약은 미리</b> 잡아두는 게 안전합니다.</p>
-
-  <div class="grp"><h4>쉐라톤 도보권</h4><span>10.03 – 10.05</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-4ps" href="https://www.google.com/maps/search/?api=1&amp;query=Pizza%204P%27s%20Sheraton%20Nha%20Trang&amp;query_place_id=ChIJ5eXo6B5ncDERrZI20z-QgvQ" target="_blank" rel="noopener">
-      <span class="pn">Pizza 4P's 쉐라톤점<b class="tg" data-t="good">예약 필수</b><u><b class="kr" data-k="hi">한국인 많음</b>호텔 1층 · 11:00–22:30 · 피자 25만–40만동<br>자체 생산 모짜렐라, 오픈키친 도우 쇼. 4.9는 후하고 체감 4.2라는 냉정한 후기도 있지만 아이 동반 저녁으로는 최고 카드</u></span>
-      <span class="ps">4.9<s>15,507</s></span></a>
-    <a class="poi" id="poi-ngoc" href="https://www.google.com/maps/search/?api=1&amp;query=Ngoc%20Banh%20Can%20Nha%20Trang&amp;query_place_id=ChIJg0A1dj9ncDERusoC3Q0-6GA" target="_blank" rel="noopener">
-      <span class="pn">Ngọc — 반깐 · 반쎄오<b class="tg" data-t="good">도보 3분</b><u>07:00–22:30<br>랍스터 반깐국수가 간판이고 주인이 영어를 합니다</u></span>
-      <span class="ps">4.6<s>1,316</s></span></a>
-    <a class="poi" id="poi-aga" href="https://www.google.com/maps/search/?api=1&amp;query=Com%20ga%20A%20Ga%20Nha%20Trang&amp;query_place_id=ChIJM1p-LgBncDER1fk6dbl9swk" target="_blank" rel="noopener">
-      <span class="pn">Cơm gà A Gà — 치킨라이스<b class="tg" data-t="good">아이 좋음</b><u>도보 7분 · 10:00–22:00 · 에어컨<br>자극적이지 않아 아이가 잘 먹습니다. 리뷰 수가 적은 게 유일한 리스크</u></span>
-      <span class="ps">4.9<s>43</s></span></a>
-    <a class="poi" id="poi-qooqoo" href="https://www.google.com/maps/search/?api=1&amp;query=QooQoo%20Premium%20Buffet%20Gold%20Coast%20Nha%20Trang&amp;query_place_id=ChIJy3amYL1ncDERtzaI_L3-cyw" target="_blank" rel="noopener">
-      <span class="pn">쿠우쿠우 골드코스트 12층<b class="tg" data-t="good">아이 좋음</b><u><b class="kr" data-k="hi">한국인 많음</b>도보 5분 · 평일 11–16 / 17–22, 주말 통영업<br>초밥·해산물 프리미엄 뷔페. 호불호 없는 안전 카드</u></span>
-      <span class="ps">4.9<s>1,947</s></span></a>
-    <a class="poi" id="poi-poseidon" href="https://www.google.com/maps/search/?api=1&amp;query=Buffet%20Poseidon%20Gold%20Coast%20Nha%20Trang&amp;query_place_id=ChIJWZkxsnJncDERy2Pw_qz5hdM" target="_blank" rel="noopener">
-      <span class="pn">Buffet Poseidon 골드코스트 5층<u>도보 5분 · 11:00–14:00 / 17:30–22:00<br>해산물 뷔페. 쿠우쿠우 만석 시 대안이고 게가 좋다는 평</u></span>
-      <span class="ps">4.5<s>619</s></span></a>
-    <a class="poi" id="poi-costa" href="https://www.google.com/maps/search/?api=1&amp;query=Costa%20Seafood%20Nha%20Trang&amp;query_place_id=ChIJlaXv8XhncDERClMvFw0zr4U" target="_blank" rel="noopener">
-      <span class="pn">Costa Seafood<b class="tg" data-t="good">도보 2분</b><u>06:30–10:00 / 11:00–14:00 / 17:00–22:00<br>홍콩식 해산물. 수조에서 골라 무게로 계산합니다. 실내 에어컨이라 아이 동반이 편하고 <b>아침도 합니다</b>. 4.1점은 서비스 편차 때문이지 음식 평은 좋습니다</u></span>
-      <span class="ps">4.1<s>1,305</s></span></a>
-    <a class="poi" id="poi-cong" href="https://www.google.com/maps/search/?api=1&amp;query=Cong%20Ca%20Phe%20Nguyen%20Chanh%20Nha%20Trang&amp;query_place_id=ChIJHWrFS9FncDERbvlLzXwhgFg" target="_blank" rel="noopener">
-      <span class="pn">Cộng Cà Phê 응웬짜인점<b class="tg" data-t="good">도보 4분</b><u><b class="kr" data-k="hi">한국인 많음</b>07:30–23:00 · 12oz 4.5만동<br>23 Nguyễn Chánh. 코코넛 커피와 소금 라떼가 간판입니다. 쉐라톤에서 한 블록</u></span>
-      <span class="ps">4.3<s>1,600</s></span></a>
-    <a class="poi" id="poi-bread1" href="https://www.google.com/maps/search/?api=1&amp;query=BREAD%201%20Nha%20Trang&amp;query_place_id=ChIJ27xESGRncDERdbVmKx3hNNY" target="_blank" rel="noopener">
-      <span class="pn">BREAD 1 · My Bakery<u>차 4분 · 06:30–23:30<br>반미와 크루아상 샌드위치. 아침 일찍 나갈 때 포장용</u></span>
-      <span class="ps">4.6<s>510</s></span></a>
-  </div>
-
-  <div class="grp"><h4>시내 · 차로 10분 이내</h4></div>
-  <div class="plist">
-    <a class="poi" id="poi-cohong" href="https://www.google.com/maps/search/?api=1&amp;query=Banh%20xeo%20Co%20Hong%20Nha%20Trang&amp;query_place_id=ChIJJ3I3KOVdcDEREZbiC2pREhU" target="_blank" rel="noopener">
-      <span class="pn">Bánh xèo Cô Hồng<b class="tg" data-t="good">위생 안심</b><u>차 10분 · 11:00–21:00<br>"카페처럼 넓고 깨끗", "기름지지 않고 바삭"이 후기에 반복됩니다. 나트랑식 미니 반쎄오</u></span>
-      <span class="ps">4.9<s>476</s></span></a>
-    <a class="poi" id="poi-luongsoncang" href="https://www.google.com/maps/search/?api=1&amp;query=Luong%20Son%20Cang%20Nha%20Trang&amp;query_place_id=ChIJ76O9Wr5ncDERPDSDjrd2qys" target="_blank" rel="noopener">
-      <span class="pn">Lương Sơn Cảng — 해산물<u>차 5분 · 10:00–23:00<br>테이블에서 새우 껍질을 까주는 가성비 로컬 해산물집</u></span>
-      <span class="ps">4.9<s>7,140</s></span></a>
-    <a class="poi" id="poi-redcrab" href="https://www.google.com/maps/search/?api=1&amp;query=Red%20Crab%20Seafood%20Grill%20Nha%20Trang&amp;query_place_id=ChIJD50RkpJncDERiqUSDEkPDMo" target="_blank" rel="noopener">
-      <span class="pn">Red Crab Seafood Grill<u><b class="kr" data-k="hi">한국인 많음</b>도보 12분 · 11:30–23:00 · 가격대 높음<br>칠리크랩·후추크랩. 한국인이 많고 볶음밥 평이 좋습니다</u></span>
-      <span class="ps">4.7<s>4,891</s></span></a>
-    <a class="poi" id="poi-dangvanquyen" href="https://www.google.com/maps/search/?api=1&amp;query=Nem%20Nuong%20Dang%20Van%20Quyen%20Nha%20Trang&amp;query_place_id=ChIJrYhLgoZncDER6fpXnhTtHH8" target="_blank" rel="noopener">
-      <span class="pn">넴느엉 Đặng Văn Quyên<b class="tg" data-t="care">평 갈림</b><u><b class="kr" data-k="local">현지 전용</b>차 4분 · 07:30–20:30 · 1인분 5.8만동<br>원조격이나 관광지화. 바로 옆 <b>Hoàng Văn Thụ</b>가 같은 맛에 덜 붐빈다는 평</u></span>
-      <span class="ps">4.1<s>5,911</s></span></a>
-    <a class="poi" id="poi-galangal" href="https://www.google.com/maps/search/?api=1&amp;query=Galangal%20Nha%20Trang&amp;query_place_id=ChIJvQl-ImNncDERhCeoeJVKIuY" target="_blank" rel="noopener">
-      <span class="pn">Galangal<u>차 5분 · 10:00–22:00<br>넴루이와 해산물 반쎄오. 외국인 대상이라 깔끔하고 설명이 친절합니다</u></span>
-      <span class="ps">4.2<s>2,576</s></span></a>
-    <a class="poi" id="poi-madamphuong" href="https://www.google.com/maps/search/?api=1&amp;query=Madam%20Phuong%20Nha%20Trang&amp;query_place_id=ChIJHW9RwchncDERvbaMbo5NpLI" target="_blank" rel="noopener">
-      <span class="pn">Madam Phuong<b class="tg" data-t="care">계산서 확인</b><u><b class="kr" data-k="warn">한국인 주의</b>차 5분 · 11:00–22:00<br>넓어서 아이 동반은 편하나 "가격 대비 맛" 지적과 <b>할인 누락 청구</b> 후기가 반복됩니다</u></span>
-      <span class="ps">4.4<s>5,827</s></span></a>
-    <a class="poi" id="poi-oldvillage" href="https://www.google.com/maps/search/?api=1&amp;query=Lang%20Nghe%20Nha%20Trang%20Xua&amp;query_place_id=ChIJ9bXQGqddcDERdFE-9Jv9IBE" target="_blank" rel="noopener">
-      <span class="pn">나트랑 옛마을<b class="tg" data-t="good">아이 좋음</b><u>차 12분 · 09:00–21:00<br>연꽃 연못에 둘러싸인 민속촌형. 음식은 평범하지만 아이가 뛸 공간이 넓습니다</u></span>
-      <span class="ps">4.6<s>4,317</s></span></a>
-    <a class="poi" id="poi-comtam" href="https://www.google.com/maps/search/?api=1&amp;query=Com%20Tam%20Sai%20Gon%20Do%20Thanh%20Nha%20Trang&amp;query_place_id=ChIJjZ6qOgBncDERrQc0FrKw25U" target="_blank" rel="noopener">
-      <span class="pn">Cơm Tấm Sài Gòn Đô Thành — 껌땀<b class="tg" data-t="good">아이 좋음</b><u>도보 9분 · 09:00–20:00 · 5.5만동<br>숯불 돼지갈비 덮밥. 매운 게 없어서 아이도 그대로 먹습니다. "한국인 남편이 5분 만에 비웠다"는 후기가 있어요</u></span>
-      <span class="ps">4.8<s>292</s></span></a>
-    <a class="poi" id="poi-banhcanh" href="https://www.google.com/maps/search/?api=1&amp;query=Banh%20canh%20ba%20Thua%202%20Nha%20Trang&amp;query_place_id=ChIJL6g6WQBdcDER8NNZ1eviHmY" target="_blank" rel="noopener">
-      <span class="pn">Bánh canh bà Thừa 2<u><b class="kr" data-k="local">현지 전용</b>차 8분 · 06:00–20:30 · 7만동<br>나트랑식 어묵 우동. 국물이 진한 편이고 20년 넘은 집입니다. 아침 일찍 가면 생선 간을 얹어줍니다</u></span>
-      <span class="ps">4.8<s>125</s></span></a>
-    <a class="poi" id="poi-bunbo" href="https://www.google.com/maps/search/?api=1&amp;query=Bun%20Bo%20Huong%20Giang%20Nha%20Trang&amp;query_place_id=ChIJO7dmNX9ncDERDE8O7qJ669k" target="_blank" rel="noopener">
-      <span class="pn">Bún Bò Hương Giang — 분보후에<b class="tg" data-t="care">맵다</b><u><b class="kr" data-k="local">현지 전용</b>차 6분 · 06:00–21:00 · 6.5만동<br>현지인이 줄 서는 집. 메뉴가 세 개뿐이고 에어컨이 없습니다. <b>고추를 안 넣어도 살짝 맵습니다</b> — 아이 몫은 따로 준비하세요</u></span>
-      <span class="ps">4.2<s>827</s></span></a>
-    <a class="poi" id="poi-bunca" href="https://www.google.com/maps/search/?api=1&amp;query=Bun%20ca%20Nguyen%20Loan%20Nha%20Trang&amp;query_place_id=ChIJv8aX-rlncDERV4JzMncK9g4" target="_blank" rel="noopener">
-      <span class="pn">Bún cá Nguyên Loan — 생선국수<b class="tg" data-t="care">위생 지적</b><u><b class="kr" data-k="local">현지 전용</b>차 6분 · 05:00–22:00 · 7만동<br>나트랑 명물 분까. 국물이 맑고 비린내가 없다는 평이 많은데, "매장이 더 깨끗했으면"이 상위 리뷰에 그대로 있습니다. 해파리가 들어가니 빼달라고 하세요</u></span>
-      <span class="ps">4.0<s>1,547</s></span></a>
-    <a class="poi" id="poi-louisiane" href="https://www.google.com/maps/search/?api=1&amp;query=Louisiane%20Brewhouse%20Nha%20Trang&amp;query_place_id=ChIJxcswvkZncDERQl0fDKfK6EY" target="_blank" rel="noopener">
-      <span class="pn">Louisiane Brewhouse<b class="tg" data-t="good">해변</b><u>차 6분 · 07:00–01:00<br>모래사장에 붙은 수제맥주 양조장. 자체 수영장이 있어 아이를 풀어놓고 앉아 있기 좋습니다. 음식은 값에 비해 평범하다는 평</u></span>
-      <span class="ps">4.3<s>4,598</s></span></a>
-  </div>
-
-  <div class="grp"><h4>디저트 · 커피</h4><span>더위 식히러</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-ivy" href="https://www.google.com/maps/search/?api=1&amp;query=Ivy%20Dessert%20Nha%20Trang&amp;query_place_id=ChIJBZNS_lBncDERmYZNyRrx48c" target="_blank" rel="noopener">
-      <span class="pn">Ivy Dessert — 젤라또<b class="tg" data-t="good">1순위</b><u>차 4분 · 13:00–22:00<br>과일 소르베가 특히 좋다는 평. 디저트 조합 메뉴가 진짜 실력이고 젤라또만 먹으면 아쉽다는 후기가 반복됩니다</u></span>
-      <span class="ps">4.9<s>496</s></span></a>
-    <a class="poi" id="poi-dino" href="https://www.google.com/maps/search/?api=1&amp;query=Dino%27s%20Shibuya%20Toast%20Gelato%20Nha%20Trang&amp;query_place_id=ChIJgUmgBcBncDERU2vdD9hDVW4" target="_blank" rel="noopener">
-      <span class="pn">Dino's Shibuya Toast & Gelato<u>차 4분 · 09:00–22:00<br>우지 말차로 직접 만듭니다. 맛보기를 다 시켜줍니다. 인기 맛은 일찍 품절되니 오후에</u></span>
-      <span class="ps">4.9<s>198</s></span></a>
-    <a class="poi" id="poi-naked" href="https://www.google.com/maps/search/?api=1&amp;query=Naked%20Flavors%20Gold%20Coast%20Nha%20Trang&amp;query_place_id=ChIJg6Vz9KJncDERRG7zLEFbg3M" target="_blank" rel="noopener">
-      <span class="pn">Naked Flavors 골드코스트<b class="tg" data-t="good">도보 5분</b><u>09:00–22:00 · 몰 안<br>금귤과 판단코코넛이 인기. 장 보러 간 김에 하나씩. 리뷰 수는 적습니다</u></span>
-      <span class="ps">5.0<s>33</s></span></a>
-  </div>
-
-  <div class="grp"><h4>안전 카드</h4><span>아이가 현지식을 거부할 때</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-jejuga" href="https://www.google.com/maps/search/?api=1&amp;query=Jejuga%20Nha%20Trang&amp;query_place_id=ChIJ2xsIKMlncDERh_NKRFOM-jg" target="_blank" rel="noopener">
-      <span class="pn">제주가 — 한식<u><b class="kr" data-k="hi">한국인 많음</b>차 5분 · 10:00–23:00 · 에어컨<br>고기와 찌개. 한식당 중 평이 가장 안정적입니다</u></span>
-      <span class="ps">4.8<s>2,527</s></span></a>
-    <a class="poi" id="poi-wangttukkung" href="https://www.google.com/maps/search/?api=1&amp;query=Wangttukkung%20Korean%20BBQ%20Nha%20Trang&amp;query_place_id=ChIJ-4ynBABncDERyFkWG3iK8R8" target="_blank" rel="noopener">
-      <span class="pn">왕뚜껑 — 솥뚜껑 삼겹살<u><b class="kr" data-k="hi">한국인 많음</b>차 6분 · 11:00–14:30 / 16:30–24:00<br>브레이크 타임 있으니 시간 확인</u></span>
-      <span class="ps">4.9<s>858</s></span></a>
-    <a class="poi" id="poi-lumiere" href="https://www.google.com/maps/search/?api=1&amp;query=Lumiere%20Texas%20BBQ%20Nha%20Trang&amp;query_place_id=ChIJPdzEZQBncDERPKK3x7JIpXg" target="_blank" rel="noopener">
-      <span class="pn">Lumiere Texas BBQ<u>A&amp;B 센트럴스퀘어 1층 · 07:00–23:00<br>버거와 립. 실내 에어컨에 아이 메뉴가 무난합니다</u></span>
-      <span class="ps">4.7<s>931</s></span></a>
-    <a class="poi" id="poi-phohong" href="https://www.google.com/maps/search/?api=1&amp;query=Pho%20Hong%20Nha%20Trang&amp;query_place_id=ChIJi3ZnH39ncDERemw2veaDW2A" target="_blank" rel="noopener">
-      <span class="pn">Phở Hồng<u><b class="kr" data-k="local">현지 전용</b>도보 10분 · 06:00–22:30 · 작은 그릇 6만동<br>면 뽑는 걸 유리 너머로 봅니다. 국물이 달지 않아 아이도 먹습니다</u></span>
-      <span class="ps">4.1<s>3,211</s></span></a>
-  </div>
-
-  <div class="grp"><h4>깜란 · 깜득</h4><span>10.07 – 10.10</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-cotuyet" href="https://www.google.com/maps/search/?api=1&amp;query=Banh%20xeo%20Co%20Tuyet%20Cam%20Lam&amp;query_place_id=ChIJZ8OtZg_1cDERQ-qbZsPFwus" target="_blank" rel="noopener">
-      <span class="pn">Bánh xèo Cô Tuyết — 할머니 반쎄오<b class="tg" data-t="care">30분만</b><u><b class="kr" data-k="warn">한국인 주의</b>JW에서 차 15–20분 · 11:00–18:00 · <b>일요일 휴무</b> · 1장 2만동대<br>갓 구운 반쎄오는 훌륭하나 한국인 대상 불친절·위생 지적 리뷰가 섞여 있습니다. 먹고 바로 나오는 코스로</u></span>
-      <span class="ps">4.9<s>1,801</s></span></a>
-    <a class="poi" id="poi-jwdining" href="https://www.google.com/maps/search/?api=1&amp;query=JW%20Marriott%20Cam%20Ranh%20Bay%20Resort&amp;query_place_id=ChIJ086newCLcDERwsGzUJ5QdJE" target="_blank" rel="noopener">
-      <span class="pn">JW 리조트 내 다이닝<u>Clay Craft 조식 · Seafood Grill 저녁 · Bayside Bistro 풀사이드 · 룸서비스 24시간<br>시푸드 그릴은 세팅 대비 가격이 합리적이라는 평. 나가기 싫은 날의 기본값</u></span>
-      <span class="ps">4.7<s>718</s></span></a>
-    <a class="poi" id="poi-xombien" href="https://www.google.com/maps/search/?api=1&amp;query=Xom%20Bien%20Seafood%20Cam%20Lam&amp;query_place_id=ChIJRXK8dkb1cDERS5zJ1s3JcNU" target="_blank" rel="noopener">
-      <span class="pn">Xóm Biển 해산물<b class="tg" data-t="good">한국어 응대</b><u><b class="kr" data-k="hi">한국인 많음</b>JW에서 차 12분 · 10:00–22:00<br>가게 이름에 카카오톡 아이디를 걸어둘 만큼 한국 손님이 많습니다. 구이류가 좋고 응대가 가족적이라는 평이 반복됩니다. <b>깜란에서 평점이 가장 높은 해산물집</b></u></span>
-      <span class="ps">4.8<s>982</s></span></a>
-    <a class="poi" id="poi-ocbien" href="https://www.google.com/maps/search/?api=1&amp;query=Oc%20Bien%20Bai%20Dai%20Cam%20Lam&amp;query_place_id=ChIJASkUyEb1cDER-txy2QJDGiQ" target="_blank" rel="noopener">
-      <span class="pn">Ốc Biển Bãi Dài<b class="tg" data-t="good">놀이터 있음</b><u>JW에서 차 12분 · 10:00–23:00 · 4인 90만동 선<br>물가에 <b>놀이터와 모래밭</b>이 있어서 아이들이 노는 동안 어른은 앉아 있을 수 있습니다. 흰 칠판에 시세를 적어두고 무게로 계산해 바가지가 없습니다</u></span>
-      <span class="ps">4.6<s>343</s></span></a>
-    <a class="poi" id="poi-eogio" href="https://www.google.com/maps/search/?api=1&amp;query=Hoa%20Eo%20Gio%20Seafood%20Cam%20Lam&amp;query_place_id=ChIJWU65KLNhcDERVN-8GJ_9gtM" target="_blank" rel="noopener">
-      <span class="pn">Hòa Eo Gió 해산물<b class="tg" data-t="good">호텔 픽업</b><u>JW에서 차 8분 · 06:00–23:00<br>바닷가에 붙어 있고 <b>호텔로 픽업을 와줍니다</b>. 랍스터와 새우를 테이블에서 발라주고, 게도 잘라서 냅니다. "깜란 리조트에 묵는다면 바로 여기"라는 후기가 여럿</u></span>
-      <span class="ps">4.4<s>2,459</s></span></a>
-    <a class="poi" id="poi-cotuyet2" href="https://www.google.com/maps/search/?api=1&amp;query=Cho%20Cam%20Duc&amp;query_place_id=ChIJ5Xlhmev0cDERKUzC5cCjeQw" target="_blank" rel="noopener">
-      <span class="pn">깜득 시장 · 과일<b class="tg" data-t="short">반쎄오 옆</b><u><b class="kr" data-k="local">현지 전용</b>06:00–18:00 · 꼬 뚜엣에서 도보 5분<br>망고가 쌉니다. 반쎄오 먹고 과일만 사서 나오면 10.09 외출이 한 번에 정리됩니다</u></span>
-      <span class="ps">4.1<s>1,022</s></span></a>
-  </div>
-
-  <div class="grp"><h4>스파</h4><span>깜란 · 무료 픽업</span></div>
-  <div class="plist">
-    <a class="poi" id="poi-spamoc" href="https://www.google.com/maps/search/?api=1&amp;query=Spa%20Moc%20Cam%20Ranh&amp;query_place_id=ChIJpQBwXHH1cDERImZcXlaeF8Q" target="_blank" rel="noopener">
-      <span class="pn">Spa Moc<b class="tg" data-t="good">10.10</b><u><b class="kr" data-k="hi">한국인 많음</b>차 5분 · 24시간 · 리조트 무료 픽업·드랍<br>가족 넷이 마사지·네일·페이셜 받고 픽드랍까지 무료였다는 후기</u></span>
-      <span class="ps">4.9<s>1,019</s></span></a>
-    <a class="poi" id="poi-kingspa" href="https://www.google.com/maps/search/?api=1&amp;query=King%20Spa%20Cam%20Lam&amp;query_place_id=ChIJ14_YIQCLcDERCSapPYRvyis" target="_blank" rel="noopener">
-      <span class="pn">King Spa Cam Lâm<u><b class="kr" data-k="hi">한국인 많음</b>차 10분 · 09:00–23:00 · 한국 마사지 표방</u></span>
-      <span class="ps">5.0<s>203</s></span></a>
-    <a class="poi" id="poi-nhudang" href="https://www.google.com/maps/search/?api=1&amp;query=Nhu%20Dang%20Spa%20Cam%20Ranh&amp;query_place_id=ChIJLbMgnLX1cDERsjRr3X-HFSc" target="_blank" rel="noopener">
-      <span class="pn">Như Đăng Spa<u><b class="kr" data-k="hi">한국인 많음</b>차 7분 · 24시간 · 무료 호텔 픽업</u></span>
-      <span class="ps">5.0<s>1,705</s></span></a>
-  </div>
-
-  <p class="foot">깜득에서 돌아올 때 택시가 잘 안 잡힙니다. 식사나 마사지가 끝날 무렵 직원에게 호출을 부탁하세요. 그랩 배달은 리조트 정문 경비실까지만 옵니다.</p>
+  <p class="intro">별점은 구글, 괄호는 리뷰 수입니다. 리뷰가 적은 집은 표본이 작다는 뜻이니 감안하세요. <b>4P's·안토이·스파 예약은 미리.</b></p>
+  <p class="intro" style="padding-top:6px"><b>배달 표시</b> — <b class="dl" data-d="bdk">배달K 깜란까지</b> 시내에서 깜란 리조트까지 오는 곳 · <b class="dl" data-d="local">깜란 배달</b> 깜란 현지 배달 확인 · <b class="dl" data-d="ask">배달 카톡 문의</b> · <b class="dl" data-d="pickup">무료 픽업</b> 식당이 리조트로 데리러 옴. <b>혼트레 섬은 배달이 안 됩니다.</b></p>
+  <div class="ptools" data-tab="eat"></div>
+  <div class="plistwrap" id="list-eat"></div>
+  <p class="foot">깜득에서 돌아올 때 택시가 잘 안 잡힙니다. 식사나 마사지가 끝날 무렵 직원에게 호출을 부탁하세요. 배달 기사는 리조트 정문 경비실까지만 옵니다.</p>
 </div>
 </section>
 
@@ -824,8 +659,8 @@ table.cost tr:last-child td{border-bottom:0}
       <li><label class="ck"><input type="checkbox" data-id="p13"><span class="lb">무이네 해돋이 투어 예약<u>공항팀 02:00 출발 · 3일 전 18시(한국)까지만 전액 환불</u></span></label></li>
       <li><label class="ck"><input type="checkbox" data-id="p14"><span class="lb">투어사에 확인 세 가지<u>① 항공 지연 시 대응 ② 짐 보관·회수 동선 ③ 아동 요금과 카시트</u></span></label></li>
       <li><label class="ck"><input type="checkbox" data-id="p2"><span class="lb">포포인츠 10.02 정리<u>투어 확정 후 취소. 무료 취소 기한 직전까지는 보험으로 유지</u></span></label></li>
-      <li><label class="ck"><input type="checkbox" data-id="p15"><span class="lb">빈원더스 2일권 구매<u>10.05–06 연속 · 프로모션 코드 확인 · 3세 키 재보기</u></span></label></li>
-      <li><label class="ck"><input type="checkbox" data-id="p16"><span class="lb">혼트레 체크인 전 짐 보관 확인<u>10.05 09시경 도착해서 바로 파크로</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p15"><span class="lb">빈원더스 티켓 결정 · 구매<u>2일권(10.05–06) 기준 · 1일권이면 당일 재입장 여부 먼저 확인 · 3세 키 재보기</u></span></label></li>
+      <li><label class="ck"><input type="checkbox" data-id="p16"><span class="lb">혼트레 짐 보관 + 레이트 체크아웃<u>10.05 도착 시 짐 보관 / 10.07 13시 체크아웃을 체크인 때 함께 요청</u></span></label></li>
       <li><label class="ck"><input type="checkbox" data-id="p17"><span class="lb">쉐라톤 10.03 얼리 체크인 요청<u>사막에서 14시 복귀</u></span></label></li>
       <li><label class="ck"><input type="checkbox" data-id="p4"><span class="lb">피자 4P's 쉐라톤점 예약<u>10.04 저녁</u></span></label></li>
       <li><label class="ck"><input type="checkbox" data-id="p6"><span class="lb">Spa Moc 예약<u>10.10 17시 · 리조트 픽업 요청</u></span></label></li>
@@ -854,17 +689,20 @@ table.cost tr:last-child td{border-bottom:0}
   </div>
 
   <div class="pblock">
-    <h3>빈원더스 티켓 — 2일권이 싸고 오래 놉니다</h3>
+    <h3>빈원더스 티켓 — 2일권 기준, 결정 전</h3>
     <div class="fact">
       <table class="cost">
-        <tr><th>티켓 (왕복 케이블카 포함)</th><th>140cm+</th><th>100–140cm</th></tr>
-        <tr><td>1일권</td><td>~$41</td><td>~$31</td></tr>
-        <tr><td>애프터4 (16시 이후)</td><td>~$27</td><td>~$21</td></tr>
-        <tr><td><b>2일 무제한</b></td><td><b>~$52</b></td><td><b>~$41</b></td></tr>
-        <tr><td>3일 무제한</td><td>~$62</td><td>~$46</td></tr>
+        <tr><th>티켓 (왕복 케이블카 포함)</th><th>성인</th><th>100–140cm</th><th>성인2+아동1</th></tr>
+        <tr><td>1일권 <i>— 재입장 여부 확인 필요</i></td><td>~$41</td><td>~$31</td><td>~$113</td></tr>
+        <tr><td>2일 무제한</td><td>$51.67</td><td>$40.19</td><td><b>$143.53</b></td></tr>
+        <tr><td>3일 무제한 (할인가)</td><td>$61.24</td><td>$45.93</td><td>$168.40</td></tr>
       </table>
-      <p style="margin-top:11px">1일권 + 애프터4를 따로 사면 성인 <b>$68</b>인데 2일권은 <b>$52</b>입니다. 아동도 $52 → $41. <b>성인 2 + 아동 1이면 약 $43(6만원) 절약</b>되고, 놀이 시간은 4시간짜리 저녁 한 번에서 <b>이틀 종일</b>로 늘어납니다.</p>
-      <p>100cm 미만은 무료입니다. 3세가 100cm를 넘는지 출발 전에 재보세요. 넘으면 아동요금이 하나 더 붙습니다.</p>
+      <p style="margin-top:11px"><b>아직 결정 전. 일정은 2일권 기준입니다</b> — 10.05 저녁 + 10.06 종일.</p>
+      <p><b>워터파크는 애초에 안 갑니다.</b> 익스트림 슬라이드가 130cm 제한이라 아이들은 탈 게 없고, 수영장은 JW에서 3박 내내 있습니다. 그러니 파크에서 쓸 시간은 전부 <b>마른 놀거리</b> — 알파인코스터, 동물 먹이주기, 아쿠아리움, 페어리랜드, 게임존, 타타쇼.</p>
+      <p><b>2일권을 고르는 이유는 무제한 재입장입니다.</b> 낮잠 자러 나왔다 다시 들어가는 패턴이 3세한테는 거의 필수인데, <b>1일권은 당일 재입장이 안 될 가능성</b>이 있습니다(공식 안내가 "한 번만 입장하면 지치니 재입장 되는 무제한권을 권한다"는 식으로 써 있음). 1일권으로 갈 거면 이것부터 확인하세요.</p>
+      <p><b>3일권은 $24.87 추가입니다.</b> 물놀이를 안 하니 이동일 아침에 끼워도 젖은 짐 문제가 없어서, 예전에 반대했던 이유는 사라졌습니다. 남은 건 10.07 오전 세 시간을 파크에 쓸지 리조트에서 쉴지의 선택뿐이에요.</p>
+      <p>100cm 미만은 무료입니다. 3세가 100cm를 넘는지 출발 전에 재보세요. 넘으면 2일권 기준 <b>$40.19</b>가 더 붙습니다.</p>
+      <p><b>달러로 보면 그대로인데 원화로 비싸진 건 환율 탓입니다.</b> 원·달러가 1,380원대라 같은 $1도 예전보다 비쌉니다. 티켓값 자체는 오르지 않았어요.</p>
       <p>공식 앱·사이트에 <b>프로모션 코드</b>가 수시로 걸립니다. 결제 전에 한 번 확인하고, 리조트 컨시어지에 투숙객 요금이 따로 있는지도 물어보세요.</p>
     </div>
   </div>
@@ -914,7 +752,7 @@ table.cost tr:last-child td{border-bottom:0}
   <div class="pblock">
     <h3>알아두면 편한 것</h3>
     <div class="fact">
-      <p><b>포포인츠와 쉐라톤은 300m입니다.</b> 10.03 호텔 이동은 짐만 옮기면 끝이고, 그래서 포포인츠 방을 오후까지 붙잡아둘 수 있습니다.</p>
+      <p><b>배달은 깜란에서만 됩니다.</b> 혼트레 섬은 기사가 못 들어오고, JW 깜란은 배달K로 시내 안토이·쏨모이가든까지 옵니다. 맛집 탭의 [깜란에서 배달] 필터로 모아 볼 수 있어요.</p>
       <p><b>깜란은 판랑에 30분 더 가깝습니다.</b> 나트랑 시내에서 편도 2시간, 깜란에서 1시간 30분. 같은 조인투어를 타도 왕복 1시간 20분이 줄어듭니다.</p>
       <p><b>나트랑 관광지는 대부분 30분에서 한 시간짜리입니다.</b> 하루에 두 개 넘게 넣으면 아이들이 먼저 지칩니다.</p>
       <p><b>깜란 배달은 정문까지만 옵니다.</b> 기사가 리조트 근처에 들어온 걸 앱에서 보고 버기를 부르면 대기 없이 받습니다.</p>
@@ -943,6 +781,17 @@ var LS={
 };
 
 var POI_DB=[
+  {key:'원숭이섬',id:'poi-monkey',tab:'see',map:''},
+  {key:'화란섬',id:'poi-hoalan',tab:'see',map:''},
+  {key:'롱푸',id:'poi-longphu',tab:'see',map:''},
+  {key:'슈렉샵',id:'poi-shrek',tab:'see',map:''},
+  {key:'안토이',id:'poi-anthoi',tab:'eat',map:''},
+  {key:'쏨모이가든',id:'poi-xommoi',tab:'eat',map:''},
+  {key:'촌촌킴',id:'poi-chonchon',tab:'eat',map:''},
+  {key:'Miumiu',id:'poi-miumiu',tab:'eat',map:''},
+  {key:'피자킹',id:'poi-pizzaking',tab:'eat',map:''},
+  {key:'하랑',id:'poi-harang',tab:'eat',map:''},
+  {key:'신라국수',id:'poi-silla',tab:'eat',map:''},
   {key:'뽀나가르',   id:'poi-ponagar',  tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.2653665,109.1953678'},
   {key:'혼쫑곶',     id:'poi-honchong', tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.27292,109.2064934'},
   {key:'아나 마리나',id:'poi-anamarina',tab:'see', map:'https://www.google.com/maps/search/?api=1&query=12.2952201,109.2216781'},
@@ -976,27 +825,139 @@ var POI_DB=[
   {key:'Seafood Grill',id:'poi-jwdining',tab:'eat',map:'https://www.google.com/maps/search/?api=1&query=12.0937532,109.1904073'},
   {key:'Spa Moc',    id:'poi-spamoc',   tab:'eat', map:'https://www.google.com/maps/search/?api=1&query=12.0818882,109.1901479'}
 ];
+/* ═══ 장소 데이터 ═══ */
+var BASE_PLACES=[{"id":"poi-ponagar","tab":"see","grp":"북쪽","name":"뽀나가르 참탑","tags":[{"t":"good","l":"아이 좋음"}],"kr":"hi","del":"","rating":"4.5","count":"32,238","pid":"ChIJUfK4YYxncDERfB2v8ZdvXxE","lat":12.2653665,"lng":109.1953678,"desc":"차 8분 · 06:00–18:00 · *3만동*, 아이도 동일 · 40분\n언덕 위 붉은 벽돌탑. 계단이 짧고 강과 어선이 내려다보입니다. 복장 규정이 있는데 가리개를 무료로 빌려줍니다"},{"id":"poi-honchong","tab":"see","grp":"북쪽","name":"혼쫑곶","tags":[{"t":"short","l":"짧게"}],"kr":"","del":"","rating":"4.3","count":"7,928","pid":"ChIJ4fNk9-tncDEREaH8DVQWkmY","lat":12.27292,"lng":109.2064934,"desc":"참탑에서 차 5분 · 06:00–18:00 · 3만동 · 30분\n바다로 튀어나온 바위 무더기. 물때가 높으면 건너가는 길이 잠기니 미끄럼 주의. 옆에 바다 보이는 카페가 있습니다"},{"id":"poi-anamarina","tab":"see","grp":"북쪽","name":"아나 마리나","tags":[{"t":"good","l":"아이 좋음"}],"kr":"","del":"","rating":"4.5","count":"1,766","pid":"ChIJ3T4_oHBocDERGezGEnl115g","lat":12.2952201,"lng":109.2216781,"desc":"차 15분 · 07:00–23:00 · 입장 무료\n베트남 첫 국제 규격 요트 마리나. 요트 구경하며 걷기 좋고 *놀이터*가 있습니다. 다만 푸드코트는 값에 비해 평이 박하니 밥은 다른 데서"},{"id":"poi-4ps","tab":"eat","grp":"쉐라톤 도보권","name":"Pizza 4P's 쉐라톤점","tags":[{"t":"good","l":"예약 필수"}],"kr":"hi","del":"","rating":"4.9","count":"15,507","pid":"ChIJ5eXo6B5ncDERrZI20z-QgvQ","lat":12.2462509,"lng":109.1961947,"desc":"호텔 1층 · 11:00–22:30 · 피자 25만–40만동\n자체 생산 모짜렐라, 오픈키친 도우 쇼. 4.9는 후하고 체감 4.2라는 냉정한 후기도 있지만 아이 동반 저녁으로는 최고 카드"},{"id":"poi-ngoc","tab":"eat","grp":"쉐라톤 도보권","name":"Ngọc — 반깐 · 반쎄오","tags":[{"t":"good","l":"도보 3분"}],"kr":"","del":"","rating":"4.6","count":"1,316","pid":"ChIJg0A1dj9ncDERusoC3Q0-6GA","lat":12.2459023,"lng":109.1940379,"desc":"07:00–22:30\n랍스터 반깐국수가 간판이고 주인이 영어를 합니다"},{"id":"poi-aga","tab":"eat","grp":"쉐라톤 도보권","name":"Cơm gà A Gà — 치킨라이스","tags":[{"t":"good","l":"아이 좋음"}],"kr":"","del":"","rating":"4.9","count":"43","pid":"ChIJM1p-LgBncDER1fk6dbl9swk","lat":12.2506756,"lng":109.195137,"desc":"도보 7분 · 10:00–22:00 · 에어컨\n자극적이지 않아 아이가 잘 먹습니다. 리뷰 수가 적은 게 유일한 리스크"},{"id":"poi-qooqoo","tab":"eat","grp":"쉐라톤 도보권","name":"쿠우쿠우 골드코스트 12층","tags":[{"t":"good","l":"아이 좋음"}],"kr":"hi","del":"","rating":"4.9","count":"1,947","pid":"ChIJy3amYL1ncDERtzaI_L3-cyw","lat":12.248145,"lng":109.1948614,"desc":"도보 5분 · 평일 11–16 / 17–22, 주말 통영업\n초밥·해산물 프리미엄 뷔페. 호불호 없는 안전 카드"},{"id":"poi-poseidon","tab":"eat","grp":"쉐라톤 도보권","name":"Buffet Poseidon 골드코스트 5층","tags":[],"kr":"","del":"","rating":"4.5","count":"619","pid":"ChIJWZkxsnJncDERy2Pw_qz5hdM","lat":12.248145,"lng":109.1948614,"desc":"도보 5분 · 11:00–14:00 / 17:30–22:00\n해산물 뷔페. 쿠우쿠우 만석 시 대안이고 게가 좋다는 평"},{"id":"poi-costa","tab":"eat","grp":"쉐라톤 도보권","name":"Costa Seafood","tags":[{"t":"good","l":"도보 2분"}],"kr":"","del":"","rating":"4.1","count":"1,305","pid":"ChIJlaXv8XhncDERClMvFw0zr4U","lat":12.2449219,"lng":109.1959065,"desc":"06:30–10:00 / 11:00–14:00 / 17:00–22:00\n홍콩식 해산물. 수조에서 골라 무게로 계산합니다. 실내 에어컨이라 아이 동반이 편하고 *아침도 합니다*. 4.1점은 서비스 편차 때문이지 음식 평은 좋습니다"},{"id":"poi-cong","tab":"eat","grp":"쉐라톤 도보권","name":"Cộng Cà Phê 응웬짜인점","tags":[{"t":"good","l":"도보 4분"}],"kr":"hi","del":"","rating":"4.3","count":"1,600","pid":"ChIJHWrFS9FncDERbvlLzXwhgFg","lat":12.2454603,"lng":109.1932539,"desc":"07:30–23:00 · 12oz 4.5만동\n23 Nguyễn Chánh. 코코넛 커피와 소금 라떼가 간판입니다. 쉐라톤에서 한 블록"},{"id":"poi-bread1","tab":"eat","grp":"쉐라톤 도보권","name":"BREAD 1 · My Bakery","tags":[],"kr":"","del":"","rating":"4.6","count":"510","pid":"ChIJ27xESGRncDERdbVmKx3hNNY","lat":12.2399322,"lng":109.1922902,"desc":"차 4분 · 06:30–23:30\n반미와 크루아상 샌드위치. 아침 일찍 나갈 때 포장용"},{"id":"poi-anthoi","tab":"eat","grp":"쉐라톤 도보권","name":"안토이 Ăn Thôi","tags":[{"t":"good","l":"한국인 1순위"}],"kr":"hi","del":"bdk","rating":"4.8","count":"11,390","pid":"ChIJh4Bjsw1ncDER3mheVtJlHtA","lat":12.2416163,"lng":109.19164,"desc":"도보 10분 · 10:30–21:30 · 예약 불가\n넴루이·월남쌈·모닝글로리, 곱창쌀국수 11.9만동. 한글 메뉴, 카드 가능. 미쉐린 빕구르망 간판이 걸려 있습니다(체인 기준). *웨이팅이 길어 오픈 시간에 맞추는 게 좋고*, 배달K로 깜란 리조트까지 시킬 수 있습니다"},{"id":"poi-xommoi","tab":"eat","grp":"쉐라톤 도보권","name":"쏨모이가든 Xóm Mới Garden","tags":[],"kr":"hi","del":"bdk","rating":"4.8","count":"17,040","pid":"ChIJWU9s5chncDERTiomOGbHjQM","lat":12.2408829,"lng":109.191768,"desc":"도보 10분 · 06:30–22:30\n리뷰 1.7만 개. 반쎄오·넴느엉은 직원이 라이스페이퍼에 싸줍니다. 새우튀김 평이 좋고 가격은 다소 높은 편. 음식이 미지근하게 나왔다는 후기도 있습니다. 배달K로 깜란까지 됩니다"},{"id":"poi-chonchon","tab":"eat","grp":"쉐라톤 도보권","name":"촌촌킴 Chuồn Chuồn Kim","tags":[],"kr":"hi","del":"","rating":"4.3","count":"4,465","pid":"ChIJ3XFHAIJncDER15BTw-Gbmpo","lat":12.246498,"lng":109.1940367,"desc":"도보 3분 · 10:30–21:00\n한글 메뉴, 메인에 밥 포함. 인테리어가 예쁘고 3층이라 웨이팅이 빨리 빠집니다. 기름질 수 있고 조림이 식어 나왔다는 후기가 있습니다. 깜란 배달 여부는 배달K에서 확인"},{"id":"poi-cohong","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Bánh xèo Cô Hồng","tags":[{"t":"good","l":"위생 안심"}],"kr":"","del":"","rating":"4.9","count":"476","pid":"ChIJJ3I3KOVdcDEREZbiC2pREhU","lat":12.2574472,"lng":109.1627809,"desc":"차 10분 · 11:00–21:00\n\"카페처럼 넓고 깨끗\", \"기름지지 않고 바삭\"이 후기에 반복됩니다. 나트랑식 미니 반쎄오"},{"id":"poi-luongsoncang","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Lương Sơn Cảng — 해산물","tags":[],"kr":"","del":"","rating":"4.9","count":"7,140","pid":"ChIJ76O9Wr5ncDERPDSDjrd2qys","lat":12.234691,"lng":109.1956648,"desc":"차 5분 · 10:00–23:00\n테이블에서 새우 껍질을 까주는 가성비 로컬 해산물집"},{"id":"poi-redcrab","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Red Crab Seafood Grill","tags":[],"kr":"hi","del":"","rating":"4.7","count":"4,891","pid":"ChIJD50RkpJncDERiqUSDEkPDMo","lat":12.2389272,"lng":109.1952007,"desc":"도보 12분 · 11:30–23:00 · 가격대 높음\n칠리크랩·후추크랩. 한국인이 많고 볶음밥 평이 좋습니다"},{"id":"poi-dangvanquyen","tab":"eat","grp":"시내 · 차로 10분 이내","name":"넴느엉 Đặng Văn Quyên","tags":[{"t":"care","l":"평 갈림"}],"kr":"local","del":"","rating":"4.1","count":"5,911","pid":"ChIJrYhLgoZncDER6fpXnhTtHH8","lat":12.2537197,"lng":109.1938289,"desc":"차 4분 · 07:30–20:30 · 1인분 5.8만동\n원조격이나 관광지화. 바로 옆 *Hoàng Văn Thụ*가 같은 맛에 덜 붐빈다는 평"},{"id":"poi-galangal","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Galangal","tags":[],"kr":"","del":"","rating":"4.2","count":"2,576","pid":"ChIJvQl-ImNncDERhCeoeJVKIuY","lat":12.2357634,"lng":109.1967537,"desc":"차 5분 · 10:00–22:00\n넴루이와 해산물 반쎄오. 외국인 대상이라 깔끔하고 설명이 친절합니다"},{"id":"poi-madamphuong","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Madam Phuong","tags":[{"t":"care","l":"계산서 확인"}],"kr":"warn","del":"","rating":"4.4","count":"5,827","pid":"ChIJHW9RwchncDERvbaMbo5NpLI","lat":12.2392868,"lng":109.1913021,"desc":"차 5분 · 11:00–22:00\n넓어서 아이 동반은 편하나 \"가격 대비 맛\" 지적과 *할인 누락 청구* 후기가 반복됩니다"},{"id":"poi-oldvillage","tab":"eat","grp":"시내 · 차로 10분 이내","name":"나트랑 옛마을","tags":[{"t":"good","l":"아이 좋음"}],"kr":"","del":"","rating":"4.6","count":"4,317","pid":"ChIJ9bXQGqddcDERdFE-9Jv9IBE","lat":12.2466911,"lng":109.1558934,"desc":"차 12분 · 09:00–21:00\n연꽃 연못에 둘러싸인 민속촌형. 음식은 평범하지만 아이가 뛸 공간이 넓습니다"},{"id":"poi-comtam","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Cơm Tấm Sài Gòn Đô Thành — 껌땀","tags":[{"t":"good","l":"아이 좋음"}],"kr":"","del":"","rating":"4.8","count":"292","pid":"ChIJjZ6qOgBncDERrQc0FrKw25U","lat":12.244661,"lng":109.1905288,"desc":"도보 9분 · 09:00–20:00 · 5.5만동\n숯불 돼지갈비 덮밥. 매운 게 없어서 아이도 그대로 먹습니다. \"한국인 남편이 5분 만에 비웠다\"는 후기가 있어요"},{"id":"poi-banhcanh","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Bánh canh bà Thừa 2","tags":[],"kr":"local","del":"","rating":"4.8","count":"125","pid":"ChIJL6g6WQBdcDER8NNZ1eviHmY","lat":12.238121,"lng":109.1836282,"desc":"차 8분 · 06:00–20:30 · 7만동\n나트랑식 어묵 우동. 국물이 진한 편이고 20년 넘은 집입니다. 아침 일찍 가면 생선 간을 얹어줍니다"},{"id":"poi-bunbo","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Bún Bò Hương Giang — 분보후에","tags":[{"t":"care","l":"맵다"}],"kr":"local","del":"","rating":"4.2","count":"827","pid":"ChIJO7dmNX9ncDERDE8O7qJ669k","lat":12.2370206,"lng":109.1882078,"desc":"차 6분 · 06:00–21:00 · 6.5만동\n현지인이 줄 서는 집. 메뉴가 세 개뿐이고 에어컨이 없습니다. *고추를 안 넣어도 살짝 맵습니다* — 아이 몫은 따로 준비하세요"},{"id":"poi-bunca","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Bún cá Nguyên Loan — 생선국수","tags":[{"t":"care","l":"위생 지적"}],"kr":"local","del":"","rating":"4.0","count":"1,547","pid":"ChIJv8aX-rlncDERV4JzMncK9g4","lat":12.2411225,"lng":109.1883668,"desc":"차 6분 · 05:00–22:00 · 7만동\n나트랑 명물 분까. 국물이 맑고 비린내가 없다는 평이 많은데, \"매장이 더 깨끗했으면\"이 상위 리뷰에 그대로 있습니다. 해파리가 들어가니 빼달라고 하세요"},{"id":"poi-louisiane","tab":"eat","grp":"시내 · 차로 10분 이내","name":"Louisiane Brewhouse","tags":[{"t":"good","l":"해변"}],"kr":"","del":"","rating":"4.3","count":"4,598","pid":"ChIJxcswvkZncDERQl0fDKfK6EY","lat":12.2310188,"lng":109.1988028,"desc":"차 6분 · 07:00–01:00\n모래사장에 붙은 수제맥주 양조장. 자체 수영장이 있어 아이를 풀어놓고 앉아 있기 좋습니다. 음식은 값에 비해 평범하다는 평"},{"id":"poi-monkey","tab":"see","grp":"원숭이섬 · 화란섬","name":"원숭이섬","tags":[{"t":"good","l":"10.04 B안"}],"kr":"","del":"","rating":"4.2","count":"3,790","pid":"ChIJdb_UoJRpcDER33c4x2XzS5o","lat":12.359675,"lng":109.21291,"desc":"07:30–16:30 · 롱푸 선착장에서 배로 · 30분 간격\n현장 약 22만동/인(왕복 배 포함)이고 사전 구매가 더 쌉니다. 원숭이·사슴 먹이주기, 오토바이 타는 원숭이 쇼, 한적한 무료 해변. *선글라스·소지품은 가방 안에* — 낚아챕니다. 쇼와 과자 먹이 판매를 비판하는 리뷰도 꾸준히 있습니다"},{"id":"poi-hoalan","tab":"see","grp":"원숭이섬 · 화란섬","name":"화란섬","tags":[{"t":"short","l":"선택"}],"kr":"","del":"","rating":"4.2","count":"2,677","pid":"ChIJqVXSA7JrcDERDhKQJD82NwU","lat":12.405657,"lng":109.2428447,"desc":"07:30–16:30 · 원숭이섬과 콤보로 흔히 묶임\n새 쇼·코끼리·사슴·나비, 15분 오르면 폭포. 실제로는 섬이 아니라 반도입니다. 코끼리 사슬, 비싼 식당과 노래방 소음 지적이 있어 시간이 빠듯하면 빼도 됩니다"},{"id":"poi-longphu","tab":"see","grp":"원숭이섬 · 화란섬","name":"롱푸 선착장","tags":[],"kr":"","del":"","rating":"4.3","count":"2,174","pid":"ChIJd2zQl_tpcDERaotjWE46ZwI","lat":12.3760974,"lng":109.1966185,"desc":"쉐라톤에서 차 30분 · 07:00–17:00\n원숭이섬·화란섬 배가 여기서 뜹니다. *돌아올 때 그랩이 잘 안 잡힌다*는 후기가 있으니 왕복 차량을 잡아두는 게 안전합니다"},{"id":"poi-tramhuong","tab":"see","grp":"도보권","name":"침향탑 · 2/4 광장","tags":[{"t":"good","l":"아이 좋음"}],"kr":"","del":"","rating":"4.4","count":"13,158","pid":"ChIJEwTU1HtncDERBl13UGJnQ3Y","lat":12.240404,"lng":109.1969225,"desc":"도보 12분 · 24시간 · 무료\n탑 자체는 볼 게 없습니다. 목적은 광장이에요. 저녁이면 현지 가족들이 연을 날리고 아이 놀이기구가 섭니다"},{"id":"poi-nightmarket","tab":"see","grp":"도보권","name":"야시장","tags":[{"t":"short","l":"짧게"}],"kr":"","del":"","rating":"3.8","count":"6,691","pid":"ChIJ2TBhifdncDER-bv_z5RkrGo","lat":12.2397172,"lng":109.1964422,"desc":"침향탑 바로 옆 · 17:00–23:00\n400m 남짓. 기념품 위주라 한 바퀴면 끝나고 흥정은 필수입니다. 저녁 먹고 소화 삼아"},{"id":"poi-skylight","tab":"see","grp":"도보권","name":"스카이라이트 루프탑","tags":[{"t":"care","l":"월요일 휴무"}],"kr":"","del":"","rating":"4.6","count":"7,346","pid":"ChIJXeYWDXlncDERdz6NupXSzTo","lat":12.2433961,"lng":109.195842,"desc":"도보 4분 · 화–일 17:00–00:45 · 입장료 있음\n유리 전망대에서 나트랑 야경 한 바퀴. 아이들은 유리 바닥과 망원경을 좋아합니다. 늦어질수록 클럽으로 바뀌니 *18–19시*에 올라가서 짧게"},{"id":"poi-yersin","tab":"see","grp":"도보권","name":"예르생 박물관","tags":[],"kr":"local","del":"","rating":"4.5","count":"470","pid":"ChIJWyKliYNncDERb7oXX4efWCM","lat":12.2509604,"lng":109.195996,"desc":"도보 6분 · 평일 07:30–11:30 / 14:00–17:00 · *일요일 휴무* · 2만동\n페스트균을 찾아낸 그 예르생. 작고 조용합니다. 아이보다 어른용"},{"id":"poi-cathedral","tab":"see","grp":"도보권","name":"나트랑 대성당","tags":[{"t":"short","l":"짧게"}],"kr":"","del":"","rating":"4.1","count":"3,184","pid":"ChIJR0Cr4n9dcDERhrCYXyjifKQ","lat":12.2467309,"lng":109.1881257,"desc":"차 5분 · 언덕 위 석조 고딕 · 입장료 1만동\n사진 한 장 찍고 나오는 곳입니다. 입장료 실랑이가 잦다는 후기가 많아요"},{"id":"poi-dammarket","tab":"see","grp":"도보권","name":"담시장","tags":[{"t":"care","l":"유아 비추"}],"kr":"local","del":"","rating":"3.9","count":"18,979","pid":"ChIJjz9TQYZncDERdYcVnKtZn-c","lat":12.2549514,"lng":109.1918164,"desc":"차 5분 · 05:00–18:30\n과일·커피·건어물은 여기가 제일 쌉니다. 다만 좁고 붐비고 더워서 유모차는 불가능합니다"},{"id":"poi-ivy","tab":"eat","grp":"디저트 · 커피","name":"Ivy Dessert — 젤라또","tags":[{"t":"good","l":"1순위"}],"kr":"","del":"","rating":"4.9","count":"496","pid":"ChIJBZNS_lBncDERmYZNyRrx48c","lat":12.2406624,"lng":109.1910875,"desc":"차 4분 · 13:00–22:00\n과일 소르베가 특히 좋다는 평. 디저트 조합 메뉴가 진짜 실력이고 젤라또만 먹으면 아쉽다는 후기가 반복됩니다"},{"id":"poi-dino","tab":"eat","grp":"디저트 · 커피","name":"Dino's Shibuya Toast & Gelato","tags":[],"kr":"","del":"","rating":"4.9","count":"198","pid":"ChIJgUmgBcBncDERU2vdD9hDVW4","lat":12.2390252,"lng":109.1921654,"desc":"차 4분 · 09:00–22:00\n우지 말차로 직접 만듭니다. 맛보기를 다 시켜줍니다. 인기 맛은 일찍 품절되니 오후에"},{"id":"poi-naked","tab":"eat","grp":"디저트 · 커피","name":"Naked Flavors 골드코스트","tags":[{"t":"good","l":"도보 5분"}],"kr":"","del":"","rating":"5.0","count":"33","pid":"ChIJg6Vz9KJncDERRG7zLEFbg3M","lat":12.2477695,"lng":109.1952896,"desc":"09:00–22:00 · 몰 안\n금귤과 판단코코넛이 인기. 장 보러 간 김에 하나씩. 리뷰 수는 적습니다"},{"id":"poi-jejuga","tab":"eat","grp":"안전 카드","name":"제주가 — 한식","tags":[],"kr":"hi","del":"","rating":"4.8","count":"2,527","pid":"ChIJ2xsIKMlncDERh_NKRFOM-jg","lat":12.236677,"lng":109.1871338,"desc":"차 5분 · 10:00–23:00 · 에어컨\n고기와 찌개. 한식당 중 평이 가장 안정적입니다"},{"id":"poi-wangttukkung","tab":"eat","grp":"안전 카드","name":"왕뚜껑 — 솥뚜껑 삼겹살","tags":[],"kr":"hi","del":"","rating":"4.9","count":"858","pid":"ChIJ-4ynBABncDERyFkWG3iK8R8","lat":12.2346969,"lng":109.1946057,"desc":"차 6분 · 11:00–14:30 / 16:30–24:00\n브레이크 타임 있으니 시간 확인"},{"id":"poi-lumiere","tab":"eat","grp":"안전 카드","name":"Lumiere Texas BBQ","tags":[],"kr":"","del":"","rating":"4.7","count":"931","pid":"ChIJPdzEZQBncDERPKK3x7JIpXg","lat":12.2409053,"lng":109.1952284,"desc":"A&B 센트럴스퀘어 1층 · 07:00–23:00\n버거와 립. 실내 에어컨에 아이 메뉴가 무난합니다"},{"id":"poi-phohong","tab":"eat","grp":"안전 카드","name":"Phở Hồng","tags":[],"kr":"local","del":"","rating":"4.1","count":"3,211","pid":"ChIJi3ZnH39ncDERemw2veaDW2A","lat":12.2439527,"lng":109.1924189,"desc":"도보 10분 · 06:00–22:30 · 작은 그릇 6만동\n면 뽑는 걸 유리 너머로 봅니다. 국물이 달지 않아 아이도 먹습니다"},{"id":"poi-shrek","tab":"see","grp":"기념품 · 쇼핑","name":"슈렉샵 (SHREK GIFT)","tags":[{"t":"good","l":"한국인 1순위"}],"kr":"hi","del":"","rating":"4.9","count":"226","pid":"ChIJuztdhWVncDERYXAlspWM4kg","lat":12.2393851,"lng":109.1912914,"desc":"쉐라톤에서 차 5분 · 09:00–22:30 · 반경 100m 안에 지점 3곳\n손님 대부분이 한국인입니다. 크록스·티셔츠·건조식품·소주잔까지 여기서 한 번에 끝나고, 통신사 할인 같은 할인이 많아요. *카드를 안 받는다는 후기가 있으니 현금 준비*"},{"id":"poi-kissa","tab":"see","grp":"기념품 · 쇼핑","name":"Kissa Souvenirs","tags":[{"t":"care","l":"목요일 휴무"}],"kr":"","del":"","rating":"4.9","count":"1,737","pid":"ChIJQSUAzJZncDERozBJrsi4eTw","lat":12.2404527,"lng":109.1918753,"desc":"차 5분 · 09:00–21:00\n핸드메이드·리사이클 가방·엽서 위주. 시장에서 5–7만동 부르는 걸 3.5만동에 판다는 후기가 있습니다. 2층 카페에서 코코넛커피. 카드 가능"},{"id":"poi-lstore","tab":"see","grp":"기념품 · 쇼핑","name":"L STORE","tags":[{"t":"good","l":"커피 선물"}],"kr":"","del":"","rating":"4.9","count":"2,595","pid":"ChIJCYz9uWFncDERIdk9wPoH29o","lat":12.2400103,"lng":109.1923795,"desc":"차 5분 · 08:00–20:30\n망고커피·코코넛커피를 시음해보고 고릅니다. 커피 선물은 여기가 제일 편합니다"},{"id":"poi-mrviet","tab":"see","grp":"기념품 · 쇼핑","name":"Mr. Viet Coffee Concept Store","tags":[],"kr":"","del":"","rating":"5.0","count":"1,498","pid":"ChIJw_crOgBncDERyfHnJfkc4S8","lat":12.2374201,"lng":109.1952008,"desc":"도보 12분 · 10:00–22:00\n원두·드립백·캡슐까지 종류가 가장 많습니다. 집에 캡슐머신이 있으면 여기"},{"id":"poi-souvgarden","tab":"see","grp":"기념품 · 쇼핑","name":"수비니어 가든","tags":[],"kr":"hi","del":"","rating":"5.0","count":"475","pid":"ChIJow-8JQBncDER5Fq5jtVpPUk","lat":12.2397893,"lng":109.1924346,"desc":"차 5분 · 09:00–22:00\n실크·천연소재 원피스와 핸드메이드 소품. 한국인 손님 후기가 많습니다"},{"id":"poi-hoa","tab":"see","grp":"기념품 · 쇼핑","name":"HOA 호아","tags":[],"kr":"hi","del":"","rating":"4.9","count":"661","pid":"ChIJF6swsN1ncDERK-xjfpF9l14","lat":12.2402561,"lng":109.1898559,"desc":"차 5분 · 10:00–21:00\n아기자기한 기념품과 간식. 슈렉샵에서 걸어서 3분이라 같이 돌기 좋습니다"},{"id":"poi-ocean","tab":"see","grp":"남쪽 · 케이블카 방면","name":"국립해양박물관","tags":[{"t":"rain","l":"비 와도"}],"kr":"","del":"","rating":"4.2","count":"2,791","pid":"ChIJ____YjZncDERGNP0e4TWvWw","lat":12.2073287,"lng":109.2146547,"desc":"케이블카 터미널에서 500m · 06:00–18:00 · 4만동 · 1시간\n거대한 고래 골격과 수조 터널이 볼거리. 일부 사육 환경이 열악하다는 지적이 리뷰에 반복되니 민감하시면 건너뛰세요"},{"id":"poi-100egg","tab":"see","grp":"남쪽 · 케이블카 방면","name":"100 Egg 머드온천","tags":[{"t":"good","l":"아이 좋음"}],"kr":"hi","del":"","rating":"4.7","count":"1,247","pid":"ChIJBzWpKwFfcDERKmYjvw4Ximo","lat":12.1852992,"lng":109.1614966,"desc":"차 20분 · 08:30–18:00 · 반나절\n아이리조트 대신 굳이 머드를 한다면 여기. 시설이 새것이고 어린이 풀이 따로 있으며 주말에도 안 붐빈다는 후기가 많습니다. 개별 머드탕을 잡으면 대중탕 요소를 피할 수 있어요"},{"id":"poi-hontam","tab":"see","grp":"남쪽 · 케이블카 방면","name":"혼땀섬","tags":[],"kr":"","del":"","rating":"4.5","count":"888","pid":"ChIJlfht4RhhcDERVPCZseDMs0k","lat":12.1758908,"lng":109.24301,"desc":"보트 필요 · 머드탕 · 워터스포츠\n빈원더스를 두 번 가는 일정에는 자리가 없습니다. 참고용"},{"id":"poi-cotuyet","tab":"eat","grp":"깜란 · 깜득","name":"Bánh xèo Cô Tuyết — 할머니 반쎄오","tags":[{"t":"care","l":"30분만"}],"kr":"warn","del":"","rating":"4.9","count":"1,801","pid":"ChIJZ8OtZg_1cDERQ-qbZsPFwus","lat":12.056814,"lng":109.1580589,"desc":"JW에서 차 15–20분 · 11:00–18:00 · *일요일 휴무* · 1장 2만동대\n갓 구운 반쎄오는 훌륭하나 한국인 대상 불친절·위생 지적 리뷰가 섞여 있습니다. 먹고 바로 나오는 코스로"},{"id":"poi-jwdining","tab":"eat","grp":"깜란 · 깜득","name":"JW 리조트 내 다이닝","tags":[],"kr":"","del":"","rating":"4.7","count":"718","pid":"ChIJ086newCLcDERwsGzUJ5QdJE","lat":12.0937532,"lng":109.1904073,"desc":"Clay Craft 조식 · Seafood Grill 저녁 · Bayside Bistro 풀사이드 · 룸서비스 24시간\n시푸드 그릴은 세팅 대비 가격이 합리적이라는 평. 나가기 싫은 날의 기본값"},{"id":"poi-xombien","tab":"eat","grp":"깜란 · 깜득","name":"Xóm Biển 해산물","tags":[{"t":"good","l":"한국어 응대"}],"kr":"hi","del":"","rating":"4.8","count":"982","pid":"ChIJRXK8dkb1cDERS5zJ1s3JcNU","lat":12.0803389,"lng":109.1805895,"desc":"JW에서 차 12분 · 10:00–22:00\n가게 이름에 카카오톡 아이디를 걸어둘 만큼 한국 손님이 많습니다. 구이류가 좋고 응대가 가족적이라는 평이 반복됩니다. *깜란에서 평점이 가장 높은 해산물집*"},{"id":"poi-ocbien","tab":"eat","grp":"깜란 · 깜득","name":"Ốc Biển Bãi Dài","tags":[{"t":"good","l":"놀이터 있음"}],"kr":"","del":"","rating":"4.6","count":"343","pid":"ChIJASkUyEb1cDER-txy2QJDGiQ","lat":12.0781112,"lng":109.1771806,"desc":"JW에서 차 12분 · 10:00–23:00 · 4인 90만동 선\n물가에 *놀이터와 모래밭*이 있어서 아이들이 노는 동안 어른은 앉아 있을 수 있습니다. 흰 칠판에 시세를 적어두고 무게로 계산해 바가지가 없습니다"},{"id":"poi-eogio","tab":"eat","grp":"깜란 · 깜득","name":"Hòa Eo Gió 해산물","tags":[{"t":"good","l":"호텔 픽업"}],"kr":"","del":"pickup","rating":"4.4","count":"2,459","pid":"ChIJWU65KLNhcDERVN-8GJ_9gtM","lat":12.1174739,"lng":109.1961734,"desc":"JW에서 차 8분 · 06:00–23:00\n바닷가에 붙어 있고 *호텔로 픽업을 와줍니다*. 랍스터와 새우를 테이블에서 발라주고, 게도 잘라서 냅니다. \"깜란 리조트에 묵는다면 바로 여기\"라는 후기가 여럿"},{"id":"poi-cotuyet2","tab":"eat","grp":"깜란 · 깜득","name":"깜득 시장 · 과일","tags":[{"t":"short","l":"반쎄오 옆"}],"kr":"local","del":"","rating":"4.1","count":"1,022","pid":"ChIJ5Xlhmev0cDERKUzC5cCjeQw","lat":12.0553348,"lng":109.1596694,"desc":"06:00–18:00 · 꼬 뚜엣에서 도보 5분\n망고가 쌉니다. 반쎄오 먹고 과일만 사서 나오면 10.09 외출이 한 번에 정리됩니다"},{"id":"poi-miumiu","tab":"eat","grp":"깜란 · 깜득","name":"Miumiu food","tags":[{"t":"good","l":"배달 확실"}],"kr":"hi","del":"local","rating":"4.9","count":"30","pid":"ChIJ1-hLItqLcDERXnCo0isjPA4","lat":12.0963455,"lng":109.1756896,"desc":"JW에서 약 2km · 09:00–22:00 · 카톡 Miumiufood\n배달K·그랩·카톡 다 됩니다. 모벤픽·알마·윈덤으로 배달받은 한국인 후기가 여러 개. 한국어 주문, 카드 가능, 카톡 주문 시 소폭 할인. 버터갈릭 새우·해산물 볶음면·반쎄오·맛조개 볶음. *튀김은 간이 거의 없어 소금 요청*. 리뷰 수가 적은 게 흠"},{"id":"poi-pizzaking","tab":"eat","grp":"깜란 · 깜득","name":"피자킹 Pizza King","tags":[{"t":"good","l":"4P's 대체"}],"kr":"hi","del":"ask","rating":"4.9","count":"968","pid":"ChIJJ24l1j31cDERoW0pyjjtndQ","lat":12.0776921,"lng":109.1753753,"desc":"JW에서 차 7분 · 11:00–22:00 · 카톡 pizzakingcamlam\n나폴리식 화덕피자. \"베트남에서 먹은 피자 중 최고\", 아이가 인생 피자라고 했다는 후기. 파스타·스테이크도 평이 좋고 *술 반입 가능*(조건 확인). 탄 피자를 받았다는 후기 1건. 배달은 카톡 문의"},{"id":"poi-harang","tab":"eat","grp":"깜란 · 깜득","name":"하랑식당 — 한식","tags":[],"kr":"hi","del":"ask","rating":"4.7","count":"649","pid":"ChIJJ-I-HAD1cDER30g7MORnm6E","lat":12.0758282,"lng":109.171899,"desc":"JW에서 차 8분 · 11:00–22:00 · 카톡 harang0966\n깜란 쪽 한식당. 김치볶음밥 평이 제일 좋고 삼겹살이 정통이라는 평. 양 많음. 치킨은 반죽이 두껍다는 지적. 배달은 카톡 문의"},{"id":"poi-thuynguyen","tab":"eat","grp":"깜란 · 깜득","name":"Thủy Nguyễn 해산물","tags":[],"kr":"","del":"pickup","rating":"4.8","count":"400","pid":"ChIJWX32-_OLcDER9t6TQCZTkQ8","lat":12.0482708,"lng":109.1933408,"desc":"JW에서 차 10분 · 09:00–23:00\n리조트까지 무료 셔틀, Zalo로 연락. 수조 해산물이 신선하고 바닷가 식당보다 싸다는 평. 디저트 과일 서비스"},{"id":"poi-camlamfood","tab":"eat","grp":"깜란 · 깜득","name":"Cam Lâm Food","tags":[{"t":"good","l":"아이 좋음"}],"kr":"","del":"pickup","rating":"4.8","count":"153","pid":"ChIJwRU9Z-P1cDERmBcIQplruKA","lat":12.0745379,"lng":109.1613151,"desc":"JW에서 차 10분 · 08:00–21:30\n무료 픽드랍. 등갈비탕 평이 좋고 *아이 도자기 페인팅*도 됩니다. 찜·통닭은 1시간 전 예약. 느리고 맛없었다는 단체 후기 1건"},{"id":"poi-silla","tab":"eat","grp":"깜란 · 깜득","name":"신라국수","tags":[{"t":"good","l":"10.10 출국 전"}],"kr":"hi","del":"","rating":"4.5","count":"245","pid":"ChIJ3TDLJwCNcDERxtnhxJOxw6A","lat":12.0098832,"lng":109.2166392,"desc":"공항 근처 · 08:00–03:00\n한국인 사장. 라면·비빔국수·만두. \"맛없으면 100% 환불\" 문구가 걸려 있습니다. 출국 전 마지막 한식으로. 비빔밥이 싱거웠다는 후기 1건"},{"id":"poi-bigfun","tab":"see","grp":"비 올 때","name":"Big Fun 빈컴 쩐푸","tags":[{"t":"rain","l":"1순위"}],"kr":"","del":"","rating":"4.9","count":"1,789","pid":"ChIJgdPCIOVncDERSPs_A0Rwpfo","lat":12.233452,"lng":109.1974312,"desc":"차 5분 · 평일 10:00–22:00, 주말 09:30– · 화·수 할인\n큰 실내 놀이터. 1–12세용이라 3세도 문제없고 두 시간이면 체력이 소진됩니다. 커피와 감자튀김 코너가 있어 부모도 앉아 있을 수 있어요"},{"id":"poi-playtime","tab":"see","grp":"비 올 때","name":"Playtime 빈컴 레탄톤","tags":[],"kr":"local","del":"","rating":"4.6","count":"123","pid":"ChIJ79TYj99ncDERjXsIYsl8sII","lat":12.2430917,"lng":109.1935386,"desc":"차 4분 · 10:00–22:00 · 3층\nBig Fun보다 작지만 더 가깝습니다. 주말엔 붐빔"},{"id":"poi-ntcenter","tab":"see","grp":"비 올 때","name":"나트랑 센터","tags":[{"t":"rain","l":"영화관"}],"kr":"","del":"","rating":"4.2","count":"11,909","pid":"ChIJn6DURYJncDERMx8H-KRgn-I","lat":12.2480844,"lng":109.1959534,"desc":"쉐라톤 도보 3분 · 09:00–22:00 · 4층 영화관과 푸드코트\n골드코스트보다 낡았다는 평이지만 *쉐라톤에서 제일 가깝습니다*. 소나기 20분 피하기에 딱이고, 앞에 스타벅스와 하이랜드가 있습니다"},{"id":"poi-goldcoast","tab":"see","grp":"비 올 때","name":"골드코스트몰 · 롯데마트","tags":[{"t":"rain","l":"도보 5분"}],"kr":"hi","del":"","rating":"4.5","count":"4,266","pid":"ChIJG4gauzFncDERZWbWVLZUXa4","lat":12.248145,"lng":109.1948614,"desc":"08:30–22:00 · 롯데마트 3–4층, 쿠우쿠우 12층, 포세이돈 5층\n비를 안 맞고 갈 수 있는 유일한 실내. 마트·뷔페·쇼핑이 한 건물에 있습니다"},{"id":"poi-spamoc","tab":"eat","grp":"스파","name":"Spa Moc","tags":[{"t":"good","l":"10.10"}],"kr":"hi","del":"","rating":"4.9","count":"1,019","pid":"ChIJpQBwXHH1cDERImZcXlaeF8Q","lat":12.0818882,"lng":109.1901479,"desc":"차 5분 · 24시간 · 리조트 무료 픽업·드랍\n가족 넷이 마사지·네일·페이셜 받고 픽드랍까지 무료였다는 후기"},{"id":"poi-kingspa","tab":"eat","grp":"스파","name":"King Spa Cam Lâm","tags":[],"kr":"hi","del":"","rating":"5.0","count":"203","pid":"ChIJ14_YIQCLcDERCSapPYRvyis","lat":12.0492246,"lng":109.1944987,"desc":"차 10분 · 09:00–23:00 · 한국 마사지 표방"},{"id":"poi-nhudang","tab":"eat","grp":"스파","name":"Như Đăng Spa","tags":[],"kr":"hi","del":"","rating":"5.0","count":"1,705","pid":"ChIJLbMgnLX1cDERsjRr3X-HFSc","lat":12.0759905,"lng":109.1705797,"desc":"차 7분 · 24시간 · 무료 호텔 픽업"},{"id":"poi-whitedune","tab":"see","grp":"무이네","name":"화이트샌듄 (바우짱)","tags":[{"t":"good","l":"일출"}],"kr":"hi","del":"","rating":"4.2","count":"3,540","pid":"ChIJ19TutTTrdjERpo5mAMYmLsU","lat":11.0609478,"lng":108.4279477,"desc":"05:00–18:00 · 입장 1.5만동 · 지프는 투어 포함\n이번 일정의 하이라이트. 호수와 풍력발전기를 낀 흰 모래언덕입니다. *낙타·타조·기니피그가 있는 작은 농장*이 붙어 있어 아이들이 좋아해요. 모래썰매는 현장 5만동 별도. 유아 동반이면 고속 지프 코스는 어차피 못 타니 그건 포기"},{"id":"poi-reddune","tab":"see","grp":"무이네","name":"레드샌듄","tags":[{"t":"short","l":"짧게"}],"kr":"","del":"","rating":"4.1","count":"6,984","pid":"ChIJG0sCU6yPdjERGKRMrcgkOxU","lat":10.9492961,"lng":108.2963502,"desc":"24시간 · 입장 무료\n붉은 모래언덕. 규모가 작아 15–30분이면 충분하다는 평이 대부분입니다. 언덕을 걸어 올라가야 하니 신발보다 맨발이 편해요"},{"id":"poi-fairystream","tab":"see","grp":"무이네","name":"요정의샘","tags":[{"t":"good","l":"아이 좋음"}],"kr":"","del":"","rating":"3.8","count":"3,990","pid":"ChIJSd7YIr-PdjERga3IkK6gHXg","lat":10.9512201,"lng":108.25634,"desc":"06:30–17:30 · 입장 무료\n붉고 흰 사암 협곡 사이를 맨발로 걷는 개울. 물이 얕아 아이들이 제일 신나는 구간입니다. *바위가 미끄러우니 아쿠아슈즈*를 챙기세요. 끝의 폭포는 기대하지 마시고요"},{"id":"poi-fishingvillage","tab":"see","grp":"무이네","name":"무이네 피싱빌리지","tags":[{"t":"care","l":"냄새·쓰레기"}],"kr":"","del":"","rating":"4.0","count":"3,450","pid":"ChIJCV30U8mPdjERU-pbq4g5q34","lat":10.9410098,"lng":108.2791267,"desc":"이른 아침이 절정\n바구니배가 가득한 사진 명소인데, \"모래도 물도 더럽다\"는 지적이 상위 리뷰에 반복됩니다. 차에서 내려 사진만 찍고 오는 정도로"},{"id":"poi-vinwonders","tab":"see","grp":"섬 · 판랑","name":"빈원더스 나트랑","tags":[{"t":"good","l":"10.05 · 10.06"}],"kr":"hi","del":"","rating":"4.7","count":"19,325","pid":"ChIJUXQmxMdncDERI-V3_g5la4I","lat":12.2170491,"lng":109.2408716,"desc":"놀이시설 08:00–20:00 · 아쿠아리움 09:00–19:00 · 워터파크 09:00–17:30 · 100cm 미만 무료\n*워터파크 빼고도 하루가 모자랍니다.* 알파인코스터(어른과 2인 동반 탑승 가능), 사파리·킹스가든 기린·카피바라 *먹이주기*, 아쿠아리움 3만 마리, 페어리랜드 유아 놀이기구, 어드벤처랜드 실내 게임존, 저녁 타타쇼. 워터파크 익스트림 슬라이드만 130cm 제한이라 아이들은 애초에 해당 없음. *알파인코스터·짚라인은 오픈런 필수*"},{"id":"poi-namcuong","tab":"see","grp":"섬 · 판랑","name":"남끄엉 사구","tags":[{"t":"good","l":"10.08"}],"kr":"","del":"","rating":"4.3","count":"1,232","pid":"ChIJB7lErgfOcDERalvOQ5LnDSo","lat":11.5087904,"lng":108.9971041,"desc":"깜란에서 차 1시간 30분 · 지프 30–40분에 60만동\n후기에 \"아이 동반 좋음\"이 반복됩니다. 얇은 긴바지 필수"},{"id":"poi-poklonggarai","tab":"see","grp":"섬 · 판랑","name":"포클롱가라이 참탑","tags":[{"t":"short","l":"선택"}],"kr":"local","del":"","rating":"4.6","count":"1,282","pid":"","lat":11.6019055,"lng":108.946504,"desc":"판랑 투어에 흔히 포함 · 3만동\n뽀나가르를 이미 봤다면 아이들에게는 반복입니다. 시간을 사막에 몰아주는 편이 낫습니다"},{"id":"poi-hangrai","tab":"see","grp":"섬 · 판랑","name":"항라이","tags":[{"t":"short","l":"선택"}],"kr":"local","del":"","rating":"4.4","count":"1,349","pid":"ChIJpWzMr7bHcDERHGtd6Voifr4","lat":11.6780558,"lng":109.1827234,"desc":"05:30–17:30 · 입장+버기 2인 12만동\n고대 산호가 드러난 바위 해안. 사진은 잘 나오지만 계단 34개를 올라야 하고 그늘이 없습니다. 유아 둘이면 사막과 둘 중 하나만"},{"id":"poi-vinhhy","tab":"see","grp":"섬 · 판랑","name":"빈히만","tags":[{"t":"short","l":"멀다"}],"kr":"local","del":"","rating":"4.5","count":"1,388","pid":"ChIJ-dWpoXe_cDERTrsz8yWPVTw","lat":11.7176196,"lng":109.2021271,"desc":"깜란에서 차 1시간 20분\n베트남에서 손꼽히는 만. 다만 판랑 사막과 반대 방향이라 하루에 둘 다는 무리입니다. 참고용"},{"id":"poi-sheepfarm","tab":"see","grp":"깜란 근처","name":"수오이띠엔 양떼목장","tags":[{"t":"good","l":"아이 좋음"}],"kr":"local","del":"","rating":"4.2","count":"1,941","pid":"ChIJ8eGG9orrcDERG4RCmyddZt0","lat":11.8049867,"lng":109.1151993,"desc":"JW에서 차 35분 · 07:30–17:30 · 입장 5만동\n남깜란, 판랑 가는 길목에 있습니다. 풀을 사서 양에게 먹입니다. *판랑 투어가 무산됐을 때의 대체재*로 딱이고, 판랑 조인투어가 서는 양떼목장도 대개 이 근방입니다"},{"id":"poi-camducmarket","tab":"see","grp":"깜란 근처","name":"깜득 시장","tags":[{"t":"short","l":"짧게"}],"kr":"local","del":"","rating":"4.1","count":"1,022","pid":"ChIJ5Xlhmev0cDERKUzC5cCjeQw","lat":12.0553348,"lng":109.1596694,"desc":"JW에서 차 15분 · 06:00–18:00\n망고와 과일이 쌉니다. 반쎄오 꼬 뚜엣에서 걸어서 5분이니 *10.09에 묶어서*. 좁고 더워서 유모차는 어렵습니다"},{"id":"poi-baidai","tab":"see","grp":"깜란 근처","name":"바이다이 공용 해변","tags":[{"t":"care","l":"쓰레기"}],"kr":"local","del":"","rating":"4.0","count":"2,282","pid":"ChIJY0lvU6mKcDER_3E9y1onU7M","lat":12.11315,"lng":109.1950652,"desc":"JW 북쪽 · 리조트 구간 밖\n모래는 곱지만 공용 구간은 쓰레기와 호객 지적이 반복됩니다. *리조트 전용 비치가 훨씬 낫습니다.* 북쪽 끝 해산물 식당가 갈 때만"}];
+var BASE_GROUPS={"see":[{"n":"북쪽","s":"차 8–12분 · 둘을 묶어 오전 한 번에"},{"n":"원숭이섬 · 화란섬","s":"10.04 B안 · 쉐라톤에서 북쪽으로 차 30분"},{"n":"도보권","s":"쉐라톤에서 걸어서"},{"n":"기념품 · 쇼핑","s":"시내에만 있습니다 — 10.03~10.05에 사세요"},{"n":"남쪽 · 케이블카 방면","s":"10.05 입도 또는 10.07 복귀 때 끼우기 좋음"},{"n":"비 올 때","s":"실내로 도망갈 곳"},{"n":"무이네","s":"10.03 새벽 · 공항에서 차 4시간"},{"n":"섬 · 판랑","s":"판랑은 이번엔 안 갑니다 — 참고용"},{"n":"깜란 근처","s":"JW에서 차 10–35분 · 판랑까지 안 가도 되는 것들"}],"eat":[{"n":"쉐라톤 도보권","s":"10.03 – 10.05"},{"n":"시내 · 차로 10분 이내","s":""},{"n":"디저트 · 커피","s":"더위 식히러"},{"n":"안전 카드","s":"아이가 현지식을 거부할 때"},{"n":"깜란 · 깜득","s":"10.07 – 10.10"},{"n":"스파","s":"깜란 · 무료 픽업"}]};
+var K_PL='nhatrang2026:places', K_PLDEL='nhatrang2026:placesDeleted';
+var places=JSON.parse(JSON.stringify(BASE_PLACES)), placesDeleted=[];
+var KR_LABEL={hi:'한국인 많음',local:'현지 전용',warn:'한국인 주의'};
+var DEL_LABEL={bdk:'배달K 깜란까지',local:'깜란 배달',ask:'배달 카톡 문의',pickup:'무료 픽업'};
+var REFS=[
+  {k:'auto',l:'오늘 숙소'},
+  {k:'sheraton',l:'쉐라톤',lat:12.2463429,lng:109.1961206},
+  {k:'hontre',l:'혼트레 메리어트',lat:12.2185938,lng:109.2551143},
+  {k:'jw',l:'JW 깜란',lat:12.0937532,lng:109.1904073},
+  {k:'here',l:'현재 위치'}];
+var STAY_BY_DAY={d02:'sheraton',d03:'sheraton',d04:'sheraton',d05:'hontre',d06:'hontre',d07:'jw',d08:'jw',d09:'jw',d10:'jw',d11:'jw'};
+var pView={see:{mode:'grp',ref:'auto',f:'all',edit:false},eat:{mode:'grp',ref:'auto',f:'all',edit:false}};
+var hereLoc=null;
+
+function placeById(id){ for(var i=0;i<places.length;i++) if(places[i].id===id) return places[i]; return null; }
+function placeUrl(p){
+  if(p.pid) return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.name)+'&query_place_id='+encodeURIComponent(p.pid);
+  if(p.lat!=null&&p.lng!=null) return 'https://www.google.com/maps/search/?api=1&query='+p.lat+','+p.lng;
+  if(p.url) return p.url;
+  return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.name);
+}
+function hav(a,b,c,d){ var t=Math.PI/180,x=(c-a)*t,y=(d-b)*t,
+  h=Math.sin(x/2)*Math.sin(x/2)+Math.cos(a*t)*Math.cos(c*t)*Math.sin(y/2)*Math.sin(y/2);
+  return 12742*Math.asin(Math.sqrt(h)); }
+function fmtKm(k){ return k<1?(Math.round(k*100)*10)+'m':(k<20?k.toFixed(1)+'km':Math.round(k)+'km'); }
+function autoRefKey(){ var td=todayInfo(); return (td&&STAY_BY_DAY[td.id])||'sheraton'; }
+function refPoint(k){
+  if(k==='here') return hereLoc;
+  if(k==='auto') k=autoRefKey();
+  for(var i=0;i<REFS.length;i++) if(REFS[i].k===k) return REFS[i];
+  return null;
+}
+function distOf(p,ref){ return (ref&&p.lat!=null&&p.lng!=null)?hav(ref.lat,ref.lng,p.lat,p.lng):null; }
+function passFilter(p,f){
+  if(f==='dlv') return p.del==='bdk'||p.del==='local'||p.del==='ask';
+  if(f==='pickup') return p.del==='pickup';
+  return true; }
+
+function placeRow(p,ref,showGrp){
+  var dk=distOf(p,ref);
+  var tags=(p.tags||[]).map(function(t){ return '<b class="tg" data-t="'+esc(t.t)+'">'+esc(t.l)+'</b>'; }).join('');
+  var dl=p.del?'<b class="dl" data-d="'+esc(p.del)+'">'+esc(DEL_LABEL[p.del]||p.del)+'</b>':'';
+  var kr=KR_LABEL[p.kr]?'<b class="kr" data-k="'+esc(p.kr)+'">'+KR_LABEL[p.kr]+'</b>':'';
+  return '<a class="poi" id="'+esc(p.id)+'" href="'+esc(placeUrl(p))+'" target="_blank" rel="noopener">'
+    +'<span class="pn">'+esc(p.name)+tags+dl
+    +'<u>'+(dk!=null?'<span class="dist">'+fmtKm(dk)+'</span>':'')+kr
+    +(showGrp?'<span class="pgrp">'+esc(p.grp||'')+'</span>':'')+fmt(p.desc||'')+'</u></span>'
+    +'<span class="ps">'+esc(p.rating||'')+(p.count?'<s>'+esc(p.count)+'</s>':'')+'</span>'
+    +'<span class="pctl"><button type="button" class="mini" data-pa="edit" data-pid="'+esc(p.id)+'" aria-label="수정">✎</button>'
+    +'<button type="button" class="mini" data-x="1" data-pa="del" data-pid="'+esc(p.id)+'" aria-label="삭제">✕</button></span></a>';
+}
+function renderTools(tab){
+  var v=pView[tab], el=document.querySelector('.ptools[data-tab="'+tab+'"]'); if(!el) return;
+  var ar=refPoint('auto');
+  var opts=REFS.map(function(r){ return '<option value="'+r.k+'"'+(v.ref===r.k?' selected':'')+'>'
+    +esc(r.k==='auto'?'오늘 숙소 ('+(ar?ar.l:'')+')':r.l)+'</option>'; }).join('');
+  var h='<span class="seg"><button type="button" data-pt="mode" data-v="grp" data-on="'+(v.mode==='grp'?1:0)+'">그룹별</button>'
+    +'<button type="button" data-pt="mode" data-v="dist" data-on="'+(v.mode==='dist'?1:0)+'">가까운 순</button></span>'
+    +'<select class="refsel" data-pt="ref" aria-label="거리 기준">'+opts+'</select>'
+    +'<button type="button" class="pedit" data-pt="edit" data-on="'+(v.edit?1:0)+'">'+(v.edit?'완료':'편집')+'</button>';
+  if(tab==='eat') h+='<span class="seg segf">'
+    +['all:전체','dlv:깜란에서 배달','pickup:무료 픽업'].map(function(x){ var a=x.split(':');
+      return '<button type="button" data-pt="f" data-v="'+a[0]+'" data-on="'+(v.f===a[0]?1:0)+'">'+a[1]+'</button>'; }).join('')+'</span>';
+  if(v.edit) h+='<div class="padd"><button type="button" data-pt="add">＋ 장소 추가</button><button type="button" data-pt="import">여러 곳 한 번에 (AI)</button></div>';
+  el.innerHTML=h;
+}
+function renderPlaces(tab){
+  var v=pView[tab], ref=refPoint(v.ref), el=document.getElementById('list-'+tab); if(!el) return;
+  var list=places.filter(function(p){ return p.tab===tab&&passFilter(p,v.f); }), out='';
+  if(v.mode==='dist'&&ref){
+    list.sort(function(a,b){ var x=distOf(a,ref),y=distOf(b,ref); return (x==null?1e9:x)-(y==null?1e9:y); });
+    out='<div class="grp"><h4>가까운 순</h4><span>'+esc(ref.l)+' 기준 · 직선거리</span></div><div class="plist">'
+      +list.map(function(p){ return placeRow(p,ref,true); }).join('')+'</div>';
+  }else{
+    var gs=(BASE_GROUPS[tab]||[]).slice();
+    list.forEach(function(p){ var g=p.grp||'기타'; if(!gs.some(function(x){ return x.n===g; })) gs.push({n:g,s:''}); });
+    gs.forEach(function(g){
+      var items=list.filter(function(p){ return (p.grp||'기타')===g.n; }); if(!items.length) return;
+      out+='<div class="grp"><h4>'+esc(g.n)+'</h4><span>'+esc(g.s||'')+'</span></div><div class="plist">'
+        +items.map(function(p){ return placeRow(p,ref,false); }).join('')+'</div>';
+    });
+  }
+  if(!list.length) out='<p class="pickempty">조건에 맞는 곳이 없습니다</p>';
+  el.innerHTML=out;
+  el.classList.toggle('pedit-on',!!v.edit);
+  renderTools(tab);
+}
+function renderAllPlaces(){ renderPlaces('see'); renderPlaces('eat'); }
+function migratePlaces(list,deleted){
+  deleted=deleted||[]; var have={};
+  list.forEach(function(p){ have[p.id]=1; });
+  BASE_PLACES.forEach(function(bp){ if(!have[bp.id]&&deleted.indexOf(bp.id)<0) list.push(JSON.parse(JSON.stringify(bp))); });
+  return list;
+}
+function savePlacesLocal(){ LS.set(K_PL,JSON.stringify(places)); LS.set(K_PLDEL,JSON.stringify(placesDeleted)); touch(); refreshStatus(); }
+function afterPlaceChange(){ buildPoiIndex(); renderAllPlaces(); render(); savePlacesLocal(); }
+function deletePlace(id){
+  places=places.filter(function(p){ return p.id!==id; });
+  if(placesDeleted.indexOf(id)<0) placesDeleted.push(id);
+  afterPlaceChange();
+}
+
+/* 구글 지도 링크 해석 — 브라우저 안에서 할 수 있는 만큼만 */
+function parseMapLink(u){
+  var r={url:(u||'').trim()}, m, t=r.url;
+  try{ t=decodeURIComponent(t); }catch(e){}
+  if(/maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs/.test(t)){ r.short=true; return r; }
+  if((m=t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/))){ r.lat=+m[1]; r.lng=+m[2]; }
+  else if((m=t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/))){ r.lat=+m[1]; r.lng=+m[2]; }
+  else if((m=t.match(/[?&](?:query|q|ll|destination)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/))){ r.lat=+m[1]; r.lng=+m[2]; }
+  if((m=t.match(/\/maps\/place\/([^\/@?]+)/))) r.name=m[1].replace(/\+/g,' ').trim();
+  else if((m=t.match(/[?&](?:query|q)=([^&]+)/))&&!/^-?\d+\.\d+,/.test(m[1])) r.name=m[1].replace(/\+/g,' ').trim();
+  if((m=t.match(/query_place_id=([A-Za-z0-9_-]+)/))||(m=t.match(/place_id:([A-Za-z0-9_-]+)/))) r.pid=m[1];
+  return r;
+}
+
 var POI_INDEX=[];
 function buildPoiIndex(){
-  POI_INDEX=[].slice.call(document.querySelectorAll('a.poi')).map(function(a){
-    var pn=a.querySelector('.pn'), ps=a.querySelector('.ps'), u=pn?pn.querySelector('u'):null;
-    var plist=a.closest('.plist'), grp=plist?plist.previousElementSibling:null;
-    var kr=pn?pn.querySelector('b.kr'):null;
-    var line=u?u.innerHTML.split('<br>')[0].replace(/<[^>]*>/g,'').trim():'';
-    var nm=''; for(var n=pn&&pn.firstChild;n;n=n.nextSibling){ if(n.nodeType===3) nm+=n.nodeValue; else break; }
-    var rt=''; for(var m=ps&&ps.firstChild;m;m=m.nextSibling){ if(m.nodeType===3) rt+=m.nodeValue; else break; }
-    return { id:a.id, name:nm.trim(), rate:rt.trim(), line:line,
-             kr:kr?kr.textContent:'', map:a.getAttribute('href'),
-             tab:a.closest('.panel').id,
-             grp:(grp&&grp.querySelector('h4'))?grp.querySelector('h4').textContent.trim():'' };
+  POI_INDEX=places.map(function(p){
+    return { id:p.id, name:p.name, rate:p.rating||'', line:(p.desc||'').split('\n')[0].replace(/\*/g,''),
+             kr:KR_LABEL[p.kr]||'', map:placeUrl(p), tab:p.tab, grp:p.grp||'' };
   });
 }
 function poiById(id){ for(var i=0;i<POI_INDEX.length;i++) if(POI_INDEX[i].id===id) return POI_INDEX[i]; return null; }
 function matchPoi(s){ if(!s) return null;
-  for(var i=0;i<POI_DB.length;i++) if(s.indexOf(POI_DB[i].key)!==-1) return POI_DB[i];
+  for(var i=0;i<POI_DB.length;i++) if(s.indexOf(POI_DB[i].key)!==-1){
+    var p=placeById(POI_DB[i].id); if(p) return {id:p.id,tab:p.tab,map:placeUrl(p)}; }
   return null; }
 
-var BASE={v:2,days:[
+var BASE={v:3,days:[
 {id:'d02',date:'10.02',wk:'금',zone:'dune',tag:'→ 무이네',
  sub:'오늘 밤은 자지 않습니다. 공항 라운지에서 기다렸다가 새벽 2시에 사막으로 출발.',
  items:[
@@ -1028,7 +989,25 @@ var BASE={v:2,days:[
   {t:'20:00',h:'취침',d:''}],
  notes:[
   {kind:'warn',h:'체력이 이 일정의 전부입니다',d:'후기에 "부모님이 힘들어하셨다", "강한 체력이 필요하다"가 반복됩니다. 3세에게는 특히 부담이에요. *10.03 오후를 통째로 비워두는 게 안전장치*고, 10.04도 무리하지 않는 게 좋습니다.'},
-  {kind:'',h:'쉐라톤 도보권',d:'도보 3분에 *나트랑 센터*(4층 영화관·푸드코트), 도보 5분에 골드코스트몰과 롯데마트, 한 블록에 *Cộng Cà Phê*. 큰 장보기는 10.04로 미뤄둡니다.'}]},{id:'d04',date:'10.04',wk:'일',zone:'city',tag:'쉐라톤',
+  {kind:'',h:'쉐라톤 도보권',d:'도보 3분에 *나트랑 센터*(4층 영화관·푸드코트), 도보 5분에 골드코스트몰과 롯데마트, 한 블록에 *Cộng Cà Phê*. 큰 장보기는 10.04로 미뤄둡니다.'}]},{id:'d04',date:'10.04',wk:'일',zone:'city',tag:'쉐라톤',altLabelA:'시내 · 참탑',useAlt:false,
+ alt:{label:'원숭이섬',
+  sub:'참탑·혼쫑곶 대신 원숭이섬. 오후 장보기·라운지·저녁은 A안과 같습니다.',
+  items:[
+   {t:'07:00',h:'메인조식',d:'06:30–11:00'},
+   {t:'08:00',h:'롱푸 선착장으로 출발',d:'쉐라톤에서 북쪽으로 차 30분. 조인투어면 호텔 픽업, 자유면 그랩',k:1},
+   {t:'08:40',h:'배 → 원숭이섬',d:'30분 간격 · 현장 약 22만동/인(왕복 배 포함), 사전 구매가 더 쌉니다',k:1},
+   {t:'09:00',h:'원숭이섬',d:'원숭이·사슴 먹이주기, 원숭이 쇼. *선글라스·소지품은 가방 안에 — 낚아챕니다*',k:1},
+   {t:'11:00',h:'화란섬 (선택)',d:'콤보일 때만. 새 쇼·코끼리·사슴·나비. 빠듯하면 생략'},
+   {t:'12:30',h:'점심',d:'투어 포함이면 섬 안 식당'},
+   {t:'13:30',h:'선착장 → 쉐라톤',d:'*복귀 때 그랩이 잘 안 잡힌다는 후기* — 조인투어 차량이나 왕복 대절이 편합니다'},
+   {t:'14:30',h:'객실 낮잠',d:''},
+   {t:'16:00',h:'롯데마트 골드코스트 — 장보기',d:'*혼트레는 배달이 안 되니 2박 치를 여기서*. 생수, 아이 간식, 컵라면, 과일, 하이볼 재료',k:1},
+   {t:'17:30',h:'라운지 해피아워',d:''},
+   {t:'19:00',h:"저녁 · Pizza 4P's 쉐라톤점",d:'호텔 1층 · *예약 필수*',k:1},
+   {t:'20:30',h:'야시장 → 슈렉샵 기념품',d:'도보 7분 · 22:30까지 · 현금 준비'}],
+  notes:[
+   {kind:'',h:'투어냐 자유냐',d:'자유입장(배표 + 그랩 왕복)이 가장 싸지만 *복귀 교통이 불안*합니다. 조인투어는 픽드랍·점심 포함이고, 프라이빗은 차량비가 팀당 따로 붙어 훨씬 비쌉니다. 섬 안에 한적한 무료 해변이 있으니 수영복 하나 챙기세요.'},
+   {kind:'warn',h:'동물 쇼에 대해',d:'원숭이 쇼와 화란섬 코끼리는 사육 환경을 비판하는 리뷰가 꾸준히 있고, 먹이로 파는 과자가 원숭이 건강에 나쁘다는 지적도 있습니다. 알고 가시면 됩니다.'}]},
  sub:'시내 유일한 통짜 하루. 오전에 북쪽을 찍고, 오후엔 장보기와 라운지.',
  items:[
   {t:'07:30',h:'메인조식',d:'06:30–11:00',k:1},
@@ -1036,50 +1015,59 @@ var BASE={v:2,days:[
   {t:'10:30',h:'혼쫑곶',d:'참탑에서 차 5분 · 3만동 · 30분 · 물때 높으면 길이 잠깁니다'},
   {t:'12:00',h:'점심 · Bánh xèo Cô Hồng',d:'위생 안심 카페형 (호텔 쪽이면 쿠우쿠우)'},
   {t:'13:30',h:'객실 낮잠',d:''},
-  {t:'15:00',h:'롯데마트 골드코스트 — 장보기',d:'도보 5분. *혼트레·JW엔 마트가 없으니 여기서 미리*: 생수, 아이 간식, 컵라면, 과일, 하이볼용 탄산수·얼음·컵. 기념품은 G7 커피·캐슈넛·건망고·코코넛캔디가 무난합니다',k:1},
+  {t:'15:00',h:'롯데마트 골드코스트 — 장보기',d:'도보 5분. *혼트레는 배달이 안 되니 2박 치를 여기서*: 생수, 아이 간식, 컵라면, 과일, 하이볼용 탄산수·얼음·컵. JW는 배달K가 되니 적게. 기념품은 G7 커피·캐슈넛·건망고·코코넛캔디가 무난합니다',k:1},
   {t:'16:00',h:'마사지 교대 또는 수영장',d:''},
   {t:'17:30',h:'라운지 해피아워',d:''},
   {t:'19:00',h:"저녁 · Pizza 4P's 쉐라톤점",d:'호텔 1층 · *예약 필수*',k:1},
-  {t:'20:30',h:'야시장 잠깐',d:'17:00–23:00 · 400m라 한 바퀴면 끝. 로컬 기념품은 여기서, 흥정 필수'}],
+  {t:'20:30',h:'야시장 → 슈렉샵 기념품',d:'야시장에서 도보 7분 · 슈렉샵 22:30까지 · *카드 안 받는다는 후기 — 현금 준비*. 근처에 Kissa·L Store·수비니어 가든도 몰려 있습니다'}],
  notes:[
+  {kind:'',h:'기념품은 시내에서',d:'제가 찾은 한국인 인기 기념품 가게는 전부 시내에 있습니다. 슈렉샵·Kissa·L Store와 안토이·쏨모이가든이 반경 300m에 몰려 있으니 *10.03~10.05 중 한 번* 몰아서 사세요.'},
   {kind:'warn',h:'비 오면',d:'오전을 접고 *Big Fun 빈컴 쩐푸* 실내 놀이터로. 차 5분, 평점 4.9, 화·수 할인. 두 시간이면 체력이 소진됩니다.'},
   {kind:'',h:'저녁을 바꾸고 싶으면',d:'*스카이라이트* 루프탑에서 야경(도보 4분, 월요일 휴무 — 10.04는 일요일이라 영업). 늦어질수록 클럽이 되니 18–19시에 짧게. 돌아오는 길에 *젤라또* Ivy Dessert.'}]},{id:'d05',date:'10.05',wk:'월',zone:'isle',tag:'→ 혼트레',
- sub:'2일권 1일차. 새벽같이 안 움직입니다 — 조식과 라운지를 다 챙기고 오후에 들어갑니다.',
+ sub:'입도일. 짐 풀고 저녁 파크를 가볍게 — 야간 조명과 타타쇼만.',
  items:[
   {t:'06:40',h:'메인조식',d:'06:30 오픈과 동시에'},
   {t:'12:00',h:'라운지 애프터눈티 — 점심 겸',d:'클럽라운지 애프터눈티로 점심을 대신합니다. *정확한 운영시간은 체크인 때 프런트에 확인*'},
-  {t:'13:00',h:'쉐라톤 체크아웃',d:'16시 보장이지만 오늘은 포기. *파크에서 보내는 시간이 훨씬 값집니다*',k:1},
+  {t:'13:00',h:'쉐라톤 체크아웃',d:'16시 보장이지만 오늘은 일찍 나섭니다',k:1},
   {t:'13:20',h:'빈펄 케이블카 터미널',d:'차 15분'},
-  {t:'13:30',h:'케이블카 10분 → 버기',d:'투숙객 무료 · 강풍이면 스피드보트로 대체'},
-  {t:'14:00',h:'리조트 벨데스크에 짐 맡기기',d:'체크인 전 보관 가능. *수영복·아쿠아슈즈·구명조끼는 미리 작은 가방에 따로 빼두면 편합니다*',k:1},
-  {t:'14:30',h:'빈원더스 입장 — 2일권 1일차',d:'첫 입장 때 *FaceID 촬영*. 무제한 재입장이라 나갔다 와도 됩니다',k:1},
-  {t:'17:30',h:'버기 10분 → 리조트',d:''},
-  {t:'18:00',h:'혼트레 체크인 · 낮잠',d:'',k:1},
-  {t:'19:00',h:'파크 재입장',d:'야간 조명과 분수쇼. 낮보다 훨씬 시원합니다'},
+  {t:'13:30',h:'케이블카 10분 → 버기',d:'투숙객 무제한 무료 · 강풍이면 스피드보트로 대체'},
+  {t:'14:00',h:'리조트 벨데스크에 짐 맡기기',d:'체크인 전 보관 가능',k:1},
+  {t:'14:15',h:'리조트 적응 · 비치 산책',d:'첫날은 무리하지 않습니다'},
+  {t:'16:00',h:'혼트레 체크인',d:'',k:1},
+  {t:'17:00',h:'빈원더스 — 첫 입장',d:'*FaceID 촬영.* 월드가든 산책과 야간 조명, 음악분수. 낮보다 훨씬 시원합니다',k:1},
+  {t:'19:00',h:'타타쇼',d:'야외 아레나 · 조명·물·음악 쇼. 아이들이 제일 좋아하는 시간대'},
   {t:'20:00',h:'폐장 · 리조트 복귀',d:''}],
- notes:[{kind:'elite',h:'체크인 때 물어볼 것',d:'혼트레는 리조트라 클럽라운지가 없습니다. 플래티넘 웰컴기프트를 *조식으로 선택*하고, 업그레이드 시 *Solare 동 조식* 이용 가능 여부를 확인하세요.'}]},{id:'d06',date:'10.06',wk:'화',zone:'isle',tag:'혼트레',
- sub:'2일권 2일차. 평일이라 케이블카 줄이 짧습니다.',
+ notes:[{kind:'elite',h:'체크인 때 물어볼 것',d:'혼트레는 리조트라 클럽라운지가 없습니다. 플래티넘 웰컴기프트를 *조식으로 선택*하고, 업그레이드 시 *Solare 동 조식* 이용 가능 여부를 확인하세요.'},
+  {kind:'warn',h:'섬은 배달이 안 됩니다',d:'혼트레는 케이블카·보트로만 들어가고 FaceID로 입장해서 배달 기사가 못 들어옵니다. 식사는 리조트와 빈원더스 안 식당, 간식은 10.04 롯데마트에서 사온 것으로.'}]},{id:'d06',date:'10.06',wk:'화',zone:'isle',tag:'혼트레',
+ sub:'파크 메인 데이. 오픈런으로 알파인코스터부터, 그다음 동물 먹이주기.',
  items:[
-  {t:'07:00',h:'조식 — 일찍',d:'9시 넘으면 자리 찾기가 어렵습니다'},
-  {t:'08:30',h:'빈원더스 입장 — 개장 시각',d:'어제 FaceID를 찍었으니 바로 통과',k:1},
-  {t:'09:00',h:'다양한 놀거리',d:'알파인 코스터 등. *일부 놀이기구는 키 제한이 있어 3세는 못 타는 게 있을 수 있습니다. 입구 표지판에서 확인하세요*'},
-  {t:'12:00',h:'파크 내 점심',d:''},
-  {t:'13:30',h:'버기 10분 → 리조트 낮잠',d:'무제한 재입장이니 눈치 볼 것 없습니다',k:1},
-  {t:'16:00',h:'재입장 — 아쿠아리움 · 실내존',d:'오션 팰리스는 2026년 2월 재개장 예정이었습니다. 앱에서 한 번 확인하세요'},
-  {t:'19:00',h:'타타쇼 · 야간 조명',d:''},
+  {t:'06:45',h:'조식 — 제일 일찍',d:'오늘은 오픈런이라 서두릅니다'},
+  {t:'08:00',h:'빈원더스 입장 — 개장과 동시에',d:'놀이시설 08:00 시작. *늦으면 알파인코스터·짚라인 줄이 감당이 안 됩니다*',k:1},
+  {t:'08:20',h:'알파인코스터',d:'1회 10분 · 입장권에 포함. *어린아이는 어른과 2인 동반 탑승 가능* — 5세는 같이 타면 됩니다',k:1},
+  {t:'09:30',h:'사파리 · 킹스가든 — 동물 먹이주기',d:'기린·카피바라 먹이주기 체험. 후기마다 아이들 반응이 가장 좋은 구간입니다',k:1},
+  {t:'11:30',h:'페어리랜드 놀이기구',d:'유아용 회전목마·관람차 쪽. 키 제한이 낮습니다'},
+  {t:'12:30',h:'파크 내 점심',d:'메오키친은 맛과 뷰 둘 다 괜찮다는 평'},
+  {t:'14:00',h:'버기 10분 → 리조트 낮잠',d:'*무제한 재입장권이 있어야 가능한 패턴입니다*',k:1},
+  {t:'16:30',h:'재입장 — 아쿠아리움',d:'씨월드 09:00–19:00 · 3만 마리. 실내라 오후 더위를 피합니다'},
+  {t:'19:00',h:'오락실 · 야간 어트랙션',d:'어드벤처랜드 실내 게임존'},
   {t:'20:00',h:'폐장 · 복귀',d:''}],
- notes:[{kind:'warn',h:'비 오면',d:'아쿠아리움·실내존·타타쇼로 하루가 채워집니다. *2일권이라 이틀 중 하루만 맑아도 손해가 적습니다.*'}]},{id:'d07',date:'10.07',wk:'수',zone:'dune',tag:'→ JW 깜란',
- sub:'이동일. 곧장 넘어가서 리조트 오후를 확보하되, 시간 되면 박물관도 괜찮습니다.',
+ notes:[
+  {kind:'warn',h:'오픈런이 오늘의 승부처',d:'후기에 "9시 반에 갔더니 케이블카부터 줄", "1시간 늦어서 짚라인·알파인 포기"가 반복됩니다. *짚라인은 롤러코스터보다 2시간 일찍 마감*하니 아침에 안 타면 끝이에요.'},
+  {kind:'',h:'운영시간이 구역마다 다릅니다',d:'놀이시설 08:00–20:00 · 아쿠아리움 09:00–19:00 · 워터파크 09:00–17:30. 오후 5시 넘으면 잠깐 멈추는 기구가 있다는 후기도 있으니 앱에서 확인하세요.'}]},{id:'d07',date:'10.07',wk:'수',zone:'dune',tag:'→ JW 깜란',
+ sub:'오전은 여유롭게. 씻고 정리해서 깜란으로 넘어갑니다.',
  items:[
   {t:'07:30',h:'조식',d:''},
-  {t:'09:00',h:'리조트 풀 마지막',d:''},
-  {t:'13:00',h:'혼트레 체크아웃',d:'리조트라 레이트 미보장. 안 되면 짐 맡기고 풀 계속',k:1},
-  {t:'13:20',h:'케이블카 → 육지',d:''},
-  {t:'14:00',h:'차량 이동 50분',d:'해양박물관 스톱 고려 — 터미널에서 500m, 4만동, 1시간. 아이들 컨디션 보고 결정',k:1},
+  {t:'09:00',h:'리조트 · 비치 산책',d:'3일권을 샀다면 이 자리에 파크 오전이 들어갑니다',k:1},
+  {t:'11:30',h:'짐 정리',d:''},
+  {t:'12:00',h:'혼트레 체크아웃',d:'물놀이를 안 하니 레이트 체크아웃이 꼭 필요하진 않습니다',k:1},
+  {t:'12:30',h:'케이블카 → 육지',d:''},
+  {t:'13:00',h:'차량 이동 50분',d:'해양박물관 스톱 고려 — 터미널에서 500m, 4만동, 1시간'},
   {t:'15:00',h:'JW 깜란 체크인',d:'',k:1},
   {t:'15:40',h:'인피니티풀 · 라군풀 · 키즈클럽',d:''},
   {t:'18:30',h:'저녁 · Seafood Grill',d:'리조트 내 · 저녁만 운영'}],
- notes:[{kind:'',h:'깜란에서의 방향',d:'JW가 3박 중 제일 비싸다고 방에만 있을 필요는 없습니다. 큰 하루짜리 투어는 이미 무이네에서 끝냈으니, 여기서는 *짧은 외출과 배달 정도*로 균형을 맞춥니다 — 반쎄오 점심, 그랩 배달, 스파 정도.'}]},{id:'d08',date:'10.08',wk:'목',zone:'dune',tag:'JW 깜란',
+ notes:[
+  {kind:'',h:'3일권으로 갈 경우',d:'08:30 입장 → 11:30 복귀 → 12:30 체크아웃으로 세 시간이 더 생깁니다. *물놀이를 안 하니 젖은 짐 문제가 없어* 이동일에 끼워도 부담이 거의 없어요. 추가비용은 가족 전체 $24.87.'},
+  {kind:'',h:'깜란에서의 방향',d:'JW가 3박 중 제일 비싸다고 방에만 있을 필요는 없습니다. 큰 하루짜리 투어는 이미 무이네에서 끝냈으니, 여기서는 *짧은 외출과 배달 정도*로 균형을 맞춥니다 — 반쎄오 점심, 그랩 배달, 스파 정도.'}]},{id:'d08',date:'10.08',wk:'목',zone:'dune',tag:'JW 깜란',
  sub:'사막은 첫날에 끝냈습니다. 오늘은 리조트 안에서.',
  items:[
   {t:'07:30',h:'Clay Craft 조식',d:''},
@@ -1089,7 +1077,7 @@ var BASE={v:2,days:[
   {t:'14:00',h:'객실 낮잠',d:''},
   {t:'16:00',h:'클레이 스튜디오 도자기 페인팅',d:'구운 뒤 완성품을 돌려줍니다. 5세에게 딱',k:1},
   {t:'17:30',h:'비치 · 선셋',d:'10월은 파도가 셀 수 있으니 상태 보고'},
-  {t:'18:30',h:'저녁 · 그랩 배달',d:'기사는 정문 경비실까지만. 앱에서 근처 진입 확인하고 버기 호출하면 안 식습니다'}],
+  {t:'18:30',h:'저녁 · 배달',d:'배달K로 *안토이·쏨모이가든*까지 깜란으로 옵니다. 깜란 로컬은 *Miumiu*(카톡·그랩), 피자킹·하랑은 카톡 문의. 기사는 정문 경비실까지 — 근처 진입 확인하고 버기 호출'}],
  notes:[{kind:'',h:'반나절 외출이 당기면',d:'남깜란 *수오이띠엔 양떼목장*이 왕복 1시간 10분. 사막을 이미 봤으니 필수는 아니지만, 양 먹이주기는 또 다른 재미입니다.'}]},{id:'d09',date:'10.09',wk:'금',zone:'dune',tag:'JW 깜란',
  sub:'오늘의 외출은 점심 한 번. 나머지는 리조트에서.',
  items:[
@@ -1108,7 +1096,7 @@ var BASE={v:2,days:[
   {t:'16:00',h:'체크아웃 · 짐은 벨데스크',d:'리조트라 미보장 · 3–4일 전 앱으로 16시 요청',k:1},
   {t:'17:00',h:'Spa Moc 마사지',d:'차 5분 · 24시간 · 리조트 무료 픽업·드랍',k:1},
   {t:'19:00',h:'복귀 → 디파처룸 샤워',d:'체크아웃 후에도 쓰는 별도 공간'},
-  {t:'19:30',h:'저녁',d:''},
+  {t:'19:30',h:'저녁',d:'리조트, 또는 공항 가는 길 *신라국수*(한국인 사장, 새벽 3시까지)'},
   {t:'21:00',h:'리조트 출발 → 21:20 공항',d:'',k:1},
   {t:'21:40',h:'에어서울 체크인',d:'예약번호 {{pnr}} · 카운터 오픈 시각 미리 확인'},
   {t:'22:00',h:'출국심사 · 보안',d:''},
@@ -1134,9 +1122,16 @@ function subst(s){ return String(s==null?'':s).replace(/\{\{(\w+)\}\}/g,function
 function fmt(s){ return esc(subst(s))
   .replace(/\u0001MISS\u0001/g,'<span class="miss">···</span>')
   .replace(/\*([^*]+)\*/g,'<b>$1</b>').replace(/\n/g,'<br>'); }
+function Vd(d){ return (d&&d.useAlt&&d.alt)?d.alt:d; }
+function migratePlan(p){
+  if(!p||!p.days) return p;
+  p.days.forEach(function(d){ var b=baseDay(d.id);
+    if(b&&b.alt&&!d.alt){ d.alt=JSON.parse(JSON.stringify(b.alt)); d.altLabelA=b.altLabelA; } });
+  return p;
+}
 function baseDay(id){ for(var i=0;i<BASE.days.length;i++) if(BASE.days[i].id===id) return BASE.days[i]; return null; }
 function isEdited(d){ var b=baseDay(d.id);
-  return !b || JSON.stringify({i:d.items,n:d.notes})!==JSON.stringify({i:b.items,n:b.notes}); }
+  return !b || JSON.stringify({i:d.items,n:d.notes,a:d.alt||null})!==JSON.stringify({i:b.items,n:b.notes,a:b.alt||null}); }
 
 function mins(t){ var m=/^\s*(\d{1,2})\s*[:.]?\s*(\d{2})\s*$/.exec(t||''); return m?(+m[1])*60+(+m[2]):null; }
 function isOvernight(items){ for(var i=0;i<items.length;i++){ var v=mins(items[i].t); if(v!=null&&v>=720) return true; } return false; }
@@ -1153,7 +1148,8 @@ function todayInfo(){
   return null;
 }
 
-function payload(){ return {v:2, updatedAt:new Date().toISOString(), plan:plan, checks:checks}; }
+function snap(){ return JSON.stringify({p:plan,c:checks,l:places,x:placesDeleted}); }
+function payload(){ return {v:3, updatedAt:new Date().toISOString(), plan:plan, checks:checks, places:places, placesDeleted:placesDeleted}; }
 function touch(){ localTs=Date.now(); LS.set(K_TS,String(localTs)); }
 function saveLocal(){
   LS.set(K_PLAN,JSON.stringify(plan));
@@ -1162,7 +1158,7 @@ function saveLocal(){
 }
 function dirty(){
   if(!remoteSnapshot) return isEdited({id:'',items:[],notes:[]}) ? false : hasAnyEdit();
-  return JSON.stringify({p:plan,c:checks})!==remoteSnapshot;
+  return snap()!==remoteSnapshot;
 }
 function hasAnyEdit(){ for(var i=0;i<plan.days.length;i++) if(isEdited(plan.days[i])) return true; return false; }
 
@@ -1182,17 +1178,20 @@ function refreshStatus(){
 function render(){
   var td=todayInfo(), out='';
   plan.days.forEach(function(d,di){
-    var isToday = td && td.id===d.id;
-    var ov=isOvernight(d.items), nextDone=false;
+    var isToday = td && td.id===d.id, V=Vd(d);
+    var ov=isOvernight(V.items), nextDone=false;
     out+='<article class="day" id="'+esc(d.id)+'"'+(isToday?' data-today="1"':'')+'>'
       +'<div class="dayhead"><div class="dnum">'+esc(d.date)+'</div><div class="dwk">'+esc(d.wk)+'</div>'
       +(isToday?'<span class="todaypill">오늘</span>':'')
       +(isEdited(d)?'<span class="edited">수정됨</span>':'')
       +'<div class="dtag" data-z="'+esc(d.zone)+'">'+esc(d.tag)+'</div></div>';
-    if(d.sub) out+='<p class="dsub">'+fmt(d.sub)+'</p>';
+    if(d.alt) out+='<div class="vtog" role="group" aria-label="일정안 선택">'
+      +'<button type="button" data-act="vA" data-di="'+di+'" data-on="'+(d.useAlt?0:1)+'">A안 · '+esc(d.altLabelA||'기본')+'</button>'
+      +'<button type="button" data-act="vB" data-di="'+di+'" data-on="'+(d.useAlt?1:0)+'">B안 · '+esc(d.alt.label||'대안')+'</button></div>';
+    if(V.sub) out+='<p class="dsub">'+fmt(V.sub)+'</p>';
 
     out+='<ul class="tl">';
-    d.items.forEach(function(it,ii){
+    V.items.forEach(function(it,ii){
       var lk=it.poi?poiById(it.poi):null;
       var poi=lk?{id:lk.id,tab:lk.tab,map:lk.map}:matchPoi(it.h+' '+(it.d||'')), mark='';
       if(isToday){
@@ -1211,7 +1210,7 @@ function render(){
         +'<a class="poilink-map" href="'+poi.map+'" target="_blank" rel="noopener">지도</a></div>';
       out+='<span class="rowctl">'
         +'<button class="mini" data-act="up" aria-label="위로"'+(ii===0?' disabled':'')+'>↑</button>'
-        +'<button class="mini" data-act="down" aria-label="아래로"'+(ii===d.items.length-1?' disabled':'')+'>↓</button>'
+        +'<button class="mini" data-act="down" aria-label="아래로"'+(ii===V.items.length-1?' disabled':'')+'>↓</button>'
         +'<button class="mini" data-x="1" data-act="del" aria-label="삭제">✕</button>'
         +'</span></li>';
     });
@@ -1222,7 +1221,7 @@ function render(){
       +'<button data-act="addnote" data-di="'+di+'">＋ 메모</button>'
       +(isEdited(d)?'<button data-act="resetday" data-di="'+di+'">이 날 되돌리기</button>':'')+'</div>';
 
-    (d.notes||[]).forEach(function(n,ni){
+    (V.notes||[]).forEach(function(n,ni){
       out+='<div class="note" data-kind="'+esc(n.kind||'')+'" data-di="'+di+'" data-ii="'+ni+'" data-type="note">'
         +(n.h?'<b>'+fmt(n.h)+'</b><br>':'')+fmt(n.d)
         +'<span class="rowctl"><button class="mini" data-act="editnote" aria-label="메모 수정">✎</button>'
@@ -1275,8 +1274,8 @@ function observeDays(){
 var sheet=document.getElementById('sheet');
 function openSheet(kind,di,ii){
   target={kind:kind,di:di,ii:ii};
-  var isNote=kind==='note', d=plan.days[di];
-  var o=isNote?(ii==null?{kind:'',h:'',d:''}:d.notes[ii]):(ii==null?{t:'',h:'',d:'',k:0}:d.items[ii]);
+  var isNote=kind==='note', d=plan.days[di], vv=Vd(d);
+  var o=isNote?(ii==null?{kind:'',h:'',d:''}:vv.notes[ii]):(ii==null?{t:'',h:'',d:'',k:0}:vv.items[ii]);
   document.getElementById('sheetTitle').textContent=
     (ii==null?(isNote?'메모 추가':'일정 추가'):(isNote?'메모 수정':'일정 수정'))+' · '+d.date;
   document.getElementById('fTimeWrap').hidden=isNote;
@@ -1299,6 +1298,8 @@ document.getElementById('sCancel').addEventListener('click',closeSheet);
 sheet.querySelector('.scrim').addEventListener('click',closeSheet);
 document.addEventListener('keydown',function(e){
   if(e.key!=='Escape') return;
+  if(document.getElementById('importsheet').dataset.on==='1'){ document.getElementById('importsheet').dataset.on='0'; return; }
+  if(document.getElementById('placesheet').dataset.on==='1'){ document.getElementById('placesheet').dataset.on='0'; return; }
   if(document.getElementById('picksheet').dataset.on==='1'){ document.getElementById('picksheet').dataset.on='0'; return; }
   if(document.getElementById('poisheet').dataset.on==='1'){ document.getElementById('poisheet').dataset.on='0'; return; }
   if(sheet.dataset.on==='1') closeSheet();
@@ -1306,7 +1307,7 @@ document.addEventListener('keydown',function(e){
 
 document.getElementById('sSave').addEventListener('click',function(){
   if(!target) return;
-  var d=plan.days[target.di];
+  var d=Vd(plan.days[target.di]); if(!d.notes) d.notes=[];
   var h=document.getElementById('fHead').value.trim();
   var dd=document.getElementById('fDetail').value.trim();
   if(!h){ document.getElementById('fHead').focus(); return; }
@@ -1323,7 +1324,7 @@ document.getElementById('sSave').addEventListener('click',function(){
 });
 document.getElementById('sDel').addEventListener('click',function(){
   if(!target||target.ii==null) return;
-  var d=plan.days[target.di];
+  var d=Vd(plan.days[target.di]);
   if(target.kind==='note') d.notes.splice(target.ii,1); else d.items.splice(target.ii,1);
   closeSheet(); render(); saveLocal();
 });
@@ -1341,35 +1342,21 @@ function leadText(node){                 /* 자식 태그 전까지의 텍스트
   return s.trim();
 }
 function openPoiSheet(tab,id){
-  var el=document.getElementById(id);
-  if(!el){ return; }
-  var pn=el.querySelector('.pn'), ps=el.querySelector('.ps');
-  var tag=pn?pn.querySelector('b.tg'):null, meta=pn?pn.querySelector('u'):null;
-
-  var cat=(tab==='eat'?'맛집':'관광');
-  var list=el.closest('.plist'), grp=list?list.previousElementSibling:null;
-  if(grp&&grp.classList.contains('grp')){
-    var h=grp.querySelector('h4'); if(h) cat+=' · '+h.textContent.trim();
-  }
-  document.getElementById('poiCat').textContent=cat;
-  var badges='';
-  [].forEach.call(pn?pn.querySelectorAll('b.tg'):[],function(t){
-    badges+=' <b class="tg" data-t="'+esc(t.getAttribute('data-t')||'')+'">'+esc(t.textContent)+'</b>'; });
-  document.getElementById('poiName').innerHTML=esc(leadText(pn))+badges;
-  var krEl=pn?pn.querySelector('b.kr'):null;
-  document.getElementById('poiKr').innerHTML = krEl
-    ? '<b class="kr" data-k="'+esc(krEl.getAttribute('data-k')||'')+'">'+esc(krEl.textContent)+'</b>' : '';
-
-  var rateEl=document.getElementById('poiRate'), r=leadText(ps);
-  if(r){
-    var c=ps.querySelector('s');
-    rateEl.style.display='flex';
-    rateEl.innerHTML='<b>'+esc(r)+'</b><span>구글 리뷰 '+esc(c?c.textContent:'')+'개</span>';
-  } else rateEl.style.display='none';
-
-  document.getElementById('poiMeta').innerHTML=meta?meta.innerHTML.replace(/<b class="kr"[\s\S]*?<\/b>/,''):'';
-  document.getElementById('poiMap').href=el.getAttribute('href');
-  backTo={tab:tab,id:id};
+  var p=placeById(id); if(!p) return;
+  var ref=refPoint(pView[p.tab].ref), dk=distOf(p,ref);
+  document.getElementById('poiCat').textContent=(p.tab==='eat'?'맛집':'관광')+(p.grp?' · '+p.grp:'')
+    +(dk!=null?' · '+ref.l+'에서 '+fmtKm(dk):'');
+  var badges=(p.tags||[]).map(function(t){ return ' <b class="tg" data-t="'+esc(t.t)+'">'+esc(t.l)+'</b>'; }).join('')
+    +(p.del?' <b class="dl" data-d="'+esc(p.del)+'">'+esc(DEL_LABEL[p.del]||p.del)+'</b>':'');
+  document.getElementById('poiName').innerHTML=esc(p.name)+badges;
+  document.getElementById('poiKr').innerHTML=KR_LABEL[p.kr]?'<b class="kr" data-k="'+esc(p.kr)+'">'+KR_LABEL[p.kr]+'</b>':'';
+  var rateEl=document.getElementById('poiRate');
+  if(p.rating){ rateEl.style.display='flex';
+    rateEl.innerHTML='<b>'+esc(p.rating)+'</b><span>'+(p.count?'구글 리뷰 '+esc(p.count)+'개':'')+'</span>'; }
+  else rateEl.style.display='none';
+  document.getElementById('poiMeta').innerHTML=fmt(p.desc||'');
+  document.getElementById('poiMap').href=placeUrl(p);
+  backTo={tab:p.tab,id:id};
   poisheet.dataset.on='1';
 }
 function closePoiSheet(){ poisheet.dataset.on='0'; }
@@ -1388,6 +1375,7 @@ function jumpToPoi(tab,id){
   switchTab(tab);
   setTimeout(function(){
     var el=document.getElementById(id);
+    if(!el&&pView[tab]){ pView[tab].f='all'; pView[tab].mode='grp'; renderPlaces(tab); el=document.getElementById(id); }
     if(el){ el.scrollIntoView({behavior:'auto',block:'center'});
       el.classList.add('poi-flash');
       setTimeout(function(){ el.classList.remove('poi-flash'); },1400); }
@@ -1461,6 +1449,133 @@ document.getElementById('pickList').addEventListener('click',function(e){
   drawLinkRow(); closePicker();
 });
 
+/* ═══ 장소 목록 조작 ═══ */
+var placesheet=document.getElementById('placesheet'), importsheet=document.getElementById('importsheet');
+var plTarget=null, plPid='', plUrl='', impTab='eat';
+function $v(id){ return document.getElementById(id).value; }
+function $s(id,v){ document.getElementById(id).value=(v==null?'':v); }
+function fillGrpList(){
+  var tab=$v('plTab'), seen={}, out='';
+  (BASE_GROUPS[tab]||[]).concat(places.filter(function(p){ return p.tab===tab; }).map(function(p){ return {n:p.grp}; }))
+    .forEach(function(g){ if(g.n&&!seen[g.n]){ seen[g.n]=1; out+='<option value="'+esc(g.n)+'">'; } });
+  document.getElementById('plGrpList').innerHTML=out;
+}
+function openPlaceSheet(id,tabHint){
+  var p=id?placeById(id):null; plTarget=p?p.id:null; plPid=p?p.pid||'':''; plUrl=p?p.url||'':'';
+  document.getElementById('plTitle').textContent=p?'장소 수정':'장소 추가';
+  $s('plUrl',plUrl); document.getElementById('plMsg').textContent='';
+  $s('plName',p?p.name:''); $s('plTab',p?p.tab:(tabHint||'eat')); $s('plGrp',p?p.grp:'');
+  var t0=(p&&p.tags&&p.tags[0])||{}; $s('plTag',t0.l||''); $s('plTagT',t0.t||'good');
+  $s('plKr',p?p.kr:''); $s('plDel',p?p.del:''); $s('plDesc',p?p.desc:'');
+  $s('plRate',p?p.rating:''); $s('plCnt',p?p.count:'');
+  $s('plLat',p&&p.lat!=null?p.lat:''); $s('plLng',p&&p.lng!=null?p.lng:'');
+  document.getElementById('plDelBtn').style.display=p?'block':'none';
+  fillGrpList(); placesheet.dataset.on='1';
+  setTimeout(function(){ document.getElementById(p?'plName':'plUrl').focus(); },60);
+}
+function closePlaceSheet(){ placesheet.dataset.on='0'; plTarget=null; }
+document.getElementById('plTab').addEventListener('change',fillGrpList);
+document.getElementById('plParse').addEventListener('click',function(){
+  var u=$v('plUrl'); if(!u.trim()) return;
+  var r=parseMapLink(u), got=[], msg=document.getElementById('plMsg');
+  plUrl=r.url;
+  if(r.short){ msg.textContent='짧은 공유 링크(maps.app.goo.gl)는 브라우저가 원래 주소를 알아낼 수 없습니다. 이름은 직접 적어 주세요 — 링크는 저장돼서 지도 버튼은 작동합니다. 좌표까지 넣으려면 링크를 한 번 열고 주소창의 긴 주소를 붙여넣으세요.'; return; }
+  plPid=r.pid||'';
+  if(r.name){ if(!$v('plName').trim()) $s('plName',r.name); got.push('이름'); }
+  if(r.lat!=null){ $s('plLat',r.lat); $s('plLng',r.lng); got.push('좌표'); }
+  if(r.pid) got.push('장소 ID');
+  msg.textContent=got.length?got.join(' · ')+'를 채웠습니다. 평점·리뷰 수·영업시간은 링크만으로는 못 가져오니 직접 적거나 비워두세요.'
+    :'링크에서 읽을 수 있는 정보가 없습니다. 이름과 위치를 직접 적어 주세요.';
+});
+document.getElementById('plSave').addEventListener('click',function(){
+  var name=$v('plName').trim(); if(!name){ document.getElementById('plName').focus(); return; }
+  var lat=parseFloat($v('plLat')), lng=parseFloat($v('plLng'));
+  var o={ id:plTarget||('u-'+Date.now().toString(36)), tab:$v('plTab'), grp:$v('plGrp').trim()||'내가 추가한 곳',
+    name:name, tags:$v('plTag').trim()?[{t:$v('plTagT'),l:$v('plTag').trim()}]:[], kr:$v('plKr'), del:$v('plDel'),
+    desc:$v('plDesc').trim(), rating:$v('plRate').trim(), count:$v('plCnt').trim(),
+    lat:isFinite(lat)?lat:null, lng:isFinite(lng)?lng:null, pid:plPid||'', url:plUrl||'' };
+  if(plTarget){
+    for(var i=0;i<places.length;i++) if(places[i].id===plTarget){
+      var old=places[i]; if(old.tags&&old.tags.length>1) o.tags=o.tags.concat(old.tags.slice(1));
+      places[i]=o; break; }
+  } else places.push(o);
+  var t=o.tab; closePlaceSheet(); pView[t].f='all'; afterPlaceChange();
+});
+document.getElementById('plDelBtn').addEventListener('click',function(){
+  if(!plTarget) return; var p=placeById(plTarget);
+  if(p&&confirm('"'+p.name+'"을(를) 목록에서 지울까요?')){ var id=plTarget; closePlaceSheet(); deletePlace(id); }
+});
+document.getElementById('plCancel').addEventListener('click',closePlaceSheet);
+placesheet.querySelector('.scrim').addEventListener('click',closePlaceSheet);
+
+var IMPORT_PROMPT='아래 구글 지도 링크의 장소들을 이 JSON 배열 형식으로 만들어줘. JSON만 출력해.\n'
+ +'[{"name":"가게 이름","tab":"eat 또는 see","grp":"그룹명(예: 깜란 · 깜득)","lat":위도,"lng":경도,'
+ +'"pid":"구글 place_id(알면)","rating":"4.5","count":"1,234","kr":"hi(한국인 많음)|local(현지 전용)|warn(한국인 주의)|빈칸",'
+ +'"del":"bdk(배달K 깜란)|local(깜란 배달)|ask(카톡 문의)|pickup(무료 픽업)|빈칸","tag":"짧은 태그","tagT":"good|short|rain|care",'
+ +'"desc":"첫 줄: 거리·영업시간\\n둘째 줄: 특징과 주의점(별표로 굵게)"}]\n\n링크:\n';
+function openImport(tab){ impTab=tab; $s('impBox',''); document.getElementById('impMsg').textContent=''; importsheet.dataset.on='1'; }
+function closeImport(){ importsheet.dataset.on='0'; }
+document.getElementById('impCancel').addEventListener('click',closeImport);
+importsheet.querySelector('.scrim').addEventListener('click',closeImport);
+document.getElementById('impTpl').addEventListener('click',function(){
+  var self=this;
+  if(navigator.clipboard) navigator.clipboard.writeText(IMPORT_PROMPT).then(function(){ self.textContent='복사됨'; },function(){ $s('impBox',IMPORT_PROMPT); });
+  else $s('impBox',IMPORT_PROMPT);
+  setTimeout(function(){ self.textContent='형식 복사'; },1600);
+});
+document.getElementById('impGo').addEventListener('click',function(){
+  var raw=$v('impBox').trim(), msg=document.getElementById('impMsg'); if(!raw) return;
+  raw=raw.replace(/^```(?:json)?/i,'').replace(/```\s*$/,'').trim();
+  var arr; try{ arr=JSON.parse(raw); }catch(e){ msg.textContent='JSON 형식이 아닙니다. AI 결과에서 대괄호 [ ] 부분만 붙여넣어 보세요.'; return; }
+  if(!Array.isArray(arr)) arr=[arr];
+  var n=0, ts=Date.now().toString(36), lastTab=impTab;
+  arr.forEach(function(x,i){ if(!x||!x.name) return;
+    var lat=parseFloat(x.lat), lng=parseFloat(x.lng), tab=(x.tab==='see'||x.tab==='eat')?x.tab:impTab;
+    places.push({ id:'u-'+ts+'-'+i, tab:tab, grp:String(x.grp||'내가 추가한 곳'), name:String(x.name),
+      tags:x.tag?[{t:['good','short','rain','care'].indexOf(x.tagT)>-1?x.tagT:'good',l:String(x.tag)}]:[],
+      kr:['hi','local','warn'].indexOf(x.kr)>-1?x.kr:'', del:['bdk','local','ask','pickup'].indexOf(x.del)>-1?x.del:'',
+      desc:String(x.desc||''), rating:x.rating!=null?String(x.rating):'', count:x.count!=null?String(x.count):'',
+      lat:isFinite(lat)?lat:null, lng:isFinite(lng)?lng:null, pid:x.pid?String(x.pid):'', url:x.url?String(x.url):'' });
+    n++; lastTab=tab; });
+  if(!n){ msg.textContent='이름(name)이 있는 항목이 없습니다.'; return; }
+  pView[lastTab].f='all'; afterPlaceChange(); msg.textContent=n+'곳을 추가했습니다.';
+});
+
+['see','eat'].forEach(function(tab){
+  var tools=document.querySelector('.ptools[data-tab="'+tab+'"]');
+  tools.addEventListener('click',function(e){
+    var b=e.target.closest('[data-pt]'); if(!b||b.tagName==='SELECT') return;
+    var v=pView[tab], k=b.dataset.pt;
+    if(k==='mode'){ v.mode=b.dataset.v; if(v.mode==='dist'&&v.ref==='here'&&!hereLoc) return askHere(tab); }
+    else if(k==='f') v.f=b.dataset.v;
+    else if(k==='edit') v.edit=!v.edit;
+    else if(k==='add') return openPlaceSheet(null,tab);
+    else if(k==='import') return openImport(tab);
+    renderPlaces(tab);
+  });
+  tools.addEventListener('change',function(e){
+    if(e.target.dataset.pt!=='ref') return;
+    pView[tab].ref=e.target.value;
+    if(e.target.value==='here'&&!hereLoc) return askHere(tab);
+    renderPlaces(tab);
+  });
+  document.getElementById('list-'+tab).addEventListener('click',function(e){
+    var b=e.target.closest('[data-pa]');
+    if(b){ e.preventDefault(); e.stopPropagation();
+      if(b.dataset.pa==='edit') openPlaceSheet(b.dataset.pid);
+      else { var p=placeById(b.dataset.pid); if(p&&confirm('"'+p.name+'"을(를) 목록에서 지울까요?')) deletePlace(p.id); }
+      return; }
+    if(pView[tab].edit){ var a=e.target.closest('a.poi'); if(a){ e.preventDefault(); openPlaceSheet(a.id); } }
+  });
+});
+function askHere(tab){
+  if(!navigator.geolocation){ alert('이 기기에서는 위치를 쓸 수 없습니다.'); pView[tab].ref='auto'; return renderPlaces(tab); }
+  navigator.geolocation.getCurrentPosition(function(pos){
+    hereLoc={k:'here',l:'현재 위치',lat:pos.coords.latitude,lng:pos.coords.longitude}; renderPlaces(tab);
+  },function(){ alert('위치 권한이 없어 현재 위치를 못 가져왔습니다. 숙소 기준으로 보여드립니다.'); pView[tab].ref='auto'; renderPlaces(tab); },
+  {enableHighAccuracy:false,timeout:8000,maximumAge:300000});
+}
+
 /* 아래로 쓸어내려 닫기 */
 function attachDrag(sheetEl,onClose){
   var card=sheetEl.querySelector('.sheetcard'), y0=null, dy=0;
@@ -1483,6 +1598,8 @@ function attachDrag(sheetEl,onClose){
 attachDrag(poisheet,closePoiSheet);
 attachDrag(sheet,closeSheet);
 attachDrag(picksheet,closePicker);
+attachDrag(placesheet,closePlaceSheet);
+attachDrag(importsheet,closeImport);
 
 document.getElementById('days').addEventListener('click',function(e){
   var jb=e.target.closest('.poilink-btn');
@@ -1490,10 +1607,11 @@ document.getElementById('days').addEventListener('click',function(e){
   var btn=e.target.closest('button');
   if(btn){
     var act=btn.dataset.act;
+    if(act==='vA'||act==='vB'){ plan.days[+btn.dataset.di].useAlt=(act==='vB'); render(); saveLocal(); return; }
     if(act==='additem'){ openSheet('item',+btn.dataset.di,null); return; }
     if(act==='addnote'){ openSheet('note',+btn.dataset.di,null); return; }
     if(act==='sort'){
-      var day=plan.days[+btn.dataset.di], ov=isOvernight(day.items);
+      var day=Vd(plan.days[+btn.dataset.di]), ov=isOvernight(day.items);
       day.items.sort(function(a,b){ var x=sortKey(a.t,ov),y=sortKey(b.t,ov);
         if(x==null) return 1; if(y==null) return -1; return x-y; });
       render(); saveLocal(); return;
@@ -1504,7 +1622,7 @@ document.getElementById('days').addEventListener('click',function(e){
       render(); saveLocal(); return;
     }
     var host=btn.closest('[data-type]'); if(!host) return;
-    var di=+host.dataset.di, ii=+host.dataset.ii, day2=plan.days[di];
+    var di=+host.dataset.di, ii=+host.dataset.ii, day2=Vd(plan.days[di]);
     if(act==='up'&&ii>0){ var a=day2.items.splice(ii,1)[0]; day2.items.splice(ii-1,0,a); render(); saveLocal(); }
     else if(act==='down'){ var c=day2.items.splice(ii,1)[0]; day2.items.splice(ii+1,0,c); render(); saveLocal(); }
     else if(act==='del'){ day2.items.splice(ii,1); render(); saveLocal(); }
@@ -1551,10 +1669,12 @@ function ghHeaders(){
   return h;
 }
 function applyRemote(parsed){
-  if(parsed&&parsed.plan&&parsed.plan.days){ plan=parsed.plan; }
+  if(parsed&&parsed.plan&&parsed.plan.days){ plan=migratePlan(parsed.plan); }
+  if(parsed&&Array.isArray(parsed.places)){ placesDeleted=parsed.placesDeleted||[]; places=migratePlaces(parsed.places,placesDeleted);
+    LS.set(K_PL,JSON.stringify(places)); LS.set(K_PLDEL,JSON.stringify(placesDeleted)); buildPoiIndex(); renderAllPlaces(); }
   if(parsed&&parsed.checks){ checks=parsed.checks;
     document.querySelectorAll('.ck input').forEach(function(b){ b.checked=!!checks[b.dataset.id]; }); }
-  remoteSnapshot=JSON.stringify({p:plan,c:checks});
+  remoteSnapshot=snap();
   LS.set(K_PLAN,JSON.stringify(plan)); LS.set(K_CHK,JSON.stringify(checks));
   localTs=remoteTs; LS.set(K_TS,String(localTs));
   render();
@@ -1571,8 +1691,9 @@ async function pullFromGitHub(manual){
     currentFileSha=data.sha;
     var parsed=JSON.parse(decodeURIComponent(escape(atob(data.content.replace(/\s/g,'')))));
     remoteTs=parsed.updatedAt?Date.parse(parsed.updatedAt):0;
-    var remoteStr=JSON.stringify({p:parsed.plan||plan,c:parsed.checks||checks});
-    var localStr=JSON.stringify({p:plan,c:checks});
+    var remoteStr=JSON.stringify({p:parsed.plan?migratePlan(parsed.plan):plan,c:parsed.checks||checks,
+      l:Array.isArray(parsed.places)?parsed.places:places,x:parsed.placesDeleted||placesDeleted});
+    var localStr=snap();
 
     if(remoteStr===localStr){ remoteSnapshot=remoteStr; refreshStatus();
       if(manual) st.textContent='이미 최신입니다.'; return; }
@@ -1618,7 +1739,7 @@ async function pushToGitHub(){
       body:JSON.stringify(body)});
     if(!p.ok){ var e=await p.text(); throw new Error('커밋 실패 ('+p.status+') '+e.slice(0,120)); }
     currentFileSha=(await p.json()).content.sha;
-    remoteSnapshot=JSON.stringify({p:plan,c:checks});
+    remoteSnapshot=snap();
     remoteTs=Date.now(); localTs=remoteTs; LS.set(K_TS,String(localTs));
     refreshStatus();
     alert('저장소에 커밋되었습니다.');
@@ -1672,7 +1793,7 @@ document.querySelectorAll('.ck input').forEach(function(b){
 
 /* backup */
 document.getElementById('bkpCopy').addEventListener('click',function(){
-  var code=btoa(unescape(encodeURIComponent(JSON.stringify({plan:plan,checks:checks,secrets:secrets}))));
+  var code=btoa(unescape(encodeURIComponent(JSON.stringify({plan:plan,checks:checks,secrets:secrets,places:places,placesDeleted:placesDeleted}))));
   var box=document.getElementById('bkpBox'); box.value=code; box.select();
   if(navigator.clipboard) navigator.clipboard.writeText(code).catch(function(){});
   var self=this; self.textContent='복사됨';
@@ -1683,7 +1804,8 @@ document.getElementById('bkpLoad').addEventListener('click',function(){
   var self=this;
   try{
     var o=JSON.parse(decodeURIComponent(escape(atob(v))));
-    if(o.plan&&o.plan.days) plan=o.plan;
+    if(o.plan&&o.plan.days) plan=migratePlan(o.plan);
+    if(Array.isArray(o.places)){ placesDeleted=o.placesDeleted||[]; places=migratePlaces(o.places,placesDeleted); savePlacesLocal(); buildPoiIndex(); renderAllPlaces(); }
     if(o.checks){ checks=o.checks;
       document.querySelectorAll('.ck input').forEach(function(b){ b.checked=!!checks[b.dataset.id]; }); }
     if(o.secrets){ secrets=o.secrets; LS.set(K_SEC,JSON.stringify(secrets)); loadSecretFields(); }
@@ -1698,8 +1820,13 @@ document.getElementById('bkpLoad').addEventListener('click',function(){
   try{ var p=LS.get(K_PLAN); if(p){ var o=JSON.parse(p); if(o&&o.days) plan=o; } }catch(e){}
   try{ var c=LS.get(K_CHK); if(c) checks=JSON.parse(c)||{}; }catch(e){}
   try{ localTs=parseInt(LS.get(K_TS)||'0',10)||0; }catch(e){}
+  try{ var pl=LS.get(K_PL); if(pl){ var arr=JSON.parse(pl); if(Array.isArray(arr)) places=arr; } }catch(e){}
+  try{ var px=LS.get(K_PLDEL); if(px) placesDeleted=JSON.parse(px)||[]; }catch(e){}
+  places=migratePlaces(places,placesDeleted);
+  plan=migratePlan(plan);
 })();
 buildPoiIndex();
+renderAllPlaces();
 render();
 loadSecretFields();
 document.querySelectorAll('.ck input').forEach(function(b){ b.checked=!!checks[b.dataset.id]; });
