@@ -300,6 +300,7 @@ function route() {
   if (p[0] === 't' && p[1]) return { view: 'trip', id: p[1], tab: p[2] || 'auto', sub: p[3] || null };
   if (p[0] === 'new') return { view: 'new', id: p[1] || null };
   if (p[0] === 'settings') return { view: 'settings' };
+  if (p[0] === 'trips') return { view: 'home', list: true };
   return { view: 'home' };
 }
 export const go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
@@ -338,7 +339,7 @@ function ctxFor(rec, r) {
     here: () => S.here,
     async saveDataset(ds) { const r = S.dsRecs.get(ds.id); await putDs({ id: ds.id, data: ds, base: r ? r.base : null, sha: r ? r.sha : null }); },
     async deleteLocal() {
-      await db.del('trips', rec.id); S.trips.delete(rec.id); go('#/'); toast('이 기기에서 지웠어요. 저장소의 파일은 그대로예요.');
+      await db.del('trips', rec.id); S.trips.delete(rec.id); go('#/trips'); toast('이 기기에서 지웠어요. 저장소의 파일은 그대로예요.');
     },
     async addTrip(data, secretValues) { const nr = await saveImported(api, data, secretValues); return nr; },
     allTrips: () => [...S.trips.values()].map((x) => x.data),
@@ -372,7 +373,7 @@ export function render() {
     console.error(e);
     node = h('main.page', section('화면을 그리다 문제가 생겼어요', h('p', String(e && e.message || e)),
       h('p.hint', '여행 데이터의 형식이 어긋났을 수 있어요. [데이터] 화면에서 JSON을 내보내 확인하거나 저장소에서 다시 불러오세요.'),
-      btn('홈으로', () => go('#/'))));
+      btn('홈으로', () => go('#/trips'))));
   }
   clear(app).appendChild(node);
   window.scrollTo(0, keepScroll);
@@ -415,7 +416,7 @@ function renderTrip(r) {
       fetchTrip(r.id, inIndex.file).then((x) => { if (x) render(); else toast('여행 파일을 찾지 못했어요.'); }).catch((e) => toast(e.message));
       return h('main.page', empty('저장소에서 여행을 내려받는 중이에요…'));
     }
-    return h('main.page', empty('이 기기에 없는 여행이에요.', btn('홈으로', () => go('#/'))));
+    return h('main.page', empty('이 기기에 없는 여행이에요.', btn('홈으로', () => go('#/trips'))));
   }
   const trip = rec.data;
   const ph = phase(trip.meta, trip.meta.timezone);
@@ -435,8 +436,9 @@ function renderTrip(r) {
   const view = { today: viewToday, plan: viewPlan, places: viewPlaces, prep: viewPrep, sos: viewSos, more: viewMore }[tab];
   const sub = ph.key === 'upcoming' ? `D-${ph.dday}` : ph.key === 'ongoing' ? `${ph.dayNo}일째` : '지난 여행';
   const header = h('header.trip-head',
-    h('a.icon-btn.back', { href: '#/', 'aria-label': '여행 목록' }, '‹'),
-    h('div.trip-title', h('h1', trip.meta.title), h('div.trip-sub', `${fmtDate(trip.meta.start)} – ${fmtDate(trip.meta.end)} · ${sub}`)),
+    h('button.icon-btn.menu', { type: 'button', 'aria-label': '여행 고르기', onclick: () => openTripPicker(rec.id) }, '☰'),
+    h('button.trip-title', { type: 'button', 'aria-label': '여행 고르기', onclick: () => openTripPicker(rec.id) },
+      h('h1', trip.meta.title, h('span.caret', { 'aria-hidden': 'true' }, ' ▾')), h('div.trip-sub', `${fmtDate(trip.meta.start)} – ${fmtDate(trip.meta.end)} · ${sub}`)),
     syncChip(rec));
   const banner = S.conflict[rec.id]
     ? h('div.banner.warn', S.status[rec.id] || '', ' ', btn('해결', () => resolveConflict(rec), 'small'))
@@ -468,7 +470,44 @@ function tripCard(t, rec, entry) {
       m.summary ? h('p.ticket-sum', m.summary) : null,
       marks.length ? h('div.ticket-marks', marks) : null));
 }
+/* 여행 고르기 (헤더 메뉴) */
+function openTripPicker(currentId) {
+  const items = [...S.trips.values()].map((r) => r.data);
+  for (const e of (S.index && S.index.trips) || []) if (!S.trips.has(e.id)) items.push({ id: e.id, meta: e, _remote: true });
+  const groups = { ongoing: [], upcoming: [], past: [] };
+  for (const t of items) groups[phase(t.meta, t.meta.timezone || 'Asia/Seoul').key].push(t);
+  groups.upcoming.sort((a, b) => String(a.meta.start).localeCompare(String(b.meta.start)));
+  groups.past.sort((a, b) => String(b.meta.start).localeCompare(String(a.meta.start)));
+  const row = (t) => h('li', h('button.prow' + (t.id === currentId ? '.current' : ''), { type: 'button', 'aria-current': t.id === currentId ? 'true' : null,
+    onclick: () => { s.close(); go('#/t/' + encodeURIComponent(t.id)); } },
+    h('span.pick-dot', { style: { background: /^#[0-9a-f]{6}$/i.test(t.meta.accent || '') ? t.meta.accent : '#8B9092' } }),
+    h('div.prow-main', h('div.prow-name', t.meta.title || t.id, t.id === currentId ? pill('지금 보는 여행', 'accent') : null, t._remote ? pill('저장소에만', 'info') : null),
+      h('div.prow-sub', `${fmtDate(t.meta.start)} – ${fmtDate(t.meta.end)}`))));
+  const grp = (title, arr) => (arr.length ? h('div', h('h3.group-title', title), h('ul.plist', arr.map(row))) : null);
+  const s = openSheet('여행 고르기', h('div',
+    grp('진행 중', groups.ongoing), grp('다가오는 여행', groups.upcoming), grp('지난 여행', groups.past),
+    h('div.btnrow.wrap',
+      btn('＋ 새 여행', () => { s.close(); go('#/new'); }, 'primary'),
+      btn('가져오기', () => { s.close(); openImportSheet(api); }),
+      btn('전체 목록', () => { s.close(); go('#/trips'); }),
+      btn('설정', () => { s.close(); go('#/settings'); }, 'ghost'))), { focus: false });
+}
+
+/* 기본 화면에 열 여행: 진행 중 → 가장 가까운 다가오는 여행 → 가장 최근에 다녀온 여행 */
+function mainTripId() {
+  const all = [...S.trips.values()].map((r) => r.data).filter((t) => t && t.meta);
+  const by = (k) => all.filter((t) => phase(t.meta, t.meta.timezone).key === k);
+  const ongoing = by('ongoing'), upcoming = by('upcoming'), past = by('past');
+  if (ongoing.length) return ongoing[0].id;
+  if (upcoming.length) return upcoming.sort((a, b) => String(a.meta.start).localeCompare(String(b.meta.start)))[0].id;
+  if (past.length) return past.sort((a, b) => String(b.meta.start).localeCompare(String(a.meta.start)))[0].id;
+  return null;
+}
 function renderHome() {
+  if (!route().list) {                       // 기본 화면(#/)은 목록 대신 그 여행으로
+    const id = mainTripId();
+    if (id) { location.replace('#/t/' + encodeURIComponent(id)); return h('main.page', empty('여는 중…')); }
+  }
   document.title = '가족 여행';
   const meta = document.querySelector('meta[name=theme-color]'); if (meta) meta.setAttribute('content', '#2E3336');
   const recs = [...S.trips.values()];
@@ -628,7 +667,7 @@ function renderSettings() {
   const rMeal = input(R.mealGapH, { type: 'number', min: 0, max: 12, inputmode: 'numeric' });
 
   return h('div.settings',
-    h('header.home-head', h('a.icon-btn.back', { href: '#/', 'aria-label': '여행 목록' }, '‹'), h('h1.brand', '설정')),
+    h('header.home-head', h('a.icon-btn.back', { href: '#/', 'aria-label': '돌아가기' }, '‹'), h('h1.brand', '설정')),
     h('main.page',
       section('저장소 연결',
         h('p.hint', '여행 데이터는 비공개 GitHub 저장소에 둡니다. fine-grained 토큰을 그 저장소 하나에만, Contents 읽기/쓰기 권한으로, 만료 90일로 만드세요. 토큰은 이 기기 브라우저에만 저장돼요.'),
@@ -728,11 +767,6 @@ async function boot() {
     }
   });
   window.addEventListener('offline', () => toast('오프라인이에요. 기기 사본으로 보여줘요.'));
-  if (!location.hash || location.hash === '#/' || location.hash === '#') {
-    const last = LS.get('ta:lastTrip');
-    const rec = last && S.trips.get(last);
-    if (rec && phase(rec.data.meta, rec.data.meta.timezone).key === 'ongoing') location.replace('#/t/' + encodeURIComponent(last) + '/today');
-  }
   render();
   if (hasToken() && navigator.onLine) {
     const r = route();

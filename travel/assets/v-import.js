@@ -121,7 +121,7 @@ async function checkAndOffer(api, text, out, opts = {}) {
         for (const x of okTrips) await saveImported(api, x.trip, x.secretValues);
         if (opts.onDone) opts.onDone();
         toast(afterSaveMsg('이 기기에 저장했어요.'), 4000);
-        api.go('#/');
+        api.go('#/trips');
       }, 'primary')) : null));
   } else if (c.kind === 'dataset') {
     const v = validateDataset(c.value);
@@ -247,7 +247,7 @@ export function viewNew(api, r) {
     openSheet('프롬프트', h('div', textarea(text, { rows: 18, readonly: true, class: 'mono' })));
   };
   return h('div.newtrip',
-    h('header.home-head', h('a.icon-btn.back', { href: '#/', 'aria-label': '여행 목록' }, '‹'), h('h1.brand', '새 여행')),
+    h('header.home-head', h('a.icon-btn.back', { href: '#/', 'aria-label': '돌아가기' }, '‹'), h('h1.brand', '새 여행')),
     h('main.page',
       section('① 프롬프트 복사',
         h('p.hint', '규칙·가족 프로필(여행 시점 나이만)·양식이 한 번에 복사돼요. 여행을 상의하던 AI 채팅 맨 끝에 붙여넣으세요. 대화가 없으면 메모·예약 메일을 같이 붙여넣으세요.'),
@@ -288,7 +288,7 @@ function viewClone(api, srcId) {
   });
   const n = daysBetween(src.meta.start, src.meta.end);
   return h('div.newtrip',
-    h('header.home-head', h('a.icon-btn.back', { href: '#/', 'aria-label': '여행 목록' }, '‹'), h('h1.brand', '복제해서 새 여행')),
+    h('header.home-head', h('a.icon-btn.back', { href: '#/', 'aria-label': '돌아가기' }, '‹'), h('h1.brand', '복제해서 새 여행')),
     h('main.page',
       section(src.meta.title,
         h('p.hint', `구조·장소·체크리스트를 복사하고 날짜를 옮겨요(${n}박). 예약·비밀값·경비·결정 기록은 비우고, 일정은 모두 '잠정'이 돼요.`),
