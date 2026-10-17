@@ -496,3 +496,8 @@ details > summary { cursor: pointer; min-height: 44px; display: flex; align-item
 }
 .dualclock { font-size: 14px; font-weight: 700; margin-top: 2px; }
 .fare { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; }
+.trip-title { background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.trip-title .caret { font-size: 14px; color: var(--text-2); }
+.menu { font-size: 22px; }
+.pick-dot { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; }
+.prow.current { border-color: var(--accent); border-width: 2px; }
