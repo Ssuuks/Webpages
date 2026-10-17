@@ -1,0 +1,7 @@
+아래 [예약 자료]에서 숙소·교통·주차·렌터카 예약을 뽑아 {"stays": [], "transports": [], "secrets": [], "secretValues": {}} 형태의 JSON 하나만 출력해.
+- 예약번호·PIN·차량번호·공유 링크는 secretValues에만 넣고, 본문에는 {{secret:키}}로 써.
+- 시각은 현지 시각 YYYY-MM-DDTHH:MM. 체크인·체크아웃 시각이 자료에 없으면 null.
+- 셔틀 막차처럼 놓치면 안 되는 시각은 deadlines에.
+
+[예약 자료]
+(여기에)

@@ -1,0 +1,9 @@
+아래 [장소 목록]의 입장료를 조사해 places 배열 JSON 하나로만 출력해. 설명 문장이나 코드블록 표시는 쓰지 마.
+- 항목 형식: {"id", "name", "prices": {"adult", "youth", "child", "infant", "note", "source"}, "pass": {"surchargePrices": {"adult", "youth", "child"}}}
+- 금액은 원 단위 숫자. 무료는 0, 모르면 null. child는 보통 36개월~만 12세, infant는 36개월 미만, youth는 만 13~18세 — 시설 기준이 다르면 note에 적어.
+- pass.surchargePrices는 투어패스 고객이 현장에서 더 내는 금액(추가금). 없으면 넣지 마.
+- source에는 확인한 곳(공식 홈페이지 주소, 상품 페이지 등)을 꼭 적어. 확인하지 못한 값은 null로 두고 추측하지 마.
+- id는 [장소 목록]의 id를 그대로.
+
+[장소 목록]
+{{placesList}}

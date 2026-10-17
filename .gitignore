@@ -1,0 +1,5 @@
+# 여행 데이터는 비공개 저장소(travel-data)에만 둔다
+travel-data/
+travel-data-bundle.json
+*.secret.json
+Handoff.md

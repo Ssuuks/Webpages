@@ -1,0 +1,1403 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "trip.v1.json",
+ "title": "trip/v1 — 가족 여행 플래너 여행 파일",
+ "description": "여행 하나 = 파일 하나. 시각은 meta.timezone 현지 시각. 비밀값은 {{secret:키}}로만 쓰고 값은 기기에. 앱의 검사기(assets/validate.js)가 이 스키마보다 더 많은 것(참조 무결성, 일정 점검)을 확인한다.",
+ "type": "object",
+ "required": [
+  "schema",
+  "id",
+  "meta",
+  "days"
+ ],
+ "properties": {
+  "schema": {
+   "const": "trip/v1"
+  },
+  "id": {
+   "type": "string",
+   "pattern": "^\\d{4}-\\d{2}-[A-Za-z0-9가-힣_-]+$"
+  },
+  "updatedAt": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "meta": {
+   "type": "object",
+   "required": [
+    "title",
+    "start",
+    "end",
+    "timezone",
+    "currency"
+   ],
+   "properties": {
+    "title": {
+     "type": "string"
+    },
+    "destination": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "country": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "start": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "end": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "timezone": {
+     "type": "string",
+     "description": "IANA 시간대, 예: Asia/Seoul"
+    },
+    "currency": {
+     "type": "string"
+    },
+    "fx": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "properties": {
+      "base": {
+       "type": "string"
+      },
+      "rate": {
+       "type": "number",
+       "description": "현지통화 1 = base 몇"
+      }
+     }
+    },
+    "status": {
+     "enum": [
+      "planning",
+      "confirmed",
+      "done"
+     ]
+    },
+    "accent": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "summary": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "datasets": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "travelers": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "role": {
+      "enum": [
+       "adult",
+       "child"
+      ]
+     },
+     "label": {
+      "type": "string"
+     },
+     "profileKey": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    }
+   }
+  },
+  "badges": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/badge"
+   }
+  },
+  "stays": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "name"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "placeId": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "checkIn": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
+     },
+     "checkOut": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
+     },
+     "phone": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "address": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "perks": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "notes": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "secretKeys": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "status": {
+      "enum": [
+       "confirmed",
+       "tentative",
+       null
+      ]
+     }
+    }
+   }
+  },
+  "transports": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "title"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "flight",
+       "car",
+       "parking",
+       "transfer",
+       "ferry",
+       "other"
+      ]
+     },
+     "title": {
+      "type": "string"
+     },
+     "from": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "to": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "start": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
+     },
+     "end": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
+     },
+     "placeId": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "phone": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "notes": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "secretKeys": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "status": {
+      "enum": [
+       "confirmed",
+       "tentative",
+       null
+      ]
+     },
+     "deadlines": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "label",
+        "at"
+       ],
+       "properties": {
+        "label": {
+         "type": "string"
+        },
+        "at": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
+        },
+        "after": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "이 교통의 end + bufferMin 이 at보다 늦으면 경고"
+        },
+        "before": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "at + bufferMin 이 이 교통의 start보다 늦으면 경고"
+        },
+        "bufferMin": {
+         "type": [
+          "number",
+          "null"
+         ]
+        }
+       }
+      }
+     },
+     "checkinOpensH": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "온라인 체크인이 열리는 시각(출발 몇 시간 전), 기본 24"
+     },
+     "airportBufferMin": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "공항 도착 목표(출발 몇 분 전), 기본 국내 60 · 해외 150"
+     }
+    }
+   }
+  },
+  "places": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/place"
+   }
+  },
+  "days": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "date",
+     "plans"
+    ],
+    "properties": {
+     "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+     },
+     "title": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "stayId": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "note": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "activePlan": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "notes": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "kind": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "title": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "text": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       }
+      }
+     },
+     "plans": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "object",
+       "required": [
+        "id",
+        "items"
+       ],
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "label": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "note": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "items": {
+         "type": "array",
+         "items": {
+          "$ref": "#/$defs/item"
+         }
+        }
+       }
+      }
+     },
+     "journal": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "하루 한 줄 기록",
+      "properties": {
+       "text": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "best": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "at": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "passes": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "name"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "holders": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "price": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "validHours": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "intervalMinutes": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "activatedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
+     },
+     "uses": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "at": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
+        },
+        "placeId": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       }
+      }
+     },
+     "dataset": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "rules": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  },
+  "checklists": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "title"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "id",
+        "text"
+       ],
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "text": {
+         "type": "string"
+        },
+        "due": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "done": {
+         "type": "boolean"
+        },
+        "note": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "fromReminder": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "예약 오픈 알림에서 만든 항목이면 '장소id 또는 일정id|방문일'"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "emergency": {
+   "type": "object",
+   "properties": {
+    "note": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "contacts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/contact"
+     }
+    },
+    "scenarios": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "id",
+       "title"
+      ],
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "title": {
+        "type": "string"
+       },
+       "desc": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "steps": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "contacts": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/contact"
+   }
+  },
+  "budget": {
+   "type": "object",
+   "properties": {
+    "planned": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "cat": {
+        "type": "string"
+       },
+       "amount": {
+        "type": "number"
+       },
+       "currency": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "note": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      }
+     }
+    },
+    "expenses": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "id",
+       "amount"
+      ],
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "date": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+       },
+       "amount": {
+        "type": "number"
+       },
+       "currency": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "cat": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "note": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "payer": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "notes": {
+   "type": "object",
+   "properties": {
+    "decisions": {
+     "type": "array"
+    },
+    "openQuestions": {
+     "type": "array"
+    },
+    "retro": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "properties": {
+      "good": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "meh": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "next": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   }
+  },
+  "secrets": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "key",
+     "label"
+    ],
+    "properties": {
+     "key": {
+      "type": "string",
+      "pattern": "^[\\w.-]+$"
+     },
+     "label": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "groups": {
+   "type": "array",
+   "description": "장소 묶음 설명(선택)",
+   "items": {
+    "type": "object",
+    "properties": {
+     "cat": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "name": {
+      "type": "string"
+     },
+     "desc": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    }
+   }
+  },
+  "documents": {
+   "type": "array",
+   "description": "서류함 목록. 파일은 저장소 docs/{여행id}/ 에",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "file"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "title": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "file": {
+      "type": "string"
+     },
+     "mime": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "size": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "addedAt": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "linkTo": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "type": {
+        "enum": [
+         "transport",
+         "stay",
+         "pass"
+        ]
+       },
+       "id": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "$defs": {
+  "badge": {
+   "type": "object",
+   "required": [
+    "id",
+    "label"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "label": {
+     "type": "string"
+    },
+    "tone": {
+     "enum": [
+      "accent",
+      "good",
+      "warn",
+      "info",
+      "muted"
+     ]
+    }
+   }
+  },
+  "contact": {
+   "type": "object",
+   "required": [
+    "label"
+   ],
+   "properties": {
+    "label": {
+     "type": "string"
+    },
+    "phone": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "note": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "placeId": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "place": {
+   "type": "object",
+   "required": [
+    "id",
+    "name"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "cat": {
+     "enum": [
+      "see",
+      "eat",
+      "cafe",
+      "shop",
+      "kids",
+      "stay",
+      "other"
+     ]
+    },
+    "group": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "lat": {
+     "type": [
+      "number",
+      "null"
+     ]
+    },
+    "lng": {
+     "type": [
+      "number",
+      "null"
+     ]
+    },
+    "address": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "phone": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "hours": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "properties": {
+      "default": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$"
+      },
+      "mon": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$"
+      },
+      "tue": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$"
+      },
+      "wed": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$"
+      },
+      "thu": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$"
+      },
+      "fri": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$"
+      },
+      "sat": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$"
+      },
+      "sun": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$"
+      },
+      "lastEntry": {
+       "type": [
+        "string",
+        "null"
+       ],
+       "pattern": "^([01]\\d|2[0-4]):[0-5]\\d$"
+      },
+      "closed": {
+       "type": "array",
+       "items": {
+        "enum": [
+         "mon",
+         "tue",
+         "wed",
+         "thu",
+         "fri",
+         "sat",
+         "sun"
+        ]
+       }
+      },
+      "note": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    },
+    "badges": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "price": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "desc": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "fav": {
+     "type": "boolean"
+    },
+    "pass": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "properties": {
+      "id": {
+       "type": "string"
+      },
+      "code": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "benefit": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "surcharge": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "reserve": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "surchargePrices": {
+       "type": [
+        "object",
+        "null"
+       ],
+       "description": "패스 고객 현장 추가금",
+       "properties": {
+        "adult": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "youth": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "child": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "infant": {
+         "type": [
+          "number",
+          "null"
+         ]
+        }
+       }
+      }
+     }
+    },
+    "links": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "properties": {
+      "map": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "web": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    },
+    "pid": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "rating": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "from": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "prices": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "description": "정가(원). child 36개월~만12세, infant 36개월 미만, youth 만13~18세가 기본",
+     "properties": {
+      "adult": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "youth": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "child": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "infant": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "note": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "source": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    }
+   }
+  },
+  "item": {
+   "type": "object",
+   "required": [
+    "id",
+    "title"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "time": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "pattern": "^([01]\\d|2[0-4]):[0-5]\\d$"
+    },
+    "end": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "pattern": "^([01]\\d|2[0-4]):[0-5]\\d$"
+    },
+    "kind": {
+     "enum": [
+      "visit",
+      "move",
+      "meal",
+      "rest",
+      "hotel",
+      "flight",
+      "other"
+     ]
+    },
+    "title": {
+     "type": "string"
+    },
+    "placeId": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "passUse": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "status": {
+     "enum": [
+      "confirmed",
+      "tentative",
+      null
+     ]
+    },
+    "optional": {
+     "type": "boolean"
+    },
+    "note": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "leg": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "properties": {
+      "km": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "min": {
+       "type": [
+        "number",
+        "null"
+       ]
+      }
+     }
+    },
+    "badges": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "transportId": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "cost": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "done": {
+     "type": "boolean",
+     "description": "여행 중 완료 표시"
+    },
+    "skipped": {
+     "type": "boolean",
+     "description": "건너뜀 표시"
+    },
+    "fixed": {
+     "type": "boolean",
+     "description": "'늦어졌어요'로 밀지 않는 일정"
+    }
+   }
+  }
+ },
+ "x-import-only": {
+  "secretValues": "{키: 값} — 기기 비밀값으로 옮기고 파일에서 삭제",
+  "_remove": "{places:[], items:[], days:[], plans:[]} — id로 삭제"
+ }
+}
