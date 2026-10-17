@@ -1,0 +1,20 @@
+name: travel-tests
+on:
+  push:
+    paths: ['travel/**', '.github/workflows/travel-tests.yml']
+  pull_request:
+    paths: ['travel/**', '.github/workflows/travel-tests.yml']
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 문법 검사
+        run: for f in travel/assets/*.js; do node --input-type=module --check < "$f"; done
+      - name: 단위 테스트
+        run: node --test travel/tests/run.mjs
