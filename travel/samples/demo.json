@@ -1,0 +1,412 @@
+{
+ "schema": "trip/v1",
+ "id": "2026-12-demo",
+ "updatedAt": "2026-10-17T00:00:00+09:00",
+ "meta": {
+  "title": "샘플 · 경주 1박 2일",
+  "destination": "경주",
+  "country": "KR",
+  "start": "2026-12-05",
+  "end": "2026-12-06",
+  "timezone": "Asia/Seoul",
+  "currency": "KRW",
+  "fx": {
+   "base": "KRW",
+   "rate": 1
+  },
+  "status": "planning",
+  "accent": "#4E7A5A",
+  "summary": "앱 사용법을 보여주는 데모. 실제 예약 정보 없음",
+  "datasets": []
+ },
+ "travelers": [
+  {
+   "id": "a1",
+   "role": "adult",
+   "label": "어른1"
+  },
+  {
+   "id": "a2",
+   "role": "adult",
+   "label": "어른2"
+  },
+  {
+   "id": "k1",
+   "role": "child",
+   "label": "첫째",
+   "profileKey": "child1"
+  }
+ ],
+ "badges": [
+  {
+   "id": "kids",
+   "label": "아이 추천",
+   "tone": "good"
+  },
+  {
+   "id": "night",
+   "label": "야경",
+   "tone": "info"
+  },
+  {
+   "id": "reserve",
+   "label": "예약 필요",
+   "tone": "warn"
+  }
+ ],
+ "stays": [
+  {
+   "id": "stay",
+   "name": "숙소(예시)",
+   "placeId": "stay-demo",
+   "checkIn": "2026-12-05T15:00",
+   "checkOut": "2026-12-06T11:00",
+   "phone": null,
+   "perks": [
+    "조식 07:00~10:00"
+   ],
+   "notes": "예약번호 {{secret:demo_booking}}",
+   "secretKeys": [
+    "demo_booking"
+   ],
+   "status": "tentative"
+  }
+ ],
+ "transports": [
+  {
+   "id": "train-out",
+   "kind": "other",
+   "title": "KTX 서울 → 신경주",
+   "from": "서울",
+   "to": "신경주",
+   "start": "2026-12-05T08:00",
+   "end": "2026-12-05T10:10",
+   "notes": "",
+   "secretKeys": [],
+   "status": "tentative"
+  },
+  {
+   "id": "train-back",
+   "kind": "other",
+   "title": "KTX 신경주 → 서울",
+   "from": "신경주",
+   "to": "서울",
+   "start": "2026-12-06T16:30",
+   "end": "2026-12-06T18:40",
+   "status": "tentative",
+   "deadlines": [
+    {
+     "label": "역 도착",
+     "at": "2026-12-06T16:00",
+     "before": "train-back",
+     "bufferMin": 20
+    }
+   ]
+  }
+ ],
+ "places": [
+  {
+   "id": "stay-demo",
+   "name": "숙소(예시)",
+   "cat": "stay",
+   "group": "보문",
+   "lat": 35.8423,
+   "lng": 129.2867,
+   "badges": []
+  },
+  {
+   "id": "bulguksa",
+   "name": "불국사",
+   "cat": "see",
+   "group": "불국사권",
+   "lat": 35.79,
+   "lng": 129.332,
+   "hours": {
+    "default": "09:00-17:30",
+    "closed": []
+   },
+   "badges": [
+    "kids"
+   ],
+   "desc": "관람 1~1.5시간"
+  },
+  {
+   "id": "cheomseongdae",
+   "name": "첨성대",
+   "cat": "see",
+   "group": "시내",
+   "lat": 35.8347,
+   "lng": 129.219,
+   "hours": null,
+   "badges": [
+    "kids",
+    "night"
+   ],
+   "desc": "야간 조명이 예뻐요"
+  },
+  {
+   "id": "wolji",
+   "name": "동궁과 월지",
+   "cat": "see",
+   "group": "시내",
+   "lat": 35.8347,
+   "lng": 129.2266,
+   "hours": {
+    "default": "09:00-22:00",
+    "lastEntry": "21:30",
+    "closed": []
+   },
+   "badges": [
+    "night"
+   ],
+   "desc": "해 질 무렵 추천"
+  },
+  {
+   "id": "daereungwon",
+   "name": "대릉원",
+   "cat": "see",
+   "group": "시내",
+   "lat": 35.8381,
+   "lng": 129.212,
+   "badges": [
+    "kids"
+   ]
+  },
+  {
+   "id": "hwangridan",
+   "name": "황리단길",
+   "cat": "eat",
+   "group": "시내",
+   "lat": 35.8376,
+   "lng": 129.2096,
+   "badges": [],
+   "desc": "점심·간식 골목"
+  }
+ ],
+ "days": [
+  {
+   "date": "2026-12-05",
+   "title": "시내 · 야경",
+   "stayId": "stay",
+   "plans": [
+    {
+     "id": "A",
+     "label": "기본",
+     "items": [
+      {
+       "id": "1205-1010",
+       "time": "10:10",
+       "kind": "flight",
+       "title": "신경주역 도착",
+       "transportId": "train-out"
+      },
+      {
+       "id": "1205-1030",
+       "time": "10:30",
+       "kind": "move",
+       "title": "→ 대릉원",
+       "leg": {
+        "km": 15,
+        "min": 25
+       }
+      },
+      {
+       "id": "1205-1100",
+       "time": "11:00",
+       "end": "12:00",
+       "kind": "visit",
+       "title": "대릉원",
+       "placeId": "daereungwon",
+       "status": "tentative"
+      },
+      {
+       "id": "1205-1210",
+       "time": "12:10",
+       "end": "13:30",
+       "kind": "meal",
+       "title": "황리단길 점심",
+       "placeId": "hwangridan"
+      },
+      {
+       "id": "1205-1340",
+       "time": "13:40",
+       "end": "14:20",
+       "kind": "visit",
+       "title": "첨성대",
+       "placeId": "cheomseongdae"
+      },
+      {
+       "id": "1205-1500",
+       "time": "15:00",
+       "kind": "hotel",
+       "title": "체크인 · 휴식",
+       "placeId": "stay-demo"
+      },
+      {
+       "id": "1205-1730",
+       "time": "17:30",
+       "end": "19:00",
+       "kind": "visit",
+       "title": "동궁과 월지 야경",
+       "placeId": "wolji",
+       "optional": true,
+       "note": "**해 질 무렵**이 가장 예뻐요"
+      }
+     ]
+    },
+    {
+     "id": "rain",
+     "label": "우천",
+     "items": [
+      {
+       "id": "rain-1205-1100",
+       "time": "11:00",
+       "kind": "visit",
+       "title": "실내 박물관 (예시)",
+       "note": "비 오면 실내 위주"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "date": "2026-12-06",
+   "title": "불국사 · 귀가",
+   "stayId": "stay",
+   "plans": [
+    {
+     "id": "A",
+     "label": "기본",
+     "items": [
+      {
+       "id": "1206-0800",
+       "time": "08:00",
+       "kind": "meal",
+       "title": "조식",
+       "placeId": "stay-demo"
+      },
+      {
+       "id": "1206-0930",
+       "time": "09:30",
+       "kind": "move",
+       "title": "→ 불국사",
+       "leg": {
+        "km": 11,
+        "min": 20
+       }
+      },
+      {
+       "id": "1206-1000",
+       "time": "10:00",
+       "end": "11:30",
+       "kind": "visit",
+       "title": "불국사",
+       "placeId": "bulguksa"
+      },
+      {
+       "id": "1206-1100",
+       "time": "11:00",
+       "kind": "hotel",
+       "title": "체크아웃",
+       "placeId": "stay-demo",
+       "note": "점검 경고 예시: 앞 일정과 시간이 겹쳐요"
+      },
+      {
+       "id": "1206-1630",
+       "time": "16:30",
+       "kind": "flight",
+       "title": "KTX 귀가",
+       "transportId": "train-back"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "passes": [],
+ "checklists": [
+  {
+   "id": "pre",
+   "title": "출발 전",
+   "items": [
+    {
+     "id": "pre-1",
+     "text": "KTX 예매",
+     "due": "2026-11-20",
+     "done": false
+    },
+    {
+     "id": "pre-2",
+     "text": "숙소 예약",
+     "due": "2026-11-15",
+     "done": false
+    }
+   ]
+  },
+  {
+   "id": "bag",
+   "title": "준비물",
+   "items": [
+    {
+     "id": "bag-1",
+     "text": "아이 겉옷",
+     "due": null,
+     "done": false
+    }
+   ]
+  }
+ ],
+ "emergency": {
+  "contacts": [
+   {
+    "label": "응급",
+    "phone": "119"
+   },
+   {
+    "label": "경찰",
+    "phone": "112"
+   }
+  ],
+  "scenarios": [
+   {
+    "id": "rain",
+    "title": "비가 오면",
+    "steps": [
+     "그날 '우천' 안으로 바꾸기",
+     "실내 장소 위주로"
+    ]
+   }
+  ]
+ },
+ "contacts": [],
+ "budget": {
+  "planned": [
+   {
+    "cat": "숙박",
+    "amount": 150000,
+    "note": "1박"
+   },
+   {
+    "cat": "교통",
+    "amount": 180000,
+    "note": "KTX 왕복"
+   }
+  ],
+  "expenses": []
+ },
+ "notes": {
+  "decisions": [
+   "불국사는 둘째 날 오전"
+  ],
+  "openQuestions": [
+   "야경은 아이 컨디션 보고 결정"
+  ],
+  "retro": null
+ },
+ "secrets": [
+  {
+   "key": "demo_booking",
+   "label": "숙소 예약번호(예시)"
+  }
+ ]
+}

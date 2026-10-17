@@ -1,0 +1,8 @@
+아래 [장소 자료](구글 지도 링크, 이름, 메모)를 places 배열 JSON으로만 출력해.
+- 항목 형식: {"id","name","cat","group","lat","lng","address","hours","badges","price","desc","links":{"map"}}
+- cat은 see·eat·cafe·shop·kids 중 하나. badges에는 이 여행의 배지 id만 써: {{badgeIds}}
+- 좌표·운영시간·가격은 확인되는 것만, 아니면 null.
+- 이미 있는 장소는 빼: {{existingPlaceNames}}
+
+[장소 자료]
+(여기에)
