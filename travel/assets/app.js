@@ -5,12 +5,12 @@ import { db, kvGet, kvSet, LS, repoConfig, setRepoConfig, getToken, setToken, se
 import { getFile, putFile, checkRepo, hasToken } from './github.js';
 import { badgeDict, phase, indexEntry } from './model.js';
 import { validateTrip } from './validate.js';
-import { openSheet, ask, btn, field, input, select, section, empty, pill } from './ui.js';
+import { openSheet, ask, btn, field, input, select, section, empty, pill, closeAllSheets } from './ui.js';
 import { viewToday, viewPlan, viewPlaces, viewPrep, viewSos } from './v-trip.js';
 import { viewMore } from './v-more.js';
 import { viewNew, openImportSheet, saveImported } from './v-import.js';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const S = {
   trips: new Map(),        // id → { id, data, base, sha, syncedAt }
   dsRecs: new Map(),       // id → { id, data, base, sha }
@@ -479,7 +479,7 @@ async function boot() {
     for (const r of await db.all('datasets')) { S.dsRecs.set(r.id, r); S.datasets[r.id] = r.data; }
     S.index = (await kvGet('index')) || null;
   } catch (e) { console.warn('IndexedDB', e); }
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', () => { closeAllSheets(); render(); });
   window.addEventListener('online', () => { toast('다시 온라인이에요.'); if (hasToken()) syncIndex(false); });
   window.addEventListener('offline', () => toast('오프라인이에요. 기기 사본으로 보여줘요.'));
   if (!location.hash || location.hash === '#/' || location.hash === '#') {

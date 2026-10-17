@@ -6,7 +6,7 @@ import { validateTrip, validateDataset } from './validate.js';
 import { extractJson, classify, prepareNewTrip, mergeInto, diffTrips } from './importer.js';
 import { buildPrompt, templateText, retroText, PROMPTS } from './prompts.js';
 import { activePlan, adoptPlace, badgeDict, shiftTrip } from './model.js';
-import { openSheet, ask, btn, field, input, textarea, select, section, checkbox, pill } from './ui.js';
+import { openSheet, ask, askText, btn, field, input, textarea, select, section, checkbox, pill } from './ui.js';
 
 /* ── 저장 ─────────────────────────────────────────── */
 export async function saveImported(api, trip, secretValues) {
@@ -94,7 +94,7 @@ async function checkAndOffer(api, text, out, opts = {}) {
         const log = diffTrips(exists.data, trip);
         extra = h('div', h('p.warn-text', `같은 id(${trip.id})의 여행이 이미 있어요. 덮어쓰면 아래처럼 바뀌어요.`), diffView(log),
           h('div.btnrow.wrap', btn('덮어써서 저장', () => save(null), 'primary'),
-            btn('다른 id로 저장', () => { const nid = prompt('새 id (YYYY-MM-지역)', trip.id + '-2'); if (nid) save(nid.trim()); })));
+            btn('다른 id로 저장', async () => { const nid = await askText('다른 id로 저장', '새 id', trip.id + '-2', 'YYYY-MM-지역 형식, 파일 이름이 돼요'); if (nid) save(nid); })));
       } else extra = h('div.btnrow', btn('저장', () => save(null), 'primary'));
     }
     out.appendChild(resultView(v, extra));
@@ -158,12 +158,12 @@ export function openImportSheet(api) {
 }
 
 /* ── AI로 고치기 (여행 안) ────────────────────────── */
-export function openAiEdit(ctx) {
+export function openAiEdit(ctx, preset) {
   const kind = select([
     { value: 'edit-trip', label: '(2) 기존 여행 고치기' },
     { value: 'bookings', label: '(4) 예약 메일·캡처 정리' },
     { value: 'add-places', label: '(3) 장소 여러 곳 추가' },
-  ], 'edit-trip');
+  ], preset || 'edit-trip');
   const { ta, node } = pasteBox('AI가 준 JSON(전체 또는 바뀐 블록만)을 붙여넣으세요');
   const out = h('div');
   const run = () => {

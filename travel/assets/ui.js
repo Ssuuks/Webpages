@@ -103,3 +103,16 @@ export function section(title, ...kids) {
   return h('section.card', title ? h('h3.card-title', title) : null, ...kids);
 }
 export function empty(text, ...kids) { return h('div.empty', h('p', text), ...kids); }
+
+/* 한 줄 입력창 (prompt 대신) → Promise<string|null> */
+export function askText(title, label, value = '', hint) {
+  return new Promise((resolve) => {
+    let done = false;
+    const inp = input(value);
+    const ok = () => { const v = inp.value.trim(); if (!v) return; done = true; s.close(); resolve(v); };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); });
+    const s = openSheet(title, h('div', field(label, inp, hint), h('div.btnrow', btn('확인', ok, 'primary'))),
+      { onClose: () => { if (!done) resolve(null); } });
+    setTimeout(() => inp.select(), 50);
+  });
+}

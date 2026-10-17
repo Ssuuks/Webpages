@@ -3,13 +3,13 @@ import { h, clear, rich, byId, same, clone, fmtDate, fmtDT, weekday, WEEK, WEEK_
   estMin, fmtLeg, hasXY, mapLinks, googlePlaceUrl, parseMapLink, copyText, toast, toEpoch, fmtDur, daysBetween, uid,
   plain } from './util.js';
 import { activePlan, dayByDate, itemMinutes, itemEndMinutes, stayForDay, stayForNight, allPlaces, findPlace, adoptPlace,
-  CATS, CAT_LABEL, ITEM_KINDS, KIND_LABEL, stayPoints } from './model.js';
+  CATS, CAT_LABEL, ITEM_KINDS, KIND_LABEL, stayPoints, reserveReminders, travelerAges } from './model.js';
 import { scheduleChecks, hoursOn } from './validate.js';
 import { extractJson } from './importer.js';
 import { buildPrompt } from './prompts.js';
 import { forecast, wxLabel, RAINY } from './weather.js';
 import { getProfile, ui, setUi } from './store.js';
-import { openSheet, ask, badges, pill, btn, linkBtn, telLink, field, input, textarea, select, checkbox, section, empty } from './ui.js';
+import { openSheet, ask, askText, badges, pill, btn, linkBtn, telLink, field, input, textarea, select, checkbox, section, empty } from './ui.js';
 
 /* 화면 상태(기기 메모리) */
 const PV = {};   // tripId → 장소 탭 상태
@@ -431,8 +431,8 @@ function moveItem(ctx, date, planId, i, dir) {
     [items[i], items[j]] = [items[j], items[i]];
   });
 }
-function addPlanCopy(ctx, day) {
-  const label = prompt('새 안 이름 (예: 우천, B안)', (day.plans || []).some((p) => p.id === 'rain') ? 'B안' : '우천');
+async function addPlanCopy(ctx, day) {
+  const label = await askText('새 안 만들기', '안 이름 (현재 안을 복사해요)', (day.plans || []).some((p) => p.id === 'rain') ? 'B안' : '우천', '예: 우천, B안, 아이 컨디션 나쁠 때');
   if (!label) return;
   ctx.save((t) => {
     const d = dayByDate(t, day.date), cur = activePlan(d);
@@ -443,8 +443,8 @@ function addPlanCopy(ctx, day) {
     d.plans.push({ id, label, items }); d.activePlan = id;
   }, `'${label}' 안을 만들었어요(현재 안 복사).`);
 }
-function renamePlan(ctx, day, plan) {
-  const label = prompt('안 이름', plan.label || plan.id);
+async function renamePlan(ctx, day, plan) {
+  const label = await askText('안 이름 바꾸기', '안 이름', plan.label || plan.id);
   if (label) ctx.save((t) => { byId(dayByDate(t, day.date).plans, plan.id).label = label; });
 }
 function openDayEdit(ctx, date) {
@@ -628,7 +628,9 @@ function todayBefore(ctx) {
   for (const c of trip.checklists || []) for (const it of c.items || []) if (!it.done && it.due) due.push({ c, it, left: daysBetween(ctx.now.date, it.due) });
   due.sort((a, b) => a.left - b.left);
   const soon = due.filter((x) => x.left <= 21);
-  out.appendChild(section('마감 다가오는 준비', soon.length ? h('ul.checks', soon.map(({ c, it, left }) => checkRow(ctx, c, it, left))) : h('p.hint', '3주 안에 마감되는 준비 항목이 없어요.'),
+  const listed = new Set(); (trip.checklists || []).forEach((c) => (c.items || []).forEach((i) => { if (i.fromReminder) listed.add(i.fromReminder); }));
+  const rem = reserveReminders(trip, ctx.datasets).filter((r) => !listed.has(r.key) && daysBetween(ctx.now.date, r.due) <= 21);
+  out.appendChild(section('마감 다가오는 준비', soon.length || rem.length ? h('ul.checks', soon.map(({ c, it, left }) => checkRow(ctx, c, it, left)), rem.map((r) => reminderRow(ctx, r))) : h('p.hint', '3주 안에 마감되는 준비 항목이 없어요.'),
     h('div.btnrow', btn('준비 탭 전체', () => ctx.go(`#/t/${encodeURIComponent(trip.id)}/prep`), 'small ghost'))));
   const oq = (trip.notes && trip.notes.openQuestions) || [];
   if (oq.length) out.appendChild(section(`열린 질문 ${oq.length}개`, h('ul', oq.slice(0, 4).map((q) => h('li', ...rich(typeof q === 'string' ? q : q.text || '', ctx.secrets)))),
@@ -762,17 +764,55 @@ export function viewPrep(ctx) {
   for (const c of lists) for (const it of c.items || []) if (!it.done && it.due) due.push({ c, it, left: daysBetween(ctx.now.date, it.due) });
   due.sort((a, b) => a.left - b.left);
   return h('div.prep',
+    familyCard(ctx),
     h('div.progress', h('div.progress-bar', { style: { width: total ? Math.round(done / total * 100) + '%' : '0' } }), h('span', `${done}/${total} 완료`)),
     due.length ? section('마감 순', h('ul.checks', due.slice(0, 8).map(({ c, it, left }) => checkRow(ctx, c, it, left)))) : null,
+    reminderSection(ctx),
     lists.map((c) => section(c.title,
       h('ul.checks', (c.items || []).map((it) => h('div.check-wrap', checkRow(ctx, c, it),
         h('button.icon-btn.small', { type: 'button', 'aria-label': '수정', onclick: () => openCheckEdit(ctx, c.id, it.id) }, '✎')))),
       btn('＋ 항목', () => openCheckEdit(ctx, c.id, null), 'small ghost'))),
-    h('div.btnrow', btn('＋ 체크리스트', () => {
-      const title = prompt('체크리스트 이름', '준비물');
+    h('div.btnrow', btn('＋ 체크리스트', async () => {
+      const title = await askText('체크리스트 추가', '이름', '준비물');
       if (title) ctx.save((t) => { t.checklists = t.checklists || []; t.checklists.push({ id: uid('cl'), title, items: [] }); });
     }, 'small'), btn('마감일 캘린더로', () => ctx.go(`#/t/${encodeURIComponent(trip.id)}/more/data`), 'small ghost')));
 }
+/* 일정에서 자동으로 만든 예약 오픈 알림 */
+function dueLabelOf(left) { return left < 0 ? `${-left}일 지남` : left === 0 ? '오늘' : `D-${left}`; }
+function reminderRow(ctx, r) {
+  const left = daysBetween(ctx.now.date, r.due);
+  const inList = (ctx.trip.checklists || []).some((c) => (c.items || []).some((i) => i.fromReminder === r.key));
+  return h('li.check-item',
+    h('div.reminder', h('button.linkish', { type: 'button', onclick: () => openPlace(ctx, r.placeId) }, r.text),
+      h('div.hint', r.kind === 'open' ? `${fmtDate(r.due)}${r.at ? ' ' + r.at.slice(11) : ''}부터 예약 가능` : '방문 전에 예약')),
+    h('span.due' + (left < 0 ? '.over' : left <= 3 ? '.soon' : ''), { title: r.due }, dueLabelOf(left)),
+    inList ? h('span.hint', '체크리스트에 있음') : btn('체크리스트에', () => ctx.save((t) => {
+      t.checklists = t.checklists || [];
+      let c = t.checklists.find((x) => x.id === 'pre') || t.checklists[0];
+      if (!c) { c = { id: 'pre', title: '출발 전', items: [] }; t.checklists.push(c); }
+      c.items = c.items || [];
+      c.items.push({ id: c.id + '-' + Date.now().toString(36), text: r.text, due: r.due, done: false, fromReminder: r.key });
+    }, '체크리스트에 넣었어요.'), 'small ghost'));
+}
+function reminderSection(ctx) {
+  const list = reserveReminders(ctx.trip, ctx.datasets);
+  if (!list.length) return null;
+  return section('예약 오픈 알림 (일정에서 자동)', h('p.hint', '일정에 넣은 장소의 예약 조건으로 계산했어요. 장소를 빼면 함께 사라져요.'),
+    h('ul.checks', list.map((r) => reminderRow(ctx, r))));
+}
+/* 여행 첫날 기준 가족 나이 */
+function familyCard(ctx) {
+  const prof = getProfile();
+  const fa = travelerAges(ctx.trip, prof);
+  if (!fa.list.length) return null;
+  const txt = (x) => (!x.age ? x.label : x.role === 'child' ? `${x.label} 만 ${x.age.years}세 (${x.age.months}개월)` : `${x.label} 만 ${x.age.years}세`);
+  return section(`가족 (${fmtDate(fa.date)} 기준)`,
+    fa.any ? h('div.chips', fa.list.map((x) => pill(txt(x), x.role === 'child' ? 'accent' : 'muted'))) : null,
+    fa.any && fa.list.some((x) => x.role === 'child' && x.age && x.age.months >= 36 && x.age.months < 40)
+      ? h('p.hint', '36개월을 막 넘긴 아이가 있어요. 대부분 시설에서 어린이 요금이에요.') : null,
+    !fa.any ? h('p.hint', (prof.fallbackAges || '') + ' · 생년월일을 넣으면 여행일 기준 나이·개월을 계산해요. ', h('a', { href: '#/settings' }, '설정')) : null);
+}
+
 function openCheckEdit(ctx, clId, itemId) {
   const cl = byId(ctx.trip.checklists, clId);
   const it = itemId ? byId(cl.items, itemId) : { text: '', due: null };

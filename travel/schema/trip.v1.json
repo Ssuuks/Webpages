@@ -577,6 +577,13 @@
           "string",
           "null"
          ]
+        },
+        "fromReminder": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "예약 오픈 알림에서 만든 항목이면 '장소id 또는 일정id|방문일'"
         }
        }
       }

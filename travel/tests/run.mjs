@@ -227,3 +227,26 @@ test('강조색 위 글자색', () => {
   assert.equal(onColor('#EE8A1E'), '#1E2224');
   assert.equal(onColor('#1E6E73'), '#FFFFFF');
 });
+
+test('예약 오픈 알림: N일 전·N시간 전·예약 필요 배지', async () => {
+  const { reserveReminders, travelerAges } = await import('../assets/model.js');
+  const t = jeju();
+  t.badges.push({ id: 'reserve', label: '예약 필요', tone: 'warn' });
+  t.places.push({ id: 'noodle', name: '면공장', pass: { id: 'jejupass', reserve: '바코드 7일 전' } },
+    { id: 'foot', name: '족욕', pass: { id: 'jejupass', reserve: '바코드 24시간 전' } },
+    { id: 'hog', name: '플라잉 호그', badges: ['reserve'] });
+  t.days[0].plans[0].items.push({ id: '1121-1300', time: '13:00', title: '면공장', placeId: 'noodle' },
+    { id: '1121-1500', time: '15:00', title: '족욕', placeId: 'foot' });
+  t.days[2].plans[0].items.push({ id: '1123-1830', time: '18:30', title: '디너', placeId: 'hog' });
+  const r = reserveReminders(t, {});
+  assert.deepEqual(r.map((x) => [x.name, x.due, x.kind]), [['면공장', '2026-11-14', 'open'], ['족욕', '2026-11-20', 'open'], ['플라잉 호그', '2026-11-23', 'need']]);
+  assert.equal(r[1].at, '2026-11-20T15:00');
+  const ics = buildIcs({ ...t, checklists: [{ id: 'pre', title: '출발 전', items: [{ id: 'p1', text: '패스 구매', due: '2026-11-19', done: false }, { id: 'p2', text: '끝남', due: '2026-11-18', done: true }] }] }, { datasets: {} });
+  assert.match(ics.text, /SUMMARY:☑ 패스 구매/);
+  assert.ok(!ics.text.includes('끝남'));
+  assert.match(ics.text, /SUMMARY:📅 면공장 예약 오픈/);
+  assert.match(ics.text, /DTSTART:20261114T000000Z/);   // 09:00 KST
+  const ages = travelerAges({ meta: { start: '2026-11-20' }, travelers: [{ label: '둘째', role: 'child', profileKey: 'child2' }] },
+    { members: [{ key: 'child2', label: '둘째', role: 'child', birth: '2023-10-30' }] });
+  assert.equal(ages.list[0].age.months, 36);
+});

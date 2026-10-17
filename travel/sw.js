@@ -1,6 +1,6 @@
 /* 오프라인 캐시 — 엔진 파일은 네트워크 우선(실패하면 캐시), 라이브러리·폰트는 캐시 우선.
    여행 데이터는 IndexedDB에 있으므로 GitHub API·날씨·지도 타일은 여기서 다루지 않는다. */
-const VERSION = 'travel-v1.0.0';
+const VERSION = 'travel-v1.1.0';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './assets/style.css', './assets/app.js', './assets/util.js', './assets/store.js', './assets/github.js',

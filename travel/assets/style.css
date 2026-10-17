@@ -430,3 +430,4 @@ details > summary { cursor: pointer; min-height: 44px; display: flex; align-item
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
 @media (min-width: 760px) { .tabbar { padding-inline: calc(50% - 360px); } }
+.reminder { flex: 1; min-width: 0; padding: 8px 0; }

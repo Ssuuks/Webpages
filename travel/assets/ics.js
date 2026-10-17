@@ -1,6 +1,6 @@
 /* 캘린더 내보내기 (.ics) — 알림(VALARM)을 넣어 휴대폰 캘린더가 알림을 맡게 한다 */
 import { toEpoch, RE_DT, RE_TIME, plain } from './util.js';
-import { activePlan } from './model.js';
+import { activePlan, reserveReminders } from './model.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 function utc(ms) {
@@ -49,6 +49,20 @@ export function buildIcs(trip, opts = {}) {
       }
     }
   }
+  /* 준비 마감·예약 오픈: 그날 09:00에 알림 (하루만 내보낼 때는 넣지 않음) */
+  if (opts.prep !== false && !only) {
+    for (const c of trip.checklists || []) for (const it of c.items || []) {
+      if (it.done || !/^\d{4}-\d{2}-\d{2}$/.test(it.due || '')) continue;
+      add(`chk-${it.id}@${trip.id}`, it.due + 'T09:00', it.due + 'T09:15', '☑ ' + plain(it.text, secrets), c.title, 1);
+    }
+    const listed = new Set();
+    (trip.checklists || []).forEach((c) => (c.items || []).forEach((i) => { if (i.fromReminder) listed.add(i.fromReminder); }));
+    for (const r of reserveReminders(trip, opts.datasets || {})) {
+      if (listed.has(r.key)) continue;
+      const at = r.at || r.due + 'T09:00';
+      add(`rsv-${r.placeId}-${r.visit}@${trip.id}`, at, null, '📅 ' + r.text, r.cond, 1);
+    }
+  }
   const stamp = utc(Date.now());
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//travel-app//KO', 'CALSCALE:GREGORIAN',
     'X-WR-CALNAME:' + escTxt(trip.meta.title)];
@@ -57,7 +71,7 @@ export function buildIcs(trip, opts = {}) {
       'SUMMARY:' + escTxt(e.title));
     if (e.desc) lines.push('DESCRIPTION:' + escTxt(e.desc));
     if (e.loc) lines.push('LOCATION:' + escTxt(e.loc));
-    if (e.alarmMin) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + escTxt(e.title), `TRIGGER:-PT${e.alarmMin}M`, 'END:VALARM');
+    if (e.alarmMin) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + escTxt(e.title), e.alarmMin === 1 ? 'TRIGGER:PT0M' : `TRIGGER:-PT${e.alarmMin}M`, 'END:VALARM');
     lines.push('END:VEVENT');
   }
   lines.push('END:VCALENDAR');

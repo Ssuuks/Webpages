@@ -1,11 +1,11 @@
 /* 더보기: 예약 · 패스 · 경비 · 지도 · 메모 · 데이터 */
 import { h, clear, rich, byId, clone, fmtDate, fmtDT, fmtLeg, distKm, hasXY, toEpoch, fromEpoch, download, copyText, toast, uid,
-  nowIn } from './util.js';
-import { activePlan, findPlace, allPlaces, stayForDay, TRANSPORT_LABEL, CAT_LABEL } from './model.js';
+  nowIn, utf8ToB64, b64ToUtf8 } from './util.js';
+import { activePlan, findPlace, allPlaces, stayForDay, TRANSPORT_LABEL, TRANSPORT_KINDS, CAT_LABEL } from './model.js';
 import { validateTrip } from './validate.js';
 import { buildIcs } from './ics.js';
 import { drawMap } from './map.js';
-import { setSecret, secretsFor, clearSecrets } from './store.js';
+import { setSecret, setSecrets, secretsFor, clearSecrets } from './store.js';
 import { listCommits, getFileAt, hasToken } from './github.js';
 import { openSheet, ask, badges, pill, btn, telLink, field, input, textarea, select, section, empty } from './ui.js';
 import { openPlace, passState, selectedDate } from './v-trip.js';
@@ -47,8 +47,10 @@ function viewBook(ctx) {
   for (const x of t.transports || []) rows.push({ at: x.start || '9999', kind: 'tr', x });
   for (const s of t.stays || []) rows.push({ at: s.checkIn || '9999', kind: 'stay', x: s });
   rows.sort((a, b) => String(a.at).localeCompare(String(b.at)));
-  if (!rows.length) return empty('예약이 아직 없어요. [데이터 → AI로 고치기]에서 프롬프트 (4) 예약 메일 정리를 쓰세요.');
-  return h('div.book', rows.map(({ kind, x }) => {
+  const adders = h('div.btnrow.wrap', btn('＋ 숙소', () => editBooking(ctx, 'stays', null), 'small'), btn('＋ 교통', () => editBooking(ctx, 'transports', null), 'small'),
+    btn('예약 메일로 추가 (AI)', () => openAiEdit(ctx, 'bookings'), 'small ghost'));
+  if (!rows.length) return h('div', empty('예약이 아직 없어요. 직접 추가하거나 예약 메일을 AI로 정리하세요.'), adders);
+  return h('div.book', adders, rows.map(({ kind, x }) => {
     const p = x.placeId && findPlace(t, ctx.datasets, x.placeId);
     const status = x.status === 'confirmed' ? pill('확정', 'good') : pill('미확정', 'warn');
     if (kind === 'stay') return h('section.card.booking',
@@ -75,25 +77,74 @@ function viewBook(ctx) {
   }));
 }
 function editBooking(ctx, block, id) {
-  const x = byId(ctx.trip[block], id);
+  const isNew = !id;
   const isStay = block === 'stays';
+  const x = isNew ? (isStay ? { status: 'tentative' } : { kind: 'flight', status: 'tentative' }) : clone(byId(ctx.trip[block], id));
   const title = input(isStay ? x.name : x.title);
+  const kind = isStay ? null : select(TRANSPORT_KINDS.map((k) => ({ value: k, label: TRANSPORT_LABEL[k] })), x.kind || 'other');
+  const from = isStay ? null : input(x.from), to = isStay ? null : input(x.to);
   const a = input(isStay ? x.checkIn : x.start, { type: 'datetime-local' }), b = input(isStay ? x.checkOut : x.end, { type: 'datetime-local' });
-  const phone = input(x.phone, { type: 'tel' }), notes = textarea(x.notes, { rows: 4 });
+  const places = (ctx.trip.places || []).slice().sort((p, q) => p.name.localeCompare(q.name, 'ko'));
+  const place = select([{ value: '', label: '(장소 없음)' }, ...places.map((p) => ({ value: p.id, label: p.name }))], x.placeId || '');
+  const phone = input(x.phone, { type: 'tel' }), address = isStay ? input(x.address) : null;
+  const perks = isStay ? textarea((x.perks || []).join('\n'), { rows: 3 }) : null;
+  const notes = textarea(x.notes, { rows: 4 });
+  const keys = input((x.secretKeys || []).join(', '), { autocapitalize: 'off', placeholder: '예: trip_booking_no, car_plate' });
   const status = select([{ value: 'confirmed', label: '확정' }, { value: 'tentative', label: '미확정' }], x.status || 'tentative');
-  const s = openSheet('예약 수정', h('div', field(isStay ? '이름' : '제목', title),
+  const remove = async () => {
+    const t = ctx.trip;
+    const refs = isStay ? (t.days || []).filter((d) => d.stayId === id).length
+      : (t.transports || []).filter((o) => (o.deadlines || []).some((d) => d.after === id || d.before === id)).length
+        + (t.days || []).reduce((n, d) => n + (d.plans || []).reduce((m, p) => m + (p.items || []).filter((it) => it.transportId === id).length, 0), 0);
+    const msg = `'${isStay ? x.name : x.title}' 예약을 지울까요?` + (refs ? `\n이 예약을 가리키는 곳 ${refs}군데의 연결도 함께 풀어요.` : '');
+    if (!(await ask(msg, [{ label: '취소', value: false }, { label: '삭제', value: true, danger: true }]))) return;
+    ctx.save((tt) => {
+      tt[block] = tt[block].filter((o) => o.id !== id);
+      if (isStay) (tt.days || []).forEach((d) => { if (d.stayId === id) delete d.stayId; });
+      else {
+        (tt.transports || []).forEach((o) => (o.deadlines || []).forEach((d) => { if (d.after === id) delete d.after; if (d.before === id) delete d.before; }));
+        (tt.days || []).forEach((d) => (d.plans || []).forEach((p) => (p.items || []).forEach((it) => { if (it.transportId === id) delete it.transportId; })));
+      }
+    }, '지웠어요.');
+    s.close();
+  };
+  const s = openSheet(isNew ? (isStay ? '숙소 추가' : '교통 추가') : '예약 수정', h('div',
+    isStay ? null : field('종류', kind),
+    field(isStay ? '이름' : '제목', title, isStay ? null : '예: 진에어 LJ6435'),
+    isStay ? null : h('div.grid2', field('출발지', from), field('도착지', to)),
     h('div.grid2', field(isStay ? '체크인' : '출발', a), field(isStay ? '체크아웃' : '도착', b)),
-    h('div.grid2', field('전화', phone), field('상태', status)), field('메모', notes, '예약번호는 {{secret:키}}로 쓰고 값은 [데이터 → 비밀값]에'),
-    h('div.btnrow', btn('저장', () => {
-      const v = (el) => (el.value ? el.value.slice(0, 16) : null);
-      ctx.save((t) => {
-        const y = byId(t[block], id);
-        if (isStay) Object.assign(y, { name: title.value.trim(), checkIn: v(a), checkOut: v(b) });
-        else Object.assign(y, { title: title.value.trim(), start: v(a), end: v(b) });
-        Object.assign(y, { phone: phone.value.trim() || null, notes: notes.value.trim(), status: status.value });
-      }, '저장했어요.');
-      s.close();
-    }, 'primary'))));
+    field('장소', place, isStay ? '거리 기준점·오늘 숙소에 쓰여요. 없으면 [장소]에서 먼저 추가하세요.' : null),
+    h('div.grid2', field('전화', phone), field('상태', status)),
+    isStay ? field('주소', address) : null,
+    isStay ? field('혜택 (줄마다 하나)', perks) : null,
+    field('메모', notes, '예약번호는 본문에 쓰지 말고 {{secret:키}}로'),
+    field('비밀값 키 (쉼표로 구분)', keys, '값은 [데이터 → 비밀값]에서 이 기기에만 저장돼요. 이 예약 날짜에 [오늘] 화면에 보여요.'),
+    h('div.btnrow',
+      btn(isNew ? '추가' : '저장', () => {
+        const name = title.value.trim();
+        if (!name) { toast(isStay ? '이름을 넣으세요.' : '제목을 넣으세요.'); return; }
+        const v = (el) => (el.value ? el.value.slice(0, 16) : null);
+        const ks = keys.value.split(/[,\s]+/).map((k) => k.trim()).filter(Boolean);
+        const bad = ks.filter((k) => !/^[\w.-]+$/.test(k));
+        if (bad.length) { toast(`비밀값 키는 영문·숫자·_·-·. 만 써요: ${bad.join(', ')}`, 4000); return; }
+        if (v(a) && v(b) && v(a) >= v(b)) { toast((isStay ? '체크아웃' : '도착') + ' 시각이 더 늦어야 해요.'); return; }
+        ctx.save((t) => {
+          t[block] = t[block] || [];
+          let y = isNew ? {} : byId(t[block], id);
+          if (isNew) {
+            const base = (isStay ? 'stay' : kind.value) + '-' + (v(a) ? v(a).slice(5, 10).replace('-', '') : 'x');
+            let nid = base, n = 2; while (byId(t[block], nid)) nid = base + '-' + n++;
+            y.id = nid; t[block].push(y);
+          }
+          if (isStay) Object.assign(y, { name, checkIn: v(a), checkOut: v(b), address: address.value.trim() || null, perks: perks.value.split('\n').map((l) => l.trim()).filter(Boolean) });
+          else Object.assign(y, { kind: kind.value, title: name, from: from.value.trim() || null, to: to.value.trim() || null, start: v(a), end: v(b) });
+          Object.assign(y, { placeId: place.value || null, phone: phone.value.trim() || null, notes: notes.value.trim(), status: status.value, secretKeys: ks });
+          t.secrets = t.secrets || [];
+          for (const k of ks) if (!t.secrets.some((q) => q.key === k)) t.secrets.push({ key: k, label: `${name} · ${k}` });
+        }, isNew ? '추가했어요.' : '저장했어요.');
+        s.close();
+      }, 'primary'),
+      isNew ? null : btn('삭제', remove, 'danger'))));
 }
 
 /* ── 패스 ─────────────────────────────────────────── */
@@ -316,14 +367,17 @@ function viewData(ctx) {
     section('비밀값 (이 기기에만)',
       h('p.hint', '예약번호·PIN·차량번호 같은 값은 이 기기 브라우저에만 저장되고 내보내기·커밋에 들어가지 않아요. 본문의 {{secret:키}} 자리에 화면에서만 채워져요.'),
       secRows.length ? secRows : h('p.hint', '이 여행에는 비밀값 키가 없어요.'),
-      secRows.length ? btn('이 여행 비밀값 모두 지우기', async () => { if (await ask('이 기기의 비밀값을 지울까요?')) { clearSecrets(t.id); ctx.render(); } }, 'small ghost danger') : null),
+      secRows.length ? h('div.btnrow.wrap',
+        btn('다른 기기로 옮기기', () => exportSecrets(ctx), 'small'),
+        btn('코드로 받기', () => importSecrets(ctx), 'small'),
+        btn('이 여행 비밀값 모두 지우기', async () => { if (await ask('이 기기의 비밀값을 지울까요?')) { clearSecrets(t.id); ctx.render(); } }, 'small ghost danger')) : null),
     section('내보내기',
       h('div.btnrow.wrap',
         btn('여행 JSON 내려받기', () => download(`${t.id}.json`, JSON.stringify(t, null, 2))),
         btn('JSON 복사', async () => toast((await copyText(JSON.stringify(t, null, 2))) ? '복사했어요.' : '복사하지 못했어요.'))),
-      h('div.field', h('label', '캘린더(.ics) — 항공·체크인·마감 시각에 알림 포함'), h('div.addline', dsel,
+      h('div.field', h('label', '캘린더(.ics) — 항공·체크인·마감 시각, 준비 마감일·예약 오픈일(09:00)에 알림'), h('div.addline', dsel,
         btn('.ics 내려받기', () => {
-          const r = buildIcs(t, { secrets: {}, date: dsel.value || null });
+          const r = buildIcs(t, { secrets: {}, date: dsel.value || null, datasets: ctx.datasets });
           if (!r.count) { toast('내보낼 일정이 없어요.'); return; }
           download(`${t.id}${dsel.value ? '-' + dsel.value : ''}.ics`, r.text, 'text/calendar');
         }))),
@@ -339,6 +393,37 @@ function viewData(ctx) {
           ctx.deleteLocal();
         }, 'ghost danger'))));
 }
+/* 비밀값 옮기기: 저장소를 거치지 않고, 사용자가 직접 코드를 다른 기기에 붙여넣는다 */
+const SEC_PREFIX = 'TA-SECRETS1:';
+async function exportSecrets(ctx) {
+  const vals = secretsFor(ctx.trip.id);
+  const n = Object.keys(vals).filter((k) => vals[k]).length;
+  if (!n) { toast('이 기기에 저장된 비밀값이 없어요.'); return; }
+  const ok = await ask(`비밀값 ${n}개가 든 코드를 만들어요. 코드를 가진 사람은 예약번호를 볼 수 있으니 본인 기기끼리만 옮기고, 메신저 단체방·메일에는 붙여넣지 마세요.`,
+    [{ label: '취소', value: false }, { label: '코드 만들기', value: true, primary: true }], '비밀값 옮기기');
+  if (!ok) return;
+  const code = SEC_PREFIX + utf8ToB64(JSON.stringify({ trip: ctx.trip.id, v: vals }));
+  const ta = textarea(code, { rows: 4, readonly: true, class: 'mono' });
+  openSheet('비밀값 코드', h('div', h('p.hint', '다른 기기의 같은 여행 → 데이터 → 비밀값 → [코드로 받기]에 붙여넣으세요.'), ta,
+    h('div.btnrow', btn('복사', async () => toast((await copyText(code)) ? '복사했어요. 붙여넣은 뒤 클립보드를 비우세요.' : '복사하지 못했어요. 칸을 길게 눌러 복사하세요.'), 'primary'))));
+}
+function importSecrets(ctx) {
+  const ta = textarea('', { rows: 4, class: 'mono', placeholder: SEC_PREFIX + '…', autocapitalize: 'off', spellcheck: 'false' });
+  const s = openSheet('비밀값 코드로 받기', h('div', field('코드', ta), h('div.btnrow', btn('받기', async () => {
+    let o;
+    try {
+      const raw = ta.value.trim();
+      if (!raw.startsWith(SEC_PREFIX)) throw new Error();
+      o = JSON.parse(b64ToUtf8(raw.slice(SEC_PREFIX.length)));
+      if (!o || typeof o.v !== 'object') throw new Error();
+    } catch { toast('코드가 올바르지 않아요. TA-SECRETS1: 로 시작하는 코드 전체를 붙여넣으세요.', 4000); return; }
+    if (o.trip !== ctx.trip.id && !(await ask(`다른 여행(${o.trip})의 코드예요. 이 여행에 넣을까요?`))) return;
+    const keys = Object.keys(o.v).filter((k) => o.v[k]);
+    setSecrets(ctx.trip.id, o.v);
+    s.close(); toast(`비밀값 ${keys.length}개를 이 기기에 저장했어요.`); ctx.render();
+  }, 'primary'))));
+}
+
 async function openHistory(ctx) {
   const body = h('div', h('p.hint', '불러오는 중…'));
   const s = openSheet('커밋 기록', body);

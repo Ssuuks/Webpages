@@ -193,3 +193,49 @@ export function shiftTrip(src, newId, newStart) {
   (t.stays || []).forEach((s) => { s.notes = strip(s.notes); });
   return t;
 }
+
+/* 예약 오픈 알림: 일정에 넣은 장소의 예약 조건("바코드 7일 전", "24시간 전")으로 오픈 시각을 계산한다.
+   숫자가 없는 조건("업체 전화")이나 '예약 필요' 배지는 방문일을 마감으로 둔다. */
+export function reserveReminders(trip, datasets) {
+  const out = [];
+  const seen = new Set();
+  for (const d of trip.days || []) {
+    const plan = activePlan(d);
+    for (const it of (plan && plan.items) || []) {
+      if (!it.placeId || it.kind === 'move') continue;
+      const p = findPlace(trip, datasets, it.placeId);
+      if (!p) continue;
+      const cond = (p.pass && p.pass.reserve) || null;
+      const flagged = (p.badges || []).includes('reserve') || (it.badges || []).includes('reserve');
+      if (!cond && !flagged) continue;
+      const byItem = !cond && (it.badges || []).includes('reserve');   // 장소가 아니라 그 일정(예: 호텔 안 식당)에 예약이 필요
+      const name = byItem ? (it.title || p.name) : p.name;
+      const key = (byItem ? it.id : p.id) + '|' + d.date;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const r = { placeId: p.id, name, visit: d.date, time: it.time || null, itemId: it.id, cond: cond || '예약 필요', key };
+      const days = /(\d+)\s*일\s*전/.exec(cond || ''), hours = /(\d+)\s*시간\s*전/.exec(cond || '');
+      if (days) { r.due = addDays(d.date, -Number(days[1])); r.kind = 'open'; r.text = `${name} 예약 오픈 (${cond}) · ${d.date.slice(5).replace('-', '/')} 방문`; }
+      else if (hours) {
+        const back = Math.ceil(Number(hours[1]) / 24);
+        r.due = addDays(d.date, -back); r.at = it.time ? r.due + 'T' + it.time : null; r.kind = 'open';
+        r.text = `${name} 예약 오픈 (${cond}) · ${d.date.slice(5).replace('-', '/')}${it.time ? ' ' + it.time : ''} 방문`;
+      } else { r.due = d.date; r.kind = 'need'; r.text = `${name} ${r.cond} · ${d.date.slice(5).replace('-', '/')}${it.time ? ' ' + it.time : ''} 전`; }
+      out.push(r);
+    }
+  }
+  return out.sort((a, b) => a.due.localeCompare(b.due));
+}
+
+/* 여행 첫날 기준 가족 나이 (기기 전용 프로필) */
+export function travelerAges(trip, profile) {
+  const members = (profile && profile.members) || [];
+  const date = trip.meta && trip.meta.start;
+  const list = (trip.travelers && trip.travelers.length ? trip.travelers : members.map((m) => ({ label: m.label, role: m.role, profileKey: m.key })))
+    .map((t) => {
+      const m = members.find((x) => x.key === t.profileKey) || members.find((x) => x.label === t.label);
+      const a = m ? ageAt(m.birth, date) : null;
+      return { label: t.label || (m && m.label) || '', role: t.role || (m && m.role), age: a };
+    });
+  return { date, list, any: list.some((x) => x.age) };
+}
