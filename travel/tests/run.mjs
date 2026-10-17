@@ -250,3 +250,132 @@ test('예약 오픈 알림: N일 전·N시간 전·예약 필요 배지', async 
     { members: [{ key: 'child2', label: '둘째', role: 'child', birth: '2023-10-30' }] });
   assert.equal(ages.list[0].age.months, 36);
 });
+
+test('3방향 병합: 서로 다른 곳은 자동으로 합치고 같은 값만 충돌', async () => {
+  const { merge3, resolveConflicts } = await import('../assets/sync.js');
+  const base = jeju();
+  const L = clone(base), R = clone(base);
+  L.days[0].plans[0].items[1].time = '10:05';                       // 이 기기: 시간
+  R.days[0].plans[0].items[1].note = '원격 메모';                     // 저장소: 같은 항목의 다른 필드
+  R.passes[0].activatedAt = '2026-11-21T10:02';
+  L.places.push({ id: 'l1', name: '로컬 장소' });
+  R.places.push({ id: 'r1', name: '원격 장소' });
+  L.days[0].plans[0].items.splice(2, 0, { id: 'L-add', time: '11:20', title: '로컬 추가' });
+  R.days[0].plans[0].items.push({ id: 'R-add', time: '13:00', title: '원격 추가' });
+  let { merged, conflicts } = merge3(base, L, R);
+  assert.equal(conflicts.length, 0);
+  const it = merged.days[0].plans[0].items;
+  assert.equal(it[1].time, '10:05'); assert.equal(it[1].note, '원격 메모');
+  assert.equal(merged.passes[0].activatedAt, '2026-11-21T10:02');
+  assert.deepEqual(merged.places.slice(-2).map((p) => p.id), ['l1', 'r1']);
+  assert.deepEqual(it.map((x) => x.id), ['1121-0940', '1121-1000', 'L-add', '1121-1135', 'R-add']);
+
+  const L2 = clone(base), R2 = clone(base);
+  L2.days[0].plans[0].items[1].time = '10:10'; R2.days[0].plans[0].items[1].time = '10:20';
+  ({ merged, conflicts } = merge3(base, L2, R2));
+  assert.equal(conflicts.length, 1);
+  assert.match(conflicts[0].label, /11\/21 · 안 기본 · 하리보 · 시작/);
+  assert.equal(merged.days[0].plans[0].items[1].time, '10:10', '고르기 전에는 이 기기 값');
+  assert.equal(resolveConflicts(merged, conflicts, ['remote']).days[0].plans[0].items[1].time, '10:20');
+});
+
+test('3방향 병합: 지우기, 순서, id 없는 배열', async () => {
+  const { merge3 } = await import('../assets/sync.js');
+  const base = jeju();
+  base.passes[0].uses = [{ at: '2026-11-21T10:00', placeId: 'haribo' }];
+  const L = clone(base), R = clone(base);
+  L.places = L.places.filter((p) => p.id !== 'dolharu');                 // 이 기기가 지움, 저장소는 그대로 → 지움
+  R.places = R.places.map((p) => (p.id === 'surprise' ? { ...p, desc: '원격 수정' } : p));
+  L.passes[0].uses.push({ at: '2026-11-21T11:35', placeId: 'surprise' }); // 양쪽에서 각각 이용 기록 → 둘 다 남김
+  R.passes[0].uses.push({ at: '2026-11-21T13:00', placeId: 'x' });
+  const items = R.days[0].plans[0].items; [items[1], items[2]] = [items[2], items[1]];   // 저장소만 순서 바꿈 → 따름
+  const { merged, conflicts } = merge3(base, L, R);
+  assert.equal(conflicts.length, 0);
+  assert.ok(!merged.places.some((p) => p.id === 'dolharu'));
+  assert.equal(merged.places.find((p) => p.id === 'surprise').desc, '원격 수정');
+  assert.equal(merged.passes[0].uses.length, 3);
+  assert.deepEqual(merged.days[0].plans[0].items.map((x) => x.id), ['1121-0940', '1121-1135', '1121-1000']);
+  // 저장소가 지웠지만 이 기기가 고친 항목은 남긴다
+  const L2 = clone(base), R2 = clone(base);
+  L2.places.find((p) => p.id === 'surprise').desc = '로컬 수정';
+  R2.places = R2.places.filter((p) => p.id !== 'surprise');
+  assert.equal(merge3(base, L2, R2).merged.places.find((p) => p.id === 'surprise').desc, '로컬 수정');
+});
+
+test('가족 규칙 점검과 하루 요약', async () => {
+  const { familyChecks, daySummary } = await import('../assets/validate.js');
+  const t = jeju();
+  t.days[0].plans[0].items.push(
+    { id: 'x1', time: '13:00', kind: 'visit', title: '세 번째 외출', placeId: 'dolharu' },
+    { id: 'x2', time: '14:00', kind: 'move', title: '→ 멀리', leg: { km: 50, min: 75 } },
+    { id: 'x3', time: '21:00', kind: 'visit', title: '야시장' },
+    { id: 'x4', time: '15:00', kind: 'visit', title: '선택 외출', optional: true });
+  const s = daySummary(t, t.days[0], {});
+  assert.deepEqual([s.fixed, s.optional, s.drive, s.pass], [4, 1, 90, 2]);
+  const w = familyChecks(t, {}, { maxOutings: 2, maxDriveMin: 80, maxLegMin: 60, bedtime: '20:30', mealGapH: 6 }).map((x) => x.msg).join('\n');
+  assert.match(w, /고정 외출이 4곳이에요\(가족 기준 2곳\)/);
+  assert.match(w, /하루 운전이 90분/);
+  assert.match(w, /한 번에 75분 이동/);
+  assert.match(w, /21:00 야시장: 아이 취침 시간\(20:30\) 이후/);
+  // 숙소 안 일정은 외출로 세지 않는다
+  t.days[0].plans[0].items.push({ id: 'x5', time: '16:00', kind: 'visit', title: '키즈클럽', placeId: 'stay-sheraton' });
+  assert.equal(daySummary(t, t.days[0], {}).fixed, 4);
+});
+
+test('자동 알림: 항공 체크인·공항 도착·렌터카 반납·레이트 체크아웃, 체크리스트와 겹치면 숨김', async () => {
+  const { autoReminders } = await import('../assets/model.js');
+  const t = jeju();
+  const r = autoReminders(t, {}, { memberships: '레이트체크아웃' });
+  const by = (src) => r.filter((x) => x.source === src).map((x) => x.at);
+  assert.deepEqual(by('checkin'), ['2026-11-19T15:45', '2026-11-24T16:05']);
+  assert.deepEqual(by('airport'), ['2026-11-20T14:45', '2026-11-25T15:05']);
+  assert.deepEqual(by('return'), ['2026-11-25T13:00']);
+  assert.deepEqual(by('late'), ['2026-11-21T20:00', '2026-11-24T20:00']);
+  t.checklists = [{ id: 'pre', title: '출발 전', items: [{ id: 'p1', text: 'x', fromReminder: 'checkin|flight-out', done: false }] }];
+  assert.equal(autoReminders(t, {}, null).filter((x) => x.source === 'checkin').length, 1);
+});
+
+test('우리 가족 요금과 패스 손익', async () => {
+  const { familyFare, passRoi, fareCategory } = await import('../assets/model.js');
+  assert.equal(fareCategory({ years: 3, months: 36 }), 'child');
+  assert.equal(fareCategory({ years: 2, months: 35 }), 'infant');
+  const t = jeju();
+  t.passes[0].price = 19900; t.passes[0].holders = 4;
+  t.travelers = [{ id: 'a1', role: 'adult', label: '어른1' }, { id: 'a2', role: 'adult', label: '어른2' }, { id: 'k1', role: 'child', label: '첫째' }, { id: 'k2', role: 'child', label: '둘째' }];
+  const har = t.places.find((p) => p.id === 'haribo');
+  har.prices = { adult: 18000, youth: 15000, child: 13000, infant: 0 };
+  har.pass = { id: 'jejupass', surchargePrices: { adult: 12000, youth: 9000, child: 7000 } };
+  t.places.find((p) => p.id === 'surprise').prices = { adult: 12000, child: 9000 };
+  const roi = passRoi(t, {}, t.passes[0], { members: [] });
+  assert.equal(roi.cost, 79600);
+  assert.deepEqual(roi.rows.map((x) => x.saved), [62000 - 38000, 42000, 24000]);   // 시험 여행은 하리보를 두 번 간다
+  assert.equal(roi.saved, 90000);
+  assert.equal(roi.net, 90000 - 79600);
+  assert.equal(familyFare({ adult: 10000 }, [{ cat: 'adult' }, { cat: 'child' }]).known, false);
+});
+
+test('이상한 좌표와 이동 거리 경고', () => {
+  const t = jeju();
+  t.places.push({ id: 'far', name: '서울 어딘가', lat: 37.56, lng: 126.97 });
+  t.days[0].plans[0].items[0].leg.km = 1;                    // 숙소 없음 → 앞 장소 없음, 검사 안 함
+  t.days[0].plans[0].items.splice(2, 0, { id: 'mv', time: '11:05', kind: 'move', title: '→ 서프라이즈', leg: { km: 2, min: 5 } });
+  const w = validateTrip(t).warnings;
+  assert.ok(w.some((x) => x.kind === 'coords-far' && /서울 어딘가/.test(x.msg)));
+  assert.ok(w.some((x) => x.kind === 'leg-dist' && /직선거리\(12\.\dkm\)보다 짧아요/.test(x.msg)));
+});
+
+test('부분 업데이트는 항목 안 객체를 깊게 합친다', async () => {
+  const { deepMerge } = await import('../assets/importer.js');
+  const a = { id: 'p', pass: { id: 'jejupass', code: '4-3', benefit: '입장권' }, badges: ['pass', 'kids'] };
+  const m = deepMerge(a, { pass: { surchargePrices: { adult: 1 } }, badges: ['pass'] });
+  assert.deepEqual(m.pass, { id: 'jejupass', code: '4-3', benefit: '입장권', surchargePrices: { adult: 1 } });
+  assert.deepEqual(m.badges, ['pass']);
+});
+
+test('연결 코드 암호화', async () => {
+  const { sealText, openText } = await import('../assets/util.js');
+  const sealed = await sealText('{"token":"github_pat_x"}', '제주2026');
+  assert.ok(!sealed.includes('github_pat'));
+  assert.equal(await openText(sealed, '제주2026'), '{"token":"github_pat_x"}');
+  await assert.rejects(() => openText(sealed, '틀림'));
+});

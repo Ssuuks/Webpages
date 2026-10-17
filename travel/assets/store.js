@@ -1,10 +1,12 @@
 /* 저장 계층
    - IndexedDB: 여행·데이터셋 사본(data)과 마지막 커밋본(base), sha
+   - IndexedDB blobs: 서류함 파일 사본(오프라인용)
    - localStorage(기기 전용): 토큰, 비밀값, 가족 프로필, 화면 설정 — 내보내기·커밋에 절대 넣지 않는다 */
+import { same } from './util.js';
 
-const DB_NAME = 'travel-app', DB_VER = 1;
+const DB_NAME = 'travel-app', DB_VER = 2;
 let dbp = null;
-const mem = { trips: new Map(), datasets: new Map(), kv: new Map() };   // IndexedDB가 막힌 환경용
+const mem = { trips: new Map(), datasets: new Map(), kv: new Map(), blobs: new Map() };   // IndexedDB가 막힌 환경용
 
 function open() {
   if (dbp) return dbp;
@@ -16,6 +18,7 @@ function open() {
       if (!db.objectStoreNames.contains('trips')) db.createObjectStore('trips', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('datasets')) db.createObjectStore('datasets', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv', { keyPath: 'k' });
+      if (!db.objectStoreNames.contains('blobs')) db.createObjectStore('blobs', { keyPath: 'path' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
@@ -37,7 +40,7 @@ async function run(store, mode, idbFn, memFn) {
     t.onabort = () => reject(t.error);
   });
 }
-const keyOf = (v) => v.id || v.k;
+const keyOf = (v) => v.id || v.k || v.path;
 
 export const db = {
   get: (store, key) => run(store, 'readonly', (s) => s.get(key), (m) => m.get(key)),
@@ -47,6 +50,27 @@ export const db = {
 };
 export async function kvGet(k) { const r = await db.get('kv', k); return r ? r.v : undefined; }
 export function kvSet(k, v) { return db.put('kv', { k, v }); }
+
+/* 서류함 파일 사본 */
+export const blobs = {
+  get: (path) => db.get('blobs', path),
+  put: (path, blob, mime) => db.put('blobs', { path, blob, mime, at: Date.now() }),
+  del: (path) => db.del('blobs', path),
+};
+
+/* 기기 안 버전 기록: 여행마다 최근 10개. 잦은 편집은 2분에 한 번만 남긴다 */
+const noTs = (t) => { if (!t) return t; const c = { ...t }; delete c.updatedAt; return c; };
+export async function pushHistory(tripId, data, label, force) {
+  if (!data) return;
+  const k = 'hist:' + tripId;
+  const list = (await kvGet(k)) || [];
+  const last = list[0];
+  if (last && same(noTs(last.data), noTs(data))) return;
+  if (!force && last && Date.now() - last.at < 120000) return;
+  list.unshift({ at: Date.now(), label: label || '편집', data });
+  await kvSet(k, list.slice(0, 10));
+}
+export async function getHistory(tripId) { return (await kvGet('hist:' + tripId)) || []; }
 
 /* ── localStorage ─────────────────────────────────── */
 const lsMem = {};
@@ -64,6 +88,16 @@ export const K = {
   secrets: 'ta:secrets',
   profile: 'ta:profile',
   ui: 'ta:ui',
+  autosync: 'ta:autosync',
+  tokenExp: 'ta:tokenExp',
+};
+
+/* 설정 */
+export const settings = {
+  autosync: () => LS.get(K.autosync) !== '0',             // 기본 켬
+  setAutosync: (on) => LS.set(K.autosync, on ? '1' : '0'),
+  tokenExp: () => (LS.get(K.tokenExp) || '').slice(0, 10),
+  setTokenExp: (v) => (v ? LS.set(K.tokenExp, v) : LS.del(K.tokenExp)),
 };
 
 /* 저장소 설정 */
@@ -112,8 +146,13 @@ export const DEFAULT_PROFILE = {
   likes: '호텔 프로그램을 즐기고 하루 외출은 1~2곳. 큰 테마파크 두 곳을 하루에 넣는 건 무리. 돈을 아끼진 않지만 억지로 비싼 선택은 피하고, 무료만 고집하지도 않는다.',
   dislikes: '방어(아이·배우자), 붐비는 축제',
   fallbackAges: '2026년 11월 기준 아이 5세와 3세(36개월을 막 넘김)',
+  /* 가족 규칙 점검 기준 */
+  rules: { maxOutings: 2, maxDriveMin: 90, maxLegMin: 60, bedtime: '20:30', mealGapH: 6 },
 };
-export function getProfile() { return Object.assign({}, DEFAULT_PROFILE, LS.json(K.profile, {})); }
+export function getProfile() {
+  const saved = LS.json(K.profile, {});
+  return Object.assign({}, DEFAULT_PROFILE, saved, { rules: { ...DEFAULT_PROFILE.rules, ...(saved.rules || {}) } });
+}
 export function setProfile(p) { LS.setJson(K.profile, p); }
 
 export function ui() { return LS.json(K.ui, {}); }

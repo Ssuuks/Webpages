@@ -63,14 +63,22 @@ export function takeImportKeys(obj) {
   return { body: o, secretValues, remove };
 }
 
-/* 배열 id 기준 upsert. 객체는 얕게 병합(블록 단위). */
+/* 객체는 깊게 합치고(바꾼 키만), 배열·값은 새 것으로 바꾼다 */
+const isPlain = (o) => o && typeof o === 'object' && !Array.isArray(o);
+export function deepMerge(a, b) {
+  if (!isPlain(a) || !isPlain(b)) return clone(b);
+  const out = clone(a);
+  for (const [k, v] of Object.entries(b)) out[k] = isPlain(out[k]) && isPlain(v) ? deepMerge(out[k], v) : clone(v);
+  return out;
+}
+/* 배열 id 기준 upsert. 항목 안의 객체(pass, hours, prices…)는 깊게 병합 */
 function upsert(base, incoming, log, path) {
   const out = (base || []).slice();
   for (const x of incoming || []) {
     if (!x || typeof x !== 'object' || !x.id) { out.push(x); log.added.push(path + ' (id 없음)'); continue; }
     const i = out.findIndex((y) => y && y.id === x.id);
     if (i < 0) { out.push(x); log.added.push(`${path}: ${label(x)}`); }
-    else if (!same(out[i], { ...out[i], ...x })) { out[i] = { ...out[i], ...x }; log.changed.push(`${path}: ${label(x)}`); }
+    else { const m = deepMerge(out[i], x); if (!same(out[i], m)) { out[i] = m; log.changed.push(`${path}: ${label(x)}`); } }
   }
   return out;
 }

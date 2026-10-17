@@ -340,6 +340,20 @@
         }
        }
       }
+     },
+     "checkinOpensH": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "온라인 체크인이 열리는 시각(출발 몇 시간 전), 기본 24"
+     },
+     "airportBufferMin": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "공항 도착 목표(출발 몇 분 전), 기본 국내 60 · 해외 150"
      }
     }
    }
@@ -444,6 +458,33 @@
           "$ref": "#/$defs/item"
          }
         }
+       }
+      }
+     },
+     "journal": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "하루 한 줄 기록",
+      "properties": {
+       "text": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "best": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "at": {
+        "type": [
+         "string",
+         "null"
+        ]
        }
       }
      }
@@ -800,6 +841,67 @@
      }
     }
    }
+  },
+  "documents": {
+   "type": "array",
+   "description": "서류함 목록. 파일은 저장소 docs/{여행id}/ 에",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "file"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "title": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "file": {
+      "type": "string"
+     },
+     "mime": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "size": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "addedAt": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "linkTo": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "type": {
+        "enum": [
+         "transport",
+         "stay",
+         "pass"
+        ]
+       },
+       "id": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   }
   }
  },
  "$defs": {
@@ -1054,6 +1156,39 @@
         "string",
         "null"
        ]
+      },
+      "surchargePrices": {
+       "type": [
+        "object",
+        "null"
+       ],
+       "description": "패스 고객 현장 추가금",
+       "properties": {
+        "adult": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "youth": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "child": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "infant": {
+         "type": [
+          "number",
+          "null"
+         ]
+        }
+       }
       }
      }
     },
@@ -1094,6 +1229,51 @@
       "string",
       "null"
      ]
+    },
+    "prices": {
+     "type": [
+      "object",
+      "null"
+     ],
+     "description": "정가(원). child 36개월~만12세, infant 36개월 미만, youth 만13~18세가 기본",
+     "properties": {
+      "adult": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "youth": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "child": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "infant": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "note": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "source": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
     }
    }
   },
@@ -1200,6 +1380,18 @@
       "string",
       "null"
      ]
+    },
+    "done": {
+     "type": "boolean",
+     "description": "여행 중 완료 표시"
+    },
+    "skipped": {
+     "type": "boolean",
+     "description": "건너뜀 표시"
+    },
+    "fixed": {
+     "type": "boolean",
+     "description": "'늦어졌어요'로 밀지 않는 일정"
     }
    }
   }

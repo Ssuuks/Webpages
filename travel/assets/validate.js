@@ -1,6 +1,6 @@
 /* trip/v1 검사 — 오류(저장 불가)와 경고(저장 가능), 요약, 비밀값 감지
    메시지는 무엇이 틀렸고 어떻게 고치는지 쓴다. DOM을 쓰지 않아 node에서도 테스트한다. */
-import { RE_DATE, RE_TIME, RE_DT, WEEK, WEEK_KO, weekday, byId, fmtDate, toEpoch, fromEpoch, hhmm } from './util.js';
+import { RE_DATE, RE_TIME, RE_DT, WEEK, WEEK_KO, weekday, byId, fmtDate, toEpoch, fromEpoch, hhmm, mins, distKm, hasXY } from './util.js';
 import { activePlan, itemMinutes, itemEndMinutes, findPlace, badgeDict, ITEM_KINDS, TRANSPORT_KINDS, TONES, CATS } from './model.js';
 
 const CAT_IDS = CATS.map((c) => c.id);
@@ -85,6 +85,17 @@ export function validateTrip(trip, opts = {}) {
     if (p.hours != null) checkHours(p.hours, `places[${i}].hours`, what, warn);
     if (p.pass && p.pass.id && !byId(trip.passes, p.pass.id)) warn(`places[${i}].pass`, `${what}의 패스 "${p.pass.id}"가 passes에 없어요.`);
   });
+
+  /* 좌표 이상치: 다른 장소들의 중앙에서 150km 넘게 떨어진 곳 (AI가 좌표를 잘못 넣었을 수 있음) */
+  const withXY = (trip.places || []).filter((p) => isObj(p) && hasXY(p));
+  if (withXY.length >= 3) {
+    const med = (arr) => { const a = [...arr].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+    const center = { lat: med(withXY.map((p) => p.lat)), lng: med(withXY.map((p) => p.lng)) };
+    for (const p of withXY) {
+      const km = distKm(center, p);
+      if (km > 150) warn('places', `장소 "${p.name}"의 좌표가 다른 장소들과 ${Math.round(km)}km 떨어져 있어요. 좌표가 맞는지 확인하세요(맞으면 무시해도 돼요).`, { kind: 'coords-far', placeId: p.id });
+    }
+  }
 
   /* 숙소·교통 */
   (trip.stays || []).forEach((s, i) => {
@@ -177,6 +188,7 @@ export function validateTrip(trip, opts = {}) {
 
   /* 일정 점검 경고 */
   if (!E.length && !opts.skipChecks) W.push(...scheduleChecks(trip, datasets));
+  if (!E.length && !opts.skipChecks && opts.rules) W.push(...familyChecks(trip, datasets, opts.rules));
 
   return result(trip, E, W);
 }
@@ -240,6 +252,18 @@ export function scheduleChecks(trip, datasets = {}) {
       if (it.kind === 'move' && it.leg && typeof it.leg.min === 'number' && start != null) {
         const next = items.slice(i + 1).map((x, k) => ({ x, m: ms[i + 1 + k] })).find((o) => o.m != null);
         if (next && start + it.leg.min > next.m) add(d.date, it.id, `${at}: 이동 ${it.leg.min}분이면 ${hhmm(start + it.leg.min)} 도착이라 다음 일정 ${next.x.time}에 늦어요.`, 'leg');
+      }
+      /* 이동 거리와 직선거리 비교 (앞뒤 장소 좌표가 있을 때) */
+      if (it.kind === 'move' && it.leg && typeof it.leg.km === 'number') {
+        const placeAt = (k) => { const x = items[k]; return x && x.kind !== 'move' && x.placeId ? findPlace(trip, datasets, x.placeId) : null; };
+        let a = null, b = null;
+        for (let k = i - 1; k >= 0 && !a; k--) { const q = placeAt(k); if (q && hasXY(q)) a = q; }
+        for (let k = i + 1; k < items.length && !b; k++) { const q = placeAt(k); if (q && hasXY(q)) b = q; }
+        const straight = a && b && a.id !== b.id ? distKm(a, b) : null;
+        if (straight != null && straight > 1) {
+          if (it.leg.km < straight * 0.8 - 0.5) add(d.date, it.id, `${at}: 이동 ${it.leg.km}km가 직선거리(${straight.toFixed(1)}km)보다 짧아요. 거리나 장소를 확인하세요.`, 'leg-dist');
+          else if (it.leg.km > straight * 3 + 5) add(d.date, it.id, `${at}: 이동 ${it.leg.km}km가 직선거리(${straight.toFixed(1)}km)보다 훨씬 길어요. 거리나 장소를 확인하세요.`, 'leg-dist');
+        }
       }
       /* 운영시간·휴무 */
       const p = it.placeId && findPlace(trip, datasets, it.placeId);
@@ -326,4 +350,68 @@ export function validateDataset(ds) {
     });
   }
   return { ok: !E.length, errors: E, warnings: W, summary: { places: isObj(ds) && isArr(ds.places) ? ds.places.length : 0 } };
+}
+
+/* ── 가족 규칙 점검 ────────────────────────────────── */
+export const DEFAULT_RULES = { maxOutings: 2, maxDriveMin: 90, maxLegMin: 60, bedtime: '20:30', mealGapH: 6 };
+const MEALISH = /(조식|아침|점심|저녁|식사|브런치|간식|디너|런치|애프터눈티|해피아워|lunch|dinner|breakfast)/i;
+
+/* 하루 요약: 고정 외출·선택 외출·운전 합계·패스 사용·가장 긴 이동 (건너뛴 일정은 빼고) */
+export function daySummary(trip, day, datasets = {}) {
+  const plan = activePlan(day);
+  const items = ((plan && plan.items) || []).filter((it) => isObj(it) && !it.skipped);
+  const stayPlaces = new Set((trip.stays || []).map((s) => s.placeId).filter(Boolean));
+  const outing = (it) => {
+    if (it.kind !== 'visit') return false;
+    if (!it.placeId) return true;
+    if (stayPlaces.has(it.placeId)) return false;
+    const p = findPlace(trip, datasets, it.placeId);
+    return !(p && p.cat === 'stay');
+  };
+  const legs = items.filter((it) => it.kind === 'move' && it.leg && typeof it.leg.min === 'number').map((it) => it.leg.min);
+  return {
+    fixed: items.filter((it) => outing(it) && !it.optional).length,
+    optional: items.filter((it) => outing(it) && it.optional).length,
+    drive: legs.reduce((a, b) => a + b, 0),
+    longest: legs.length ? Math.max(...legs) : 0,
+    pass: items.filter((it) => it.passUse).length,
+  };
+}
+
+export function familyChecks(trip, datasets = {}, rules = {}) {
+  const R = { ...DEFAULT_RULES, ...rules };
+  const W = [];
+  const add = (date, itemId, msg) => W.push({ path: 'days', date, itemId, msg, kind: 'family' });
+  const stayPlaces = new Set((trip.stays || []).map((s) => s.placeId).filter(Boolean));
+  const bed = mins(R.bedtime);
+  for (const d of trip.days || []) {
+    if (!isObj(d) || !RE_DATE.test(d.date || '')) continue;
+    const plan = activePlan(d); if (!plan || !isArr(plan.items)) continue;
+    const dl = dayLabel(trip, d.date);
+    const sum = daySummary(trip, d, datasets);
+    if (R.maxOutings && sum.fixed > R.maxOutings) add(d.date, null, `${dl}: 고정 외출이 ${sum.fixed}곳이에요(가족 기준 ${R.maxOutings}곳). 하나를 '선택'으로 바꾸거나 다른 날로 옮겨 보세요.`);
+    if (R.maxDriveMin && sum.drive > R.maxDriveMin) add(d.date, null, `${dl}: 하루 운전이 ${sum.drive}분이에요(가족 기준 ${R.maxDriveMin}분).`);
+    const items = plan.items.filter((it) => isObj(it) && !it.skipped);
+    const ms = itemMinutes(items);
+    const meals = [];
+    items.forEach((it, i) => {
+      if (it.kind === 'move' && it.leg && typeof it.leg.min === 'number' && R.maxLegMin && it.leg.min > R.maxLegMin)
+        add(d.date, it.id, `${dl} ${it.time || ''} ${it.title}: 한 번에 ${it.leg.min}분 이동이에요(가족 기준 ${R.maxLegMin}분). 멀미·휴식을 생각해 중간에 쉬어 가세요.`);
+      const atStay = it.placeId && stayPlaces.has(it.placeId);
+      if (bed != null && ms[i] != null && ms[i] >= bed && !['hotel', 'rest', 'flight', 'move'].includes(it.kind) && !atStay)
+        add(d.date, it.id, `${dl} ${it.time} ${it.title}: 아이 취침 시간(${R.bedtime}) 이후 외부 일정이에요.`);
+      const text = `${it.title || ''} ${it.note || ''}`;
+      if (ms[i] != null && (it.kind === 'meal' || MEALISH.test(text))) {
+        const inNote = it.kind !== 'meal' && !MEALISH.test(it.title || '');
+        meals.push({ at: inNote ? (itemEndMinutes(it, ms[i]) ?? ms[i]) : ms[i], it });
+      }
+    });
+    if (R.mealGapH && meals.length >= 2) {
+      for (let i = 1; i < meals.length; i++) {
+        const gap = meals[i].at - meals[i - 1].at;
+        if (gap > R.mealGapH * 60) add(d.date, meals[i].it.id, `${dl}: '${meals[i - 1].it.title}' 뒤 ${Math.floor(gap / 60)}시간 ${gap % 60 ? (gap % 60) + '분 ' : ''}동안 식사·간식이 없어요. 아이 간식을 챙기세요.`);
+      }
+    }
+  }
+  return W;
 }

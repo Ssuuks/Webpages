@@ -1,14 +1,15 @@
 /* 더보기: 예약 · 패스 · 경비 · 지도 · 메모 · 데이터 */
 import { h, clear, rich, byId, clone, fmtDate, fmtDT, fmtLeg, distKm, hasXY, toEpoch, fromEpoch, download, copyText, toast, uid,
-  nowIn, utf8ToB64, b64ToUtf8 } from './util.js';
-import { activePlan, findPlace, allPlaces, stayForDay, TRANSPORT_LABEL, TRANSPORT_KINDS, CAT_LABEL } from './model.js';
+  nowIn, utf8ToB64, b64ToUtf8, plain } from './util.js';
+import { activePlan, findPlace, allPlaces, stayForDay, TRANSPORT_LABEL, TRANSPORT_KINDS, CAT_LABEL, flightLinks, passRoi, familyCategories } from './model.js';
 import { validateTrip } from './validate.js';
 import { buildIcs } from './ics.js';
 import { drawMap } from './map.js';
-import { setSecret, setSecrets, secretsFor, clearSecrets } from './store.js';
+import { setSecret, setSecrets, secretsFor, clearSecrets, getHistory, getProfile } from './store.js';
 import { listCommits, getFileAt, hasToken } from './github.js';
-import { openSheet, ask, badges, pill, btn, telLink, field, input, textarea, select, section, empty } from './ui.js';
+import { openSheet, ask, badges, pill, btn, linkBtn, telLink, field, input, textarea, select, section, empty } from './ui.js';
 import { openPlace, passState, selectedDate } from './v-trip.js';
+import { addDoc, removeDoc, loadDoc, cachedPaths, cacheAll, pendingCount, fmtSize, isImage } from './docs.js';
 import { openAiEdit } from './v-import.js';
 
 const SUBS = [
@@ -17,6 +18,8 @@ const SUBS = [
   { id: 'budget', label: '경비', icon: '💳', desc: '계획 대비 실제, CSV' },
   { id: 'map', label: '지도', icon: '🗺', desc: '전체 장소와 하루 동선' },
   { id: 'notes', label: '메모', icon: '✎', desc: '결정·열린 질문·회고' },
+  { id: 'docs', label: '서류함', icon: '📎', desc: '바우처·QR·탑승권, 오프라인 보관' },
+  { id: 'print', label: '공유·인쇄', icon: '🖨', desc: '비밀값 없이 일정표 공유' },
   { id: 'data', label: '데이터', icon: '⇅', desc: 'AI로 고치기, 비밀값, 내보내기, 동기화' },
 ];
 
@@ -26,7 +29,7 @@ export function viewMore(ctx) {
     return h('div.more', h('div.menu-grid', SUBS.map((s) => h('a.menu-tile', { href: `#/t/${encodeURIComponent(ctx.trip.id)}/more/${s.id}` },
       h('span.menu-ico', { 'aria-hidden': 'true' }, s.icon), h('b', s.label), h('span', s.desc)))));
   }
-  const view = { book: viewBook, pass: viewPass, budget: viewBudget, map: viewMap, notes: viewNotes, data: viewData }[sub.id];
+  const view = { book: viewBook, pass: viewPass, budget: viewBudget, map: viewMap, notes: viewNotes, data: viewData, docs: viewDocs, print: viewPrint }[sub.id];
   return h('div.more-sub',
     h('div.subhead', h('a.icon-btn', { href: `#/t/${encodeURIComponent(ctx.trip.id)}/more`, 'aria-label': '더보기' }, '‹'), h('h2', sub.label)),
     view(ctx));
@@ -62,7 +65,8 @@ function viewBook(ctx) {
       (x.perks || []).length ? h('ul.perks', x.perks.map((k) => h('li', ...rich(k, ctx.secrets)))) : null,
       x.notes ? h('p.item-note', ...rich(x.notes, ctx.secrets)) : null,
       secretList(ctx, x.secretKeys),
-      btn('수정', () => editBooking(ctx, 'stays', x.id), 'small ghost'));
+      docChips(ctx, { type: 'stay', id: x.id }),
+      h('div.btnrow.wrap', btn('수정', () => editBooking(ctx, 'stays', x.id), 'small ghost'), btn('＋ 서류', () => openAddDoc(ctx, { type: 'stay', id: x.id }), 'small ghost')));
     return h('section.card.booking',
       h('div.card-kicker', (TRANSPORT_LABEL[x.kind] || '교통') + ' ', status),
       h('h3', x.title),
@@ -72,8 +76,10 @@ function viewBook(ctx) {
       x.phone ? h('p', telLink(x.phone, '☎ ' + x.phone)) : null,
       x.notes ? h('p.item-note', ...rich(x.notes, ctx.secrets)) : null,
       (x.deadlines || []).length ? h('ul.kv', x.deadlines.map((d) => h('li', h('span', '⏰ ' + d.label), h('b', fmtDT(d.at))))) : null,
+      x.kind === 'flight' && flightLinks(x).length ? h('div.btnrow.wrap', flightLinks(x).map((l) => linkBtn(l.label, l.href, 'small ghost'))) : null,
       secretList(ctx, x.secretKeys),
-      btn('수정', () => editBooking(ctx, 'transports', x.id), 'small ghost'));
+      docChips(ctx, { type: 'transport', id: x.id }),
+      h('div.btnrow.wrap', btn('수정', () => editBooking(ctx, 'transports', x.id), 'small ghost'), btn('＋ 서류', () => openAddDoc(ctx, { type: 'transport', id: x.id }), 'small ghost')));
   }));
 }
 function editBooking(ctx, block, id) {
@@ -105,7 +111,7 @@ function editBooking(ctx, block, id) {
         (tt.transports || []).forEach((o) => (o.deadlines || []).forEach((d) => { if (d.after === id) delete d.after; if (d.before === id) delete d.before; }));
         (tt.days || []).forEach((d) => (d.plans || []).forEach((p) => (p.items || []).forEach((it) => { if (it.transportId === id) delete it.transportId; })));
       }
-    }, '지웠어요.');
+    }, '예약을 지웠어요.', { undo: true });
     s.close();
   };
   const s = openSheet(isNew ? (isStay ? '숙소 추가' : '교통 추가') : '예약 수정', h('div',
@@ -177,11 +183,14 @@ function passCard(ctx, p) {
         const i = input(p.activatedAt || now, { type: 'datetime-local' });
         const s = openSheet('개시 시각', h('div', field('첫 입장 시각(현지)', i), h('div.btnrow', btn('저장', () => { record('activatedAt', i.value ? i.value.slice(0, 16) : null); s.close(); }, 'primary'))));
       }, 'ghost'),
-      p.activatedAt ? btn('초기화', async () => { if (await ask('개시 기록과 이용 기록을 지울까요?')) ctx.save((t) => { const q = byId(t.passes, p.id); q.activatedAt = null; q.uses = []; }); }, 'ghost danger') : null),
+      p.activatedAt ? btn('초기화', async () => { if (await ask('개시 기록과 이용 기록을 지울까요?')) ctx.save((t) => { const q = byId(t.passes, p.id); q.activatedAt = null; q.uses = []; }, '패스 기록을 지웠어요.', { undo: true }); }, 'ghost danger') : null),
     uses.length ? h('div', h('h4', '이용 기록'), h('ol.uses', uses.map((u) => {
       const pl = u.placeId && findPlace(ctx.trip, ctx.datasets, u.placeId);
       return h('li', fmtDT(u.at), pl ? ' · ' + pl.name : '');
     }))) : null,
+    docChips(ctx, { type: 'pass', id: p.id }),
+    h('div.btnrow', btn('＋ 패스 QR·바코드', () => openAddDoc(ctx, { type: 'pass', id: p.id }), 'small ghost')),
+    roiSection(ctx, p),
     (p.rules || []).length ? h('details', h('summary', '규칙'), h('ul', p.rules.map((r) => h('li', r)))) : null,
     passPlaces.length ? h('div', h('h4', `가까운 패스 장소${ref ? ' · ' + (ctx.here() ? '현재 위치' : ref.l) + ' 기준' : ''}`),
       !ctx.here() ? btn('내 위치로 정렬', () => ctx.getHere(), 'small ghost') : null,
@@ -191,6 +200,23 @@ function passCard(ctx, p) {
           h('div.badges', badges(ctx.badges, (x.badges || []).filter((b) => b !== 'pass')))))))),
       passPlaces.length > 12 ? h('p.hint', `외 ${passPlaces.length - 12}곳은 장소 탭의 '패스' 칩에서`) : null) : null);
   return card;
+}
+/* 패스 손익: 계획한 패스 일정의 우리 가족 정가 − 추가금 − 패스값 */
+function roiSection(ctx, p) {
+  const r = passRoi(ctx.trip, ctx.datasets, p, getProfile());
+  if (!r.rows.length) return null;
+  const won = (n) => (n == null ? '?' : n.toLocaleString('ko-KR') + '원');
+  const cats = familyCategories(ctx.trip, getProfile());
+  const count = (c) => cats.filter((x) => x.cat === c).length;
+  const fam = [['adult', '성인'], ['youth', '청소년'], ['child', '어린이'], ['infant', '영유아']].filter(([c]) => count(c)).map(([c, l]) => `${l} ${count(c)}`).join(' · ');
+  return h('details.roi', { open: true }, h('summary', '패스 손익 (계획 기준)'),
+    h('table.tbl', h('thead', h('tr', h('th', '일정'), h('th', '정가'), h('th', '추가금'), h('th', '혜택'))),
+      h('tbody', r.rows.map((x) => h('tr', h('td', `${fmtDate(x.date, false)} ${x.title}`),
+        h('td', x.regular.known ? won(x.regular.total) : '?'), h('td', x.surcharge.known ? won(x.surcharge.total) : '?'),
+        h('td', x.saved == null ? '?' : won(x.saved)))))),
+    h('p.roi-sum', `혜택 ${won(r.saved)} − 패스 ${won(r.cost)} = `, h('b' + (r.net >= 0 ? '.good-text' : '.warn-text'), (r.net >= 0 ? '+' : '') + won(r.net))),
+    r.unknown ? h('p.hint', `가격을 모르는 일정 ${r.unknown}곳은 계산에서 빠졌어요. `, btn('가격 조사 프롬프트', () => openAiEdit(ctx, 'prices'), 'small ghost')) : null,
+    h('p.hint', `우리 가족(${fam}) 기준 · 여행 첫날 나이로 분류 · 시설마다 어린이 기준이 다를 수 있어요.`));
 }
 function recordUse(ctx, p, passPlaces) {
   const sel = select([{ value: '', label: '(장소 선택 안 함)' }, ...passPlaces.map((x) => ({ value: x.id, label: x.name }))], '');
@@ -230,6 +256,7 @@ function viewBudget(ctx) {
       h('div.stats', h('div.stat', h('span', '계획'), h('b', money(totPlan, base))), h('div.stat', h('span', '실제'), h('b', money(totReal, base))),
         h('div.stat', h('span', '차이'), h('b', money(totReal - totPlan, base)))),
       m.fx && m.fx.base && m.fx.base !== m.currency ? h('p.hint', `환율: 1 ${m.currency} = ${m.fx.rate} ${m.fx.base} (meta.fx)`) : null,
+      fxConverter(ctx),
       Object.keys(byCur).length > 1 || (Object.keys(byCur)[0] && Object.keys(byCur)[0] !== base) ? h('p.hint', '통화별 실제: ' + Object.entries(byCur).map(([c, v]) => money(v, c)).join(' · ')) : null),
     section('분류별', h('table.tbl', h('thead', h('tr', h('th', '분류'), h('th', '계획'), h('th', '실제'))),
       h('tbody', Object.entries(sums).map(([c, s]) => h('tr', h('td', c), h('td', money(s.plan)), h('td', money(s.real) + (s.unk ? ` (+환산불가 ${s.unk})` : ''))))))),
@@ -247,7 +274,7 @@ function viewBudget(ctx) {
         download(`${t.id}-경비.csv`, csv, 'text/csv');
       }, 'small ghost'))));
 }
-function editExpense(ctx, id) {
+export function editExpense(ctx, id) {
   const m = ctx.trip.meta;
   const x = id ? byId(ctx.trip.budget.expenses, id) : { date: ctx.phase.key === 'ongoing' ? ctx.now.date : m.start, currency: m.currency, cat: '' };
   const cats = [...new Set([...(ctx.trip.budget && ctx.trip.budget.planned || []).map((p) => p.cat), '식비', '교통', '입장료', '쇼핑', '숙박', '기타'].filter(Boolean))];
@@ -268,7 +295,7 @@ function editExpense(ctx, id) {
         if (i >= 0) t.budget.expenses[i] = out; else t.budget.expenses.push(out);
       }, '저장했어요.');
       s.close();
-    }, 'primary'), id ? btn('삭제', () => { ctx.save((t) => { t.budget.expenses = t.budget.expenses.filter((e) => e.id !== id); }); s.close(); }, 'danger') : null)));
+    }, 'primary'), id ? btn('삭제', () => { ctx.save((t) => { t.budget.expenses = t.budget.expenses.filter((e) => e.id !== id); }, '지출을 지웠어요.', { undo: true }); s.close(); }, 'danger') : null)));
 }
 
 /* ── 지도 ─────────────────────────────────────────── */
@@ -320,7 +347,7 @@ function listEditor(ctx, title, getArr, setArr, placeholder) {
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
   return section(title,
     arr.length ? h('ul.notelist', arr.map((x, i) => h('li', h('span', ...rich(typeof x === 'string' ? x : x.text || JSON.stringify(x), ctx.secrets)),
-      h('button.icon-btn.small', { type: 'button', 'aria-label': '삭제', onclick: async () => { if (await ask('이 줄을 지울까요?')) ctx.save((t) => setArr(t, arr.filter((_, j) => j !== i))); } }, '✕')))) : h('p.hint', '비어 있어요.'),
+      h('button.icon-btn.small', { type: 'button', 'aria-label': '삭제', onclick: () => ctx.save((t) => setArr(t, arr.filter((_, j) => j !== i)), '지웠어요.', { undo: true }) }, '✕')))) : h('p.hint', '비어 있어요.'),
     h('div.addline', inp, btn('추가', add, 'small')));
 }
 function viewNotes(ctx) {
@@ -332,6 +359,7 @@ function viewNotes(ctx) {
     listEditor(ctx, '결정 기록', () => n().decisions, (t, v) => { ensure(t).decisions = v; }, '정한 것'),
     listEditor(ctx, '열린 질문', () => n().openQuestions, (t, v) => { ensure(t).openQuestions = v; }, '아직 정하지 않은 것'),
     h('h3.group-title', '여행 후 회고'),
+    h('div.btnrow', btn('AI로 회고 정리', () => openAiEdit(ctx, 'retro'), 'small'), h('span.hint', '날짜별 한 줄 기록과 완료·건너뜀을 모아 프롬프트를 만들어요.')),
     listEditor(ctx, '좋았던 것', () => retro().good, setRetro('good'), '좋았던 것'),
     listEditor(ctx, '아쉬운 것', () => retro().meh, setRetro('meh'), '아쉬운 것'),
     listEditor(ctx, '다음에', () => retro().next, setRetro('next'), '다음에 할 것'));
@@ -360,7 +388,9 @@ function viewData(ctx) {
         tok ? btn('커밋', () => ctx.commit(), ctx.dirty ? 'primary' : '') : h('a.btn', { href: '#/settings' }, '저장소 연결하기'),
         tok ? btn('불러오기', () => ctx.pull(true)) : null,
         ctx.dirty && ctx.base ? btn('전체 되돌리기', async () => { if (await ask('마지막 커밋 버전으로 모두 되돌릴까요? 이 기기의 변경은 사라져요.')) ctx.replace(clone(ctx.base), '되돌렸어요.'); }, 'ghost danger') : null,
-        tok && ctx.rec.sha ? btn('커밋 기록', () => openHistory(ctx), 'ghost') : null)),
+        tok && ctx.rec.sha ? btn('커밋 기록', () => openHistory(ctx), 'ghost') : null,
+        btn('기기 기록', () => openLocalHistory(ctx), 'ghost')),
+      h('p.hint', '기기 기록: 이 기기에서 고치기 전 상태를 최근 10개까지 보관해요. 커밋 전 실수도 되돌릴 수 있어요.')),
     section('AI로 고치기',
       h('p.hint', '현재 여행 JSON(비밀값 제외)이 들어간 프롬프트를 복사해 AI에게 바꿀 내용을 말하고, 결과를 붙여넣으면 변경 목록을 보여준 뒤 적용해요. 예약 메일 정리·장소 추가 프롬프트도 여기 있어요.'),
       btn('AI로 고치기 / 가져오기', () => openAiEdit(ctx), 'primary')),
@@ -377,7 +407,7 @@ function viewData(ctx) {
         btn('JSON 복사', async () => toast((await copyText(JSON.stringify(t, null, 2))) ? '복사했어요.' : '복사하지 못했어요.'))),
       h('div.field', h('label', '캘린더(.ics) — 항공·체크인·마감 시각, 준비 마감일·예약 오픈일(09:00)에 알림'), h('div.addline', dsel,
         btn('.ics 내려받기', () => {
-          const r = buildIcs(t, { secrets: {}, date: dsel.value || null, datasets: ctx.datasets });
+          const r = buildIcs(t, { secrets: {}, date: dsel.value || null, datasets: ctx.datasets, profile: getProfile() });
           if (!r.count) { toast('내보낼 일정이 없어요.'); return; }
           download(`${t.id}${dsel.value ? '-' + dsel.value : ''}.ics`, r.text, 'text/calendar');
         }))),
@@ -424,6 +454,16 @@ function importSecrets(ctx) {
   }, 'primary'))));
 }
 
+async function openLocalHistory(ctx) {
+  const list = await getHistory(ctx.trip.id);
+  if (!list.length) { toast('아직 기기 기록이 없어요.'); return; }
+  const s = openSheet('기기 기록 (최근 10개)', h('ul.history', list.map((x) => h('li',
+    h('div', h('b', x.label), h('div.hint', new Date(x.at).toLocaleString('ko-KR'))),
+    btn('이 상태로', async () => {
+      if (!(await ask(`'${x.label}' 시점으로 되돌릴까요? 지금 상태도 기기 기록에 남겨요.`))) return;
+      s.close(); ctx.replace(clone(x.data), '되돌렸어요.');
+    }, 'small')))));
+}
 async function openHistory(ctx) {
   const body = h('div', h('p.hint', '불러오는 중…'));
   const s = openSheet('커밋 기록', body);
@@ -438,3 +478,156 @@ async function openHistory(ctx) {
   } catch (e) { clear(body).appendChild(h('p.err', e.message)); }
 }
 
+
+/* ── 서류함 ───────────────────────────────────────── */
+const linkName = (t, l) => {
+  if (!l) return '기타';
+  const x = l.type === 'transport' ? byId(t.transports, l.id) : l.type === 'stay' ? byId(t.stays, l.id) : l.type === 'pass' ? byId(t.passes, l.id) : null;
+  return x ? (x.title || x.name) : '기타';
+};
+const sameLink = (a, b) => !!a && !!b && a.type === b.type && a.id === b.id;
+export function docChips(ctx, link) {
+  const docs = (ctx.trip.documents || []).filter((d) => sameLink(d.linkTo, link));
+  if (!docs.length) return null;
+  return h('div.chips', docs.map((d) => h('button.chipbtn', { type: 'button', onclick: () => openDoc(ctx, d) }, (isImage(d) ? '🖼 ' : '📄 ') + d.title)));
+}
+export async function openDoc(ctx, doc) {
+  const body = h('div', h('p.hint', '여는 중…'));
+  let url = null;
+  const s = openSheet(doc.title, body, { onClose: () => { if (url) URL.revokeObjectURL(url); } });
+  try {
+    const blob = await loadDoc(doc);
+    url = URL.createObjectURL(blob);
+    clear(body).appendChild(h('div.docview',
+      isImage(doc) ? h('img.docimg', { src: url, alt: doc.title }) : h('p', `${doc.mime || '파일'} · ${fmtSize(doc.size)}`),
+      h('div.btnrow.wrap',
+        btn(isImage(doc) ? '크게 보기' : '열기', () => window.open(url, '_blank', 'noopener'), 'primary'),
+        (() => { const a = h('a.btn', { download: doc.file.split('/').pop() }, '내려받기'); a.href = url; return a; })()),
+      h('p.hint', `${linkName(ctx.trip, doc.linkTo)} · ${fmtSize(doc.size)} · 이 기기에 사본 있음`)));
+  } catch (e) { clear(body).appendChild(h('p.err', e.message)); }
+}
+export function openAddDoc(ctx, link) {
+  const file = h('input', { type: 'file', accept: 'image/*,application/pdf' });
+  const title = input('', { placeholder: '예: 렌터카 바우처, 패스 QR' });
+  file.addEventListener('change', () => { const f = file.files[0]; if (f && !title.value) title.value = f.name.replace(/\.[^.]+$/, ''); });
+  const t = ctx.trip;
+  const opts = [{ value: '', label: '(연결 안 함)' },
+    ...(t.transports || []).map((x) => ({ value: 'transport:' + x.id, label: '교통 · ' + x.title })),
+    ...(t.stays || []).map((x) => ({ value: 'stay:' + x.id, label: '숙소 · ' + x.name })),
+    ...(t.passes || []).map((x) => ({ value: 'pass:' + x.id, label: '패스 · ' + x.name }))];
+  const sel = select(opts, link ? link.type + ':' + link.id : '');
+  const s = openSheet('서류 추가', h('div',
+    field('파일 (사진·PDF)', file, '큰 사진은 자동으로 줄여요. QR·바코드 캡처는 원본 그대로 둬요.'),
+    field('제목', title), field('연결', sel),
+    h('p.hint', hasToken() ? '비공개 저장소의 docs/ 폴더에 올라가고 이 기기에도 사본을 둬요. 토큰이 있는 기기(가족 폰 포함)에서 볼 수 있어요.' : '저장소 연결이 없어 이 기기에만 저장돼요.'),
+    h('div.btnrow', btn('추가', async () => {
+      const f = file.files[0];
+      if (!f) { toast('파일을 고르세요.'); return; }
+      const [type, id] = sel.value ? sel.value.split(':') : [null, null];
+      try {
+        const meta = await addDoc(t.id, f, { title: title.value.trim() || f.name, linkTo: type ? { type, id } : null });
+        s.close();
+        await ctx.save((tt) => { tt.documents = [...(tt.documents || []), meta]; }, hasToken() ? '추가했어요. 동기화할 때 저장소에 올라가요.' : '이 기기에 추가했어요.');
+      } catch (e) { toast(e.message, 4000); }
+    }, 'primary'))));
+}
+function viewDocs(ctx) {
+  const t = ctx.trip;
+  const docs = t.documents || [];
+  const status = h('p.hint', '');
+  pendingCount().then((n) => { status.textContent = n ? `저장소에 올릴(또는 지울) 서류 ${n}개가 기다리는 중 — 동기화하면 처리돼요.` : ''; });
+  const groups = new Map();
+  for (const d of docs) { const k = linkName(t, d.linkTo); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(d); }
+  const marks = {};
+  const list = h('div', [...groups].map(([g, arr]) => h('section.pgroup', h('h3', g, h('span.count', String(arr.length))),
+    h('ul.plist', arr.map((d) => {
+      const mark = h('span.hint', '');
+      marks[d.file] = mark;
+      return h('li', h('div.prow.static',
+        h('div.prow-main', h('div.prow-name', (isImage(d) ? '🖼 ' : '📄 ') + d.title), h('div.prow-sub', h('span', fmtSize(d.size)), mark)),
+        h('div.prow-btns', btn('보기', () => openDoc(ctx, d), 'small'),
+          btn('삭제', async () => {
+            if (!(await ask(`'${d.title}'을(를) 지울까요? 이 기기와 저장소에서 모두 지워요.`, [{ label: '취소', value: false }, { label: '삭제', value: true, danger: true }]))) return;
+            await removeDoc(d);
+            ctx.save((tt) => { tt.documents = (tt.documents || []).filter((x) => x.id !== d.id); }, '지웠어요.');
+          }, 'small ghost danger'))));
+    })))));
+  cachedPaths(docs).then((set) => { for (const d of docs) if (marks[d.file]) marks[d.file].textContent = set.has(d.file) ? '· 이 기기에 있음' : '· 저장소에만'; });
+  const prog = h('span.hint', '');
+  return h('div.docs',
+    h('p.hint', '렌터카 바우처, 패스 QR, 탑승권 캡처처럼 현장에서 바로 꺼내야 하는 파일. 비공개 저장소 docs/ 폴더에 올리고, 이 기기에도 사본을 둬서 오프라인에서도 열려요.'),
+    h('div.btnrow.wrap', btn('＋ 서류 추가', () => openAddDoc(ctx, null), 'primary'),
+      docs.length ? btn('모두 이 기기에 받기', async () => {
+        const r = await cacheAll(docs, (n, total) => { prog.textContent = ` ${n}/${total}`; });
+        toast(r.fail ? `${r.ok}개 받음, ${r.fail}개 실패(온라인·토큰 확인)` : `${r.ok}개 모두 이 기기에 있어요. 오프라인에서도 열려요.`, 4000);
+        ctx.render();
+      }) : null, prog),
+    status,
+    docs.length ? list : empty('아직 서류가 없어요. 예약 카드의 [＋ 서류]로도 넣을 수 있어요.'));
+}
+
+/* 환율 계산기 (외화 여행) */
+export function fxConverter(ctx) {
+  const m = ctx.trip.meta, fx = m.fx || {};
+  if (!fx.base || fx.base === m.currency || typeof fx.rate !== 'number' || !fx.rate) return null;
+  const a = input('', { inputmode: 'decimal', placeholder: m.currency, 'aria-label': m.currency + ' 금액' });
+  const b = input('', { inputmode: 'decimal', placeholder: fx.base, 'aria-label': fx.base + ' 금액' });
+  const num = (v) => +String(v).replace(/[^\d.]/g, '');
+  const fmtN = (n) => (isFinite(n) ? Math.round(n).toLocaleString('ko-KR') : '');
+  a.addEventListener('input', () => { b.value = a.value ? fmtN(num(a.value) * fx.rate) : ''; });
+  b.addEventListener('input', () => { a.value = b.value ? fmtN(num(b.value) / fx.rate) : ''; });
+  return h('div.fx', h('span.fx-l', '환율 계산'), a, h('span', '='), b);
+}
+
+/* ── 공유·인쇄: 비밀값·가족 정보 없는 일정표 ───────── */
+function printSheet(ctx, withNotes) {
+  const t = ctx.trip, m = t.meta;
+  const txt = (x) => plain(x, {});                      // 비밀값 자리는 ··· 로
+  return h('article.print-sheet',
+    h('h1', m.title), h('p.p-meta', `${fmtDate(m.start)} – ${fmtDate(m.end)}` + (m.summary ? ' · ' + txt(m.summary) : '')),
+    (t.stays || []).length ? h('div.p-block', h('h2', '숙소'), h('ul', t.stays.map((s) => h('li', `${s.name} · ${fmtDT(s.checkIn)} → ${fmtDT(s.checkOut)}`)))) : null,
+    (t.transports || []).length ? h('div.p-block', h('h2', '교통'), h('ul', t.transports.map((x) => h('li', `${x.title} · ${fmtDT(x.start)}${x.end ? ' → ' + fmtDT(x.end) : ''}`)))) : null,
+    (t.days || []).map((d, i) => {
+      const plan = activePlan(d) || { items: [] };
+      return h('section.p-day', h('h2', `${i + 1}일차 ${fmtDate(d.date)}${d.title ? ' · ' + txt(d.title) : ''}`),
+        h('ol', (plan.items || []).filter((it) => it.kind !== 'move' || withNotes).map((it) => {
+          const p = it.placeId && findPlace(t, ctx.datasets, it.placeId);
+          return h('li' + (it.optional ? '.opt' : '') + (it.kind === 'move' ? '.mv' : ''),
+            h('span.t', it.time || ''), txt(it.title) + (it.optional ? ' (선택)' : ''),
+            p && p.address && it.kind !== 'move' ? h('span.addr', ' · ' + p.address) : null,
+            withNotes && it.note ? h('div.note', txt(it.note)) : null);
+        })));
+    }),
+    h('p.p-foot', '가족 여행 플래너에서 만든 일정표 · 예약번호 등 비밀값은 빠져 있어요.'));
+}
+const PRINT_CSS = 'body{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;margin:24px auto;max-width:720px;padding:0 16px;color:#222;background:#fff}'
+  + 'h1{font-size:24px;margin:0}h2{font-size:17px;margin:20px 0 6px;padding-bottom:3px;border-bottom:2px solid #EE8A1E}'
+  + 'ol,ul{padding-left:0;list-style:none;margin:0}li{padding:3px 0}.t{display:inline-block;min-width:52px;font-weight:700}'
+  + '.opt{color:#777}.mv{color:#888;font-size:13px}.addr{color:#777;font-size:13px}.note{color:#555;font-size:13px;margin-left:52px}.p-meta,.p-foot{color:#666}';
+const escHtml = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function viewPrint(ctx) {
+  let withNotes = false;
+  const box = h('div.print-wrap');
+  const draw = () => { clear(box).appendChild(printSheet(ctx, withNotes)); };
+  draw();
+  const notesChk = h('input', { type: 'checkbox' });
+  notesChk.addEventListener('change', () => { withNotes = notesChk.checked; draw(); });
+  const htmlOf = () => `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(ctx.trip.meta.title)}</title><style>${PRINT_CSS}</style></head><body>${box.innerHTML}</body></html>`;
+  const fname = `${ctx.trip.id}-일정표.html`;
+  const fileOf = () => new File([htmlOf()], fname, { type: 'text/html' });
+  return h('div.print-view',
+    h('p.hint.no-print', '예약번호 같은 비밀값, 가족 생년월일, 경비는 넣지 않아요. 조부모님께 보내거나 종이로 뽑을 때 쓰세요.'),
+    h('div.btnrow.wrap.no-print',
+      h('label.check', notesChk, h('span', '메모·이동까지')),
+      btn('인쇄 · PDF로 저장', () => window.print(), 'primary'),
+      btn('HTML 파일로 저장', () => download(fname, htmlOf(), 'text/html')),
+      btn('공유', async () => {
+        const f = fileOf();
+        try {
+          if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: ctx.trip.meta.title }); return; }
+          if (navigator.share) { await navigator.share({ title: ctx.trip.meta.title, text: box.innerText.slice(0, 4000) }); return; }
+        } catch { return; }
+        toast((await copyText(box.innerText)) ? '일정표 글을 복사했어요.' : '공유할 수 없어요. HTML 파일로 저장하세요.');
+      })),
+    box);
+}

@@ -1,12 +1,15 @@
 /* 새 여행 · 가져오기 · AI로 고치기
    붙여넣기 → [검사] → 오류/경고/요약/비밀값 → 미리보기 → [저장](기기) → [커밋](저장소) */
 import { h, clear, byId, clone, copyText, toast, fmtDate, fmtDT, RE_DATE, addDays, daysBetween } from './util.js';
-import { setSecrets, getProfile } from './store.js';
+import { setSecrets, getProfile, settings, getToken } from './store.js';
 import { validateTrip, validateDataset } from './validate.js';
 import { extractJson, classify, prepareNewTrip, mergeInto, diffTrips } from './importer.js';
 import { buildPrompt, templateText, retroText, PROMPTS } from './prompts.js';
-import { activePlan, adoptPlace, badgeDict, shiftTrip } from './model.js';
+import { activePlan, adoptPlace, badgeDict, shiftTrip, allPlaces } from './model.js';
 import { openSheet, ask, askText, btn, field, input, textarea, select, section, checkbox, pill } from './ui.js';
+
+/* 저장 뒤 안내: 자동 동기화가 켜져 있으면 곧 저장소에 올라간다 */
+const afterSaveMsg = (what) => (getToken() && settings.autosync() ? `${what} 곧 저장소에도 올라가요.` : getToken() ? `${what} 저장소에 올리려면 [커밋]을 누르세요.` : `${what} (저장소 연결 없음 · 기기에만)`);
 
 /* ── 저장 ─────────────────────────────────────────── */
 export async function saveImported(api, trip, secretValues) {
@@ -21,6 +24,7 @@ export async function saveImported(api, trip, secretValues) {
   const rec = { id: t.id, data: t, base: prev ? prev.base : null, sha: prev ? prev.sha : null, syncedAt: prev ? prev.syncedAt : null };
   await api.putRec(rec);
   if (secretValues && Object.keys(secretValues).length) setSecrets(t.id, secretValues);
+  if (api.afterImport) api.afterImport(t.id);
   return rec;
 }
 async function saveDataset(api, ds) {
@@ -87,7 +91,7 @@ async function checkAndOffer(api, text, out, opts = {}) {
         const tt = asId ? { ...trip, id: asId } : trip;
         await saveImported(api, tt, secretValues);
         if (opts.onDone) opts.onDone();
-        toast('이 기기에 저장했어요. 저장소에 올리려면 [커밋]을 누르세요.');
+        toast(afterSaveMsg('이 기기에 저장했어요.'));
         api.go('#/t/' + encodeURIComponent(tt.id) + '/plan');
       };
       if (exists) {
@@ -116,7 +120,7 @@ async function checkAndOffer(api, text, out, opts = {}) {
         for (const d of okDs) await saveDataset(api, d);
         for (const x of okTrips) await saveImported(api, x.trip, x.secretValues);
         if (opts.onDone) opts.onDone();
-        toast('이 기기에 저장했어요. 홈의 [모두 커밋]으로 저장소에 올리세요.', 4000);
+        toast(afterSaveMsg('이 기기에 저장했어요.'), 4000);
         api.go('#/');
       }, 'primary')) : null));
   } else if (c.kind === 'dataset') {
@@ -144,7 +148,7 @@ function mergePreview(api, rec, partial, out, opts) {
       v.ok ? h('div.btnrow', btn('적용', async () => {
         await saveImported(api, trip, secretValues);
         if (opts.onDone) opts.onDone();
-        toast('적용했어요. 확인 후 [커밋]하세요.');
+        toast(afterSaveMsg('적용했어요.'));
         api.go('#/t/' + encodeURIComponent(rec.id) + '/plan');
         api.render();
       }, 'primary')) : null)));
@@ -163,6 +167,9 @@ export function openAiEdit(ctx, preset) {
     { value: 'edit-trip', label: '(2) 기존 여행 고치기' },
     { value: 'bookings', label: '(4) 예약 메일·캡처 정리' },
     { value: 'add-places', label: '(3) 장소 여러 곳 추가' },
+    { value: 'fix-warnings', label: '경고 해결 요청 (점검 결과 포함)' },
+    { value: 'retro', label: '회고 정리 (한 줄 기록·완료·건너뜀)' },
+    { value: 'prices', label: '장소 가격 조사 (패스 손익용)' },
   ], preset || 'edit-trip');
   const { ta, node } = pasteBox('AI가 준 JSON(전체 또는 바뀐 블록만)을 붙여넣으세요');
   const out = h('div');
@@ -178,22 +185,32 @@ export function openAiEdit(ctx, preset) {
       const { trip, secretValues } = prepareNewTrip(partial);
       const v = validateTrip(trip, { datasets: ctx.datasets });
       out.appendChild(resultView({ ...v, summary: { ...v.summary, secrets: Object.keys(secretValues).length } }, h('div', h('h4', '변경 목록'), diffView(diffTrips(ctx.trip, trip)),
-        v.ok ? btn('적용', async () => { if (Object.keys(secretValues).length) setSecrets(ctx.trip.id, secretValues); s.close(); await ctx.replace(adoptAll(trip, ctx), '적용했어요. 확인 후 [커밋]하세요.'); }, 'primary') : null)));
+        v.ok ? btn('적용', async () => { if (Object.keys(secretValues).length) setSecrets(ctx.trip.id, secretValues); s.close(); await ctx.replace(adoptAll(trip, ctx), afterSaveMsg('적용했어요.')); }, 'primary') : null)));
       return;
     }
     if (c.kind === 'places') partial = c.value;
     else if (c.kind === 'partial') partial = c.value;
     else { out.appendChild(h('div.result', h('p.err', '여행 JSON 또는 바뀐 블록({"days": [...]} 등)을 붙여넣으세요.'))); return; }
-    const { trip, log, secretValues } = mergeInto(ctx.trip, partial);
+    /* 데이터셋에만 있는 장소를 고치면(예: 가격 조사) 먼저 여행 장소로 복사해 원래 정보(좌표·혜택)를 지킨다 */
+    const baseTrip = clone(ctx.trip);
+    for (const p of (partial.places || [])) if (p && p.id && !byId(baseTrip.places, p.id)) adoptPlace(baseTrip, ctx.datasets, p.id);
+    const { trip, log, secretValues } = mergeInto(baseTrip, partial);
     const v = validateTrip(trip, { datasets: ctx.datasets });
     out.appendChild(resultView({ ...v, summary: { ...v.summary, secrets: Object.keys(secretValues).length } },
       h('div', h('h4', '변경 목록'), diffView(log),
-        v.ok ? btn('적용', async () => { if (Object.keys(secretValues).length) setSecrets(ctx.trip.id, secretValues); s.close(); await ctx.replace(adoptAll(trip, ctx), '적용했어요. 확인 후 [커밋]하세요.'); }, 'primary') : null)));
+        v.ok ? btn('적용', async () => { if (Object.keys(secretValues).length) setSecrets(ctx.trip.id, secretValues); s.close(); await ctx.replace(adoptAll(trip, ctx), afterSaveMsg('적용했어요.')); }, 'primary') : null)));
   };
   const s = openSheet('AI로 고치기', h('div',
     h('ol.steps',
       h('li', field('프롬프트', kind), btn('프롬프트 복사', async () => {
-        const text = await buildPrompt(kind.value, { trip: ctx.trip, profile: getProfile(), date: ctx.trip.meta.start, badgeIds: Object.keys(badgeDict(ctx.trip, ctx.datasets)) });
+        const prof = getProfile();
+        const v = validateTrip(ctx.trip, { datasets: ctx.datasets, rules: prof.rules });
+        const warnings = v.warnings.filter((w) => !['coords', 'adopt'].includes(w.kind)).map((w) => w.msg);
+        const passIds = new Set((ctx.trip.passes || []).map((x) => x.id));
+        const usedIds = new Set((ctx.trip.days || []).flatMap((d) => (d.plans || []).flatMap((p) => (p.items || []).map((i) => i.placeId))).filter(Boolean));
+        const places = allPlaces(ctx.trip, ctx.datasets).filter((p) => (p.pass && passIds.has(p.pass.id)) || usedIds.has(p.id)).filter((p) => !p.prices);
+        const text = await buildPrompt(kind.value, { trip: ctx.trip, profile: prof, date: ctx.trip.meta.start, badgeIds: Object.keys(badgeDict(ctx.trip, ctx.datasets)),
+          rules: prof.rules, warnings, places });
         toast((await copyText(text)) ? '복사했어요. 여행을 상의하던 AI 채팅 끝에 붙여넣고 (여기에) 부분을 채우세요.' : '복사하지 못했어요.', 4000);
       }, 'small')),
       h('li', 'AI가 준 JSON을 붙여넣고 [검사] → 변경 목록 확인 → [적용].')),

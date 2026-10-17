@@ -1,5 +1,5 @@
 /* trip/v1 다루기 — 조회, 오늘 숙소, 장소 합치기, 빈 양식 */
-import { byId, addDays, RE_DATE, nowIn, daysBetween, hasXY, clone } from './util.js';
+import { byId, addDays, RE_DATE, RE_DT, nowIn, daysBetween, hasXY, clone, toEpoch, fromEpoch } from './util.js';
 
 export const CATS = [
   { id: 'see', label: '관광' }, { id: 'eat', label: '맛집' }, { id: 'cafe', label: '카페' },
@@ -238,4 +238,111 @@ export function travelerAges(trip, profile) {
       return { label: t.label || (m && m.label) || '', role: t.role || (m && m.role), age: a };
     });
   return { date, list, any: list.some((x) => x.age) };
+}
+
+/* 항공편 번호 (예: "진에어 LJ6435" → LJ6435) */
+export function flightCode(title) {
+  const m = /\b([A-Z][A-Z0-9]|[A-Z0-9][A-Z])\s?(\d{2,4})\b/.exec(String(title || ''));
+  return m ? m[1] + m[2] : null;
+}
+export function flightLinks(t) {
+  const code = flightCode(t.title);
+  if (!code) return [];
+  return [
+    { label: '운항 정보(네이버)', href: 'https://search.naver.com/search.naver?query=' + encodeURIComponent(code + ' 운항정보') },
+    { label: '운항 정보(구글)', href: 'https://www.google.com/search?q=' + encodeURIComponent(code + ' flight status') },
+  ];
+}
+/* 공항 장소 찾기: 교통의 placeId → 이름에 출발지와 '공항'이 들어간 장소 */
+export function airportPlace(trip, datasets, t) {
+  if (t.placeId) return findPlace(trip, datasets, t.placeId);
+  const from = String(t.from || '').replace(/\s|공항|국제/g, '');
+  return (trip.places || []).find((p) => /공항|airport/i.test(p.name) && (!from || p.name.replace(/\s/g, '').includes(from))) || null;
+}
+const shiftDT = (dt, minutes, tz) => fromEpoch(toEpoch(dt, tz) + minutes * 60000, tz);
+const norm = (x) => String(x || '').replace(/\s|[·,()\[\]'"]/g, '').toLowerCase();
+
+/* 자동 알림: 예약 오픈 + 항공 체크인 + 공항 도착 목표 + 렌터카 반납 준비 + 레이트 체크아웃 요청
+   이미 체크리스트에 손으로 적어 둔 것(이름이 겹침)이나 체크리스트로 옮긴 것은 뺀다. */
+export function autoReminders(trip, datasets, profile) {
+  const tz = (trip.meta && trip.meta.timezone) || 'Asia/Seoul';
+  const out = reserveReminders(trip, datasets).map((r) => ({ ...r, source: 'reserve' }));
+  const domestic = !trip.meta || !trip.meta.country || trip.meta.country === 'KR';
+  for (const t of trip.transports || []) {
+    if (t.kind === 'flight' && RE_DT.test(t.start || '')) {
+      const opens = typeof t.checkinOpensH === 'number' ? t.checkinOpensH : 24;
+      const at = shiftDT(t.start, -opens * 60, tz);
+      out.push({ key: 'checkin|' + t.id, source: 'checkin', kind: 'open', name: t.title, due: at.slice(0, 10), at,
+        cond: '온라인 체크인', text: `${t.title} 온라인 체크인 (보통 출발 ${opens}시간 전부터 · 항공사 앱에서 확인)` });
+      const buf = typeof t.airportBufferMin === 'number' ? t.airportBufferMin : domestic ? 60 : 150;
+      const arrive = shiftDT(t.start, -buf, tz);
+      out.push({ key: 'airport|' + t.id, source: 'airport', kind: 'time', name: t.title, due: arrive.slice(0, 10), at: arrive, transportId: t.id,
+        cond: `출발 ${buf}분 전 도착`, text: `${t.title} 공항 도착 목표 ${arrive.slice(11)} (출발 ${t.start.slice(11)}, ${buf}분 전)` });
+    }
+    if (t.kind === 'car' && RE_DT.test(t.end || '')) {
+      const at = shiftDT(t.end, -120, tz);
+      out.push({ key: 'return|' + t.id, source: 'return', kind: 'time', name: t.title, due: at.slice(0, 10), at, transportId: t.id,
+        cond: '반납 준비', text: `${t.title} 반납 준비: 주유(계약 조건 확인)·짐·카시트·쓰레기 (계약 종료 ${t.end.slice(11)})` });
+    }
+  }
+  const late = /레이트/.test((profile && profile.memberships) || '');
+  for (const st of trip.stays || []) {
+    if (!RE_DT.test(st.checkOut || '')) continue;
+    if (!late && !/레이트/.test((st.perks || []).join(' '))) continue;
+    const at = addDays(st.checkOut.slice(0, 10), -1) + 'T20:00';
+    out.push({ key: 'late|' + st.id, source: 'late', kind: 'time', name: st.name, due: at.slice(0, 10), at,
+      cond: '레이트 체크아웃', text: `${st.name} 레이트 체크아웃 요청 (체크아웃 ${st.checkOut.slice(5, 10).replace('-', '/')} ${st.checkOut.slice(11)})` });
+  }
+  const items = (trip.checklists || []).flatMap((c) => c.items || []);
+  const covered = (r) => items.some((i) => i.fromReminder === r.key
+    || (r.source === 'reserve' && r.name && norm(i.text).includes(norm(r.name).slice(0, 6))));
+  return out.filter((r) => !covered(r)).sort((a, b) => (a.at || a.due + 'T09:00').localeCompare(b.at || b.due + 'T09:00'));
+}
+
+/* ── 요금: 우리 가족 기준 ─────────────────────────────
+   분류 기본값: 36개월 미만 infant · 36개월~만 12세 child · 만 13~18세 youth · 만 19세 이상 adult (시설마다 다를 수 있음) */
+export function fareCategory(age, role) {
+  if (!age) return role === 'child' ? 'child' : 'adult';
+  if (age.months < 36) return 'infant';
+  if (age.years <= 12) return 'child';
+  if (age.years <= 18) return 'youth';
+  return 'adult';
+}
+export function familyCategories(trip, profile) {
+  const fa = travelerAges(trip, profile || {});
+  return fa.list.map((x) => ({ label: x.label, cat: fareCategory(x.age, x.role) }));
+}
+/* table: {adult, youth, child, infant} → 합계. 모르는 값이 있으면 known=false */
+export function familyFare(table, cats) {
+  if (!table || typeof table !== 'object') return { total: null, known: false };
+  let total = 0, known = true;
+  for (const c of cats) {
+    let v = table[c.cat];
+    if (v == null && c.cat === 'youth') v = table.adult;      // 청소년 요금이 없으면 성인 요금
+    if (v == null && c.cat === 'infant') v = 0;               // 영유아 요금이 없으면 무료로 봄(대부분)
+    if (typeof v !== 'number') { known = false; continue; }
+    total += v;
+  }
+  return { total, known };
+}
+/* 패스 손익(계획 기준): 패스로 들어가는 일정의 정가 합계 − (패스값 + 추가금) */
+export function passRoi(trip, datasets, pass, profile) {
+  const cats = familyCategories(trip, profile);
+  const rows = [];
+  for (const d of trip.days || []) {
+    const plan = activePlan(d);
+    for (const it of (plan && plan.items) || []) {
+      if (it.passUse !== pass.id || it.skipped) continue;
+      const p = findPlace(trip, datasets, it.placeId);
+      const regular = familyFare(p && p.prices, cats);
+      const sur = p && p.pass && p.pass.surchargePrices ? familyFare(p.pass.surchargePrices, cats)
+        : (p && (p.badges || []).includes('surcharge') ? { total: null, known: false } : { total: 0, known: true });
+      rows.push({ date: d.date, title: it.title, place: p, regular, surcharge: sur,
+        saved: regular.known && sur.known ? regular.total - sur.total : null });
+    }
+  }
+  const cost = (typeof pass.price === 'number' ? pass.price : 0) * (pass.holders || cats.length || 1);
+  const known = rows.filter((r) => r.saved != null);
+  const saved = known.reduce((a, r) => a + r.saved, 0);
+  return { rows, cost, saved, net: saved - cost, unknown: rows.length - known.length, people: cats.length };
 }

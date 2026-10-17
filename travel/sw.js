@@ -1,13 +1,15 @@
 /* 오프라인 캐시 — 엔진 파일은 네트워크 우선(실패하면 캐시), 라이브러리·폰트는 캐시 우선.
    여행 데이터는 IndexedDB에 있으므로 GitHub API·날씨·지도 타일은 여기서 다루지 않는다. */
-const VERSION = 'travel-v1.1.0';
+const VERSION = 'travel-v1.2.0';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './assets/style.css', './assets/app.js', './assets/util.js', './assets/store.js', './assets/github.js',
   './assets/model.js', './assets/validate.js', './assets/importer.js', './assets/prompts.js', './assets/ics.js',
   './assets/weather.js', './assets/map.js', './assets/ui.js', './assets/v-trip.js', './assets/v-more.js', './assets/v-import.js',
+  './assets/sync.js', './assets/docs.js',
   './assets/prompts/new-trip.txt', './assets/prompts/edit-trip.txt', './assets/prompts/add-places.txt',
-  './assets/prompts/bookings.txt', './assets/prompts/past-trip.txt',
+  './assets/prompts/bookings.txt', './assets/prompts/past-trip.txt', './assets/prompts/fix-warnings.txt',
+  './assets/prompts/retro.txt', './assets/prompts/prices.txt',
   './assets/icon.svg', './assets/icon-192.png', './assets/icon-180.png',
   './samples/demo.json', './schema/trip.v1.json',
   './vendor/leaflet-1.9.4/leaflet.js', './vendor/leaflet-1.9.4/leaflet.css',

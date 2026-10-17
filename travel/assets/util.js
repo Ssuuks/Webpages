@@ -201,7 +201,13 @@ export function fmtLeg(km) {
 }
 
 /* ── 지도 링크 ──────────────────────────────────────── */
-export function mapLinks(p) {
+/* 길찾기 앱: 국내는 카카오·네이버(국내 장소 정보가 풍부), 해외는 구글 */
+export function mapLinks(p, country) {
+  const all = mapLinksAll(p);
+  if (country && country !== 'KR') return [all[2]];
+  return all;
+}
+function mapLinksAll(p) {
   const name = p.name || '';
   const n = encodeURIComponent(name);
   const xy = hasXY(p);
@@ -259,16 +265,49 @@ export function download(name, text, type = 'application/json') {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 let toastTimer;
-export function toast(msg, ms = 2600) {
+/* toast('메시지') / toast('메시지', 4000) / toast('지웠어요', { action: '되돌리기', onAction }) */
+export function toast(msg, opt = 2600) {
+  const o = typeof opt === 'number' ? { ms: opt } : (opt || {});
+  const ms = o.ms || (o.action ? 6000 : 2600);
   let el = document.getElementById('toast');
   if (!el) { el = h('div#toast', { role: 'status', 'aria-live': 'polite' }); document.body.appendChild(el); }
-  el.textContent = msg; el.dataset.on = '1';
+  clear(el);
+  el.appendChild(h('span', msg));
+  if (o.action) {
+    el.appendChild(h('button.toast-act', { type: 'button', onclick: () => { el.dataset.on = '0'; o.onAction(); } }, o.action));
+  }
+  el.dataset.act = o.action ? '1' : '0';
+  el.dataset.on = '1';
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.dataset.on = '0'; }, ms);
 }
 export function utf8ToB64(s) {
   const bytes = new TextEncoder().encode(s); let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+export async function blobToB64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer()); let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+/* 암호(선택)로 코드 보호: PBKDF2(SHA-256, 20만 회) → AES-GCM */
+const enc = new TextEncoder(), dec = new TextDecoder();
+const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function deriveKey(pass, salt) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+export async function sealText(text, pass) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(pass, salt);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(text)));
+  return [b64(salt), b64(iv), b64(ct)].join('.');
+}
+export async function openText(sealed, pass) {
+  const [s, i, c] = sealed.split('.');
+  const key = await deriveKey(pass, unb64(s));
+  return dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(i) }, key, unb64(c)));
 }
 export function b64ToUtf8(b) {
   const bin = atob(String(b).replace(/\s/g, ''));

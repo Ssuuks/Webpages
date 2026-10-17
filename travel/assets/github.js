@@ -1,5 +1,5 @@
 /* GitHub Contents API — 비공개 데이터 저장소를 사용자 토큰으로 읽고 쓴다 */
-import { repoConfig, getToken } from './store.js';
+import { repoConfig, getToken, settings } from './store.js';
 import { utf8ToB64, b64ToUtf8 } from './util.js';
 
 const API = 'https://api.github.com';
@@ -29,6 +29,15 @@ function explain(status, what) {
 
 export const hasToken = () => !!getToken();
 
+/* 토큰 만료일: GitHub가 응답 헤더로 알려주면 기억한다(브라우저에 노출되지 않으면 설정에서 직접 입력) */
+function note(res) {
+  try {
+    const exp = res.headers.get('github-authentication-token-expiration');
+    if (exp) { const d = new Date(exp.replace(' UTC', 'Z').replace(' ', 'T')); if (!isNaN(d)) settings.setTokenExp(d.toISOString().slice(0, 10)); }
+  } catch { /* 무시 */ }
+  return res;
+}
+
 /* 파일 읽기 → { sha, text, json } / 없으면 null */
 export async function getFile(path) {
   const c = repoConfig();
@@ -37,6 +46,7 @@ export async function getFile(path) {
     res = await fetch(contentsUrl(path) + '?ref=' + encodeURIComponent(c.branch) + '&t=' + Date.now(),
       { headers: headers(), cache: 'no-store' });
   } catch { throw new GhError(0, '네트워크에 연결할 수 없어요 (오프라인이면 기기 사본으로 동작합니다)'); }
+  note(res);
   if (res.status === 404) return null;
   if (!res.ok) throw explain(res.status, path + ' 불러오기');
   const data = await res.json();
@@ -53,18 +63,48 @@ export async function getFile(path) {
 }
 
 /* 파일 쓰기 → 새 sha */
-export async function putFile(path, obj, sha, message) {
+export async function putFile(path, obj, sha, message, opts = {}) {
   const c = repoConfig();
-  const text = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2) + '\n';
-  const body = { message, content: utf8ToB64(text), branch: c.branch };
+  const content = opts.b64 != null ? opts.b64 : utf8ToB64(typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2) + '\n');
+  const body = { message, content, branch: c.branch };
   if (sha) body.sha = sha;
   let res;
   try {
     res = await fetch(contentsUrl(path), { method: 'PUT', headers: headers(true), body: JSON.stringify(body) });
   } catch { throw new GhError(0, '네트워크에 연결할 수 없어요. 연결된 뒤 다시 커밋하세요.'); }
+  note(res);
   if (!res.ok) throw explain(res.status, path + ' 커밋');
   const out = await res.json();
   return out.content.sha;
+}
+
+/* 파일의 sha만 (큰 파일도) */
+export async function getSha(path) {
+  const c = repoConfig();
+  const res = await fetch(contentsUrl(path) + '?ref=' + encodeURIComponent(c.branch) + '&t=' + Date.now(),
+    { headers: { ...headers(), Accept: 'application/vnd.github.object+json' }, cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw explain(res.status, path + ' 확인');
+  return (await res.json()).sha;
+}
+/* 바이너리 내려받기 (서류함) → Blob */
+export async function getRaw(path) {
+  const c = repoConfig();
+  let res;
+  try {
+    res = await fetch(contentsUrl(path) + '?ref=' + encodeURIComponent(c.branch),
+      { headers: { ...headers(), Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
+  } catch { throw new GhError(0, '네트워크에 연결할 수 없어요'); }
+  if (!res.ok) throw explain(res.status, '파일 내려받기');
+  return res.blob();
+}
+export async function deleteFile(path, message) {
+  const c = repoConfig();
+  const sha = await getSha(path);
+  if (!sha) return false;
+  const res = await fetch(contentsUrl(path), { method: 'DELETE', headers: headers(true), body: JSON.stringify({ message, sha, branch: c.branch }) });
+  if (!res.ok) throw explain(res.status, path + ' 삭제');
+  return true;
 }
 
 /* 저장소 접근 확인 */
@@ -74,6 +114,7 @@ export async function checkRepo() {
   try {
     res = await fetch(`${API}/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}`, { headers: headers(), cache: 'no-store' });
   } catch { throw new GhError(0, '네트워크에 연결할 수 없어요'); }
+  note(res);
   if (!res.ok) throw explain(res.status, '저장소 확인');
   const r = await res.json();
   return { private: r.private, full: r.full_name, canPush: !!(r.permissions && r.permissions.push), defaultBranch: r.default_branch };

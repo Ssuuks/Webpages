@@ -1,13 +1,13 @@
 /* 여행 안 화면: 오늘 · 일정 · 장소 · 준비 · 비상 */
-import { h, clear, rich, byId, same, clone, fmtDate, fmtDT, weekday, WEEK, WEEK_KO, mins, hhmm, normTime, distKm, fmtKm,
+import { h, clear, rich, byId, same, clone, fmtDate, fmtDT, weekday, WEEK, WEEK_KO, mins, hhmm, normTime, distKm, fmtKm, nowIn,
   estMin, fmtLeg, hasXY, mapLinks, googlePlaceUrl, parseMapLink, copyText, toast, toEpoch, fmtDur, daysBetween, uid,
-  plain } from './util.js';
+  plain, addDays } from './util.js';
 import { activePlan, dayByDate, itemMinutes, itemEndMinutes, stayForDay, stayForNight, allPlaces, findPlace, adoptPlace,
-  CATS, CAT_LABEL, ITEM_KINDS, KIND_LABEL, stayPoints, reserveReminders, travelerAges } from './model.js';
-import { scheduleChecks, hoursOn } from './validate.js';
+  CATS, CAT_LABEL, ITEM_KINDS, KIND_LABEL, stayPoints, autoReminders, travelerAges, flightLinks, airportPlace, familyCategories, familyFare } from './model.js';
+import { scheduleChecks, hoursOn, familyChecks, daySummary } from './validate.js';
 import { extractJson } from './importer.js';
 import { buildPrompt } from './prompts.js';
-import { forecast, wxLabel, RAINY } from './weather.js';
+import { forecast, forecastFull, wxLabel, hoursOf, RAINY, GUSTY, isStormy, WMO } from './weather.js';
 import { getProfile, ui, setUi } from './store.js';
 import { openSheet, ask, askText, badges, pill, btn, linkBtn, telLink, field, input, textarea, select, checkbox, section, empty } from './ui.js';
 
@@ -29,8 +29,23 @@ function pickDate(ctx, date) {
   setUi(u);
 }
 function checksFor(ctx) {
-  if (!ctx._checks) ctx._checks = scheduleChecks(ctx.trip, ctx.datasets);
+  if (!ctx._checks) {
+    ctx._checks = scheduleChecks(ctx.trip, ctx.datasets);
+    if (ctx.phase.key !== 'past') ctx._checks.push(...familyChecks(ctx.trip, ctx.datasets, getProfile().rules));
+  }
   return ctx._checks;
+}
+/* 날짜 요약 한 줄: 고정 외출 · 선택 · 운전 · 패스 (가족 기준을 넘으면 강조) */
+export function summaryLine(ctx, day) {
+  const s = daySummary(ctx.trip, day, ctx.datasets), R = getProfile().rules;
+  const part = (txt, over) => h('span' + (over ? '.over' : ''), txt);
+  const parts = [];
+  if (s.fixed || s.optional) parts.push(part(`고정 ${s.fixed}`, R.maxOutings && s.fixed > R.maxOutings));
+  if (s.optional) parts.push(part(`선택 ${s.optional}`));
+  if (s.drive) parts.push(part(`운전 ${s.drive}분`, R.maxDriveMin && s.drive > R.maxDriveMin));
+  if (s.pass) parts.push(part(`패스 ${s.pass}`));
+  if (!parts.length) return null;
+  return h('div.sumline', { title: '가족 기준은 설정 → 가족 프로필에서 바꿔요' }, parts.flatMap((x, i) => (i ? [h('span.sep', '·'), x] : [x])));
 }
 function dayEdited(ctx, date) {
   if (!ctx.base) return false;
@@ -46,10 +61,64 @@ export function weatherSlot(ctx, date, opts = {}) {
   forecast(p.lat, p.lng, ctx.tz).then((days) => {
     const w = wxLabel(days && days[date]);
     if (!w) return;
-    slot.appendChild(h('span.wx-in', w.icon + ' ' + w.temp, ' · ', h('span' + (w.pop >= RAINY ? '.wx-rain' : ''), `강수 ${w.pop}%`)));
+    slot.appendChild(h('span.wx-in', w.icon + ' ' + w.temp, ' · ', h('span' + (w.pop >= RAINY ? '.wx-rain' : ''), `강수 ${w.pop}%`),
+      w.gust != null && w.gust >= GUSTY ? h('span.wx-wind', ` · 💨 돌풍 ${Math.round(w.gust)}m/s`) : null));
     if (w.pop >= RAINY && opts.onRain) slot.appendChild(opts.onRain());
   });
   return slot;
+}
+/* 해외: 현지 시각과 한국 시각을 함께 */
+function dualClock(ctx) {
+  const home = nowIn('Asia/Seoul');
+  if (home.time === ctx.now.time) return null;
+  return h('div.dualclock', `현지 ${ctx.now.time} · 한국 ${home.time}`);
+}
+/* 기준 좌표: 그날 숙소 */
+function wxPoint(ctx, date) {
+  const st = stayForDay(ctx.trip, date) || (ctx.trip.stays || [])[0];
+  const p = st && findPlace(ctx.trip, ctx.datasets, st.placeId);
+  return p && hasXY(p) ? p : null;
+}
+/* 오늘 시간별: 다음 12시간 강수확률·바람 */
+function hourlyStrip(ctx) {
+  const box = h('div.hourly', { 'aria-label': '시간별 예보' });
+  const p = wxPoint(ctx, ctx.now.date);
+  if (!p) return box;
+  forecastFull(p.lat, p.lng, ctx.tz).then((full) => {
+    const startH = Math.floor(ctx.now.min / 60);
+    const list = [...hoursOf(full, ctx.now.date, startH, 23), ...hoursOf(full, addDays(ctx.now.date, 1), 0, 23)].slice(0, 12);
+    if (!list.length) return;
+    box.appendChild(h('div.hourly-row', list.map((x) => {
+      const [, ico] = WMO[x.code] || ['', ''];
+      return h('div.hour' + (x.pop >= RAINY ? '.rain' : '') + (isStormy(x) ? '.storm' : ''),
+        h('span.h-t', x.t.slice(11, 13) + '시'), h('span.h-i', ico), h('span.h-p', x.pop + '%'),
+        h('span.h-w', (x.gust != null ? Math.round(x.gust) : '-') + 'm/s'));
+    })));
+  });
+  return box;
+}
+/* 항공편 날 강풍: 출발 전후 3시간에 강풍이면 경고 */
+function windAlert(ctx, date) {
+  const flights = (ctx.trip.transports || []).filter((t) => t.kind === 'flight' && (t.start || '').slice(0, 10) === date);
+  const box = h('div');
+  if (!flights.length) return box;
+  const p = wxPoint(ctx, date);
+  if (!p || daysBetween(ctx.now.date, date) > 15 || daysBetween(ctx.now.date, date) < 0) return box;
+  forecastFull(p.lat, p.lng, ctx.tz).then((full) => {
+    for (const t of flights) {
+      const hh = +t.start.slice(11, 13);
+      const around = hoursOf(full, date, Math.max(0, hh - 3), Math.min(23, hh + 1));
+      const worst = around.reduce((a, x) => (!a || (x.gust || 0) > (a.gust || 0) ? x : a), null);
+      if (!worst || !(isStormy(worst) || (worst.gust || 0) >= GUSTY)) continue;
+      const strong = isStormy(worst);
+      box.appendChild(h('section.card.windcard' + (strong ? '.strong' : ''),
+        h('h3.card-title', strong ? '💨 강풍 주의 — 항공편 지연·결항 가능' : '💨 바람이 강해요'),
+        h('p', `${t.title} ${t.start.slice(11)} 출발 무렵 풍속 ${Math.round(worst.wind)}m/s, 돌풍 ${Math.round(worst.gust)}m/s 예보(${worst.t.slice(11, 16)}). 예보는 바뀔 수 있어요.`),
+        h('div.btnrow.wrap', flightLinks(t).map((l) => linkBtn(l.label, l.href, 'small')),
+          btn('비상 시나리오', () => ctx.go(`#/t/${encodeURIComponent(ctx.trip.id)}/sos`), 'small ghost'))));
+    }
+  });
+  return box;
 }
 function rainAction(ctx, day) {
   return () => {
@@ -119,13 +188,14 @@ export function openPlace(ctx, id, refK) {
   const inTrip = !!byId(ctx.trip.places, id);
   const ht = hoursText(p, ctx.phase.key === 'ongoing' ? ctx.now.date : selectedDate(ctx) || ctx.now.date);
   const on = ctx.phase.key === 'ongoing' ? openNow(p, ctx) : null;
-  const links = mapLinks(p);
+  const links = mapLinks(p, ctx.trip.meta.country);
   const body = h('div.place-detail',
     h('div.badges', pill(CAT_LABEL[p.cat] || '기타', 'muted'), p.group ? pill(p.group, 'muted') : null, badges(ctx.badges, p.badges),
       p._src !== 'trip' ? pill('데이터셋', 'info') : null),
     d != null ? h('p.dist-line', `${ref.l}에서 ${fmtLeg(d)} (직선 기준)`) : null,
     ht ? h('p', h('b', '운영 '), ht, on === true ? pill('지금 운영 중', 'good') : on === false ? pill('지금 닫힘', 'warn') : null) : null,
     p.price ? h('p', h('b', '요금 '), p.price) : null,
+    fareLine(ctx, p),
     p.pass ? h('div.passbox',
       h('div.stamp', '패스'),
       h('div', p.pass.code ? h('b', p.pass.code + ' ') : null, p.pass.benefit || ''),
@@ -147,11 +217,23 @@ export function openPlace(ctx, id, refK) {
         const used = (ctx.trip.days || []).some((dd) => (dd.plans || []).some((pl) => (pl.items || []).some((it) => it.placeId === id)))
           || (ctx.trip.stays || []).some((st) => st.placeId === id);
         if (used) { toast('일정이나 숙소에서 쓰고 있는 장소예요. 먼저 그 항목에서 장소를 빼세요.', 4000); return; }
-        if (await ask(`'${p.name}'을(를) 장소 목록에서 지울까요?`)) { s.close(); ctx.save((t) => { t.places = t.places.filter((x) => x.id !== id); }, '지웠어요.'); }
+        if (await ask(`'${p.name}'을(를) 장소 목록에서 지울까요?`)) { s.close(); ctx.save((t) => { t.places = t.places.filter((x) => x.id !== id); }, `'${p.name}'을(를) 지웠어요.`, { undo: true }); }
       }, 'danger') : null));
   const s = openSheet(p.name, body);
 }
 
+/* 우리 가족 요금 (장소에 prices가 있을 때) */
+function fareLine(ctx, p) {
+  const cats = familyCategories(ctx.trip, getProfile());
+  const won = (n) => n.toLocaleString('ko-KR') + '원';
+  const reg = p.prices ? familyFare(p.prices, cats) : null;
+  const sur = p.pass && p.pass.surchargePrices ? familyFare(p.pass.surchargePrices, cats) : null;
+  if (!reg && !sur) return null;
+  return h('p.fare', h('b', `우리 가족 ${cats.length}명 `),
+    reg ? (reg.known ? `정가 ${won(reg.total)}` : `정가 일부 모름${reg.total ? ' (아는 것만 ' + won(reg.total) + ')' : ''}`) : '',
+    sur ? (reg ? ' · ' : '') + (sur.known ? `패스 추가금 ${won(sur.total)}` : '패스 추가금 일부 모름') : '',
+    p.prices && p.prices.note ? h('div.hint', p.prices.note) : null);
+}
 function openAddToPlan(ctx, placeId) {
   const p = findPlace(ctx.trip, ctx.datasets, placeId);
   const days = ctx.trip.days || [];
@@ -323,7 +405,8 @@ function renderDay(ctx, day, { editing, checks }) {
       h('h2', `${di + 1}일차 · ${fmtDate(day.date)}`, day.title ? h('span.day-sub', day.title) : null),
       h('div.day-meta',
         stay ? h('span', '🏨 ' + stay.name) : null,
-        weatherSlot(ctx, day.date, { onRain: rainAction(ctx, day) }))),
+        weatherSlot(ctx, day.date, { onRain: rainAction(ctx, day) })),
+      summaryLine(ctx, day)),
     h('div.day-actions',
       edited ? h('span.edited', '수정됨') : null,
       edited ? btn('이 날 되돌리기', async () => {
@@ -350,19 +433,37 @@ function renderDay(ctx, day, { editing, checks }) {
     btn('날짜 제목·메모', () => openDayEdit(ctx, day.date), 'small'),
     (day.plans || []).length > 1 ? btn('이 안 이름 바꾸기', () => renamePlan(ctx, day, plan), 'small') : null,
     (day.plans || []).length > 1 && plan !== day.plans[0] ? btn('이 안 삭제', async () => {
-      if (await ask(`'${plan.label}' 안을 지울까요?`)) ctx.save((t) => { const d = dayByDate(t, day.date); d.plans = d.plans.filter((p) => p.id !== plan.id); delete d.activePlan; });
+      if (await ask(`'${plan.label}' 안을 지울까요?`)) ctx.save((t) => { const d = dayByDate(t, day.date); d.plans = d.plans.filter((p) => p.id !== plan.id); delete d.activePlan; }, `'${plan.label}' 안을 지웠어요.`, { undo: true });
     }, 'small danger') : null) : null;
 
   return h('div.day',
-    head, plans, notes.length ? h('div.notes', notes) : null,
+    head, plans, windAlert(ctx, day.date), notes.length ? h('div.notes', notes) : null,
     dayChecks.length ? h('ul.warns', dayChecks.map((w) => h('li', w.msg))) : null,
     editBar,
-    plan ? timeline(ctx, day, plan, { editing, checks }) : null);
+    plan ? timeline(ctx, day, plan, { editing, checks }) : null,
+    !editing && actionsAllowed(ctx, day) ? journalCard(ctx, day) : null);
+}
+/* 하루 한 줄 기록 (회고 프롬프트에 들어감) */
+function journalCard(ctx, day) {
+  const j = day.journal || {};
+  const text = textarea(j.text, { rows: 2, placeholder: '오늘 어땠나요? 한 줄이면 충분해요', 'aria-label': '한 줄 기록' });
+  const best = input(j.best, { placeholder: '오늘의 최고 순간 (선택)', 'aria-label': '최고 순간' });
+  return section(day.date === ctx.now.date ? '오늘의 한 줄' : `${fmtDate(day.date)}의 한 줄`, text, best,
+    h('div.btnrow', btn('저장', () => ctx.save((t) => {
+      const d = dayByDate(t, day.date);
+      const v = { text: text.value.trim(), best: best.value.trim() };
+      if (v.text || v.best) d.journal = { ...v, at: new Date().toISOString() }; else delete d.journal;
+    }, '기록했어요.'), 'small primary')));
 }
 
 function timeline(ctx, day, plan, { editing, checks, from = 0, compact = false }) {
   const items = plan.items || [];
   const ms = itemMinutes(items);
+  const light = !editing && isLight(ctx, day.date);
+  const hide = new Set();
+  if (light) items.forEach((it, i) => {
+    if (it.optional) { hide.add(i); if (i > 0 && items[i - 1].kind === 'move') hide.add(i - 1); }
+  });
   const isToday = ctx.phase.key === 'ongoing' && day.date === ctx.now.date;
   const list = h('ol.timeline' + (compact ? '.compact' : ''));
   let prevPlace = null, nowDrawn = !isToday;
@@ -370,7 +471,7 @@ function timeline(ctx, day, plan, { editing, checks, from = 0, compact = false }
   const stayPlace = stay && findPlace(ctx.trip, ctx.datasets, stay.placeId);
   items.forEach((it, i) => {
     const p = it.placeId && findPlace(ctx.trip, ctx.datasets, it.placeId);
-    if (i >= from) {
+    if (i >= from && !hide.has(i)) {
       if (!nowDrawn && ms[i] != null && ms[i] > ctx.now.min) { list.appendChild(h('li.now-line', h('span', '지금 ' + ctx.now.time))); nowDrawn = true; }
       if (it.kind === 'move' && !editing) list.appendChild(moveRow(ctx, it, items, i, prevPlace || stayPlace));
       else {
@@ -382,6 +483,8 @@ function timeline(ctx, day, plan, { editing, checks, from = 0, compact = false }
     if (p && hasXY(p)) prevPlace = p;
   });
   if (!nowDrawn) list.appendChild(h('li.now-line', h('span', '지금 ' + ctx.now.time)));
+  const hiddenN = [...hide].filter((i) => i >= from && items[i].kind !== 'move').length;
+  if (hiddenN) list.appendChild(h('li.empty-li', `'오늘 가볍게'로 선택 일정 ${hiddenN}개를 숨겼어요.`));
   if (!items.length) list.appendChild(h('li.empty-li', editing ? '아직 일정이 없어요. [＋ 일정 추가]를 누르세요.' : '이 안에는 아직 일정이 없어요.'));
   return list;
 }
@@ -408,22 +511,156 @@ function itemRow(ctx, day, plan, it, i, p, { editing, warns, past }) {
   const title = p && !editing
     ? h('button.item-title.linkish', { type: 'button', onclick: () => openPlace(ctx, p.id) }, it.title || p.name)
     : h('span.item-title', it.title || (p && p.name) || '(제목 없음)');
-  const row = h('li.item' + (past ? '.past' : '') + (it.optional ? '.optional' : ''), { dataset: { kind: it.kind || 'visit' } },
+  if (it.done) tags.unshift(pill('✓ 완료', 'good'));
+  if (it.skipped) tags.unshift(pill('건너뜀', 'muted'));
+  const acts = !editing && actionsAllowed(ctx, day) && it.kind !== 'move';
+  const row = h('li.item' + (past ? '.past' : '') + (it.optional ? '.optional' : '') + (it.done ? '.done' : '') + (it.skipped ? '.skipped' : ''), { dataset: { kind: it.kind || 'visit' } },
     h('div.item-time', h('span', it.time || '—'), it.end ? h('small', '~' + it.end) : null),
     h('div.item-body',
       h('div.item-head', title, tags.length ? h('span.item-tags', tags) : null),
       it.note ? h('div.item-note', ...rich(it.note, ctx.secrets)) : null,
       it.cost ? h('div.item-note', '💳 ' + it.cost) : null,
       warns.length ? h('ul.warns.inline', warns.map((w) => h('li', w.msg.replace(/^[^:]*: /, '')))) : null,
+      acts ? h('div.item-acts',
+        h('button.mini-btn', { type: 'button', 'aria-pressed': it.done ? 'true' : 'false', onclick: () => markItem(ctx, day.date, plan.id, it.id, 'done') }, it.done ? '✓ 완료됨' : '✓ 완료'),
+        h('button.mini-btn', { type: 'button', 'aria-pressed': it.skipped ? 'true' : 'false', onclick: () => markItem(ctx, day.date, plan.id, it.id, 'skipped') }, it.skipped ? '되살리기' : '건너뛰기'),
+        ctx.phase.key === 'ongoing' ? h('button.mini-btn', { type: 'button', onclick: () => openAlternatives(ctx, day, plan, it, i) }, '대안') : null) : null,
       editing ? h('div.item-ctl',
         h('button.icon-btn', { type: 'button', 'aria-label': '위로', disabled: i === 0, onclick: () => moveItem(ctx, day.date, plan.id, i, -1) }, '↑'),
         h('button.icon-btn', { type: 'button', 'aria-label': '아래로', disabled: i === plan.items.length - 1, onclick: () => moveItem(ctx, day.date, plan.id, i, 1) }, '↓'),
         h('button.icon-btn', { type: 'button', 'aria-label': '수정', onclick: () => openItemEdit(ctx, day.date, plan.id, i) }, '✎'),
-        h('button.icon-btn.danger', { type: 'button', 'aria-label': '삭제', onclick: async () => {
-          if (await ask(`'${it.title}'을(를) 지울까요?`)) ctx.save((t) => { const pl = byId(dayByDate(t, day.date).plans, plan.id); pl.items.splice(i, 1); });
-        } }, '✕')) : null));
+        h('button.icon-btn.danger', { type: 'button', 'aria-label': '삭제', onclick: () => ctx.save((t) => { const pl = byId(dayByDate(t, day.date).plans, plan.id); pl.items.splice(i, 1); }, `'${it.title}'을(를) 지웠어요.`, { undo: true }) }, '✕')) : null));
   return row;
 }
+/* 서류 열기 (v-more의 뷰어를 필요할 때 불러온다 — 순환 import 방지) */
+async function openDocLazy(ctx, d) { const m = await import('./v-more.js'); m.openDoc(ctx, d); }
+
+/* ── 현장 조정 ─────────────────────────────────────── */
+const lightKey = (ctx, date) => ctx.trip.id + '|' + date;
+function isLight(ctx, date) { return !!(ui().light || {})[lightKey(ctx, date)]; }
+function setLight(ctx, date, on) {
+  const u = ui(); u.light = u.light || {};
+  if (on) u.light[lightKey(ctx, date)] = 1; else delete u.light[lightKey(ctx, date)];
+  setUi(u);
+}
+function actionsAllowed(ctx, day) { return ctx.phase.key === 'past' || (ctx.phase.key === 'ongoing' && day.date <= ctx.now.date); }
+function markItem(ctx, date, planId, itemId, field) {
+  const other = field === 'done' ? 'skipped' : 'done';
+  ctx.save((t) => {
+    const it = byId(byId(dayByDate(t, date).plans, planId).items, itemId);
+    if (it[field]) delete it[field]; else { it[field] = true; delete it[other]; }
+  });
+}
+/* 늦어졌을 때: 지금 이후 일정을 한꺼번에 민다 (항공·교통에 묶인 일정은 그대로) */
+function shiftLater(ctx, minutes) {
+  const date = ctx.now.date, nowM = ctx.now.min;
+  let n = 0;
+  ctx.save((t) => {
+    const plan = activePlan(dayByDate(t, date));
+    const ms = itemMinutes(plan.items);
+    plan.items.forEach((it, i) => {
+      if (it.done || it.skipped || it.kind === 'flight' || it.transportId || it.fixed) return;
+      const st = ms[i]; if (st == null) return;
+      const end = itemEndMinutes(it, st);
+      if (st >= nowM) { it.time = hhmm(st + minutes); if (it.end && end != null) it.end = hhmm(end + minutes); n++; }
+      else if (end != null && end > nowM) { it.end = hhmm(end + minutes); n++; }
+    });
+  }, `이후 일정을 ${minutes}분씩 미뤘어요. 운영시간·패스·막차 경고를 확인하세요.`, { undo: true });
+  return n;
+}
+function adjustBar(ctx, day) {
+  const light = isLight(ctx, day.date);
+  return h('div.adjust',
+    h('span.adjust-label', '늦어졌어요'),
+    [15, 30, 60].map((m) => h('button.mini-btn', { type: 'button', onclick: () => shiftLater(ctx, m) }, `+${m}분`)),
+    h('button.mini-btn', { type: 'button', 'aria-pressed': light ? 'true' : 'false', onclick: () => { setLight(ctx, day.date, !light); ctx.render(); } }, light ? '선택 일정 보이기' : '오늘 가볍게'));
+}
+
+/* ── 빈 시간·대안 추천 ───────────────────────────── */
+function suggestPlaces(ctx, { origin, date, atMin, exclude, limit = 5 }) {
+  if (!origin || !hasXY(origin)) return [];
+  const activePass = (ctx.trip.passes || []).find((x) => passState(ctx, x).active);
+  return allPlaces(ctx.trip, ctx.datasets)
+    .filter((p) => hasXY(p) && p.cat !== 'stay' && p.cat !== 'other' && !exclude.has(p.id))
+    .map((p) => {
+      const d = distKm(origin, p);
+      const hrs = hoursOn(p.hours, date);
+      if (d == null || d > 25 || hrs === 'closed') return null;
+      const arrive = atMin + Math.max(5, estMin(d));
+      if (hrs && (arrive < hrs.open || arrive > hrs.close - 40 || (hrs.lastEntry != null && arrive > hrs.lastEntry))) return null;
+      let score = d;
+      const b = p.badges || [];
+      if (b.includes('kids')) score -= 3;
+      if (b.includes('indoor')) score -= 1;
+      if (p.fav) score -= 3;
+      if (activePass && p.pass && p.pass.id === activePass.id) score -= 4;
+      return { p, d, score, hrs, arrive };
+    })
+    .filter(Boolean).sort((a, b) => a.score - b.score).slice(0, limit);
+}
+function suggestionList(ctx, list, date, onAdd) {
+  if (!list.length) return h('p.hint', '조건에 맞는 곳이 없어요(좌표·운영시간이 있는 장소만 찾아요).');
+  return h('ul.plist', list.map(({ p, d, hrs, arrive }) => h('li', h('div.prow.static',
+    h('div.prow-main',
+      h('div.prow-name', p.fav ? h('span.fav', '★') : null, p.name, p.pass && p.pass.code ? h('span.code', p.pass.code) : null),
+      h('div.prow-sub', h('span.dist', fmtLeg(d)), h('span', `${hhmm(arrive)} 도착`), hrs ? h('span', hrs.close - hrs.open >= 1440 ? '24시간' : `~${hhmm(hrs.close)}`) : h('span', '운영시간 정보 없음')),
+      h('div.badges', badges(ctx.badges, p.badges))),
+    h('div.prow-btns', btn('자세히', () => openPlace(ctx, p.id), 'small ghost'), btn('넣기', () => onAdd(p, arrive), 'small'))))));
+}
+function addNow(ctx, date, p, atMin) {
+  ctx.save((t) => {
+    adoptPlace(t, ctx.datasets, p.id);
+    const plan = activePlan(dayByDate(t, date));
+    const tm = hhmm(Math.ceil(atMin / 5) * 5);
+    const item = { id: newItemId(t, date, tm), time: tm, kind: p.cat === 'eat' ? 'meal' : 'visit', title: p.name, placeId: p.id, status: 'tentative' };
+    const act = (t.passes || []).find((x) => p.pass && x.id === p.pass.id && x.activatedAt);
+    if (act) item.passUse = act.id;
+    insertByTime(plan.items, item);
+  }, `${p.name}을(를) 오늘 일정에 넣었어요.`, { undo: true });
+}
+function gapSection(ctx, day, items, ms, curI, nextI) {
+  const nowM = ctx.now.min;
+  const startAt = curI >= 0 ? (itemEndMinutes(items[curI], ms[curI]) ?? nowM) : nowM;
+  const endAt = nextI >= 0 ? ms[nextI] : Math.max(startAt, 18 * 60);
+  const gap = endAt - startAt;
+  if (gap < 60 || startAt > 20 * 60) return null;
+  let origin = ctx.here();
+  if (!origin) {
+    for (let k = (curI >= 0 ? curI : nextI >= 0 ? nextI : items.length) - 1; k >= 0; k--) {
+      const q = items[k].placeId && findPlace(ctx.trip, ctx.datasets, items[k].placeId);
+      if (q && hasXY(q)) { origin = q; break; }
+    }
+  }
+  if (!origin) { const st = stayForDay(ctx.trip, day.date); const q = st && findPlace(ctx.trip, ctx.datasets, st.placeId); if (q && hasXY(q)) origin = q; }
+  const exclude = new Set(items.map((x) => x.placeId).filter(Boolean));
+  const list = suggestPlaces(ctx, { origin, date: day.date, atMin: startAt, exclude });
+  return section(`빈 시간 ${Math.floor(gap / 60)}시간${gap % 60 ? ' ' + (gap % 60) + '분' : ''} · 가까운 곳`,
+    h('p.hint', `${hhmm(startAt)}부터 ${nextI >= 0 ? hhmm(endAt) + ' 다음 일정 전까지' : '저녁 전까지'} · ${ctx.here() ? '현재 위치' : origin && origin.name ? origin.name : ''} 기준 · 아이 추천·찜·쓸 수 있는 패스 장소 먼저`),
+    suggestionList(ctx, list, day.date, (p, arrive) => addNow(ctx, day.date, p, arrive)),
+    !ctx.here() ? btn('내 위치 기준으로', () => ctx.getHere(), 'small ghost') : null);
+}
+function openAlternatives(ctx, day, plan, it, i) {
+  const items = plan.items, ms = itemMinutes(items);
+  let origin = it.placeId && findPlace(ctx.trip, ctx.datasets, it.placeId);
+  if (!origin || !hasXY(origin)) for (let k = i - 1; k >= 0; k--) { const q = items[k].placeId && findPlace(ctx.trip, ctx.datasets, items[k].placeId); if (q && hasXY(q)) { origin = q; break; } }
+  if ((!origin || !hasXY(origin)) && ctx.here()) origin = ctx.here();
+  const atMin = day.date === ctx.now.date ? Math.max(ctx.now.min, ms[i] ?? ctx.now.min) : (ms[i] ?? 600);
+  const exclude = new Set(items.map((x) => x.placeId).filter(Boolean));
+  const list = suggestPlaces(ctx, { origin, date: day.date, atMin, exclude, limit: 8 });
+  const s = openSheet(`'${it.title}' 대신`, h('div',
+    h('p.hint', `${origin && origin.name ? origin.name + ' 근처' : '근처'} · ${hhmm(atMin)}에 열려 있는 곳`),
+    suggestionList(ctx, list, day.date, (p, arrive) => {
+      s.close();
+      ctx.save((t) => {
+        adoptPlace(t, ctx.datasets, p.id);
+        const pl = byId(dayByDate(t, day.date).plans, plan.id);
+        const old = byId(pl.items, it.id); old.skipped = true; delete old.done;
+        const tm = hhmm(Math.ceil(arrive / 5) * 5);
+        insertByTime(pl.items, { id: newItemId(t, day.date, tm), time: tm, kind: p.cat === 'eat' ? 'meal' : 'visit', title: p.name, placeId: p.id, status: 'tentative', note: `'${it.title}' 대신` });
+      }, `'${it.title}'은 건너뛰고 ${p.name}을(를) 넣었어요.`, { undo: true });
+    })));
+}
+
 function moveItem(ctx, date, planId, i, dir) {
   ctx.save((t) => {
     const items = byId(dayByDate(t, date).plans, planId).items;
@@ -508,7 +745,8 @@ export function viewToday(ctx) {
   const nowM = ctx.now.min;
   let curI = -1, nextI = -1;
   items.forEach((it, i) => {
-    if (it.kind === 'move' || ms[i] == null) return;
+    if (it.kind === 'move' || ms[i] == null || it.done || it.skipped) return;
+    if (isLight(ctx, date) && it.optional) return;
     const e = itemEndMinutes(it, ms[i]);
     if (ms[i] <= nowM && e != null && e > nowM && curI < 0) curI = i;
     if (ms[i] > nowM && nextI < 0) nextI = i;
@@ -516,12 +754,28 @@ export function viewToday(ctx) {
   const out = h('div.today');
   out.appendChild(h('div.hero',
     h('div.hero-top', h('span.hero-day', `${ph.dayNo}일차 · ${fmtDate(date)}`), weatherSlot(ctx, date, { onRain: day ? rainAction(ctx, day) : null })),
+    dualClock(ctx),
     h('h2', (day && day.title) || '오늘'),
     stay ? h('button.hero-stay.linkish', { type: 'button', onclick: () => stay.placeId && openPlace(ctx, stay.placeId) }, '🏨 오늘 숙소 · ' + stay.name) : null));
-  if (curI >= 0) out.appendChild(nowCard(ctx, items[curI], '지금', ms[curI]));
-  if (nextI >= 0) out.appendChild(nextCard(ctx, items, nextI, ms));
+  out.appendChild(hourlyStrip(ctx));
+  out.appendChild(windAlert(ctx, date));
+  if (curI >= 0) out.appendChild(nowCard(ctx, items[curI], '지금', ms[curI], day, plan));
+  if (nextI >= 0) out.appendChild(nextCard(ctx, items, nextI, ms, day, plan));
   else if (items.length) out.appendChild(section(null, h('p', '오늘 남은 일정이 없어요. 푹 쉬세요.')));
+  if (day && plan && items.length) out.appendChild(adjustBar(ctx, day));
+  const gap = day && plan ? gapSection(ctx, day, items, ms, curI, nextI) : null;
+  if (gap) out.appendChild(gap);
 
+  const todo = todayTodo(ctx);
+  if (todo) out.appendChild(todo);
+  const todayDocs = (trip.documents || []).filter((d) => {
+    const l = d.linkTo; if (!l) return false;
+    const x = l.type === 'transport' ? byId(trip.transports, l.id) : l.type === 'stay' ? byId(trip.stays, l.id) : l.type === 'pass' ? byId(trip.passes, l.id) : null;
+    if (!x) return false;
+    if (l.type === 'pass') return items.some((it) => it.passUse === x.id);
+    return [x.start, x.end, x.checkIn, x.checkOut].some((v) => (v || '').slice(0, 10) === date);
+  });
+  if (todayDocs.length) out.appendChild(section('오늘 필요한 서류', h('div.chips', todayDocs.map((d) => h('button.chipbtn', { type: 'button', onclick: () => openDocLazy(ctx, d) }, '📎 ' + d.title)))));
   /* 오늘 필요한 비밀값 */
   const keys = todaySecretKeys(trip, date);
   if (keys.length) out.appendChild(section('오늘 필요한 정보', h('ul.kv', keys.map((k) => {
@@ -552,6 +806,12 @@ export function viewToday(ctx) {
       h('div.btnrow', btn('일정 탭에서 보기', () => { pickDate(ctx, date); ctx.go(`#/t/${encodeURIComponent(trip.id)}/plan`); }, 'small ghost'),
         btn('오늘 일정 공유', () => shareDay(ctx, day), 'small ghost'))));
   } else out.appendChild(section(null, h('p', '오늘 날짜의 일정이 없어요.')));
+  const moreMod = () => import('./v-more.js');
+  const fxBox = h('div');
+  moreMod().then((m) => { const c = m.fxConverter(ctx); if (c) fxBox.appendChild(c); });
+  out.appendChild(section('지출', h('div.btnrow', btn('＋ 지출 기록', () => moreMod().then((m) => m.editExpense(ctx, null)), 'small'),
+    btn('경비 보기', () => ctx.go(`#/t/${encodeURIComponent(trip.id)}/more/budget`), 'small ghost')), fxBox));
+  if (day) out.appendChild(journalCard(ctx, day));
   return out;
 }
 function todaySecretKeys(trip, date) {
@@ -566,15 +826,16 @@ function todaySecretKeys(trip, date) {
   }
   return [...keys];
 }
-function nowCard(ctx, it, label, start) {
+function nowCard(ctx, it, label, start, day, plan) {
   const p = it.placeId && findPlace(ctx.trip, ctx.datasets, it.placeId);
   const end = itemEndMinutes(it, start);
   return h('section.card.nowcard',
     h('div.card-kicker', label + (end != null ? ` · ${hhmm(end)}까지 (${fmtDur((end - ctx.now.min) * 60000)} 남음)` : '')),
     h('h3', p ? h('button.linkish', { type: 'button', onclick: () => openPlace(ctx, p.id) }, it.title) : it.title),
-    it.note ? h('p.item-note', ...rich(it.note, ctx.secrets)) : null);
+    it.note ? h('p.item-note', ...rich(it.note, ctx.secrets)) : null,
+    day && plan ? h('div.btnrow', btn('✓ 끝났어요', () => markItem(ctx, day.date, plan.id, it.id, 'done'), 'small')) : null);
 }
-function nextCard(ctx, items, i, ms) {
+function nextCard(ctx, items, i, ms, day, plan) {
   const it = items[i];
   const p = it.placeId && findPlace(ctx.trip, ctx.datasets, it.placeId);
   const leftMin = ms[i] - ctx.now.min;
@@ -597,8 +858,10 @@ function nextCard(ctx, items, i, ms) {
     lines.length ? h('p', lines.join(' · ')) : null,
     it.note ? h('p.item-note', ...rich(it.note, ctx.secrets)) : null,
     h('div.btnrow.wrap',
-      p ? mapLinks(p).map((l) => linkBtn(l.label, l.href, 'small')) : null,
-      !ctx.here() ? btn('내 위치 기준', () => ctx.getHere(), 'small ghost') : null));
+      p ? mapLinks(p, ctx.trip.meta.country).map((l) => linkBtn(l.label, l.href, 'small')) : null,
+      !ctx.here() ? btn('내 위치 기준', () => ctx.getHere(), 'small ghost') : null),
+    day && plan ? h('div.btnrow.wrap', btn('건너뛰기', () => markItem(ctx, day.date, plan.id, it.id, 'skipped'), 'small ghost'),
+      btn('대안 찾기', () => openAlternatives(ctx, day, plan, it, i), 'small ghost')) : null);
 }
 function passMini(ctx, p) {
   const st = passState(ctx, p);
@@ -629,7 +892,7 @@ function todayBefore(ctx) {
   due.sort((a, b) => a.left - b.left);
   const soon = due.filter((x) => x.left <= 21);
   const listed = new Set(); (trip.checklists || []).forEach((c) => (c.items || []).forEach((i) => { if (i.fromReminder) listed.add(i.fromReminder); }));
-  const rem = reserveReminders(trip, ctx.datasets).filter((r) => !listed.has(r.key) && daysBetween(ctx.now.date, r.due) <= 21);
+  const rem = autoReminders(trip, ctx.datasets, getProfile()).filter((r) => !listed.has(r.key) && daysBetween(ctx.now.date, r.due) <= 21);
   out.appendChild(section('마감 다가오는 준비', soon.length || rem.length ? h('ul.checks', soon.map(({ c, it, left }) => checkRow(ctx, c, it, left)), rem.map((r) => reminderRow(ctx, r))) : h('p.hint', '3주 안에 마감되는 준비 항목이 없어요.'),
     h('div.btnrow', btn('준비 탭 전체', () => ctx.go(`#/t/${encodeURIComponent(trip.id)}/prep`), 'small ghost'))));
   const oq = (trip.notes && trip.notes.openQuestions) || [];
@@ -639,6 +902,7 @@ function todayBefore(ctx) {
   if (warnN) out.appendChild(section('일정 점검', h('p', `경고 ${warnN}건이 있어요.`), h('ul.warns', checksFor(ctx).slice(0, 5).map((w) => h('li', w.msg)))));
   const first = (trip.days || [])[0];
   if (first && ph.dday <= 15) out.appendChild(section('출발일 날씨', h('p', fmtDate(first.date) + ' '), weatherSlot(ctx, first.date)));
+  for (const t of (trip.transports || []).filter((x) => x.kind === 'flight' && x.start)) out.appendChild(windAlert(ctx, t.start.slice(0, 10)));
   const bk = [...(trip.transports || []), ...(trip.stays || [])];
   if (bk.length) {
     const tent = bk.filter((x) => x.status === 'tentative');
@@ -654,8 +918,11 @@ function todayAfter(ctx) {
   return h('div.today',
     h('div.hero', h('div.hero-top', h('span.hero-day', '다녀온 여행'), h('span', `${fmtDate(trip.meta.start)} – ${fmtDate(trip.meta.end)}`)),
       h('h2', trip.meta.title), trip.meta.summary ? h('p', trip.meta.summary) : null),
-    section('회고', r ? h('div', list('좋았던 것', r.good), list('아쉬운 것', r.meh), list('다음에', r.next)) : h('p.hint', '아직 회고가 없어요. [더보기 → 메모]에서 적거나, AI 프롬프트 (5)로 정리하세요.'),
-      btn('회고 쓰기', () => ctx.go(`#/t/${encodeURIComponent(trip.id)}/more/notes`), 'small ghost')),
+    section('회고', r ? h('div', list('좋았던 것', r.good), list('아쉬운 것', r.meh), list('다음에', r.next)) : h('p.hint', '아직 회고가 없어요. 한 줄 기록·완료·건너뜀을 모아 AI에게 정리를 맡길 수 있어요.'),
+      h('div.btnrow.wrap', btn('AI로 회고 정리', () => import('./v-import.js').then((m) => m.openAiEdit(ctx, 'retro')), 'small'),
+        btn('직접 쓰기', () => ctx.go(`#/t/${encodeURIComponent(trip.id)}/more/notes`), 'small ghost'))),
+    (trip.days || []).some((d) => d.journal) ? section('그날그날', h('ul.journal', (trip.days || []).filter((d) => d.journal).map((d) =>
+      h('li', h('b', fmtDate(d.date) + ' '), d.journal.text || '', d.journal.best ? h('div.hint', '최고: ' + d.journal.best) : null)))) : null,
     section('다음 여행에 쓰기', h('p.hint', '구조·장소·체크리스트를 복사하고 날짜를 옮겨요. 예약·비밀값·경비는 비워요.'),
       btn('복제해서 새 여행', () => ctx.go(`#/new/${encodeURIComponent(trip.id)}`), 'primary')));
 }
@@ -772,19 +1039,22 @@ export function viewPrep(ctx) {
       h('ul.checks', (c.items || []).map((it) => h('div.check-wrap', checkRow(ctx, c, it),
         h('button.icon-btn.small', { type: 'button', 'aria-label': '수정', onclick: () => openCheckEdit(ctx, c.id, it.id) }, '✎')))),
       btn('＋ 항목', () => openCheckEdit(ctx, c.id, null), 'small ghost'))),
-    h('div.btnrow', btn('＋ 체크리스트', async () => {
+    h('div.btnrow', btn('다른 여행에서 불러오기', () => openChecklistImport(ctx), 'small'), btn('＋ 체크리스트', async () => {
       const title = await askText('체크리스트 추가', '이름', '준비물');
       if (title) ctx.save((t) => { t.checklists = t.checklists || []; t.checklists.push({ id: uid('cl'), title, items: [] }); });
     }, 'small'), btn('마감일 캘린더로', () => ctx.go(`#/t/${encodeURIComponent(trip.id)}/more/data`), 'small ghost')));
 }
 /* 일정에서 자동으로 만든 예약 오픈 알림 */
 function dueLabelOf(left) { return left < 0 ? `${-left}일 지남` : left === 0 ? '오늘' : `D-${left}`; }
+const REM_HINT = { reserve: (r) => (r.kind === 'open' ? `${fmtDate(r.due)}${r.at ? ' ' + r.at.slice(11) : ''}부터 예약 가능` : '방문 전에 예약'),
+  checkin: (r) => `${fmtDate(r.due)} ${r.at.slice(11)}쯤부터`, airport: (r) => `${fmtDate(r.due)} ${r.at.slice(11)}`,
+  return: (r) => `${fmtDate(r.due)} ${r.at.slice(11)}부터`, late: (r) => `${fmtDate(r.due)} 저녁까지 프런트·앱에 요청` };
 function reminderRow(ctx, r) {
   const left = daysBetween(ctx.now.date, r.due);
   const inList = (ctx.trip.checklists || []).some((c) => (c.items || []).some((i) => i.fromReminder === r.key));
   return h('li.check-item',
-    h('div.reminder', h('button.linkish', { type: 'button', onclick: () => openPlace(ctx, r.placeId) }, r.text),
-      h('div.hint', r.kind === 'open' ? `${fmtDate(r.due)}${r.at ? ' ' + r.at.slice(11) : ''}부터 예약 가능` : '방문 전에 예약')),
+    h('div.reminder', r.placeId ? h('button.linkish', { type: 'button', onclick: () => openPlace(ctx, r.placeId) }, r.text) : h('span', r.text),
+      h('div.hint', (REM_HINT[r.source] || REM_HINT.reserve)(r))),
     h('span.due' + (left < 0 ? '.over' : left <= 3 ? '.soon' : ''), { title: r.due }, dueLabelOf(left)),
     inList ? h('span.hint', '체크리스트에 있음') : btn('체크리스트에', () => ctx.save((t) => {
       t.checklists = t.checklists || [];
@@ -795,10 +1065,33 @@ function reminderRow(ctx, r) {
     }, '체크리스트에 넣었어요.'), 'small ghost'));
 }
 function reminderSection(ctx) {
-  const list = reserveReminders(ctx.trip, ctx.datasets);
+  if (ctx.phase.key === 'past') return null;
+  const list = autoReminders(ctx.trip, ctx.datasets, getProfile()).filter((r) => (r.at || r.due + 'T23:59') >= ctx.now.dt);
   if (!list.length) return null;
-  return section('예약 오픈 알림 (일정에서 자동)', h('p.hint', '일정에 넣은 장소의 예약 조건으로 계산했어요. 장소를 빼면 함께 사라져요.'),
+  return section('자동 알림', h('p.hint', '예약 오픈(일정에 넣은 장소의 예약 조건), 항공 체크인·공항 도착 목표, 렌터카 반납 준비, 레이트 체크아웃 요청을 예약·일정에서 계산했어요. 체크리스트에 이미 적어 둔 것은 빼요. 캘린더(.ics)에도 들어가요.'),
     h('ul.checks', list.map((r) => reminderRow(ctx, r))));
+}
+/* 오늘(여행 중): 오늘 시각이 있는 자동 알림 + 항공편 출발 안내 */
+function todayTodo(ctx) {
+  const list = autoReminders(ctx.trip, ctx.datasets, getProfile()).filter((r) => r.due === ctx.now.date);
+  const flights = (ctx.trip.transports || []).filter((t) => t.kind === 'flight' && (t.start || '').slice(0, 10) === ctx.now.date);
+  if (!list.length && !flights.length) return null;
+  const rows = list.map((r) => {
+    const passed = r.at && r.at.slice(11) <= ctx.now.time;
+    return h('li' + (passed ? '.past' : ''), h('span.todo-time', r.at ? r.at.slice(11) : ''), h('span', r.text));
+  });
+  const goNow = flights.map((t) => {
+    const ap = airportPlace(ctx.trip, ctx.datasets, t);
+    const arrive = list.find((r) => r.source === 'airport' && r.transportId === t.id);
+    const from = ctx.here() || (() => { const st = stayForDay(ctx.trip, ctx.now.date); const q = st && findPlace(ctx.trip, ctx.datasets, st.placeId); return q && hasXY(q) ? { ...q, l: st.name } : null; })();
+    const d = ap && hasXY(ap) && from ? distKm(from, ap) : null;
+    const by = arrive && d != null ? hhmm(mins(arrive.at.slice(11)) - Math.max(5, estMin(d))) : null;
+    return h('div.gonow', h('b', `✈ ${t.title} ${t.start.slice(11)} 출발`),
+      arrive ? h('div', `공항 도착 목표 ${arrive.at.slice(11)}` + (by ? ` · ${ctx.here() ? '현재 위치' : from.l || '숙소'}에서 ${fmtKm(d)}, ${by}까지 출발(추정)` : '')) : null,
+      h('div.btnrow.wrap', flightLinks(t).map((l) => linkBtn(l.label, l.href, 'small ghost')),
+        ap ? linkBtn('공항 길찾기', mapLinks(ap, ctx.trip.meta.country)[0].href, 'small ghost') : null));
+  });
+  return section('오늘 할 일', goNow, rows.length ? h('ul.todo', rows) : null);
 }
 /* 여행 첫날 기준 가족 나이 */
 function familyCard(ctx) {
@@ -812,6 +1105,42 @@ function familyCard(ctx) {
       ? h('p.hint', '36개월을 막 넘긴 아이가 있어요. 대부분 시설에서 어린이 요금이에요.') : null,
     !fa.any ? h('p.hint', (prof.fallbackAges || '') + ' · 생년월일을 넣으면 여행일 기준 나이·개월을 계산해요. ', h('a', { href: '#/settings' }, '설정')) : null);
 }
+
+/* 지난 여행 체크리스트를 이 여행으로 (마감일은 출발일 차이만큼 옮김) */
+function openChecklistImport(ctx) {
+  const others = ctx.allTrips().filter((t) => t.id !== ctx.trip.id && (t.checklists || []).some((c) => (c.items || []).length));
+  if (!others.length) { toast('불러올 체크리스트가 있는 다른 여행이 없어요.'); return; }
+  const body = h('div');
+  const tsel = select(others.map((t) => ({ value: t.id, label: t.meta.title })), others[0].id);
+  const listBox = h('div');
+  const drawLists = () => {
+    const src = others.find((t) => t.id === tsel.value);
+    clear(listBox).appendChild(h('div.field', h('label', '가져올 목록'), (src.checklists || []).filter((c) => (c.items || []).length)
+      .map((c) => checkbox(true, `${c.title} (${c.items.length})`, null, { value: c.id }))));
+  };
+  tsel.addEventListener('change', drawLists); drawLists();
+  body.append(field('여행', tsel), listBox, h('div.btnrow', btn('불러오기', () => {
+    const src = others.find((t) => t.id === tsel.value);
+    const ids = [...listBox.querySelectorAll('input:checked')].map((x) => x.value);
+    const delta = RE_DATE_.test(src.meta.start || '') && RE_DATE_.test(ctx.trip.meta.start || '') ? daysBetween(src.meta.start, ctx.trip.meta.start) : 0;
+    let n = 0;
+    ctx.save((t) => {
+      t.checklists = t.checklists || [];
+      for (const c of (src.checklists || []).filter((x) => ids.includes(x.id))) {
+        let dst = t.checklists.find((x) => x.title === c.title);
+        if (!dst) { dst = { id: uid('cl'), title: c.title, items: [] }; t.checklists.push(dst); }
+        const have = new Set((dst.items || []).map((i) => i.text));
+        for (const it of c.items || []) {
+          if (have.has(it.text) || it.fromReminder) continue;
+          dst.items.push({ id: dst.id + '-' + Date.now().toString(36) + (n++), text: it.text, due: it.due && delta ? addDays(it.due, delta) : null, done: false, ...(it.note ? { note: it.note } : {}) });
+        }
+      }
+    }, '체크리스트를 불러왔어요.', { undo: true });
+    s.close();
+  }, 'primary')));
+  const s = openSheet('다른 여행에서 불러오기', body);
+}
+const RE_DATE_ = /^\d{4}-\d{2}-\d{2}$/;
 
 function openCheckEdit(ctx, clId, itemId) {
   const cl = byId(ctx.trip.checklists, clId);
@@ -827,7 +1156,7 @@ function openCheckEdit(ctx, clId, itemId) {
           else c.items.push({ id: clId + '-' + Date.now().toString(36), text: text.value.trim(), due: due.value || null, done: false });
         }); s.close();
       }, 'primary'),
-      itemId ? btn('삭제', () => { ctx.save((t) => { const c = byId(t.checklists, clId); c.items = c.items.filter((x) => x.id !== itemId); }); s.close(); }, 'danger') : null)));
+      itemId ? btn('삭제', () => { ctx.save((t) => { const c = byId(t.checklists, clId); c.items = c.items.filter((x) => x.id !== itemId); }, '항목을 지웠어요.', { undo: true }); s.close(); }, 'danger') : null)));
 }
 
 /* ── 비상 ─────────────────────────────────────────── */

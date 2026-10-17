@@ -1,6 +1,6 @@
 /* 캘린더 내보내기 (.ics) — 알림(VALARM)을 넣어 휴대폰 캘린더가 알림을 맡게 한다 */
 import { toEpoch, RE_DT, RE_TIME, plain } from './util.js';
-import { activePlan, reserveReminders } from './model.js';
+import { activePlan, autoReminders } from './model.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 function utc(ms) {
@@ -57,10 +57,10 @@ export function buildIcs(trip, opts = {}) {
     }
     const listed = new Set();
     (trip.checklists || []).forEach((c) => (c.items || []).forEach((i) => { if (i.fromReminder) listed.add(i.fromReminder); }));
-    for (const r of reserveReminders(trip, opts.datasets || {})) {
+    for (const r of autoReminders(trip, opts.datasets || {}, opts.profile || null)) {
       if (listed.has(r.key)) continue;
       const at = r.at || r.due + 'T09:00';
-      add(`rsv-${r.placeId}-${r.visit}@${trip.id}`, at, null, '📅 ' + r.text, r.cond, 1);
+      add(`auto-${r.key.replace(/[^\w-]/g, '-')}@${trip.id}`, at, null, (r.source === 'airport' ? '✈ ' : '📅 ') + r.text, r.cond, r.source === 'airport' ? 30 : 1);
     }
   }
   const stamp = utc(Date.now());
