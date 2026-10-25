@@ -9,7 +9,8 @@ import { load, save, wipe, UPGRADES, upgCost, totalStars } from './store.js';
 const $ = (id) => document.getElementById(id);
 const cvs = $('cv');
 const renderer = createRenderer(cvs);
-const view = renderer.view;
+/* 조작 계산은 CSS 픽셀 기준(렌더러 버퍼 크기와 무관) */
+const scr = () => renderer.screen || renderer.view;
 
 let data = load();
 let lv = null;          // 지금 레벨(보정 끝난 것)
@@ -49,7 +50,7 @@ function onDown(e) {
   if (mode !== 'play' && mode !== 'card') return;
   if (e.target.closest && e.target.closest('button')) return;
   e.preventDefault();
-  const w = view.w;
+  const w = scr().w;
   const dead = Math.abs(e.clientX - w / 2) < w * 0.06;
   pointers.set(e.pointerId, {
     x0: e.clientX, x: e.clientX, side: dead ? 0 : e.clientX < w / 2 ? -1 : 1, drag: false, sx0: restX(),
@@ -64,9 +65,10 @@ function onMove(e) {
   p.x = e.clientX;
   if (p.drag) return;
   const dx = p.x - p.x0;
-  // 누르고 있는 엄지가 조금 구르는 정도로는 끌기로 바뀌지 않는다
-  const limit = p.side === 0 ? 10 : Math.max(24, view.w * 0.06);
-  if (Math.abs(dx) > limit && (p.side === 0 || Math.sign(dx) !== p.side)) {
+  // 누르고 있는 엄지가 조금 구르는 정도로는 끌기로 바뀌지 않는다(누른 쪽으로 미는 건 더 너그럽게)
+  const w = scr().w;
+  const limit = p.side === 0 ? 10 : Math.sign(dx) === p.side ? Math.max(40, w * 0.1) : Math.max(24, w * 0.06);
+  if (Math.abs(dx) > limit) {
     p.drag = true;
     p.x0 = p.x;
     p.sx0 = restX();
@@ -82,7 +84,8 @@ function onUp(e) {
       // 남은 손가락은 지금 자리에서 다시 시작(예전 기준점으로 튀지 않게)
       p.x0 = p.x;
       p.sx0 = restX();
-      if (!p.drag) p.side = Math.abs(p.x - view.w / 2) < view.w * 0.06 ? 0 : p.x < view.w / 2 ? -1 : 1;
+      const w = scr().w;
+      if (!p.drag) p.side = Math.abs(p.x - w / 2) < w * 0.06 ? 0 : p.x < w / 2 ? -1 : 1;
     }
   }
 }
@@ -99,7 +102,7 @@ function currentInput() {
   const p = activeId != null ? pointers.get(activeId) : null;
   if (p) {
     if (p.drag) {
-      tx = p.sx0 + ((p.x - p.x0) * 10) / (0.8 * view.col);
+      tx = p.sx0 + ((p.x - p.x0) * 10) / (0.8 * scr().col);
       // 길 끝을 넘겨 끌었으면 기준점을 옮겨, 되돌리는 순간 바로 반응하게
       if (Math.abs(tx) > EDGE) {
         tx = Math.sign(tx) * EDGE;
