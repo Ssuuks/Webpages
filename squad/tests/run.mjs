@@ -104,9 +104,83 @@ test('시뮬레이션은 넘겨준 레벨을 바꾸지 않는다', () => {
   assert.equal(JSON.stringify([lv.rows, lv.foes, lv.props, lv.saws]), before);
 });
 
-test('첫 레벨 첫 게이트는 +10 대 −5', () => {
+test('첫 레벨 첫 게이트는 +10 대 −5이고, 손대지 않은 분대(x=0)는 왼쪽 +10을 지난다', () => {
   const lv = C.buildLevel(1);
   assert.deepEqual(lv.rows[0].cells.map(C.cellLabel), ['+10', '−5']);
+  assert.equal(C.pickCell(lv.rows[0], 0), 0);
+  assert.equal(C.pickCell(lv.rows[0], 0.01), 1);
+});
+
+test('레벨 카드가 소개하는 메커닉은 그 레벨에 꼭 나온다', () => {
+  const present = (lv, m) => {
+    const cells = lv.rows.flatMap((r) => r.cells);
+    switch (m) {
+      case 'mul': return cells.some((c) => c.op === 'mul');
+      case 'mul3': return cells.some((c) => c.op === 'mul' && c.v === 3);
+      case 'div': return cells.some((c) => c.op === 'div');
+      case 'triple': return lv.rows.some((r) => r.cells.length === 3);
+      case 'shoot': return lv.rows.some((r) => r.cells.length === 1);
+      case 'wall': return lv.props.some((p) => p.kind === 'wall');
+      case 'crate': return lv.props.some((p) => p.kind === 'crate');
+      case 'saw': return lv.saws.length > 0;
+      case 'runner': case 'brute': case 'spit': return lv.foes.some((f) => f.kind === m);
+      default: return true;
+    }
+  };
+  for (const m of Object.keys(C.UNLOCK)) {
+    const lv = C.prepareLevel(C.UNLOCK[m]);
+    assert.ok(present(lv, m), `L${C.UNLOCK[m]}에 ${m}이(가) 없음`);
+    assert.deepEqual(lv.missing, []);
+  }
+});
+
+test('보스 직전 줄은 ×2로 크게 불릴 기회가 있다(L3부터)', () => {
+  for (let L = 3; L <= 40; L++) {
+    const last = C.buildLevel(L).rows.at(-1);
+    assert.ok(last.cells.some((c) => c.op === 'mul'), `L${L} 마지막 줄 ${last.cells.map(C.cellLabel).join('|')}`);
+  }
+});
+
+test('보스 경기 규칙: 졸개는 분대 코앞에 생기지 않고, 맞붙으면 내려찍기 예고는 사라진다', () => {
+  const lv = C.prepareLevel(12);
+  const s = C.newGame(lv, {});
+  while (s.phase === 'run') C.step(s, C.botInput(s));
+  const arena = structuredClone(s);
+  s.squad.n = 15;   // 약한 분대로 가만히 있으면 진다
+  let minGap = Infinity;
+  while (s.phase === 'arena' && s.tick < 40000) {
+    C.step(s, { dir: 0, tx: null });
+    for (const e of s.ev) if (e.t === 'summon') for (const f of s.foes.slice(-e.n)) minGap = Math.min(minGap, f.z - s.squad.z);
+  }
+  assert.ok(minGap > 3, `졸개가 ${minGap.toFixed(2)} 앞에 생김`);
+  assert.equal(s.phase, 'lost');
+  assert.ok(['boss', 'summon'].includes(s.cause), s.cause);
+  // 예고 중에 보스가 닿으면 예고는 지워진다
+  arena.boss.slam = { x0: -5, x1: 0, t: 0.5, T: 1 };
+  arena.boss.z = arena.squad.z;
+  C.step(arena, { dir: 0, tx: null });
+  assert.ok(arena.boss.clash);
+  assert.equal(arena.boss.slam, null);
+});
+
+test('비켜 간 벽은 지나갈 때까지 남아 있고, 마지막 병사가 쓰러진 틱에는 아무것도 되살리지 못한다', () => {
+  const lv = C.prepareLevel(3);
+  const s = C.newGame(lv, {});
+  let passed = 0;
+  while (s.phase === 'run') {
+    C.step(s, C.botInput(s));
+    for (const p of s.props) if (p.passed) { assert.ok(p.alive); passed++; }
+  }
+  assert.ok(passed > 0, '봇이 피해 간 벽이 하나는 있어야 한다');
+  // 병사 1명, 바로 앞에 좀비, 총알 하나로 열리는 지원병 상자
+  const t = C.newGame(C.prepareLevel(6), {});
+  t.squad.n = 1;
+  t.foes.unshift({ id: 9999, kind: 'grunt', x: t.squad.x, z: t.squad.z + 0.3, hp: 5, max: 5, alive: true, awake: true, hitT: -9, cd: 0, seed: 0, r: 0.42, spd: 2.6, home: 0.9, homeDist: 18 });
+  t.props.push({ id: 9998, kind: 'crate', x0: -1, x1: 1, z: t.squad.z + 1, hp: 0.001, max: 1, alive: true, hitT: -9, reward: { type: 'men', v: 10 } });
+  t.bullets.push({ x: 0, z: t.squad.z + 0.9, d: 0, dmg: 5 });
+  C.step(t, { dir: 0, tx: null });
+  assert.equal(t.phase, 'lost');
+  assert.equal(t.squad.n, 0);
 });
 
 test('레벨 생성 규칙 (L1~60)', () => {
@@ -155,6 +229,7 @@ test(`기준 봇이 강화 없이 L1~${MAX_LEVEL}을 모두 깬다(보정 실패
     const s = run(lv, C.botInput);
     assert.equal(s.phase, 'won', `L${L}: ${s.phase} (${s.cause})`);
     assert.ok(s.squad.n >= lv.par * 0.95, `L${L}: 기준 봇 결과가 별 기준과 어긋남`);
+    assert.ok(lv.arriveWeak >= 1, `L${L}: 약한 기준 봇이 보스까지 못 감`);
     assert.ok(Number.isFinite(s.squad.x) && Number.isFinite(s.squad.z));
     assert.ok(s.squad.n <= C.MAX_N);
   }
@@ -200,12 +275,15 @@ test('강화는 도움이 된다', () => {
 
 test('별과 코인', () => {
   const lv = C.prepareLevel(4);
-  const g = C.starGoals(lv);
+  const g = C.starGoals(lv.par);
   assert.ok(g.two < g.three && g.three <= lv.par);
-  assert.equal(C.starsFor(lv, 1, false), 0);
-  assert.equal(C.starsFor(lv, 1, true), 1);
-  assert.equal(C.starsFor(lv, g.two, true), 2);
-  assert.equal(C.starsFor(lv, g.three, true), 3);
+  assert.equal(C.starsFor(lv.par, 1, false), 0);
+  assert.equal(C.starsFor(lv.par, 1, true), 1);
+  assert.equal(C.starsFor(lv.par, g.two, true), 2);
+  assert.equal(C.starsFor(lv.par, g.three, true), 3);
+  // 강화를 달면 별 기준도 같이 오른다(강화는 이기기 쉽게, 별은 실력으로)
+  assert.ok(C.parFor(lv, C.START_N + 20, 10) > lv.par);
+  assert.equal(C.parFor(lv), lv.par);
   const s = run(lv, C.botInput);
   const won = C.coinsFor(lv, s, true, 3);
   const lost = C.coinsFor(lv, s, false, 0);

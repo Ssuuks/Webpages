@@ -1,7 +1,7 @@
 /* 화면 그리기 — 시뮬레이션 상태를 읽기만 한다(상태를 바꾸지 않는다).
    이펙트(파편·떠오르는 숫자·흔들림)는 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { ROAD, radius, cellGood, applyOp, BULLET_SPEED, DT } from './core.js';
+import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT } from './core.js';
 import { buildSprites } from './sprites.js';
 
 const FONT = '"Black Han Sans", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
@@ -50,6 +50,7 @@ export function createRenderer(cvs) {
   /* 병사 대형(그릴 위치) */
   const vis = { n: 0, x: new Float32Array(200), z: new Float32Array(200), born: new Float32Array(200) };
 
+  const byDepth = (a, b) => b.z - a.z;
   /* 그리기 순서 정렬용 목록(재사용) */
   const items = [];
   for (let i = 0; i < 900; i++) items.push({ z: 0, k: 0, o: null, i: 0, x: 0 });
@@ -449,8 +450,7 @@ export function createRenderer(cvs) {
     const q = s.squad;
     const dz = row.z - q.z;
     const near = dz < 20 && dz > 0;
-    let idx = 0;
-    for (let i = 0; i < row.cells.length; i++) if (q.x >= row.cells[i].x0) idx = i;
+    const idx = pickCell(row, q.x);
     const H = 2.7;
     // 기둥
     const posts = [row.cells[0].x0];
@@ -590,14 +590,45 @@ export function createRenderer(cvs) {
     ctx.textBaseline = 'middle';
     const size = Math.round(Math.min(46, Math.max(13, fs * 0.85)));
     if (isCrate) {
-      const r = p.reward;
-      const icon = r.type === 'gun' ? '🔫' : r.type === 'men' ? '👥' : '💰';
-      ctx.font = `${Math.round(size * 0.9)}px sans-serif`;
-      ctx.fillText(icon, mx, face.ay - h * 0.5);
+      crateIcon(p.reward.type, mx, face.ay - h * 0.5, Math.min(w, h) * 0.32);
       label(String(Math.ceil(p.hp)), mx, face.dy - size * 0.75, size, '#FFE38A');
     } else {
       label(String(Math.ceil(p.hp)), mx, face.ay - h * 0.3, size, '#FFFFFF');
     }
+  }
+
+  /* 상자 보상 그림: 총 / 병사 / 동전 */
+  function crateIcon(type, x, y, r) {
+    if (r < 3) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(1.5, r * 0.14);
+    ctx.strokeStyle = C.outline;
+    ctx.fillStyle = 'rgba(20,14,8,.35)';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+    if (type === 'gun') {
+      ctx.fillStyle = '#FFB347';
+      ctx.beginPath();
+      ctx.moveTo(-r, -r * 0.35); ctx.lineTo(r, -r * 0.35); ctx.lineTo(r, r * 0.05); ctx.lineTo(-r * 0.15, r * 0.05);
+      ctx.lineTo(-r * 0.35, r * 0.75); ctx.lineTo(-r * 0.8, r * 0.75); ctx.lineTo(-r * 0.6, r * 0.05); ctx.lineTo(-r, r * 0.05);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    } else if (type === 'men') {
+      ctx.fillStyle = '#7FC4FF';
+      for (const dx of [-0.45, 0.45]) {
+        ctx.beginPath(); ctx.arc(dx * r, -r * 0.35, r * 0.3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo((dx - 0.4) * r, r * 0.8); ctx.quadraticCurveTo(dx * r, -r * 0.15, (dx + 0.4) * r, r * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke();
+      }
+    } else {
+      ctx.fillStyle = '#FFD45A';
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.75, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#C98A12';
+      ctx.fillRect(-r * 0.12, -r * 0.4, r * 0.24, r * 0.8);
+    }
+    ctx.restore();
   }
 
   function drawSaw(w, s) {
@@ -908,8 +939,10 @@ export function createRenderer(cvs) {
     if (q.n > 0) for (let i = 0; i < vis.n; i++) push(vis.z[i], 6, null, i);
     order.length = nItems;
     for (let i = 0; i < nItems; i++) order[i] = items[i];
-    order.sort((a, b) => b.z - a.z);
+    order.sort(byDepth);
     const R = radius(q.n);
+    // 길가 소품은 먼저 그린다(가까운 나무가 게이트 숫자를 가리지 않게)
+    for (const it of order) if (it.k === 9) drawProp(it.i, it.x, it.z);
     for (const it of order) {
       switch (it.k) {
         case 1: drawRow(s, it.o); break;
@@ -918,7 +951,6 @@ export function createRenderer(cvs) {
         case 4: drawFoe(it.o, s); break;
         case 5: drawBoss(it.o, s); break;
         case 6: drawSquadMember(it.i, s, R); break;
-        case 9: drawProp(it.i, it.x, it.z); break;
         default:
       }
     }

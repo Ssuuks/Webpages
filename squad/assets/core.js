@@ -97,7 +97,7 @@ export function levelParams(L) {
     chunks: Math.min(14, 7 + Math.floor(l / 3)),
     pressure: Math.min(1.35, 0.55 + 0.65 * k + 0.005 * over),
     maxMul: l < UNLOCK.mul ? 0 : l < 10 ? 2 : 3,
-    bossKill: 7 + 2.5 * k + Math.min(2, over * 0.05),     // 기준 병력의 75%가 보스를 잡는 데 걸리는 초
+    bossKill: 7 + 6 * k + Math.min(2, over * 0.05),       // 기준 병력의 75%가 보스를 잡는 데 걸리는 초
     slamEvery: 3.2 - 1.0 * k,
     slamWarn: 1.25 - 0.4 * k,
     slamThird: l >= UNLOCK.triple,
@@ -113,6 +113,7 @@ const KIND_UNLOCK = { gate: 1, wave: 1, rest: 1, shoot: UNLOCK.shoot, guard: UNL
 const KIND_WEIGHT = { gate: 3, guard: 1.3, wave: 2.6, shoot: 1, wall: 1, crate: 1.1, spit: 0.9, saw: 1.1 };
 /* 레벨마다 처음 소개하는 청크 */
 const INTRO = { 2: 'shoot', 3: 'wall', 4: 'crate', 5: 'spit', 6: 'saw' };
+const FOE_INTRO = [UNLOCK.runner, UNLOCK.brute];
 
 function weighted(o, kinds, L, avoid) {
   let list = kinds.filter((k) => L >= KIND_UNLOCK[k] && k !== avoid);
@@ -134,6 +135,7 @@ function planChunks(p, g) {
     if (i === 0) kind = 'gate';
     else if (i === K - 1) kind = 'gate';
     else if (intro && i === 1) kind = intro;
+    else if (FOE_INTRO.includes(p.L) && i === 3) kind = 'wave';
     else if (i % 5 === 4) kind = 'rest';
     else if (GROW_KINDS.includes(plan[i - 1])) kind = weighted(g, THREAT_KINDS, p.L, p.L < 10 ? lastThreat : '');
     else kind = weighted(g, GROW_KINDS, p.L, '');
@@ -189,11 +191,14 @@ function spawnWave(lv, g, p, z, ng, scale, opt = {}) {
   const x0 = lane ? lane.x0 + 0.6 : -4.4;
   const x1 = lane ? lane.x1 - 0.6 : 4.4;
   let budget = m;
-  if (has(p.L, 'brute') && !opt.noBrute && chance(g, 0.35 + 0.2 * p.k)) {
+  const forced = lv.force;
+  if (has(p.L, 'brute') && (forced.has('brute') || (!opt.noBrute && chance(g, 0.35 + 0.2 * p.k)))) {
+    forced.delete('brute');
     placed.push(addFoe(lv, g, 'brute', U(g, x0, x1), z + U(g, 4, 8), hp * 10));
     budget -= 6;
   }
-  if (has(p.L, 'runner') && !opt.noRunner && chance(g, 0.5)) {
+  if (has(p.L, 'runner') && (forced.has('runner') || (!opt.noRunner && chance(g, 0.5)))) {
+    forced.delete('runner');
     const rn = Math.min(8, Math.max(2, Math.round(budget * 0.3)));
     for (let i = 0; i < rn; i++) placed.push(addFoe(lv, g, 'runner', U(g, -4, 4), z + 10 + i * 1.6, hp * 0.55));
     budget -= Math.ceil(rn / 2);
@@ -226,12 +231,25 @@ function makeRow(lv, z, cells, ng) {
 function gateChoices(g, p, ng, target, ctx) {
   const ratio = target / ng;
   const out = [];
-  const third = has(p.L, 'triple') && chance(g, 0.3);
-  if (ctx.mulLeft > 0 && ng <= 300 && (ratio > 1.4 || chance(g, 0.25))) {
+  const third = (has(p.L, 'triple') && chance(g, 0.3)) || ctx.force.has('triple');
+  ctx.force.delete('triple');
+  const wantMul = ctx.force.has('mul') || ctx.force.has('mul3');
+  if (ctx.last && ctx.mulLeft > 0 && ng <= 3000) {
+    // 보스 직전의 큰 한 방: ×2 대 쏴서 키우는 +
     ctx.mulLeft--;
-    const m = has(p.L, 'mul3') && ng < 40 && chance(g, 0.35) ? 3 : 2;
+    out.push(['mul', 2]);
+    out.push(['add', Math.max(10, nice(ng * U(g, 0.6, 0.85)))]);
+  } else if (ctx.mulLeft > (ctx.last ? 0 : ctx.reserve) && (wantMul || (ng <= 300 && (ratio > 1.4 || chance(g, 0.25))))) {
+    ctx.mulLeft--;
+    const m = ctx.force.has('mul3') || (has(p.L, 'mul3') && ng < 150 && chance(g, 0.3)) ? 3 : 2;
+    ctx.force.delete('mul');
+    if (m === 3) ctx.force.delete('mul3');
     out.push(['mul', m]);
     out.push(['add', Math.max(5, nice(ng * U(g, 0.45, 0.85)))]);
+  } else if (ctx.force.has('div')) {
+    ctx.force.delete('div');
+    out.push(['add', Math.max(5, nice(ng * clamp(ratio - 1, 0.25, 1.5) * U(g, 0.85, 1.2)))]);
+    out.push(['div', 2]);
   } else {
     const a = Math.max(5, nice(ng * clamp(ratio - 1, 0.25, 1.5) * U(g, 0.85, 1.2)));
     out.push(['add', a]);
@@ -246,8 +264,9 @@ function gateChoices(g, p, ng, target, ctx) {
     else out.push(['add', Math.max(3, nice(ng * U(g, 0.15, 0.35)))]);
   }
   // '덜 나쁜 쪽' 줄: −a 대 ÷2 (L8부터 가끔, 마지막 두 청크에는 없음)
-  if (has(p.L, 'div') && ctx.lessBad > 0 && !ctx.late && out.length === 2 && chance(g, 0.18)) {
+  if (has(p.L, 'div') && ctx.lessBad > 0 && !ctx.late && out.length === 2 && !out.some((o) => o[0] === 'div') && chance(g, 0.18)) {
     ctx.lessBad--;
+    if (out.some((o) => o[0] === 'mul')) ctx.mulLeft++;
     out.length = 0;
     out.push(['div', 2]);
     out.push(['add', -Math.max(5, nice(ng * U(g, 0.25, 0.4)))]);
@@ -292,7 +311,7 @@ const CHUNK = {
     const rowZ = z + 34;
     const ratio = target / ng;
     let good;
-    if (ctx.mulLeft > 0 && ng <= 300) { ctx.mulLeft--; good = ['mul', 2]; }
+    if (ctx.mulLeft > ctx.reserve && ng <= 300) { ctx.mulLeft--; good = ['mul', 2]; }
     else good = ['add', Math.max(8, nice(ng * clamp(ratio - 1, 0.5, 1.5) * U(g, 1.2, 1.5)))];
     const poor = ['add', Math.max(2, nice(ng * U(g, 0.08, 0.22)))];
     const goodLeft = chance(g, 0.5);
@@ -404,11 +423,18 @@ export function buildLevel(L, attempt = 0) {
   };
   const plan = planChunks(p, g);
   lv.plan = plan;
-  const ctx = { mulLeft: p.maxMul, lessBad: p.L >= UNLOCK.div ? 1 : 0, late: false };
+  // 그 레벨에서 처음 소개하는 것은 반드시 한 번 나오게
+  const force = new Set();
+  for (const m of ['mul', 'runner', 'brute', 'div', 'triple', 'mul3']) if (UNLOCK[m] === p.L) force.add(m);
+  lv.force = force;
+  // ×는 하나를 보스 직전 줄 몫으로 남겨 둔다(L3부터)
+  const reserve = p.maxMul >= 2 ? 1 : 0;
+  const ctx = { mulLeft: p.maxMul, reserve, lessBad: p.L >= UNLOCK.div ? 1 : 0, late: false, last: false, force };
   let z = 34;
   let ng = START_N;
   for (let i = 0; i < plan.length; i++) {
     ctx.late = i >= plan.length - 2;
+    ctx.last = i === plan.length - 1 && reserve > 0;
     const target = START_N * Math.pow(p.P / START_N, (i + 1) / plan.length);
     // 너무 앞서가면 다음 줄은 덜 주고, 처지면 더 준다
     const t = ng > target * 1.25 ? target * 0.9 : ng < target * 0.8 ? target * 1.15 : target;
@@ -419,6 +445,8 @@ export function buildLevel(L, attempt = 0) {
   }
   lv.arenaZ = z + 12;
   lv.foes.sort((a, b) => a.z - b.z || a.id - b.id);
+  lv.missing = [...force];   // 끝까지 못 넣은 소개 항목(테스트에서 비어 있어야 함)
+  delete lv.force;
   return lv;
 }
 
@@ -510,18 +538,25 @@ export function step(s, input) {
   sawsUpdate(s, R);
   foesUpdate(s, R);
   spitsUpdate(s, R);
+  if (wiped(s)) return s;
   fire(s, R);
   bulletsUpdate(s);
   if (s.boss) bossUpdate(s, R);
-
-  if (q.n <= 0 && s.phase !== 'lost') {
-    q.n = 0;
-    s.phase = 'lost';
-    s.endT = 0;
-    if (!s.cause) s.cause = 'foe';
-    emit(s, { t: 'lose', cause: s.cause });
-  }
+  wiped(s);
   return s;
+}
+
+/* 병사가 모두 쓰러졌으면 그 틱에서 바로 끝낸다(날아가던 총알이 보스를 잡거나 상자로 되살아나지 않게) */
+function wiped(s) {
+  const q = s.squad;
+  if (q.n > 0 || s.phase === 'lost') return false;
+  q.n = 0;
+  s.phase = 'lost';
+  s.endT = 0;
+  s.bullets.length = 0;
+  if (!s.cause) s.cause = 'foe';
+  emit(s, { t: 'lose', cause: s.cause });
+  return true;
 }
 
 function enterArena(s) {
@@ -537,13 +572,19 @@ function enterArena(s) {
   emit(s, { t: 'boss' });
 }
 
+/* 분대 중심이 지나는 칸. 경계 위(출발 자리 x=0 포함)는 왼쪽 칸 — 화면의 칸 강조도 같은 규칙을 쓴다 */
+export function pickCell(row, x) {
+  let idx = 0;
+  for (let i = 1; i < row.cells.length; i++) if (x > row.cells[i].x0) idx = i;
+  return idx;
+}
+
 function rowsUpdate(s) {
   const q = s.squad;
   for (const row of s.rows) {
     if (row.done || q.z < row.z) continue;
     row.done = true;
-    let idx = 0;
-    for (let i = 0; i < row.cells.length; i++) if (q.x >= row.cells[i].x0) idx = i;
+    const idx = pickCell(row, q.x);
     row.chosen = idx;
     const c = row.cells[idx];
     const before = q.n;
@@ -563,12 +604,13 @@ function overlap(a0, a1, b0, b1) { return Math.max(0, Math.min(a1, b1) - Math.ma
 function propsUpdate(s, R) {
   const q = s.squad;
   for (const p of s.props) {
-    if (!p.alive) continue;
+    if (!p.alive || p.passed) continue;
     if (q.z + 0.55 * R < p.z) continue;
+    const ov = overlap(q.x - R, q.x + R, p.x0, p.x1) / (2 * R);
+    // 비켜 간 벽·상자는 그대로 남아 뒤로 지나간다(그리기만 한다)
+    if (ov <= 0) { p.passed = true; continue; }
     p.alive = false;
     if (p.kind === 'crate') { emit(s, { t: 'crateMiss', x: (p.x0 + p.x1) / 2, z: p.z }); continue; }
-    const ov = overlap(q.x - R, q.x + R, p.x0, p.x1) / (2 * R);
-    if (ov <= 0) { emit(s, { t: 'wallPass', id: p.id }); continue; }
     const k = Math.ceil((p.hp / SOLDIER_HP) * Math.min(1, ov * 2));
     emit(s, { t: 'wallCrash', x: (p.x0 + p.x1) / 2, z: p.z, n: k });
     lose(s, Math.max(1, k), 'wall');
@@ -622,7 +664,7 @@ function foesUpdate(s, R) {
     if (Math.abs(f.z - q.z) < 0.55 * R + f.r && Math.abs(f.x - q.x) < R + f.r * 0.8) {
       f.alive = false;
       emit(s, { t: 'bite', kind: f.kind, x: f.x, z: f.z });
-      lose(s, contactCost(f.hp), f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
+      lose(s, contactCost(f.hp), s.phase === 'arena' ? 'summon' : f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
       continue;
     }
     if (f.z < q.z - 4) f.alive = false;   // 지나쳐 갔다
@@ -687,7 +729,7 @@ function bulletsUpdate(s) {
       }
     }
     for (const p of s.props) {
-      if (!p.alive || p.z <= z0 - 0.4 || p.z > z1 + 0.4 || b.x < p.x0 || b.x > p.x1) continue;
+      if (!p.alive || p.passed || p.z <= z0 - 0.4 || p.z > z1 + 0.4 || b.x < p.x0 || b.x > p.x1) continue;
       if (p.z < bestZ) { bestZ = p.z; hitKind = 2; hitObj = p; }
     }
     for (const f of s.foes) {
@@ -786,6 +828,7 @@ function bossUpdate(s, R) {
     b.z = Math.max(reach, b.z - b.walk * (b.enraged ? 1.25 : 1) * DT);
   } else if (!b.clash) {
     b.clash = true;
+    b.slam = null;
     b.clashCd = 0.3;
     emit(s, { t: 'clash' });
   }
@@ -824,12 +867,12 @@ function bossUpdate(s, R) {
   // 졸개 소환
   if (s.L >= UNLOCK.summon) {
     b.summonCd -= DT;
-    if (b.summonCd <= 0) {
+    if (b.summonCd <= 0 && b.z - q.z > 9) {
       b.summonCd = 5.5;
       const m = Math.min(8, 3 + Math.floor(s.L / 5));
       const hp = 0.08 * dps(s.bossRef);
       for (let i = 0; i < m; i++) {
-        const f = { id: s.nextId++, kind: 'grunt', x: clamp(b.x + (rand(s) - 0.5) * 6, -4.4, 4.4), z: b.z - 2 - rand(s) * 3, hp: Math.max(1, Math.round(hp)), max: 0, alive: true, awake: true, hitT: -9, cd: 0, seed: (rand(s) * 1000) | 0, r: 0.42, spd: 2.6, home: 0.9, homeDist: 18 };
+        const f = { id: s.nextId++, kind: 'grunt', x: clamp(b.x + (rand(s) - 0.5) * 6, -4.4, 4.4), z: Math.max(q.z + 0.55 * R + 5, b.z - 2 - rand(s) * 3), hp: Math.max(1, Math.round(hp)), max: 0, alive: true, awake: true, hitT: -9, cd: 0, seed: (rand(s) * 1000) | 0, r: 0.42, spd: 2.6, home: 0.9, homeDist: 18 };
         f.max = f.hp;
         s.foes.push(f);
       }
@@ -855,7 +898,7 @@ function cellCenter(c) { return clamp((c.x0 + c.x1) / 2, -EDGE, EDGE); }
 /* 기준 봇: 몇 군데 x 후보를 놓고 '다음 게이트 결과 − 벽·무리 피해 + 상자 보상'을 따져 가장 나은 곳으로 간다.
    그 위치에서 쏘는 총알이 게이트·벽·상자에 맞는 것도 셈에 넣는다. 톱날·독침·내려찍기는 피한다.
    opt.pump=false 면 게이트를 쏴서 올리는 효과를 셈하지 않고(겉보기 숫자로만 고른다), opt.crates=false 면 상자를 무시한다. */
-const CANDS = [-4.2, -3.33, -2.5, -1.6, -0.8, 0, 0.8, 1.6, 2.5, 3.33, 4.2];
+const CANDS = [-4.2, -3.6, -2.5, -1.25, -0.45, 0.45, 1.25, 2.5, 3.6, 4.2];
 
 export function botTarget(s, opt = {}) {
   const q = s.squad;
@@ -879,9 +922,7 @@ export function botTarget(s, opt = {}) {
       const tReach = (row.z - q.z) / vz;
       // 제때 못 가면 지금 칸을 지나게 된다
       const at = travel < tReach ? x : q.x;
-      let idx = 0;
-      for (let i = 0; i < row.cells.length; i++) if (at >= row.cells[i].x0) idx = i;
-      const c = row.cells[idx];
+      const c = row.cells[pickCell(row, at)];
       let v = c.v;
       if (c.op === 'add' && opt.pump !== false) {
         const shoot = Math.max(0, tReach - travel - 0.2);
@@ -892,7 +933,7 @@ export function botTarget(s, opt = {}) {
     }
     // 벽: 그 자리에서 쏴서 못 부수면 남은 만큼 잃는다
     for (const p of s.props) {
-      if (!p.alive || p.z < q.z || p.z > horizon + 0.5 || p.z - q.z > 34) continue;
+      if (!p.alive || p.passed || p.z < q.z || p.z > horizon + 0.5 || p.z - q.z > 34) continue;
       const t = (p.z - q.z) / vz;
       const shot = D * cover(x, p.x0, p.x1) * Math.max(0, t - travel) * 0.85;
       if (p.kind === 'wall') {
@@ -916,6 +957,13 @@ export function botTarget(s, opt = {}) {
     if (val > best + 1e-9) { best = val; bestX = x; }
   }
   let tx = bestX;
+  // 다음 줄의 칸 경계에 서지 않는다
+  if (row) {
+    for (let i = 1; i < row.cells.length; i++) {
+      const x0 = row.cells[i].x0;
+      if (Math.abs(tx - x0) < 0.4) tx = tx >= x0 ? x0 + 0.4 : x0 - 0.4;
+    }
+  }
   // 톱날 피하기
   for (const w of s.saws) {
     const dz = w.z - q.z;
@@ -988,27 +1036,47 @@ export function prepareLevel(L) {
 }
 
 export function calibrate(lv) {
-  const s = newGame(lv, { start: START_N, fire: 0 });
   const maxTicks = Math.ceil((lv.arenaZ / lv.speed + 60) / DT);
+  // 약한 기준: 게이트를 쏴서 올릴 줄 모르고 상자도 안 여는(그래도 피하기는 하는) 플레이
+  const w = newGame(lv, { start: START_N, fire: 0 });
+  while (w.phase === 'run' && w.tick < maxTicks) step(w, botInput(w, { pump: false, crates: false }));
+  if (w.phase !== 'arena') return { ok: false };
+  const s = newGame(lv, { start: START_N, fire: 0 });
   while (s.phase === 'run' && s.tick < maxTicks) step(s, botInput(s));
   if (s.phase !== 'arena') return { ok: false };
   const arrive = s.squad.n;
-  // 기준 봇보다 병력이 25% 적고 상자를 하나도 안 연 사람도 같은 시간에 잡도록
-  const hp = Math.max(30, Math.round(dps(arrive * 0.75, 0, 0) * lv.params.bossKill));
+  // 기준 봇보다 병력이 25% 적고 상자를 하나도 안 연 사람도 보스가 닿기 전에 잡도록.
+  // 약한 기준이 기준 봇의 절반도 못 되는 레벨(쏴서 키우기·상자에 기대는 레벨)은 약한 기준 쪽으로 낮춘다.
+  const ref = Math.min(arrive, 2 * w.squad.n);
+  const hp = Math.max(30, Math.round(dps(ref * 0.75, 0, 0) * lv.params.bossKill));
   s.boss.hp = s.boss.max = hp;
-  s.bossRef = arrive;
+  s.bossRef = ref;
   while (s.phase === 'arena' && s.tick < maxTicks) step(s, botInput(s));
   if (s.phase !== 'won') return { ok: false };
-  return { ok: true, lv: { bossHp: hp, arrive, par: s.squad.n, calTier: s.squad.tier, calTicks: s.tick } };
+  return { ok: true, lv: { bossHp: hp, arrive: ref, arriveStrong: arrive, arriveWeak: w.squad.n, par: s.squad.n, calTier: s.squad.tier, calTicks: s.tick } };
 }
 
-/* 별: 이기면 1개, 기준 봇이 남긴 병력의 40% 이상이면 2개, 80% 이상이면 3개 */
-export function starGoals(lv) {
-  return { two: Math.max(2, Math.round(lv.par * 0.4)), three: Math.max(3, Math.round(lv.par * 0.8)) };
+/* 별 기준 병력: 기준 봇이 '그 플레이어의 강화'를 달고 돌았을 때 남기는 병력. 강화는 이기기 쉽게 해 주지만 별은 실력으로. */
+const parCache = new Map();
+export function parFor(lv, start = START_N, fire = 0) {
+  if (start === START_N && fire === 0) return lv.par;
+  const key = `${lv.L}:${lv.attempt}:${start}:${fire}`;
+  if (parCache.has(key)) return parCache.get(key);
+  const s = newGame(lv, { start, fire });
+  const maxTicks = Math.ceil((lv.arenaZ / lv.speed + 60) / DT);
+  while ((s.phase === 'run' || s.phase === 'arena') && s.tick < maxTicks) step(s, botInput(s));
+  const par = s.phase === 'won' ? Math.max(lv.par, s.squad.n) : lv.par;
+  parCache.set(key, par);
+  return par;
 }
-export function starsFor(lv, n, won) {
+
+/* 별: 이기면 1개, 기준 병력(par)의 40% 이상이면 2개, 80% 이상이면 3개 */
+export function starGoals(par) {
+  return { two: Math.max(2, Math.round(par * 0.4)), three: Math.max(3, Math.round(par * 0.8)) };
+}
+export function starsFor(par, n, won) {
   if (!won) return 0;
-  const g = starGoals(lv);
+  const g = starGoals(par);
   if (n >= g.three) return 3;
   if (n >= g.two) return 2;
   return 1;

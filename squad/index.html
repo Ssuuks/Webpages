@@ -115,7 +115,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--amber); out
 .tag { margin-top: 14px; text-align: center; font-size: 14px; color: #E9E2D4; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
 .menu { width: min(380px, 100%); display: flex; flex-direction: column; gap: 10px; }
 .menu .btn.primary { min-height: 64px; font-size: 28px; }
-.menu .row .btn { background: rgba(16, 23, 35, 0.86); font-size: 15px; padding: 0 8px; }
+.menu .row .btn { background: rgba(16, 23, 35, 0.86); font-size: 15px; padding: 0 8px; gap: 4px; white-space: nowrap; }
 .stars-total { margin-top: 10px; text-align: center; font-size: 13px; color: var(--muted); }
 .stars-total b { color: #FFD45A; }
 
@@ -202,6 +202,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--amber); out
   background: rgba(16, 23, 35, 0.88); border: 1px solid rgba(242, 181, 58, 0.6); font-weight: 700; font-size: 14px; line-height: 1.4;
 }
 #tip.pop { animation: tipIn 0.25s ease-out; }
+/* 보스전에는 위쪽(보스 머리) 대신 아래쪽 버튼 위에 */
+#tip.low { top: auto; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 72px); }
 @keyframes tipIn { from { opacity: 0; transform: translate(-50%, -8px); } }
 
 /* 결과 */
