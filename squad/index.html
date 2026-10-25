@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>숫자부대 돌격</title>
+<meta name="description" content="게이트를 골라 병력을 불리고, 좀비 떼를 뚫고, 끝에서 보스를 쓰러뜨리는 러너 슈팅 게임">
+<meta name="theme-color" content="#121A26">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="숫자부대">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./assets/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap">
+<style>
+/* 화면 전체가 게임판, 메뉴는 그 위에 뜨는 어두운 판. 군용 스텐실 느낌의 굵은 제목 + 담백한 본문 */
+:root {
+  --ink: #121A26;
+  --panel: rgba(16, 23, 35, 0.9);
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #F4EFE6;
+  --muted: #A9B2C0;
+  --amber: #F2B53A;
+  --amber-ink: #2A1B05;
+  --blue: #3D95FF;
+  --red: #E8543A;
+  --display: "Black Han Sans", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--ink); color: var(--text); }
+body {
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+[hidden] { display: none !important; }
+#cv { position: fixed; inset: 0; display: block; touch-action: none; }
+button {
+  font: inherit; color: inherit; border: 0; background: none; cursor: pointer;
+  touch-action: manipulation;
+}
+button:focus-visible, input:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+
+/* 공통 판 */
+.screen {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  z-index: 20;
+}
+.dim { background: rgba(10, 14, 22, 0.62); }
+.sheet {
+  width: min(420px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 20px 18px 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  touch-action: pan-y;
+}
+.sheet h2 {
+  font-family: var(--display); font-weight: 400; font-size: 28px; letter-spacing: 0.01em;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 14px;
+}
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 52px; padding: 0 18px; border-radius: 14px;
+  font-weight: 700; font-size: 16px;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line);
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn.primary {
+  background: var(--amber); color: var(--amber-ink); border-color: transparent;
+  font-family: var(--display); font-weight: 400; font-size: 22px; letter-spacing: 0.02em;
+  box-shadow: 0 4px 0 #A8741A;
+}
+.btn.primary:active { box-shadow: 0 1px 0 #A8741A; transform: translateY(3px); }
+.btn.glow { box-shadow: 0 0 0 2px var(--amber) inset; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.row { display: flex; gap: 10px; }
+.row > * { flex: 1; min-width: 0; }
+.back { font-size: 15px; font-weight: 600; color: var(--muted); padding: 8px 4px; font-family: var(--body); }
+.coinchip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-variant-numeric: tabular-nums; font-weight: 700; color: #FFD45A;
+}
+.coinchip::before {
+  content: ""; width: 14px; height: 14px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #FFE89A, #E3A21A 70%); box-shadow: 0 0 0 1.5px #8A5A00 inset;
+}
+
+/* 타이틀 */
+#scrTitle { justify-content: space-between; background: linear-gradient(180deg, rgba(12, 16, 28, 0.55) 0%, rgba(12, 16, 28, 0) 40%, rgba(12, 16, 28, 0) 55%, rgba(12, 16, 28, 0.8) 100%); }
+.logo { margin-top: 6vh; text-align: center; line-height: 0.92; filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.35)); }
+.logo .l1, .logo .l2 { display: block; font-family: var(--display); }
+.logo .l1 { font-size: clamp(52px, 17vw, 84px); color: #FFFFFF; -webkit-text-stroke: 2px #0C121C; }
+.logo .l2 {
+  font-size: clamp(64px, 22vw, 108px); color: var(--amber); -webkit-text-stroke: 2px #0C121C;
+  transform: rotate(-3deg); margin-top: 2px;
+}
+.tag { margin-top: 14px; text-align: center; font-size: 14px; color: #E9E2D4; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
+.menu { width: min(380px, 100%); display: flex; flex-direction: column; gap: 10px; }
+.menu .btn.primary { min-height: 64px; font-size: 28px; }
+.menu .row .btn { background: rgba(16, 23, 35, 0.86); font-size: 15px; padding: 0 8px; }
+.stars-total { margin-top: 10px; text-align: center; font-size: 13px; color: var(--muted); }
+.stars-total b { color: #FFD45A; }
+
+/* 레벨 선택 */
+#levelGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.lv {
+  aspect-ratio: 1; border-radius: 12px; background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+}
+.lv b { font-family: var(--display); font-weight: 400; font-size: 22px; }
+.lv .st { font-size: 10px; letter-spacing: 1px; color: #FFD45A; }
+.lv:disabled { opacity: 0.32; cursor: default; }
+.lv.cur { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber) inset; }
+
+/* 강화 */
+.upg { padding: 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; }
+.upg-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.upg-head b { font-size: 16px; }
+.pips { display: inline-flex; gap: 3px; }
+.pips i { width: 7px; height: 12px; border-radius: 2px; background: rgba(255, 255, 255, 0.15); }
+.pips i.on { background: var(--amber); }
+.upg-eff { grid-column: 1; font-size: 13px; color: var(--muted); }
+.upg-eff em { font-style: normal; color: var(--text); font-weight: 600; }
+.buy { grid-column: 2; grid-row: 1 / span 2; min-width: 92px; min-height: 48px; border-radius: 12px; background: var(--amber); color: var(--amber-ink); font-weight: 700; font-size: 14px; }
+.buy:disabled { background: rgba(255, 255, 255, 0.08); color: var(--muted); cursor: default; }
+
+/* 설정 */
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.set-row span { display: flex; flex-direction: column; gap: 2px; }
+.set-row b { font-size: 15px; font-weight: 600; }
+.set-row small { font-size: 12px; color: var(--muted); }
+.switch { appearance: none; -webkit-appearance: none; flex: none; width: 50px; height: 30px; border-radius: 15px; background: rgba(255, 255, 255, 0.16); position: relative; cursor: pointer; transition: background 0.15s; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+.switch:checked { background: var(--blue); }
+.switch:checked::after { transform: translateX(20px); }
+.danger { margin-top: 16px; }
+.danger .btn { width: 100%; color: #FFB4A6; }
+.danger p { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+
+/* 레벨 카드 */
+#scrCard { background: rgba(10, 14, 22, 0.5); pointer-events: none; }
+.card { text-align: center; animation: cardIn 0.35s ease-out; }
+.card .eyebrow { font-size: 13px; letter-spacing: 0.2em; color: var(--muted); }
+.card .big { font-family: var(--display); font-size: 92px; line-height: 1; color: #fff; -webkit-text-stroke: 2px #0C121C; }
+.card .new { margin-top: 10px; font-size: 15px; font-weight: 700; color: var(--amber); text-shadow: 0 1px 2px #000; }
+.card .goal { margin-top: 6px; font-size: 13px; color: #E9E2D4; text-shadow: 0 1px 2px #000; }
+@keyframes cardIn { from { transform: scale(1.3); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* HUD */
+#hud { position: fixed; left: 0; right: 0; top: 0; z-index: 10; padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left)); pointer-events: none; }
+.hud-top { display: flex; align-items: center; gap: 10px; }
+.hud-lvl { font-family: var(--display); font-size: 20px; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5); white-space: nowrap; }
+.prog { flex: 1; position: relative; height: 12px; border-radius: 6px; background: rgba(10, 14, 22, 0.6); border: 1px solid rgba(255, 255, 255, 0.25); overflow: hidden; }
+.prog i { position: absolute; inset: 0; background: linear-gradient(90deg, #3D95FF, #7FC4FF); transform-origin: left; transform: scaleX(0); }
+.skull { font-size: 18px; filter: drop-shadow(0 1px 0 #000); }
+.hud-coins { background: rgba(10, 14, 22, 0.6); padding: 4px 9px; border-radius: 10px; font-size: 14px; }
+#btnPause { pointer-events: auto; width: 44px; height: 44px; border-radius: 12px; background: rgba(10, 14, 22, 0.6); border: 1px solid rgba(255, 255, 255, 0.25); display: grid; place-items: center; }
+#btnPause::before { content: ""; width: 12px; height: 16px; border-left: 4px solid #fff; border-right: 4px solid #fff; }
+#bossBar { margin: 10px auto 0; width: min(420px, 92%); display: flex; align-items: center; gap: 8px; font-family: var(--display); font-size: 16px; text-shadow: 0 2px 0 #000; }
+#bossBar .bar { flex: 1; height: 14px; border-radius: 7px; overflow: hidden; background: rgba(10, 14, 22, 0.7); border: 1px solid rgba(255, 255, 255, 0.35); position: relative; }
+#bossBar i { position: absolute; inset: 0; background: linear-gradient(90deg, #C9363B, #FF7A55); transform-origin: left; }
+#bossBar.rage .bar { animation: rage 0.5s ease-in-out infinite alternate; }
+@keyframes rage { to { box-shadow: 0 0 10px 2px rgba(255, 70, 50, 0.8); } }
+
+/* 터치 안내 */
+.touch-hint {
+  position: fixed; bottom: max(18px, env(safe-area-inset-bottom)); z-index: 9; pointer-events: none;
+  width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 22px; color: rgba(255, 255, 255, 0.55); background: rgba(10, 14, 22, 0.25); border: 2px solid rgba(255, 255, 255, 0.2);
+  transition: background 0.1s, color 0.1s, transform 0.1s;
+}
+#touchL { left: max(18px, env(safe-area-inset-left)); }
+#touchR { right: max(18px, env(safe-area-inset-right)); }
+.touch-hint.on { background: rgba(61, 149, 255, 0.55); color: #fff; border-color: #fff; transform: scale(1.08); }
+#tut { position: fixed; inset: auto 0 18%; z-index: 11; pointer-events: none; text-align: center; }
+#tut .hands { display: flex; justify-content: space-between; padding: 0 12%; }
+#tut .hand { width: 64px; height: 64px; border-radius: 50%; border: 3px solid #fff; background: rgba(61, 149, 255, 0.35); animation: tap 0.9s ease-in-out infinite; }
+#tut .hand:last-child { animation-delay: 0.45s; }
+#tut p { margin-top: 14px; font-family: var(--display); font-size: 22px; text-shadow: 0 2px 0 #000, 0 0 12px rgba(0, 0, 0, 0.6); }
+@keyframes tap { 50% { transform: scale(0.82); background: rgba(61, 149, 255, 0.75); } }
+#tip {
+  position: fixed; top: calc(max(10px, env(safe-area-inset-top)) + 84px); left: 50%; transform: translateX(-50%); z-index: 12; pointer-events: none;
+  width: max-content; max-width: min(420px, 90vw); padding: 10px 14px; border-radius: 12px; text-align: center;
+  background: rgba(16, 23, 35, 0.88); border: 1px solid rgba(242, 181, 58, 0.6); font-weight: 700; font-size: 14px; line-height: 1.4;
+}
+#tip.pop { animation: tipIn 0.25s ease-out; }
+@keyframes tipIn { from { opacity: 0; transform: translate(-50%, -8px); } }
+
+/* 결과 */
+#resTitle { font-family: var(--display); font-size: 54px; text-align: center; color: var(--amber); -webkit-text-stroke: 1.5px #0C121C; line-height: 1.05; }
+#scrResult.lost #resTitle { color: var(--red); }
+#resStars { display: flex; justify-content: center; gap: 10px; margin: 6px 0 12px; }
+#resStars span { font-size: 44px; color: rgba(255, 255, 255, 0.16); transition: transform 0.25s cubic-bezier(.3, 1.8, .5, 1), color 0.2s; }
+#resStars span.on { color: #FFD45A; transform: scale(1.15); text-shadow: 0 0 14px rgba(255, 212, 90, 0.6); }
+#resCause { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 12px; padding: 12px; border-radius: 12px; background: rgba(232, 84, 58, 0.12); border: 1px solid rgba(232, 84, 58, 0.35); }
+#resCause b { font-size: 15px; }
+#resCause span { font-size: 13px; color: #E2D8CB; }
+#resStats { display: flex; flex-direction: column; margin-bottom: 14px; }
+#resStats div { display: flex; justify-content: space-between; padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: 15px; }
+#resStats span { color: var(--muted); }
+#resStats b { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<canvas id="cv" aria-label="게임 화면"></canvas>
+
+<div id="hud" hidden>
+  <div class="hud-top">
+    <div class="hud-lvl">레벨 <span id="hudL">1</span></div>
+    <div class="prog" aria-hidden="true"><i id="hudBar"></i></div>
+    <span class="skull" aria-hidden="true">☠</span>
+    <span class="hud-coins coinchip" id="hudCoins">0</span>
+    <button id="btnPause" aria-label="일시정지"></button>
+  </div>
+  <div id="bossBar" hidden><span>보스</span><div class="bar"><i id="bossFill"></i></div></div>
+</div>
+<div id="touchL" class="touch-hint" hidden aria-hidden="true">◀</div>
+<div id="touchR" class="touch-hint" hidden aria-hidden="true">▶</div>
+<div id="tut" hidden><div class="hands"><span class="hand"></span><span class="hand"></span></div><p>화면 왼쪽·오른쪽을 꾹 눌러 이동</p></div>
+<div id="tip" hidden role="status"></div>
+
+<section id="scrTitle" class="screen" hidden>
+  <div>
+    <h1 class="logo"><span class="l1">숫자부대</span><span class="l2">돌격</span></h1>
+    <p class="tag">게이트를 골라 병력을 불리고, 끝에서 보스를 막아라</p>
+  </div>
+  <div class="menu">
+    <button id="btnPlay" class="btn primary" data-focus>레벨 <span id="tPlayL">1</span> 시작</button>
+    <div class="row">
+      <button id="btnLevels" class="btn">레벨 선택</button>
+      <button id="btnUpg" class="btn">강화 <span class="coinchip" id="tCoins">0</span></button>
+      <button id="btnSet" class="btn">설정</button>
+    </div>
+    <p class="stars-total">모은 별 <b>★ <span id="tStars">0</span></b></p>
+  </div>
+</section>
+
+<section id="scrLevels" class="screen dim" hidden>
+  <div class="sheet">
+    <h2>레벨 선택 <button class="back" data-back="title" data-focus>닫기</button></h2>
+    <div id="levelGrid"></div>
+  </div>
+</section>
+
+<section id="scrUpg" class="screen dim" hidden>
+  <div class="sheet">
+    <h2>강화 <span class="coinchip" id="uCoins">0</span></h2>
+    <div id="upgList" class="stack"></div>
+    <button id="upgBack" class="btn" data-back="title" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
+  </div>
+</section>
+
+<section id="scrSet" class="screen dim" hidden>
+  <div class="sheet">
+    <h2>설정</h2>
+    <div id="setList"></div>
+    <div class="danger">
+      <button id="resetAsk" class="btn">진행 초기화</button>
+      <div id="resetConfirm" hidden>
+        <p>레벨·별·코인·강화가 모두 지워져요. 되돌릴 수 없어요.</p>
+        <div class="row"><button id="resetNo" class="btn">취소</button><button id="resetYes" class="btn" style="color:#FF8A6B">지우기</button></div>
+      </div>
+    </div>
+    <button id="setBack" class="btn" data-back="title" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
+  </div>
+</section>
+
+<section id="scrCard" class="screen" hidden>
+  <div class="card">
+    <div class="eyebrow">LEVEL</div>
+    <div class="big" id="cardL">1</div>
+    <div class="new" id="cardNew"></div>
+    <div class="goal" id="cardGoal"></div>
+  </div>
+</section>
+
+<section id="scrPause" class="screen dim" hidden>
+  <div class="sheet stack">
+    <h2>일시정지</h2>
+    <button id="pResume" class="btn primary" data-focus>계속하기</button>
+    <button id="pRestart" class="btn">처음부터 다시</button>
+    <div class="row"><button id="pSet" class="btn">설정</button><button id="pMenu" class="btn">메뉴로</button></div>
+  </div>
+</section>
+
+<section id="scrResult" class="screen dim" hidden>
+  <div class="sheet">
+    <div id="resTitle">승리!</div>
+    <div id="resStars"><span>★</span><span>★</span><span>★</span></div>
+    <div id="resCause" hidden></div>
+    <div id="resStats"></div>
+    <div class="stack">
+      <button id="resPrimary" class="btn primary" data-focus>다음 레벨</button>
+      <button id="resHelp" class="btn" hidden></button>
+      <div class="row"><button id="resUpg" class="btn">강화</button><button id="resMenu" class="btn">메뉴로</button></div>
+    </div>
+  </div>
+</section>
+
+<noscript><p style="padding:24px">이 게임은 자바스크립트가 필요해요.</p></noscript>
+<script type="module" src="./assets/main.js"></script>
+</body>
+</html>
