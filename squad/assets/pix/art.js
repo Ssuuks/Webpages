@@ -110,11 +110,11 @@ function crowdFrames(head, body, w) {
 
 /* 의무병: 흰 철모 + 분홍 하트(빨간 십자 없음), 분홍 구급 가방, 총 없음 */
 const MED_HEAD = [
-  '..hhhhhh....',
-  '.hhHHhhhh...',
-  'hhHhXhXhhb..',
-  'hhhhXXXhbb..',
-  'hhhhhXhbbb..',
+  '..hHHhhh....',
+  '.hXXhXXhh...',
+  'hHXXXXXhhb..',
+  'hhhXXXhhbb..',
+  'hhhhXhhbbb..',
   'sBBBBBBBBs..',
 ];
 const MED_BODY = [
@@ -161,32 +161,31 @@ const RKT_FIRE = pad(['.........fFf', '..........F.', ...RKT_HEAD.slice(1, 6), '
 /* 뒷줄 철모(병력 규모 표시용 5×4) */
 const HELMET = ['.hhh.', 'hHhhb', 'hhhbb', 'BBBBB'];
 
-/* 앞모습 병사(철창 속 포로·승리용): 손 흔들기 2프레임 + 슬픈 얼굴 */
-function frontRows(hat, face, arms, emblem) {
+/* 앞모습 병사(철창 속 포로·승리용): 손 흔들기 2프레임 + 우는 얼굴(감은 눈 아래 ㅠㅠ 눈물 줄기, 벌린 입).
+   모자 5줄 + 얼굴 3줄 + 몸 5줄 = 13줄. 눈은 격자 x 2~3·8~9, y 5줄째(0부터) — 눈물 효과를 붙일 자리 */
+function frontRows(hat, face, arms) {
   return [...hat, ...face, ...arms];
 }
 const FRONT_FACE = [
-  '.ssssssssss.',
   '.sKKssssKKs.',
   '.sKWssssKWs.',
   '.ppssKKsspp.',
 ];
 const FRONT_SAD = [
-  '.ssssssssss.',
-  '.sssssssssss',
   '.sKKssssKKs.',
-  '.wpssKKsspw.',
+  '.swwsssswws.',
+  '.pwssmmsswp.',
 ];
 const FRONT_ARMS = [
   ['s.cccccc....', '.sccccccs...', '..cccccc.s..', '..nnnnnn....', '..kk..kk....'],
   ['..cccccc..s.', '.scccccccs..', 's.cccccc....', '..nnnnnn....', '..kk..kk....'],
 ];
-const FRONT_ARMS_SAD = ['.scccccccs..', '.scccccccs..', '..cccccc....', '..nnnnnn....', '..kk..kk....'];
+const FRONT_ARMS_SAD = ['.sccccccs...', '.scccccccs..', '..cccccc....', '..nnnnnn....', '..kk..kk....'];
 const FRONT_HAT = {
-  team: ['...hhhhhh...', '..hHHhhhhh..', '.hHhhhhhhhb.', '.BBBBBBBBBB.'],
-  medic: ['...hhhhhh...', '..hHhXhXhh..', '.hHhhXXXhhb.', '.BBBBBXBBBB.'],
-  sniper: ['....hhhh....', '..hHHhhhhb..', '.hhhhhhhhbb.', 'BBBBBBBBBBBB'],
-  rocket: ['.........EE.', '...hhhhhhTT.', '..hHHhhhhTT.', '.BBBBBBBBTT.'],
+  team: ['...hhhhhh...', '..hHHhhhhh..', '.hHhhhhhhhb.', '.hhhhhhhhbb.', '.BBBBBBBBBB.'],
+  medic: ['...hHHhhh...', '..hXXhXXhh..', '.hHXXXXXhhb.', '.hhhXXXhhbb.', '.BBBBXBBBBB.'],
+  sniper: ['....hhhh....', '...hHHhhb...', '...rrrrrr...', '.hhhhhhhhhb.', 'BBBBBBBBBBBB'],
+  rocket: ['.........EE.', '...hhhhhhTT.', '..hHHhhhhTT.', '.hHhhhhhhTT.', '.BBBBBBBBTT.'],
 };
 function captive(k) {
   const hat = FRONT_HAT[k];
@@ -197,9 +196,9 @@ function captive(k) {
     pad(frontRows(hat, FRONT_SAD, FRONT_ARMS_SAD), w),
   ];
 }
-const PAL_FRONT = (p) => ({ ...p, w: '#8FD3FF' });
+const PAL_FRONT = (p) => ({ ...p, w: '#8FD3FF', m: '#7A2E4A' });
 
-/* ---------------- 영웅(뒷모습 14×16 몸통 + 소품, 4걸음 × 펄럭임 2 + 서기 2 + 기절 + 스킬 2 + 돌아보기 2) ---------------- */
+/* ---------------- 영웅(뒷모습 16×18, 4걸음 × 펄럭임 2 + 서기 2 + 기절 + 스킬 2 + 돌아보기 2) ---------------- */
 const MUNGCHI = {
   ...BASE, h: '#8E9E58', H: '#C3D18A', b: '#6C7A40', B: '#525D2E', y: '#FFD84A', Y: '#FFF09A',
   e: '#FF9F43', E: '#D9731F', c: '#3567C9', C: '#2B5EB8', n: '#2D3D74', m: '#FFF1DE', M: '#E9B26B', q: '#C98A4E',
@@ -213,53 +212,76 @@ const NABI = {
   c: '#3B3F6B', C: '#2C2F52', n: '#2C2F52', t: '#E8DCCB', T: '#BBAF9C', x: '#FF6FA0', w: '#C98A4E',
 };
 
-/* 뭉치 대장: 눈썹까지 덮는 큰 철모(뒤에도 금별), 주황 스카프 꼬리, 몸만 한 확성기 */
+/* 격자 겹치기: part의 '.' 아닌 글자를 (x, y)부터 덮어쓴다('_'는 지우기) */
+function over(rows, x, y, part) {
+  const out = rows.slice();
+  part.forEach((pr, j) => {
+    const yy = y + j;
+    if (yy < 0 || yy >= out.length) return;
+    const r = out[yy].split('');
+    for (let i = 0; i < pr.length; i++) {
+      const xx = x + i;
+      if (pr[i] === '.' || xx < 0 || xx >= r.length) continue;
+      r[xx] = pr[i] === '_' ? '.' : pr[i];
+    }
+    out[yy] = r.join('');
+  });
+  return out;
+}
+
+/* 뭉치 대장(16×18): 눈썹까지 덮는 큰 철모(뒤에도 금별), 금 견장, 바람에 날리는 주황 스카프 꼬리, 몸만 한 주황 확성기 */
 const MUN_HEAD = [
   '....hhhhhh......',
   '..hhHHhhhhhh....',
   '.hHHhhhyhhhhb...',
-  'hHHhhyyyyyhhbb..',
-  'hHhhhhyyyhhhbb..',
-  'hhhhhhyhyhhbbb..',
+  'hHHhhhyyyhhhbb..',
+  'hHhhyyyyyyyhbb..',
+  'hhhhhyyyyyhbbb..',
+  'hhhhhyyhyyhbbb..',
   'BBBBBBBBBBBBBB..',
 ];
-const MUN_NAPE = ['.ssseeeeeeeess..'];
-const MUN_LOOK = [['.sKpeeeeeeeess..'], ['.sKpeeeeeeeess..'.replace('K', 's')]];
-const MUN_BODY = [
-  [
-    'EEcceeEccccc.M..',
-    'E.cCeEcCcccsmM..',
-    '..cCcccCcccmmmM.',
-    '..cCcccCccsmmmmM',
-    '..cCCCCCccc.mmM.',
-    '..nnnnnnnnn..M..',
-  ],
-  [
-    '.Ecceeeccccc.M..',
-    'EEcCeEcCcccsmM..',
-    '..cCcccCcccmmmM.',
-    '..cCcccCccsmmmmM',
-    '..cCCCCCccc.mmM.',
-    '..nnnnnnnnn..M..',
-  ],
+const MUN_TORSO = [
+  '..EeeeeeeeeE....',
+  '..yycccccyy.....',
+  '..cccccccccc....',
+  '..ccccccccCs....',
+  '..ccccccccCs....',
+  '..qqqqqqqqq.....',
+  '..cCCCCCCCC.....',
+  '...nnnnnnn......',
 ];
-const MUN_ACT = [
-  [
-    '..cceeEcccss.MM.',
-    '..cCeEcCccsmmmMM',
-    '..cCcccCcc.mmmM.',
-    '..cCcccCcc..mM..',
-    '..cCCCCCcc......',
-    '..nnnnnnnn......',
-  ],
-  [
-    '..cceeEccss.MMM.',
-    '..cCeEcCcsmmmmMM',
-    '..cCcccCc.mmmmM.',
-    '..cCcccCc...mM..',
-    '..cCCCCCcc......',
-    '..nnnnnnnn......',
-  ],
+/* 확성기(옆으로 든 모습): 입대는 크림색, 나팔은 주황, 입구 테두리는 크림 */
+const MUN_HORN = [
+  '...mm',
+  '..eem',
+  'eeeEm',
+  'eeeEm',
+  '..EEm',
+  '...mm',
+];
+const MUN_TAIL = [
+  ['ee', 'eE', '.E', 'eE', 'E.'],
+  ['eE.', 'EeE', 'E..', '...', '...'],
+];
+const MUN_BODY = MUN_TAIL.map((t) => over(over(MUN_TORSO, 0, 0, t), 11, 1, MUN_HORN));
+/* 스킬: 확성기를 오른손으로 머리 옆까지 치켜든다(위를 향한 나팔 입구가 보인다). 두 장은 나팔이 1칸 흔들리고 꼬리가 날린다 */
+const MUN_HORN_UP = ['mmmmm', 'mEEEm', '.eeee', '..eeE', '...eE', '...mm', '...s.', '...cc', '..cc.', '.cc..'];
+const MUN_ACT_FULL = [0, 1].map((i) => over(['................', ...MUN_HEAD, ...over(MUN_TORSO, 0, 0, MUN_TAIL[i])], 11 - i, 0, MUN_HORN_UP));
+/* 돌아보기: 오른쪽 어깨 너머로 돌아본다 — 철모 오른쪽 끝 아래로 뺨·눈(반짝임)·볼 홍조가 나오고, 뒤통수의 별은 1칸 왼쪽으로 돈다.
+   둘째 장은 같은 자세로 눈을 감는다 */
+const MUN_LOOK_HEAD = [
+  '....hhhhhh......',
+  '..hhHHhhhhhh....',
+  '.hHHhhyhhhhhb...',
+  'hHHhhyyyhhhhbb..',
+  'hHhyyyyyyyhhbs..',
+  'hhhhyyyyyhhbKWs.',
+  'hhhhyyhyyhBsKKs.',
+  'BBBBBBBBBBBssps.',
+];
+const MUN_LOOK = [
+  [MUN_LOOK_HEAD, [], over(MUN_BODY[0], 12, 0, ['ss'])],
+  [over(MUN_LOOK_HEAD, 12, 5, ['ss']), [], over(MUN_BODY[0], 12, 0, ['ss'])],
 ];
 const HERO_LEGS = [
   ['...kk...kk......', null],
@@ -275,98 +297,91 @@ function heroWalk(head, nape, body, f, w = 16) {
   if (L[1]) rows.push(L[1]);
   return pad(rows, w);
 }
-function heroSheet(head, nape, look, bodies, act, ko, w) {
+/* 15장: 걷기 4(몸 A) · 펄럭임 걷기 4(몸 B) · 서기 2 · 기절 · 스킬 2 · 돌아보기 2(돌린 머리 / 같은 머리로 눈 감기)
+   P = { head, headB?, nape, bodies:[A,B], act:[2], actHead?, ko, look:[[머리, 목, 몸?], [머리, 목, 몸?]] } */
+function heroSheet(P, w = 16) {
   const out = [];
-  for (const b of bodies) for (let f = 0; f < 4; f++) out.push(heroWalk(head, nape, b, f, w));
-  out.push(heroWalk(head, nape, bodies[0], 0, w), heroWalk(head, nape, bodies[1], 2, w));   // 서기 A/B
-  out.push(pad(ko, w));
-  out.push(heroWalk(head, nape, act[0], 0, w), heroWalk(head, nape, act[1], 0, w));
-  out.push(heroWalk(head, look[0], bodies[0], 0, w), heroWalk(head, look[1], bodies[0], 0, w));
+  const hb = P.headB || P.head;
+  for (let f = 0; f < 4; f++) out.push(heroWalk(P.head, P.nape, P.bodies[0], f, w));
+  for (let f = 0; f < 4; f++) out.push(heroWalk(hb, P.nape, P.bodies[1], f, w));
+  out.push(heroWalk(P.head, P.nape, P.bodies[0], 0, w), heroWalk(hb, P.nape, P.bodies[1], 2, w));   // 서기 A/B
+  out.push(pad(P.ko, w));
+  const ah = P.actHead || P.head;
+  out.push(heroWalk(ah, P.nape, P.act[0], 0, w), heroWalk(ah, P.nape, P.act[1], 0, w));
+  for (const [lh, ln, lb] of P.look) out.push(heroWalk(lh, ln, lb || P.bodies[0], 0, w));
   return out;
 }
 const MUN_KO = [
   '................',
+  '................',
+  '................',
   '.....hhhhhh.....',
   '...hhHHhhhhhh...',
   '..hHHhhhyhhhhb..',
-  '.hHHhhyyyyyhhbb.',
-  '.hHhhhhyyyhhhbb.',
-  '.hhhhhhyhyhhbbb.',
+  '.hHHhhhyyyhhhbb.',
+  '.hHhhyyyyyyyhbb.',
+  '.hhhhhyyyyyhbbb.',
   '.BBBBBBBBBBBBBB.',
-  '..ssseeeeeeeess.',
-  '.EcceeEccccccM..',
-  'kkcCcccCcccsmmM.',
-  'kkcCCCCCcccmmmmM',
-  '..nnnnnnnnnn.mM.',
+  'eE.EeeeeeeeeE...',
+  '.EEyycccccyy.mm.',
+  'kkccccccccccEeem',
+  'kkqqqqqqqqq.eeEm',
+  '..nnnnnnnnn..mm.',
 ];
 
-/* 보리: 토끼귀 간호모, 몸보다 큰 하트 가방 */
-const BORI_HEAD = [
-  '..wu.....wu.....',
-  '..wu.....wu.....',
-  '..wuw...wuw.....',
-  '...ww...ww......',
+/* 보리(16×18): 토끼귀 간호모(분홍 5×4 하트), 몸보다 큰 하트 가방(흰 하트), 스킬 때 커다란 주사기 */
+const BORI_EARS = ['..wu.....wu.....', '..wuw...wuw.....', '...ww...ww......'];
+const BORI_EARS_B = ['...wu.....wu....', '..wuw...wuw.....', '...ww...ww......'];
+const BORI_HOOD = [
   '...vwwwwwwv.....',
-  '..vwwqwqwwwv....',
+  '..vwqqwqqwwv....',
+  '..vwqqqqqwwv....',
   '..vwwqqqwwwv....',
   '.rrvvvqvvvvrr...',
 ];
+const BORI_HEAD = [...BORI_EARS, ...BORI_HOOD];
 const BORI_NAPE = ['.rrRrrrrrrRrr...'];
-const BORI_LOOK = [['.rsKprrrrrRrr...'], ['.rssprrrrrRrr...']];
 const BORI_BAG = [
   '.cqqqcqqqc......',
-  '.qQQqqqqqqz.....',
-  'sqQqqWqWqqzs....',
-  '.qqqqWWWqqz.....',
-  '..qqqqWqqz......',
-  '..cqqqqqzc......',
-  '..ccqqqzcc......',
+  'sqQQqqqqqzs.....',
+  '.qQWWqWWqz......',
+  '.qqWWWWWqz......',
+  '..qqWWWqz.......',
+  '..cqqWqzc.......',
   '..nnnqznnn......',
 ];
 const BORI_BODY = [BORI_BAG, BORI_BAG];
-const BORI_EARS_B = [
-  '...wu.....wu....',
-  '..wu.....wu.....',
-  '..wuw...wuw.....',
-  '...ww...ww......',
+/* 돌아보기: 오른쪽 어깨 너머로 — 두건 오른쪽 아래로 뺨·눈(반짝임)·볼 홍조가 나오고 하트는 1칸 왼쪽으로 돈다 */
+const BORI_LOOK_HOOD = [
+  '...vwwwwwwv.....',
+  '..vqqwqqwwwv....',
+  '..vqqqqqwwwvs...',
+  '..vwqqqwwwvsKW..',
+  '.rrvvqvvvvsKKs..',
 ];
-const BORI_ACT = [
-  [
-    's.cqqqcqqqc.s...',
-    's.qQQqqqqqqzs...',
-    '.cqQqqWqWqqzc...',
-    '..qqqqWWWqqz....',
-    '...qqqqWqqz.....',
-    '...cqqqqqzc.....',
-    '...ccqqqzcc.....',
-    '...nnnqznnn.....',
-  ],
-  [
-    '.scqqqcqqqcs....',
-    '.cqQQqqqqqqzc...',
-    '..qQqqWqWqqz....',
-    '..qqqqWWWqqz....',
-    '...qqqqWqqz.....',
-    '...cqqqqqzc.....',
-    '...ccqqqzcc.....',
-    '...nnnqznnn.....',
-  ],
+const BORI_LOOK = [
+  [[...BORI_EARS, ...BORI_LOOK_HOOD], ['.rrRrrrrrRrsps..']],
+  [[...BORI_EARS, ...over(BORI_LOOK_HOOD, 12, 3, ['ss'])], ['.rrRrrrrrRrsps..']],
 ];
+/* 스킬: 오른손으로 커다란 주사기를 치켜들고 왼손도 번쩍(두 장은 주사기가 1칸 들썩인다) */
+const BORI_SYRINGE = ['.G.', '.G.', 'WWW', 'WqW', 'WqW', 'WQW', '.W.', 'WWW', '.s.', 'cs.'];
+const BORI_ACT_FULL = [0, 1].map((i) => over(over(['................', ...BORI_HEAD, ...BORI_NAPE, ...BORI_BAG], 12, 1 - i, BORI_SYRINGE), 0, 10, i ? ['s', 's'] : ['.', 's']));
 const BORI_KO = [
   '................',
-  '.....wu...wu....',
-  '....wu...wu.....',
-  '....wuw.wuw.....',
+  '................',
+  '.....wu.....wu..',
+  '....wuw...wuw...',
+  '.....ww...ww....',
   '....vwwwwwwv....',
-  '...vwwqwqwwwv...',
+  '...vwqqwqqwwv...',
+  '...vwqqqqqwwv...',
   '...vwwqqqwwwv...',
   '..rrvvvqvvvvrr..',
   '..rrRrrrrrrRrr..',
   '..cqqqcqqqc.....',
-  '.sqQQqqqqqqzs...',
-  'kkqQqqWqWqqzkk..',
-  '..qqqqWWWqqz....',
-  '...qqqqWqqz.....',
+  '.sqQQqqqqqzs....',
+  'kkqQWWqWWqzkk...',
+  '..qqWWWWWqz.....',
 ];
 
 /* 나비: 고양이귀 비니, 키 두 배의 총(등에 비스듬히), 꼬리 끝 리본 */
@@ -382,7 +397,12 @@ const NABI_HEAD = [
   '.BBBBBBBgBBB....',
 ];
 const NABI_NAPE = ['..rrrrrwrrr.....'];
-const NABI_LOOK = [['..sKprrwrrr.....'], ['..sspprwrrr.....']];
+/* 돌아보기: 오른쪽 어깨 너머로 — 비니 오른쪽 아래로 뺨과 졸린 반달눈(반짝임)·볼 홍조. 둘째 장은 눈을 감는다 */
+const NABI_LOOK_HEAD = [...NABI_HEAD.slice(0, 6), '.hHHhhhhhgbbs...', '.hHhhhhhghbsKK..', '.BBBBBBBgBBsKW..'];
+const NABI_LOOK = [
+  [NABI_LOOK_HEAD, ['..rrrrrwrrrpss..']],
+  [over(NABI_LOOK_HEAD, 12, 7, ['ss', 'KK']), ['..rrrrrwrrrpss..']],
+];
 const NABI_BODY = [
   [
     '..ccccwcccc.....',
@@ -446,19 +466,20 @@ const NABI_KO = [
   '...wnnnnnnn.tx..',
 ];
 
-function nabiSheet() {
-  const s = heroSheet(NABI_HEAD, NABI_NAPE, NABI_LOOK, NABI_BODY, NABI_ACT, NABI_KO, 16);
-  // 스킬 자세는 총을 들어 겨눈다(머리 위 총열이 곧게 선다)
-  s[11] = heroWalk(NABI_ACT_HEAD, NABI_NAPE, NABI_ACT[0], 0, 16);
-  s[12] = heroWalk(NABI_ACT_HEAD, NABI_NAPE, NABI_ACT[1], 0, 16);
+function munchiSheet() {
+  const s = heroSheet({ head: MUN_HEAD, nape: [], bodies: MUN_BODY, act: MUN_BODY, ko: MUN_KO, look: MUN_LOOK });
+  // 스킬 자세: 치켜든 확성기가 맨 위 빈 줄까지 올라간다
+  s[11] = pad([...MUN_ACT_FULL[0], HERO_LEGS[0][0]], 16);
+  s[12] = pad([...MUN_ACT_FULL[1], HERO_LEGS[0][0]], 16);
   return s;
 }
+function nabiSheet() {
+  return heroSheet({ head: NABI_HEAD, nape: NABI_NAPE, bodies: NABI_BODY, act: NABI_ACT, actHead: NABI_ACT_HEAD, ko: NABI_KO, look: NABI_LOOK });
+}
 function boriSheet() {
-  const s = heroSheet(BORI_HEAD, BORI_NAPE, BORI_LOOK, BORI_BODY, BORI_ACT, BORI_KO, 16);
-  // 귀가 박자 어긋나게 팔랑인다(펄럭임 B)
-  const headB = [...BORI_EARS_B, ...BORI_HEAD.slice(4)];
-  for (let f = 0; f < 4; f++) s[4 + f] = heroWalk(headB, BORI_NAPE, BORI_BODY[1], f, 16);
-  s[9] = heroWalk(headB, BORI_NAPE, BORI_BODY[1], 2, 16);
+  const s = heroSheet({ head: BORI_HEAD, headB: [...BORI_EARS_B, ...BORI_HOOD], nape: BORI_NAPE, bodies: BORI_BODY, act: BORI_BODY, ko: BORI_KO, look: BORI_LOOK });
+  s[11] = pad([...BORI_ACT_FULL[0], HERO_LEGS[0][0]], 16);
+  s[12] = pad([...BORI_ACT_FULL[1], HERO_LEGS[0][0]], 16);
   return s;
 }
 
@@ -488,8 +509,8 @@ const FACE_BORI = [
   '...wu..........wu...',
   '...wuw........wuw...',
   '....wuw......wuw....',
-  '.....vwwwwwwwwv.....',
-  '....vwwwwqwqwwwwv...',
+  '.....vwwqqwqqwv.....',
+  '....vwwwqqqqqwwwv...',
   '...vwwwwwqqqwwwwwv..',
   '..rrvvvvvvqvvvvvvrr.',
   '.rrrrrrrrrrrrrrrrrrr',
@@ -764,14 +785,55 @@ function sawOps(f) {
   ops.push(['ell', 8.5, 8.5, 2.6, 2.6, 'K'], ['ell', 8.5, 8.5, 2, 2, 'c'], ['px', 8, 8, 'W']);
   return { w: 17, h: 17, ops };
 }
-function puffOps(i) {
-  const r = [3, 5, 7, 8][i];
-  const ops = [['ell', 10, 10, r, r * 0.85, 'a']];
-  if (i < 2) ops.push(['ell*', 9, 9, r * 0.6, r * 0.5, 'W']);
-  if (i > 0) ops.push(['clearEll', 10, 10, r - 2.6, (r - 2.6) * 0.85]);
-  return { w: 20, h: 20, ops, dither: i === 3 };
+/* 연기 뭉게: 겹친 동그라미 3~5개(위 왼쪽 하이라이트, 아래 오른쪽 그늘, 가운데 구멍 없음).
+   뒤 두 장은 외곽선 없이 바둑판 점으로 흩어지며 사라진다(고리 모양이 아니다). */
+/* 뭉게: 가운데 동그라미 + 둘레의 혹들. 마지막 장은 흩어진 조각(고리가 아니게 일부러 고르지 않다) */
+const PUFF_RING = [[4.1, 7, 2.6, 4.9, 0.86, 0.2], [3.4, 7, 2.6, 6.2, 0.86, 0.5]];
+const PUFF_BLOBS = [[[10, 11.4, 2.7], [6.9, 11.6, 2], [13.1, 11.6, 2], [8.6, 9, 2], [11.7, 9.2, 1.8]]].concat(PUFF_RING.map(([c, n, r, d, sq, rot]) => {
+  const B = [[10, 10.5, c]];
+  for (let k = 0; k < n; k++) {
+    const a = rot + (k * 2 * Math.PI) / n - Math.PI / 2;
+    B.push([10 + Math.cos(a) * d, 10.5 + Math.sin(a) * d * sq, r]);
+  }
+  return B;
+})).concat([[[10, 9, 2.6], [4.6, 10.4, 2.1], [15.2, 8.6, 2.3], [7, 4.6, 1.8], [12.6, 15, 1.9], [5.6, 15.4, 1.5], [16, 13.6, 1.5]]]);
+function puffRows(i) {
+  const B = PUFF_BLOBS[i];
+  const inside = (x, y) => B.some(([cx, cy, r]) => Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < r);
+  const depth = (x, y) => {
+    let f = -1;
+    for (const [cx, cy, r] of B) f = Math.max(f, r - Math.hypot(x + 0.5 - cx, y + 0.5 - cy));
+    return f;   // 가장자리에서 안쪽으로 몇 픽셀
+  };
+  const rows = [];
+  for (let y = 0; y < 20; y++) {
+    let row = '';
+    for (let x = 0; x < 20; x++) {
+      let ch = '.';
+      if (inside(x, y)) {
+        const top = !inside(x, y - 1) || (!inside(x - 1, y) && !inside(x - 1, y + 1));
+        const bottom = !inside(x, y + 1) || (!inside(x, y + 2) && x >= 9) || (!inside(x + 1, y) && !inside(x + 1, y - 1) && y > 9);
+        ch = bottom ? 's' : top ? 'W' : 'a';
+        // 위 왼쪽 반짝임(작은 타원)
+        if (i < 2) { const [hx, hy, hr, hq] = i ? [7.6, 7.4, 1.9, 1.1] : [8.2, 8.6, 1.2, 0.8]; if (((x + 0.5 - hx) / hr) ** 2 + ((y + 0.5 - hy) / hq) ** 2 < 1) ch = 'W'; }
+        if (i === 2) {
+          const d = depth(x, y);
+          if (d < 1.6 && ((x + y) & 1)) ch = '.';
+          else if (d < 0.6) ch = '.';
+          if (ch === 's') ch = 'a';
+        } else if (i === 3) {
+          const d = depth(x, y);
+          if ((x + y) & 1 || (d < 0.9 && x & 1)) ch = '.';
+          else if (ch === 's') ch = 'a';
+        }
+      }
+      row += ch;
+    }
+    rows.push(row);
+  }
+  return rows;
 }
-const PUFF_PAL = { a: '#F4EEE6', W: '#FFFFFF' };
+const PUFF_PAL = { a: '#F1EAE8', W: '#FFFFFF', s: '#CDC2D3' };
 
 const PROP_PAL = {
   c: '#5FA84E', C: '#9BD67A', d: '#3F7A3A', r: '#B08A66', R: '#D2B08C', Q: '#8A6A4E',
@@ -810,7 +872,7 @@ export const SHEETS = {
   captive_sniper: { pal: PAL_FRONT(SNIPER), frames: captive('sniper'), lod: [1, 0.75, 0.5] },
   captive_rocket: { pal: PAL_FRONT(ROCKET), frames: captive('rocket'), lod: [1, 0.75, 0.5] },
 
-  hero_mungchi: { pal: MUNGCHI, frames: heroSheet(MUN_HEAD, MUN_NAPE, MUN_LOOK, MUN_BODY, MUN_ACT, MUN_KO, 16) },
+  hero_mungchi: { pal: MUNGCHI, frames: munchiSheet() },
   hero_bori: { pal: BORI, frames: boriSheet() },
   hero_nabi: { pal: NABI, frames: nabiSheet() },
   face_mungchi: { pal: { ...MUNGCHI, w: '#9FD8FF' }, frames: [FACE_MUNGCHI] },
@@ -839,7 +901,7 @@ export const SHEETS = {
   /* 효과 */
   flash: { pal: FX_PAL, frames: [['.y.', 'yWy', '.y.'], ['..y..', '..Y..', 'yYWYy', '..Y..', '..y..']], out: null },
   spark: { pal: FX_PAL, frames: [['W.W', '.W.', 'W.W'], ['Y...Y', '.....', '..W..', '.....', 'Y...Y']], out: null },
-  puff: { pal: PUFF_PAL, frames: [0, 1, 2, 3].map(puffOps), lod: [1, 0.5], outFrames: [OUT, OUT, null, null] },
+  puff: { pal: PUFF_PAL, frames: [0, 1, 2, 3].map(puffRows), lod: [1, 0.5], outFrames: [OUT, OUT, null, null] },
   smoke: { pal: { a: '#C9CED6', b: '#9AA2B0' }, frames: [['.a.', 'aaa', '.b.'], ['..a..', '.aaa.', 'aaaab', '.abb.']], out: null },
   boomfx: { pal: { W: '#FFFFFF', y: '#FFF4B0', o: '#FFB347', r: '#FF7A45' }, frames: [
     { w: 16, h: 16, ops: [['ell', 8, 8, 7, 6, 'o'], ['ell*', 8, 7, 5, 4, 'y'], ['ell*', 8, 7, 2.5, 2, 'W']] },
@@ -865,7 +927,7 @@ export const SHEETS = {
 
 /* HUD·DOM 아이콘(9×9 안팎) — 게이트 칸 아이콘도 같은 그림을 쓴다 */
 export const ICONS = {
-  medic: ['..hhhhh..', '.hHHhhhh.', 'hHhXhXhhb', 'hhhXXXhhb', 'hhhhXhhbb', 'BBBBBBBBB', '.sssssss.', '.sKsssKs.', '..sssss..'],
+  medic: ['..hHHhh..', '.hXXhXXh.', 'hHXXXXXhb', 'hhhXXXhhb', 'hhhhXhhbb', 'BBBBBBBBB', '.sssssss.', '.sKsssKs.', '..sssss..'],
   sniper: ['..ttttt..', '.tTTKTTt.', 'tTTTKTTTt', 'tTTTTTTTt', 'tKKTKTKKt', 'tTTTTTTTt', 'tTTTKTTTt', '.tTTKTTt.', '..ttttt..'],
   rocket: ['....E....', '...EoE...', '...oOo...', '...oOo...', '...oOo...', '..AoOoA..', '.AA.o.AA.', '....f....', '...fFf...'],
   gun: ['.........z', '.ZZZZZZZZZ', 'wwwwgggggg', 'www.gK....', 'ww..gg....', 'w.........'],

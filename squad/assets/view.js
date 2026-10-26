@@ -20,14 +20,15 @@ export function makeView() {
 
 /* 카메라 배치와 화면 크기로 렌즈를 정한다. extra(0~1)는 보스전에서 뒤로 빠지는 정도.
    opt(생략 가능): at = 분대가 올 화면 높이 비율(기본 0.74), up·back = 카메라 높이·거리,
-   minHz = 지평선이 이보다 위로 올라가지 않게(화면 높이 비율) — 낮은 화면에서는 분대가 그만큼 내려온다. */
+   minHz = 지평선이 이보다 위로 올라가지 않게(화면 높이 비율) — 낮은 화면에서는 분대가 그만큼 내려온다,
+   extraBack·extraUp = 보스전에 더 빠지는 거리·높이(기본 6·3). */
 export function fitView(v, w, h, roadHalf, extra = 0, opt = null) {
   const at = opt && opt.at != null ? opt.at : 0.74;
   v.w = w;
   v.h = h;
   v.col = Math.min(w, h * 0.62);
-  v.back = (opt && opt.back != null ? opt.back : 16) + 6 * extra;
-  v.up = (opt && opt.up != null ? opt.up : 13) + 3 * extra;
+  v.back = (opt && opt.back != null ? opt.back : 16) + (opt && opt.extraBack != null ? opt.extraBack : 6) * extra;
+  v.up = (opt && opt.up != null ? opt.up : 13) + (opt && opt.extraUp != null ? opt.extraUp : 3) * extra;
   v.camH = v.up;
   const th = Math.atan2(v.up, v.back + v.ahead);
   v.sin = Math.sin(th);

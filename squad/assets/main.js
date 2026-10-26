@@ -257,6 +257,7 @@ function show(id) {
   $('skillBtn').hidden = !(touch && s && s.hero);
   if (!touch) $('tip').hidden = true;
   if (renderer.setFrozen) renderer.setFrozen(mode === 'pause' || mode === 'result');
+  if (renderer.setCard) renderer.setCard(mode === 'card');   // 레벨 카드 뒤에는 병력 숫자·떠오르는 숫자를 그리지 않는다
   const focus = id && $(id).querySelector('[data-focus]');
   if (focus) setTimeout(() => focus.focus({ preventScroll: true }), 30);
   updateMusic();

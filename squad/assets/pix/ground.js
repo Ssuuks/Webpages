@@ -1,7 +1,11 @@
 /* 땅 그리기 — 버퍼 한 장(Uint32)에 하늘·언덕·모래·도로·연석·안개를 한 번에 칠한다.
    하늘(그라데이션·해)은 화면 크기가 바뀔 때만, 언덕은 카메라가 옆으로 움직였을 때만 다시 만든다.
    줄마다 월드 z를 계산해 줄무늬가 흐르게 하고, 멀어서 줄무늬가 한 줄보다 촘촘해지면 중간색으로 바꿔
-   물결무늬(모아레)를 없앤다. 안개는 이웃한 단계끼리만 디더링한다. */
+   물결무늬(모아레)를 없앤다. 안개는 이웃한 단계끼리만 디더링한다.
+   - 안개는 칠한 뒤 픽셀을 다시 읽어 섞지 않고, 칠할 때 바로 안개 낀 색(미리 만든 표)으로 칠한다.
+     디더링 무늬는 가로 4칸 주기라 구간을 4칸 무늬로 채운다(T6·T9).
+   - 줄마다 바뀌는 값은 draw()의 지역 변수로만 둔다(클로저 변수에 실수를 쓰면 매번 상자에 담겨 쓰레기가 된다).
+   - 넓은 화면(가로·태블릿)에서는 폰 기둥 바깥에 자갈을 찍지 않는다. */
 import { ROAD } from '../core.js';
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
@@ -25,13 +29,47 @@ function hash2(a, b) { let h = (a * 374761393 + b * 668265263) | 0; h = Math.imu
 const NOISE = new Uint8Array(64 * 64);
 for (let i = 0; i < NOISE.length; i++) NOISE[i] = hash2(i & 63, i >> 6) & 255;
 
+/* 땅에 쓰는 색 번호 */
+const G1 = 0, G2 = 1, EDGE = 2, ROAD1 = 3, ROAD2 = 4, ROADMIX = 5, CRACK = 6, CURBA = 7, CURBB = 8, CURBMIX = 9, LINE = 10, LINEDIM = 11;
+const NC = 12;
+/* 줄마다 쓰는 색(안개 단계 두 개) — 모듈 단위 표라 쓰레기가 없다.
+   색은 Int32로 둔다: 불투명 색(알파 0xFF)은 부호 있는 32비트로 -2^24..-1이라 작은 정수(Smi)로 다뤄져
+   함수에 넘겨도 상자(HeapNumber)에 담기지 않는다(Uint32 그대로면 2^31 이상이라 매번 상자가 생긴다, T6). */
+const rA = new Int32Array(NC), rB = new Int32Array(NC);
+
+/* 구간 [a, b)를 4칸 주기 무늬로 채운다: x&3 번째 비트가 1이면 rB[ci], 아니면 rA[ci] */
+function fillPat(U, row, a, b, ci, mask) {
+  const cA = rA[ci], cB = rB[ci];
+  const n = b - a;
+  if (n <= 0) return;
+  if (mask === 0 || cA === cB) { U.fill(cA, row + a, row + b); return; }
+  if (mask === 15) { U.fill(cB, row + a, row + b); return; }
+  if (n <= 24) {
+    for (let x = a; x < b; x++) U[row + x] = (mask >> (x & 3)) & 1 ? cB : cA;
+    return;
+  }
+  for (let x = a; x < a + 4; x++) U[row + x] = (mask >> (x & 3)) & 1 ? cB : cA;
+  let len = 4;
+  const o = row + a;
+  while (len < n) {
+    const c = len < n - len ? len : n - len;
+    U.copyWithin(o + len, o, o + c);
+    len += c;
+  }
+}
+/* 화면 x 구간(반올림한 정수) → 최소 1px, 버퍼 안으로 자르고 칠한다. 정수만 받아 인자가 상자에 담기지 않게 */
+function seg(U, row, BW, a, b, ci, mask) {
+  if (b <= a) b = a + 1;
+  if (a < 0) a = 0;
+  if (b > BW) b = BW;
+  if (b > a) fillPat(U, row, a, b, ci, mask);
+}
+const R = Math.round;
+
 export function createGround() {
   const pals = new Map();
   let base = null, baseKey = '';        // 하늘 그라데이션 + 해
   let sky = null, skyKey = '', skyRows = 0, skyW = 0;   // + 언덕
-  const fogCache = new Map();
-  // 줄 그리기에 쓰는 공유 값(줄마다 함수를 만들지 않게)
-  let U = null, ROW = 0, BWc = 0, CX = 0, S = 1, VX = 0;
 
   function palOf(b) {
     let p = pals.get(b);
@@ -47,26 +85,15 @@ export function createGround() {
     p.crack = lerpU32(p.road, hexU32('#2B1D2E'), 0.28);
     p.lineDim = lerpU32(p.line, p.road, 0.45);
     p.edge = lerpU32(p.g1, p.g2, 0.6);
+    // 색 번호 → 색, 색 번호 × 안개 단계(0~4) → 안개 낀 색
+    const cols = new Int32Array(NC);
+    cols[G1] = p.g1; cols[G2] = p.g2; cols[EDGE] = p.edge; cols[ROAD1] = p.road; cols[ROAD2] = p.road2; cols[ROADMIX] = p.roadMix;
+    cols[CRACK] = p.crack; cols[CURBA] = p.curbA; cols[CURBB] = p.curbB; cols[CURBMIX] = p.curbMix; cols[LINE] = p.line; cols[LINEDIM] = p.lineDim;
+    const fogT = new Int32Array(NC * 5);
+    for (let c = 0; c < NC; c++) for (let st = 0; st <= 4; st++) fogT[c * 5 + st] = st ? lerpU32(cols[c], p.fog, st / 4) : cols[c];
+    p.cols = cols; p.fogT = fogT; p.fogI = p.fog | 0;
     pals.set(b, p);
     return p;
-  }
-  function fogged(c, fog, st) {
-    const k = c * 8 + st;
-    let v = fogCache.get(k);
-    if (v === undefined) {
-      v = lerpU32(c, fog, st / 4);
-      if (fogCache.size > 4000) fogCache.clear();
-      fogCache.set(k, v);
-    }
-    return v;
-  }
-  const X = (wx) => CX + (wx - VX) * S;
-  function fill(x0, x1, c) {
-    let a = Math.round(x0), bb = Math.round(x1);
-    if (bb <= a) bb = a + 1;
-    if (a < 0) a = 0;
-    if (bb > BWc) bb = BWc;
-    if (bb > a) U.fill(c, ROW + a, ROW + bb);
   }
 
   function buildBase(BW, rows, hz, p, quality) {
@@ -124,72 +151,77 @@ export function createGround() {
     const h = view.camH, sin = view.sin, cos = view.cos, F = view.F;
     const cyy = view.cy + sy;
     const camZ = view.camZ;
-    U = u32; BWc = BW; CX = view.cx + sx; VX = view.camX;
-    const dzAt = (yy) => { const t = (cyy - yy) / F; const den = sin - t * cos; return den <= 1e-5 ? 1e9 : (h * (t * sin + cos)) / den; };
+    const cx = view.cx + sx, vx = view.camX;
+    const cols = p.cols, fogT = p.fogT, fogC = p.fogI;
     const hiQ = quality !== 'low';
-    let dzA = dzAt(hzI + 0.5);
+    // 자갈은 폰 기둥(가운데 col 폭의 ±75%) 안에만 — 넓은 화면의 바깥은 맨 모래(T9)
+    const colHalf = (view.col || BW) * 0.75;
+    const pxL = Math.max(0, cx - colHalf), pxR = Math.min(BW, cx + colHalf);
+    // 화면 줄 → 카메라에서의 깊이(월드 z 거리)
+    let t = (cyy - (hzI + 0.5)) / F;
+    let den = sin - t * cos;
+    let dzA = den <= 1e-5 ? 1e9 : (h * (t * sin + cos)) / den;
     for (let y = hzI; y < BH; y++) {
       const dz = dzA;
-      dzA = dzAt(y + 1.5);
+      t = (cyy - (y + 1.5)) / F;
+      den = sin - t * cos;
+      dzA = den <= 1e-5 ? 1e9 : (h * (t * sin + cos)) / den;
       const span = Math.abs(dz - dzA);
       const d = h * sin + dz * cos;
-      S = F / d;
-      const s = S;
+      const s = F / d;
       const wz = camZ + dz;
       const row = y * BW;
-      ROW = row;
       // 완전히 안개 속인 줄(지평선 근처)은 바로 채운다
-      if (d >= 115) { u32.fill(p.fog, row, row + BW); continue; }
+      if (d >= 115) { u32.fill(fogC, row, row + BW); continue; }
+      // 이 줄의 안개: 이웃한 두 단계(s0·s1)를 가로 4칸 베이어 무늬(mask)로 섞는다
+      const fogK = (d - 70) / 45;
+      let mask = 0;
+      if (fogK > 0) {
+        const lv = Math.min(4, fogK * 4), i0 = Math.floor(lv), fr = lv - i0;
+        let s0 = i0 < 4 ? i0 : 4, s1 = i0 + 1 < 4 ? i0 + 1 : 4;
+        if (hiQ) {
+          const bo = (y & 3) << 2;
+          mask = (fr > BAYER[bo] ? 1 : 0) | (fr > BAYER[bo | 1] ? 2 : 0) | (fr > BAYER[bo | 2] ? 4 : 0) | (fr > BAYER[bo | 3] ? 8 : 0);
+        } else { s0 = s1 = Math.min(4, Math.round(lv)); }
+        for (let c = 0; c < NC; c++) { rA[c] = fogT[c * 5 + s0]; rB[c] = fogT[c * 5 + s1]; }
+      } else {
+        for (let c = 0; c < NC; c++) { rA[c] = cols[c]; rB[c] = cols[c]; }
+      }
       // 모래(땅)
-      u32.fill(p.g1, row, row + BW);
+      fillPat(u32, row, 0, BW, G1, mask);
       // 길가 자갈: 월드 칸 경계를 지나는 줄에만 짧은 점(칸에 고정)
       if (hiQ && s > 3) {
         const zc = Math.floor(wz * 1.5), zn = Math.floor((camZ + dzA) * 1.5);
         if (zc !== zn) {
-          const wx0 = VX - CX / s, wx1 = VX + (BW - CX) / s;
+          const wx0 = vx + (pxL - cx) / s, wx1 = vx + (pxR - cx) / s;
           const len = s > 14 ? 3 : s > 8 ? 2 : 1;
           const zr = (zc & 63) << 6;
           for (let xc = Math.floor(wx0 * 1.5), xe = Math.ceil(wx1 * 1.5); xc <= xe; xc++) {
             const wx = xc / 1.5;
             if (wx > -ROAD - 0.7 && wx < ROAD + 0.7) continue;
             const nv = NOISE[zr | (xc & 63)];
-            if (nv < 46) { const px = X(wx + (nv & 7) * 0.08); fill(px, px + len, nv < 14 ? p.edge : p.g2); }
+            if (nv < 46) { const px = cx + (wx + (nv & 7) * 0.08 - vx) * s; seg(u32, row, BW, R(px), R(px + len), nv < 14 ? EDGE : G2, mask); }
           }
         }
       }
       // 도로 + 속도감 띠(4u)
-      fill(X(-ROAD), X(ROAD), span < 1.6 ? ((Math.floor(wz / 4) & 1) ? p.road2 : p.road) : p.roadMix);
+      const xRL = cx + (-ROAD - vx) * s, xRR = cx + (ROAD - vx) * s;
+      seg(u32, row, BW, R(xRL), R(xRR), span < 1.6 ? ((Math.floor(wz / 4) & 1) ? ROAD2 : ROAD1) : ROADMIX, mask);
       // 도로 금(드문드문)
       if (hiQ && s > 5) {
         const zc = Math.floor(wz * 2), zn = Math.floor((camZ + dzA) * 2);
         if (zc !== zn) {
           const nv = NOISE[((zc & 63) << 6) | ((zc * 7) & 63)];
-          if (nv < 70) { const px = X(-ROAD + 0.6 + (nv / 70) * (2 * ROAD - 1.2)); fill(px, px + (s > 12 ? 2 : 1), p.crack); }
+          if (nv < 70) { const px = cx + (-ROAD + 0.6 + (nv / 70) * (2 * ROAD - 1.2) - vx) * s; seg(u32, row, BW, R(px), R(px + (s > 12 ? 2 : 1)), CRACK, mask); }
         }
       }
       // 연석(2u 줄무늬)
-      const cc = span < 0.9 ? ((Math.floor(wz / 2) & 1) ? p.curbA : p.curbB) : p.curbMix;
-      fill(X(-ROAD - 0.45), X(-ROAD), cc);
-      fill(X(ROAD), X(ROAD + 0.45), cc);
+      const cc = span < 0.9 ? ((Math.floor(wz / 2) & 1) ? CURBA : CURBB) : CURBMIX;
+      seg(u32, row, BW, R(cx + (-ROAD - 0.45 - vx) * s), R(xRL), cc, mask);
+      seg(u32, row, BW, R(xRR), R(cx + (ROAD + 0.45 - vx) * s), cc, mask);
       // 가운데 점선
-      if (span < 2 && (((wz % 7) + 7) % 7) < 3) fill(X(-0.09), X(0.09), span < 1 ? p.line : p.lineDim);
-      // 안개: 이웃한 단계끼리만 섞는다(멀리 떨어진 두 색을 섞으면 바둑판이 된다)
-      const fogK = (d - 70) / 45;
-      if (fogK > 0) {
-        const lv = Math.min(4, fogK * 4), i0 = Math.floor(lv), fr = lv - i0;
-        let lc = -1, ls = -1, lvv = 0;
-        const bo = (y & 3) << 2;
-        const st0 = Math.min(4, i0), st1 = Math.min(4, i0 + 1), stL = Math.min(4, Math.round(lv));
-        for (let x = 0; x < BW; x++) {
-          const st = hiQ ? (fr > BAYER[bo | (x & 3)] ? st1 : st0) : stL;
-          if (!st) continue;
-          const c = u32[row + x];
-          if (c !== lc || st !== ls) { lc = c; ls = st; lvv = fogged(c, p.fog, st); }
-          u32[row + x] = lvv;
-        }
-      }
+      if (span < 2 && (((wz % 7) + 7) % 7) < 3) seg(u32, row, BW, R(cx + (-0.09 - vx) * s), R(cx + (0.09 - vx) * s), span < 1 ? LINE : LINEDIM, mask);
     }
-    U = null;
   }
   return { draw };
 }

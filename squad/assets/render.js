@@ -6,7 +6,7 @@ import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT } from './c
 import { HEROES, biomeOf } from './roster.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL } from './pix/art.js';
 import { createAtlas, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
-import { createFont, opText } from './pix/font.js';
+import { createFont, opText, compactTexts } from './pix/font.js';
 import { createGround } from './pix/ground.js';
 import { frameRaster, outline } from './pix/raster.js';
 
@@ -17,11 +17,93 @@ const STEPS4 = [1, 0.75, 0.5, 0.33];
 const TIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9'];
 const GOLD_BULLET = '#FFD84A';
 const PANEL = {
-  good: { rgb: '62,139,234', line: '#BFE2FF', out: '#1D3F8A', arrow: '#DDF3FF' },
-  bad: { rgb: '232,56,79', line: '#FFC2B3', out: '#6E1A33', arrow: '#FFD0C4' },
-  zero: { rgb: '150,150,175', line: '#E0E0EA', out: '#3A3550', arrow: null },
-  unit: { rgb: '255,196,60', line: '#FFF09A', out: '#6E4208', arrow: null },
+  good: { hex: '#3E8BEA', line: '#BFE2FF', out: '#1D3F8A', arrow: '#DDF3FF' },
+  bad: { hex: '#E8384F', line: '#FFC2B3', out: '#6E1A33', arrow: '#FFD0C4' },
+  zero: { hex: '#9696AF', line: '#E0E0EA', out: '#3A3550', arrow: null },
+  unit: { hex: '#FFC43C', line: '#FFF09A', out: '#6E4208', arrow: null, hi: '#FFE9A0' },
 };
+/* 화면에 쓰는 글자 색 조합 전부(쉬는 틈에 미리 굽는다 — 그리는 중에 아틀라스에 굽지 않게, T1) */
+export const GLYPH_PAIRS = [
+  ['#FFFFFF', OUT], ['#FFFFFF', PANEL.good.out], ['#FFFFFF', PANEL.bad.out], ['#FFFFFF', PANEL.zero.out], ['#FFFFFF', PANEL.unit.out],
+  ['#FFF09A', PANEL.unit.out], ['#FFF09A', OUT], ['#DDF3FF', PANEL.good.out], ['#FFD0C4', PANEL.bad.out], ['#FFC2B3', PANEL.bad.out],
+  ['#C9F5B8', '#1E5A2E'], ['#FFE38A', OUT], ['#FFE08A', OUT], ['#FFFFFF', '', ['tight']], [PANEL.unit.out, '', ['tight']],
+];
+
+/* 버퍼 크기 규칙(순수 함수): 폰 비율 기둥 폭 / K 가 190px(160~220)에 가장 가까운 정수 K.
+   버퍼는 화면을 덮고, CSS 크기가 정수 px가 되도록 한두 칸 넓힌다(소수 DPR에서 1px 이음새가 생기지 않게, T2).
+   VW·VH = 실제로 보이는 버퍼 크기(소수) — 도로는 여기 가운데에 둔다. */
+export function pickBuffer(w, h, ratio) {
+  const dpr = ratio || 1;
+  const col = Math.min(w, h * 0.62);
+  const devW = Math.round(w * dpr), devH = Math.round(h * dpr), devCol = col * dpr;
+  let K = 1, be = Infinity;
+  for (let k = 1; k <= 12; k++) {
+    const bw = Math.ceil(devCol / k);
+    const e = Math.abs(bw - 190) + (bw < 160 || bw > 220 ? 1000 : 0);
+    if (e < be) { be = e; K = k; }
+  }
+  const per = K / dpr;
+  const intCss = (n) => {
+    for (let i = 0; i < 64; i++) { const c = (n + i) * per; if (Math.abs(c - Math.round(c)) < 1e-3) return n + i; }
+    return n;
+  };
+  const BW = intCss(Math.max(1, Math.ceil(devW / K)));
+  const BH = intCss(Math.max(1, Math.ceil(devH / K)));
+  return { K, BW, BH, cssPer: per, cssW: Math.round(BW * per), cssH: Math.round(BH * per), VW: devW / K, VH: devH / K, col };
+}
+
+/* 카메라 맞춤(순수 함수). 보스전(dolly→1)에는 뒤로 빠지되, 분대는 ~65% 이하·영웅 발은 72% 이하에 남게(T4) */
+export function lensOpt(w, h, dolly = 0) {
+  const col = Math.min(w, h * 0.62);
+  const up = clamp(((FIT.at - FIT.minHz) * h * 0.93) / (0.09 * col), 9.5, FIT.up);
+  // 짧은 버퍼(360x640·가로 화면)일수록 덜 빠지고, 지평선 하한을 풀어 분대가 아래로 밀려나지 않게
+  const short = clamp((400 - h) / 100, 0, 1);
+  return {
+    at: FIT.at - (0.05 + 0.04 * short) * dolly, up, back: FIT.back, minHz: FIT.minHz * (1 - 0.7 * dolly),
+    extraBack: 6 - 2 * short, extraUp: 3 - short,
+  };
+}
+
+/* 피격 번쩍임 제한: 같은 대상은 gap초에 한 번, dur초 동안(초당 1/gap회 이하 — 보스 0.5초, 좀비 0.34초) */
+export function createFlashLimiter(gap = 0.34, dur = 0.034) {
+  const m = new Map();
+  return {
+    on(key, hitT, simT, time, reduce) {
+      const f = m.get(key);
+      if (reduce) return false;
+      if (simT - hitT > 0.05) return f !== undefined && time < f.until;
+      if (f === undefined) { m.set(key, { last: time, until: time + dur }); return true; }
+      if (time - f.last >= gap) { f.last = time; f.until = time + dur; }
+      return time < f.until;
+    },
+    clear() { m.clear(); },
+    get size() { return m.size; },
+  };
+}
+
+/* 길가 소품 자리(순수 함수): 9u마다 양쪽에 하나. 해시는 부호 없는 32비트라 >>> 로 민다(V1: >> 는 음수가 나와 도로 위에 놓였다) */
+export const SCENERY_STEP = 9;
+export const sceneryHash = (z, side) => hashInt(z * 7 + (side > 0 ? 3 : 11));
+export const sceneryX = (h, side) => side * (6.4 + ((h >>> 3) % 34) / 10);
+export const sceneryZ = (h, z) => z + ((h >>> 8) % 50) / 10;
+
+/* 렌더러가 쓰는 프레임 번호(시트 길이와 맞는지 tests/art.mjs가 검사한다) */
+export const FRAMES = {
+  soldier: { sheets: ['soldier'], walk: [0, 1, 2, 3], idle: [4, 5] },
+  special: { sheets: 'unit', walk: [0, 1, 2, 3], idle: [4, 5], hit: [4] },
+  rocket: { sheets: ['rocket'], fire: [6, 7] },
+  hero: { sheets: 'hero', walk: [0, 1, 2, 3, 4, 5, 6, 7], idle: [8, 9], ko: [10], cast: [11, 12], look: [13], blink: [14] },
+  captive: { sheets: 'captive', wave: [0, 1], sad: [2] },
+  foe: { sheets: ['grunt', 'runner'], walk: [0, 1, 2, 3], idle: [0, 2], lunge: [4, 5] },
+  brute: { sheets: ['brute'], walk: [0, 1, 2, 3], lunge: [1] },
+  spit: { sheets: ['spit'], idle: [0, 1], tell: [2, 3, 4] },
+  boss: { sheets: ['boss'], walk: [0, 1, 2, 3], windup: [4], slam: [5], roar: [6, 7], stomp: [8, 9], dead: [10] },
+  fx2: { sheets: ['flash', 'spark', 'glint', 'boomfx', 'flag', 'rocketShot', 'smoke'], f: [0, 1] },
+  fx4: { sheets: ['saw', 'puff', 'coin'], f: [0, 1, 2, 3] },
+  one: { sheets: ['helmet', 'bubble', 'tear', 'helmetBit', 'plus', 'heart', 'dust'], f: [0] },
+  star: { sheets: ['star'], f: [1] },
+};
+const FR = FRAMES;
 const FX_COL = {
   green: ['#8FD16A', '#5E9E4B', '#C9E36A'], purple: ['#B79BE0', '#8A6CC0', '#B9F25B'],
   wood: ['#F0C27E', '#C98A4E', '#8E5A30'], stone: ['#C9CED6', '#9AA2B0', '#FFC93C'], iron: ['#8A93A6', '#596277', '#C9CED6'],
@@ -30,6 +112,7 @@ const FX_COL = {
   unit: ['#FFD84A', '#FFF09A', '#D08A12'], boom: ['#FFF4B0', '#FFB347', '#FF7A45', '#9AA2B0'], heal: ['#7CE07A', '#C9F5B8'],
 };
 const MAX_PARTS = 320;
+const FLAG_X = [0, -0.55, 0.55];
 
 function hashInt(n) {
   let h = (n | 0) * 2654435761;
@@ -47,47 +130,78 @@ export function createRenderer(cvs) {
   const atlas = createAtlas();
   const font = createFont(atlas);
   const ground = createGround();
-  let BW = 0, BH = 0, K = 1, dpr = 1, cssPer = 1, cssW = 0, cssH = 0;
+  let BW = 0, BH = 0, VW = 0, VH = 0, K = 1, dpr = 1, cssPer = 1, cssW = 0, cssH = 0;
   let img = null, u32 = null;
   let quality = 'high';
   let shakeOn = true;
   let preview = false;
   let frozenSet = false;
+  let cardOn = false;
   let hudCss = null;
   let dirty = true;
-  const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /* 움직임 줄이기: 켜고 끄는 것을 바로 따른다(T10) */
+  let reduce = false;
+  try {
+    if (typeof matchMedia === 'function') {
+      const mq = matchMedia('(prefers-reduced-motion: reduce)');
+      reduce = !!mq.matches;
+      const onMq = (e) => { reduce = !!e.matches; if (reduce) trauma = 0; dirty = true; };
+      if (mq.addEventListener) mq.addEventListener('change', onMq); else if (mq.addListener) mq.addListener(onMq);
+    }
+  } catch { /* 없는 환경 */ }
   const RENDERING = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('image-rendering', 'pixelated') ? 'pixelated'
     : typeof CSS !== 'undefined' && CSS.supports && CSS.supports('image-rendering', 'crisp-edges') ? 'crisp-edges' : '-webkit-optimize-contrast';
 
-  /* 급한 그림은 바로, 나머지는 쉬는 틈에 굽는다(레벨 시작 때 멈칫하지 않게) */
-  for (const n of ['soldier', 'helmet', 'grunt', 'flash', 'spark', 'puff', 'coin']) atlas.bake(n);
+  /* 굽기는 모두 쉬는 틈에(부팅 중 긴 작업 없이). 글자·아이콘(닫힌 집합)을 먼저, 그다음 자주 쓰는 시트, 나머지.
+     준비(ready)가 끝난 뒤에는 그리는 중에 아틀라스에 굽는 일이 없다(T1·T7). */
   let readyResolve;
   const ready = new Promise((r) => { readyResolve = r; });
-  atlas.bakeIdle(Object.keys(SHEETS), () => readyResolve(true));
+  {
+    const first = ['soldier', 'helmet', 'grunt', 'flash', 'spark', 'puff', 'coin', 'runner', 'flag'];
+    const tasks = [
+      ...font.prebakeTasks(GLYPH_PAIRS),
+      () => { for (const k of Object.keys(ICONS)) atlas.icon(k); },
+      ...first,
+      ...Object.keys(SHEETS).filter((n) => !first.includes(n)),
+    ];
+    atlas.bakeIdle(tasks, () => { readyResolve(true); idleAfterReady(); });
+  }
   ensureJua();
 
   /* 프레임 상태 */
-  let time = 0, frameN = 0, camX = 0, dolly = 0, fitted = -1, trauma = 0;
-  let flashA = 0, flashRGB = '255,255,255';
-  let shownN = 0, countPop = 0, countTint = 0, lastN = -1;
+  let time = 0, prevTime = 0, f60 = 0, camX = 0, dolly = 0, fitted = -1, trauma = 0;
+  let flashA = 0, flashRGB = '255,255,255', flashCss = 'rgb(255,255,255)';
+  let shownN = 0, countPop = 0, countTint = 0, lastN = -1, pillA = 1;
   let lastS = null, lastT = -1, stillFor = 0;
   let hurtAt = -9, bossImpactT = -9, roarT = -9, bossIntroT = -9, bossDeath = null, enrageT = -9;
   let castT = -9, castId = '', castRun = false, castArena = false, healT = -9, rocketT = -9, snipeT = -9, readyT = -9;
   let healSum = 0, healShown = -9, groundMs = 0, putMs = 0, drawMs = 0, hurtSeed = 0;
   let cut = null;        // 컷인 { t, id }
   let lookNext = 3;
+  const SPAWN_CAP = 160;
+  let spawnBudget = SPAWN_CAP;   // 그리기 한 번(+그 뒤 이벤트)에 새로 띄우는 파편 수 상한 — 폭발이 한꺼번에 터져도 프레임이 튀지 않게(V5)
   const sq = { x: 0, z: 0, vz: 0, vx: 0, n: 0, tier: 0, sp: [] };   // 그리는 순간의 분대(보간)
-  const lod = new Map();       // 렌더러 전용 축소 단계(시뮬 객체에 쓰지 않는다)
-  const flashes = new Map();   // 피격 번쩍임 제한(초당 3회 이하)
+  /* 렌더러 전용 축소 단계(시뮬 객체에 쓰지 않는다). 종류마다 숫자 키 Map(문자열 키를 매 프레임 만들지 않게) */
+  const lodScen = new Map(), lodFoe = new Map(), lodSaw = new Map(), lodCage = new Map();
+  let lodBoss;
+  const flashFoe = createFlashLimiter(0.34, 0.034);   // 좀비: 초당 3회 이하
+  const flashBoss = createFlashLimiter(0.5, 0.034);   // 보스: 초당 2회 이하, 반투명 덧칠(V9)
   const hitSeen = new Map();
   const tickAt = new Map();
   const bruteStep = new Map();
   const spSeen = new Map();    // 특수병 id → { born, fx, fz }
   const pendingGet = [];       // 아직 분대 목록에서 못 찾은 합류 이벤트
+  const pill = { on: false, x0: 0, y0: 0, x1: 0, y1: 0 };   // 이번 프레임 숫자 말풍선 자리(떠오르는 숫자가 피해 간다, V4)
+  const selLbl = { on: false, x0: 0, y0: 0, x1: 0, y1: 0 }; // 고른 게이트 칸 숫자 자리(말풍선이 더 흐려진다, V7)
+  const labelCache = { add: new Map(), unit: new Map(), mul: new Map(), div: new Map() };
+  const mtx = typeof DOMMatrix === 'function' ? new DOMMatrix() : null;   // 무늬 위치(프레임마다 새로 만들지 않는다)
 
-  /* 효과 풀 */
+  /* 효과 풀 — 파편은 빈 칸 목록(free list)으로 O(1)에 꺼내고, 살아 있는 것만 돈다 */
   const parts = [];
   for (let i = 0; i < MAX_PARTS; i++) parts.push({ on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, max: 1, c: '#fff', size: 1, g: 9, spr: null });
+  const pFree = new Int16Array(MAX_PARTS), pLive = new Int16Array(MAX_PARTS);
+  let nFree = 0, nLive = 0;
+  for (let i = MAX_PARTS - 1; i >= 0; i--) pFree[nFree++] = i;
   const fxs = [];
   for (let i = 0; i < 72; i++) fxs.push({ on: false });
   const floats = [];
@@ -106,16 +220,29 @@ export function createRenderer(cvs) {
   const vis = { n: 0, x: new Float32Array(VIS), z: new Float32Array(VIS), born: new Float32Array(VIS), helm: new Uint8Array(VIS) };
   let orderT = -1;
 
-  /* 그리기 목록(재사용) */
+  /* 그리기 목록(재사용). 깊이 정렬은 정수 키(깊이 1/64u 단위 + 넣은 순서)를 Int32Array에서 정렬한다 —
+     비교 함수 없이, 프레임마다 쓰레기 없이(T6). 같은 깊이는 넣은 순서대로 그린다. */
+  const MAX_ITEMS = 1000;
   const items = [];
-  for (let i = 0; i < 700; i++) items.push({ z: 0, k: 0, o: null, i: 0, x: 0 });
+  for (let i = 0; i < MAX_ITEMS; i++) items.push({ z: 0, k: 0, o: null, i: 0, x: 0 });
   let nItems = 0;
-  const order = [];
-  const byDepth = (a, b) => b.z - a.z;
+  const sortKeys = new Int32Array(MAX_ITEMS);
   function push(z, k, o, i = 0, x = 0) {
-    if (nItems >= items.length) return;
+    if (nItems >= MAX_ITEMS) return;
     const it = items[nItems++];
     it.z = z; it.k = k; it.o = o; it.i = i; it.x = x;
+  }
+  /* 먼 것부터(깊이 내림차순)로 정렬된 개수를 돌려준다. sortKeys[j] & 1023 = items 번호 */
+  function sortItems() {
+    const n = nItems, z0 = view.camZ - 24;
+    for (let i = 0; i < n; i++) {
+      let q = Math.round((items[i].z - z0) * 64);
+      if (q < 0) q = 0; else if (q > 0x1FFFF) q = 0x1FFFF;
+      // 깊이를 뒤집은 키(먼 것이 작다)로 오름차순 정렬 → 먼 것부터, 같은 깊이는 넣은 순서대로
+      sortKeys[i] = ((0x1FFFF - q) << 10) | i;
+    }
+    sortKeys.subarray(0, n).sort();
+    return n;
   }
 
   /* 무늬 */
@@ -130,39 +257,29 @@ export function createRenderer(cvs) {
   function resize(w, h, ratio) {
     cssW = w; cssH = h;
     dpr = ratio || 1;
-    const col = Math.min(w, h * 0.62);
-    const devW = Math.round(w * dpr), devH = Math.round(h * dpr), devCol = col * dpr;
-    // 기둥 폭이 버퍼 190px에 가장 가까운 정수 배율(160~220 안을 우선)
-    let best = 1, be = Infinity;
-    for (let k = 1; k <= 12; k++) {
-      const bw = Math.ceil(devCol / k);
-      const e = Math.abs(bw - 190) + (bw < 160 || bw > 220 ? 1000 : 0);
-      if (e < be) { be = e; best = k; }
-    }
-    K = best;
-    BW = Math.max(1, Math.ceil(devW / K));
-    BH = Math.max(1, Math.ceil(devH / K));
-    cssPer = K / dpr;
+    const b = pickBuffer(w, h, dpr);
+    K = b.K; BW = b.BW; BH = b.BH; VW = b.VW; VH = b.VH;
+    cssPer = b.cssPer;
     cvs.width = BW;
     cvs.height = BH;
-    cvs.style.width = BW * cssPer + 'px';
-    cvs.style.height = BH * cssPer + 'px';
+    // CSS 크기는 정수 px(소수 DPR에서도 버퍼 한 칸 = 기기 픽셀 K개로 고르게, T2)
+    cvs.style.width = b.cssW + 'px';
+    cvs.style.height = b.cssH + 'px';
     cvs.style.imageRendering = RENDERING;
     ctx.imageSmoothingEnabled = false;
     img = ctx.createImageData(BW, BH);
     u32 = new Uint32Array(img.data.buffer);
     fitted = -1;
     layout();
-    screen.w = w; screen.h = h; screen.col = col;
-    if (ov) sizeOverlay();
+    screen.w = w; screen.h = h; screen.col = b.col;
+    if (ov) { sizeOverlay(); idle(renderTitles); }
     dirty = true;
   }
   function layout() {
     if (!BW) return;
-    // 짧은 화면에서는 카메라를 낮춰 분대를 63% 근처에 두고도 지평선이 화면 안에 남게
-    const col = Math.min(BW, BH * 0.62);
-    const up = clamp(((FIT.at - FIT.minHz) * BH * 0.93) / (0.09 * col), 9.5, FIT.up);
-    fitView(view, BW, BH, ROAD, dolly, { at: FIT.at, up, back: FIT.back, minHz: FIT.minHz });
+    // 보이는 영역(VW×VH) 기준으로 맞춘다 — 버퍼가 정수 CSS 크기 때문에 조금 넓어져도 도로는 화면 가운데
+    const o = lensOpt(VW, VH, dolly);
+    fitView(view, VW, VH, ROAD, dolly, o);
     fitted = dolly;
   }
 
@@ -170,21 +287,26 @@ export function createRenderer(cvs) {
   function setShake(on) { shakeOn = !!on; if (!on) trauma = 0; }
   function setPreview(on) { preview = !!on; dirty = true; }
   function setFrozen(on) { frozenSet = !!on; dirty = true; }
+  /* 레벨 카드가 떠 있는 동안: 숫자 말풍선·떠오르는 숫자를 그리지 않는다(카드 글자와 겹치지 않게, V6) */
+  function setCard(on) { cardOn = !!on; dirty = true; }
   function setHudTarget(x, y) { hudCss = x == null ? null : { x, y }; }
 
   function reset() {
     for (const p of parts) p.on = false;
+    nFree = 0; nLive = 0; spawnBudget = SPAWN_CAP;
+    for (let i = MAX_PARTS - 1; i >= 0; i--) pFree[nFree++] = i;
     for (const f of fxs) f.on = false;
     for (const f of floats) f.on = false;
     for (const f of flies) f.on = false;
     for (const t of tracers) t.on = false;
     for (const r of rings) r.on = false;
-    trauma = 0; flashA = 0; camX = 0; vis.n = 0; lastN = -1; countTint = 0; countPop = 0; shownN = 0;
+    trauma = 0; flashA = 0; camX = 0; vis.n = 0; lastN = -1; countTint = 0; countPop = 0; shownN = 0; pillA = 1;
     dolly = 0; layout();   // 보스전 렌즈를 되돌린다(R1)
     hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9;
     castT = -9; castRun = false; castArena = false; healT = -9; rocketT = -9; snipeT = -9; readyT = -9; healSum = 0; healShown = -9;
     cut = null; clearOverlay();
-    lod.clear(); flashes.clear(); hitSeen.clear(); tickAt.clear(); bruteStep.clear(); spSeen.clear(); pendingGet.length = 0;
+    lodScen.clear(); lodFoe.clear(); lodSaw.clear(); lodCage.clear(); lodBoss = undefined;
+    flashFoe.clear(); flashBoss.clear(); hitSeen.clear(); tickAt.clear(); bruteStep.clear(); spSeen.clear(); pendingGet.length = 0;
     lastS = null; stillFor = 0; dirty = true;
   }
 
@@ -193,11 +315,12 @@ export function createRenderer(cvs) {
   let partSkip = 0;
   function part(x, y, z, vx, vy, vz, life, c, size = 1, g = 9, spr = null) {
     if (lowFx() && (partSkip++ & 1)) return;
-    for (const p of parts) {
-      if (p.on) continue;
-      p.on = true; p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz; p.life = life; p.max = life; p.c = c; p.size = size; p.g = g; p.spr = spr;
-      return;
-    }
+    if (!nFree || spawnBudget <= 0) return;
+    spawnBudget--;
+    const idx = pFree[--nFree];
+    const p = parts[idx];
+    p.on = true; p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz; p.life = life; p.max = life; p.c = c; p.size = size; p.g = g; p.spr = spr;
+    pLive[nLive++] = idx;
   }
   function burst(x, y, z, n, colors, speed = 3, up = 3, life = 0.55) {
     if (typeof colors === 'string') colors = [colors];
@@ -221,6 +344,7 @@ export function createRenderer(cvs) {
     for (const f of floats) { if (!f.on) { slot = f; break; } if (f.life < slot.life) slot = f; }
     slot.on = true; slot.x = x; slot.y = y; slot.z = z; slot.text = text; slot.fill = fill; slot.out = o.out || OUT;
     slot.scale = o.scale || 1; slot.life = o.life || 1; slot.max = slot.life; slot.vz = o.vz || 0; slot.icon = o.icon || null; slot.rise = o.rise ?? 1.4;
+    slot.pill = !!o.pill;
   }
   function ring(x, z, r0, r1, dur, c, o = {}) {
     for (const r of rings) if (!r.on) { Object.assign(r, { on: true, x, z, r0, r1, t: 0, dur, c, follow: o.follow || false, thick: o.thick || 1 }); return; }
@@ -229,7 +353,7 @@ export function createRenderer(cvs) {
     for (const t of tracers) if (!t.on) { Object.assign(t, { on: true, x0, y0, z0, x1, y1, z1, c, t: 0, dur }); return; }
   }
   function shake(a) { if (shakeOn && !reduce) trauma = Math.min(1, trauma + a); }
-  function screenFlash(a, rgb) { if (reduce) a *= 0.4; if (a > flashA) { flashA = a; flashRGB = rgb; } }
+  function screenFlash(a, rgb) { if (reduce) a *= 0.25; if (a > flashA) { flashA = a; if (rgb !== flashRGB) { flashRGB = rgb; flashCss = 'rgb(' + rgb + ')'; } } }
 
   /* 코인이 HUD로 날아갈 자리(버퍼 픽셀) */
   function hudTarget() {
@@ -238,7 +362,7 @@ export function createRenderer(cvs) {
       const el = document.getElementById('hudCoins');
       if (el && el.offsetParent !== null) { const r = el.getBoundingClientRect(); x = r.left + 10; y = r.top + r.height / 2; }
     }
-    if (x == null) return { x: BW - 30, y: 16 };
+    if (x == null) return { x: VW - 30, y: 16 };
     const cr = cvs.getBoundingClientRect ? cvs.getBoundingClientRect() : { left: 0, top: 0 };
     return { x: (x - cr.left) / cssPer, y: (y - cr.top) / cssPer };
   }
@@ -274,7 +398,8 @@ export function createRenderer(cvs) {
           const good = e.after >= e.before;
           const isUnit = e.op === 'unit';
           const text = opText({ op: e.op, v: e.v });
-          float(q.x, 3.3 + 0.3 * R, q.z, text, isUnit ? '#FFF09A' : good ? '#DDF3FF' : '#FFD0C4', { scale: 2, life: 1.0, vz: q.vz, out: isUnit ? PANEL.unit.out : good ? PANEL.good.out : PANEL.bad.out, rise: 0.8 });
+          // 말풍선 바로 위에 뜬다(화면에서 말풍선 위 6px 이상 — drawFloats가 맞춘다, V4)
+          float(q.x, 3.3 + 0.3 * R, q.z, text, isUnit ? '#FFF09A' : good ? '#DDF3FF' : '#FFD0C4', { scale: 2, life: 1.0, vz: q.vz, out: isUnit ? PANEL.unit.out : good ? PANEL.good.out : PANEL.bad.out, rise: 0.8, pill: true });
           const cols = isUnit ? FX_COL.unit : good ? FX_COL.good : FX_COL.bad;
           for (let i = 0; i < 20; i++) part(e.x + (Math.random() - 0.5) * 3, 0.4 + Math.random() * 2.2, e.z, (Math.random() - 0.5) * 6, 1 + Math.random() * 4, -1 - Math.random() * 3, 0.5 + Math.random() * 0.3, cols[i % 3], Math.random() < 0.4 ? 2 : 1);
           countPop = 1;
@@ -535,20 +660,14 @@ export function createRenderer(cvs) {
   }
   /* 먼 곳에서 나타날 때는 단계적으로(안개와 맞춘다). 기둥·판·숫자에 같은 값(R6) */
   function fadeIn(d) { return d > 113 ? 0 : d > 106 ? 0.34 : d > 99 ? 0.67 : 1; }
-  function lodStep(key, want, steps) {
-    const prev = lod.get(key);
+  function lodStep(map, key, want, steps) {
+    const prev = map.get(key);
     const st = pickStep(Math.min(1, want), prev, steps);
-    if (st !== prev) lod.set(key, st);
+    if (st !== prev) map.set(key, st);
     return st;
   }
-  /* 피격 번쩍임: 맞은 직후 2프레임만, 같은 대상은 0.34초에 한 번(초당 3회 이하) */
-  function flashOn(key, hitT, simT) {
-    if (reduce || simT - hitT > 0.05) { const f = flashes.get(key); return !!(f && time < f.until); }
-    let f = flashes.get(key);
-    if (!f) { f = { last: -9, until: -9 }; flashes.set(key, f); }
-    if (time - f.last > 0.34) { f.last = time; f.until = time + 0.034; }
-    return time < f.until;
-  }
+  /* 시각 time 기준 hz 박자가 이번 프레임에 몇 번 지났나(프레임 수가 아니라 시간으로 세는 생성 빈도, T8) */
+  function beats(hz) { return Math.floor(time * hz) - Math.floor(prevTime * hz); }
   function shadowAt(x, z, rx, col) {
     if (!project(view, x, 0, z)) return;
     ctx.fillStyle = col;
@@ -565,15 +684,12 @@ export function createRenderer(cvs) {
 
   /* ---------- 배경 소품 ---------- */
   function scenery(bio) {
-    const step = 9;
+    const step = SCENERY_STEP;
     const props = bio.props;
     for (let z = Math.floor((view.camZ + 4) / step) * step; z < view.camZ + 104; z += step) {
-      for (const side of [-1, 1]) {
-        const h = hashInt(z * 7 + (side > 0 ? 3 : 11));
-        const kind = props[h % props.length];
-        const x = side * (6.4 + ((h >> 3) % 34) / 10);
-        const zz = z + ((h >> 8) % 50) / 10;
-        push(zz, 10, kind, z * 2 + (side > 0 ? 1 : 0), x);
+      for (let side = -1; side <= 1; side += 2) {
+        const h = sceneryHash(z, side);
+        push(sceneryZ(h, z), 10, props[h % props.length], z * 2 + (side > 0 ? 1 : 0), sceneryX(h, side));
       }
     }
   }
@@ -585,7 +701,7 @@ export function createRenderer(cvs) {
     const r0 = sh.frames[0][0];
     const want = (P.s * (WORLD_H[kind] || 1)) / (r0.h - 2);
     if (want < 0.3) return;
-    const st = lodStep('sc' + key, want, STEPS3);
+    const st = lodStep(lodScen, key, want, STEPS3);
     if (a < 1) ctx.globalAlpha = a;
     atlas.draw(ctx, kind, 0, P.x, P.y, st);
     if (a < 1) ctx.globalAlpha = 1;
@@ -629,24 +745,43 @@ export function createRenderer(cvs) {
     for (let i = 0; i < row.cells.length; i++) {
       const c = row.cells[i];
       const st = cellStyle(c);
+      const unit = st === PANEL.unit;
       const sel = near && i === idx;
       const dim = near && i !== idx;
       if (!vface(c.x0 + 0.15, c.x1 - 0.15, 0.12, H, row.z)) continue;
       const pumped = s.t - c.hitT < 0.15;
-      const farA = dz > 45 ? 0.9 : st === PANEL.unit ? 0.78 : 0.55;
-      ctx.fillStyle = `rgba(${st.rgb},${sel ? 0.8 : dim ? (st === PANEL.unit ? 0.55 : 0.38) : pumped ? Math.min(0.9, farA + 0.15) : farA})`;
+      // 금색(특수병) 판은 거의 불투명하게 — 아스팔트가 비쳐 탁해지지 않게(V10)
+      const farA = dz > 45 ? 0.9 : unit ? 0.92 : 0.55;
+      const pa = sel ? (unit ? 0.96 : 0.8) : dim ? (unit ? 0.72 : 0.38) : pumped ? Math.min(0.96, farA + 0.15) : farA;
+      ctx.fillStyle = st.hex;
+      ctx.globalAlpha = a * pa;
       trap(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy);
+      const pw = face.bx - face.ax, ph = face.ay - face.dy;
+      if (unit && ph > 6) {
+        // 위쪽 밝은 띠(세로 그라데이션 느낌) + 가끔 지나가는 반짝임
+        const t = 0.42;
+        ctx.fillStyle = st.hi;
+        ctx.globalAlpha = a * pa * 0.7;
+        trap(face.dx + (face.ax - face.dx) * t, face.cx + (face.bx - face.cx) * t, face.dy + (face.ay - face.dy) * t, face.dx, face.cx, face.dy);
+        const u = (time * 0.8 + c.x0 * 0.13) % 1.6;
+        if (u < 1 && pw > 10 && ph > 12) {
+          const sx = Math.round(face.dx + 2 + u * (face.cx - face.dx - 4)), sy = Math.round(face.dy + 3);
+          ctx.globalAlpha = a;
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(sx - 1, sy, 3, 1); ctx.fillRect(sx, sy - 1, 1, 3);
+        }
+      }
+      ctx.globalAlpha = a;
       if (st === PANEL.bad) {
-        stripe.setTransform(new DOMMatrix().translate(Math.round(face.dx), Math.round(face.dy)));
+        if (mtx) { mtx.e = Math.round(face.dx); mtx.f = Math.round(face.dy); stripe.setTransform(mtx); }
         ctx.fillStyle = stripe;
         trap(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy);
       }
-      const pw = face.bx - face.ax, ph = face.ay - face.dy;
       if (pw > 14 && ph > 10) { ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(Math.round(face.dx + 2), Math.round(face.dy + 2), Math.max(2, (pw * 0.22) | 0), 1); }
       ctx.fillStyle = sel ? '#FFFFFF' : pumped ? '#FFFFFF' : st.line;
       trapLine(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy, sel ? 2 : 1);
       const mx = (face.ax + face.bx) / 2, my = (face.ay + face.dy) / 2 - bump;
-      cellLabel(c, st, mx, my, pw - 4, ph, sel);
+      cellLabel(c, st, mx, my, pw, ph, sel);
       if (preview && c.op && dz < 40 && dz > 0 && ph > 16) {
         const r = Math.max(0, applyOp(q.n, c.op, c.v));
         const t = '=' + r;
@@ -655,30 +790,89 @@ export function createRenderer(cvs) {
     }
     ctx.globalAlpha = 1;
   }
-  /* 칸 숫자: 판 폭에 맞는 가장 큰 글꼴. 들어갈 자리가 없으면 아예 쓰지 않는다(먼 3칸 겹침 방지, R5) */
-  function cellLabel(c, st, mx, my, room, ph, sel) {
-    const txt = opText(c);
+  /* 칸 글자 후보(원래 → '+' 뺀 것 → 'k'), 값마다 한 번만 만든다 */
+  function labelTexts(c) {
+    const m = labelCache[c.op] || labelCache.add;
+    let t = m.get(c.v);
+    if (t === undefined) {
+      t = compactTexts(c, []);
+      if (m.size > 3000) m.clear();
+      m.set(c.v, t);
+    }
+    return t;
+  }
+  function markSel(sel, x0, y0, x1, y1) {
+    if (!sel) return;
+    selLbl.on = true; selLbl.x0 = x0; selLbl.y0 = y0; selLbl.x1 = x1; selLbl.y1 = y1;
+  }
+  /* 칸 숫자: 판 폭에 맞는 가장 큰 글꼴. 좁으면 차례로 '+' 빼기 → 'k' → 작은 글꼴 → 판 전체 폭 → 외곽선 없는 촘촘한 글꼴,
+     그래도 안 되면 ▲/▼만(먼 3칸 게이트가 빈 판으로 보이지 않게, V3·T3). 옆 칸 숫자와는 겹치지 않는다(R5) */
+  function cellLabel(c, st, mx, my, pw, ph, sel) {
+    const texts = labelTexts(c);
+    const txt = texts[0];
+    const room = pw - 4;
     if (c.op === 'unit') {
       const ic = atlas.icon(c.k || 'medic');
       const fw = ic.w + 2;
-      const tw1 = font.measure(txt, 'big', 1);
-      if (ph >= 30 && room >= Math.max(fw, tw1)) {
+      const tw1 = font.measure(txt, 'big', 1), tw2 = font.measure(txt, 'big', 2);
+      if (ph >= 38 && room >= 44 && room >= Math.max(fw, tw2)) {
+        unitIcon(ic, mx, my - 10);
+        font.draw(ctx, txt, mx, my + 9, { scale: 2, fill: '#FFFFFF', out: st.out });
+        markSel(sel, mx - tw2 / 2, my - 10 - ic.h / 2 - 2, mx + tw2 / 2, my + 18);
+      } else if (room >= 44 && room >= fw + tw2 + 2 && ph >= 22) {
+        unitIcon(ic, mx - (tw2 + 2) / 2, my);
+        font.draw(ctx, txt, mx + (fw + 2) / 2, my, { scale: 2, fill: '#FFFFFF', out: st.out });
+        markSel(sel, mx - (fw + tw2 + 2) / 2, my - 9, mx + (fw + tw2 + 2) / 2, my + 9);
+      } else if (ph >= 30 && room >= Math.max(fw, tw1)) {
         unitIcon(ic, mx, my - 6);
         font.draw(ctx, txt, mx, my + 8, { fill: '#FFFFFF', out: st.out });
+        markSel(sel, mx - Math.max(fw, tw1) / 2, my - 6 - ic.h / 2 - 2, mx + Math.max(fw, tw1) / 2, my + 13);
       } else if (room >= fw + tw1 + 1 && ph >= 13) {
         unitIcon(ic, mx - (tw1 + 1) / 2, my);
         font.draw(ctx, txt, mx + (fw + 1) / 2, my, { fill: '#FFFFFF', out: st.out });
+        markSel(sel, mx - (fw + tw1 + 1) / 2, my - 7, mx + (fw + tw1 + 1) / 2, my + 7);
       } else if (room >= fw && ph >= 13) unitIcon(ic, mx, my);
-      else if (room >= font.measure(txt, 'small')) font.draw(ctx, txt, mx, my, { size: 'small', fill: '#FFF09A', out: st.out });
+      // 좁은 금색 판: 흰 글자 + 갈색 외곽선, 더 좁으면 외곽선 없는 갈색 글자(노랑 위 노랑은 안 읽힌다)
+      else if (font.measure(txt, 'small') <= pw + 2 && ph >= 7) font.draw(ctx, txt, mx, my, { size: 'small', fill: '#FFFFFF', out: st.out });
+      else if (font.measure(txt, 'tight') <= pw && ph >= 5) font.draw(ctx, txt, mx, my, { size: 'tight', fill: st.out });
+      else if (pw >= 4) { ctx.fillStyle = st.out; ctx.fillRect(Math.round(mx) - 1, Math.round(my), 3, 1); ctx.fillRect(Math.round(mx), Math.round(my) - 1, 1, 3); }
       return;
     }
-    let size = null, scale = 1;
-    if (room >= 44 && font.measure(txt, 'big', 2) <= room && ph >= 26) { size = 'big'; scale = 2; }
-    else if (room >= 15 && font.measure(txt, 'big', 1) <= room) size = 'big';
-    else if (font.measure(txt, 'small') <= room + 2) size = 'small';
-    if (!size) return;
-    font.draw(ctx, txt, mx, my, { size, scale, fill: '#FFFFFF', out: st.out });
-    if (st.arrow && size === 'big' && ph > 22) arrow(mx, my - (scale === 2 ? 14 : 9), st === PANEL.good);
+    let size = '', scale = 1, t = txt;
+    if (room >= 44 && ph >= 26 && font.measure(txt, 'big', 2) <= room) { size = 'big'; scale = 2; }
+    if (!size && room >= 15) {
+      for (let j = 0; j < texts.length && !size; j++) {
+        if (font.measure(texts[j], 'big', 1) <= room) { size = 'big'; t = texts[j]; }
+        else if (font.measure(texts[j], 'slim', 1) <= room) { size = 'slim'; t = texts[j]; }   // 가는 기호로 한 번 더
+      }
+    }
+    if (!size && ph >= 7) {
+      for (let j = 0; j < texts.length && !size; j++) if (font.measure(texts[j], 'small') <= room + 2) { size = 'small'; t = texts[j]; }
+      // 판 전체 폭(기둥까지)을 쓴다
+      for (let j = 0; j < texts.length && !size; j++) if (font.measure(texts[j], 'small') <= pw + 2) { size = 'small'; t = texts[j]; }
+    }
+    if (!size && ph >= 5) for (let j = 0; j < texts.length && !size; j++) if (font.measure(texts[j], 'tight') <= pw) { size = 'tight'; t = texts[j]; }
+    if (size) {
+      font.draw(ctx, t, mx, my, { size, scale, fill: '#FFFFFF', out: st.out });
+      const lw = font.measure(t, size, scale), lh = font.height(size, scale);
+      const arw = st.arrow && (size === 'big' || size === 'slim') && ph > 22;
+      if (arw) arrow(mx, my - (scale === 2 ? 14 : 9), st === PANEL.good);
+      markSel(sel, mx - lw / 2, my - lh / 2 - (arw ? 6 : 0), mx + lw / 2, my + lh / 2);
+      return;
+    }
+    // 마지막 수단: 판이 비지 않게 ▲/▼(회색 판은 '=')
+    if (st.arrow && pw >= 4) arrowMark(mx, my, st === PANEL.good, pw >= 7);
+    else if (pw >= 4) font.draw(ctx, '=', mx, my, { size: 'tight', fill: '#FFFFFF' });
+  }
+  /* 외곽선 두른 5×3 화살표(아주 좁으면 외곽선 없이) */
+  function arrowMark(x, y, up, outlined) {
+    const ax = Math.round(x), ay = Math.round(y) - 1;
+    if (outlined) {
+      ctx.fillStyle = OUT;
+      if (up) { ctx.fillRect(ax - 1, ay - 1, 3, 1); ctx.fillRect(ax - 2, ay, 5, 1); ctx.fillRect(ax - 3, ay + 1, 7, 3); }
+      else { ctx.fillRect(ax - 3, ay - 1, 7, 3); ctx.fillRect(ax - 2, ay + 2, 5, 1); ctx.fillRect(ax - 1, ay + 3, 3, 1); }
+    }
+    arrow(ax, ay, up);
   }
   function unitIcon(ic, cx, cy) {
     const x = Math.round(cx - ic.w / 2), y = Math.round(cy - ic.h / 2);
@@ -717,14 +911,14 @@ export function createRenderer(cvs) {
     const a = fadeIn(face.d);
     if (!a) return;
     ctx.globalAlpha = a;
-    propSparks(p, 'w' + p.id);
+    propSparks(p, p.id);
     const hit = s.t - p.hitT < 0.1;
     ctx.fillStyle = '#C9CED6';
     trap(face.dx, face.cx, face.dy, top.tL, top.tR, top.ty);
     ctx.fillStyle = hit ? '#B7BEC9' : '#9AA2B0';
     trap(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy);
     const w = face.bx - face.ax, h = face.ay - face.dy;
-    hazard.setTransform(new DOMMatrix().translate(Math.round(face.ax), 0));
+    if (mtx) { mtx.e = Math.round(face.ax); mtx.f = 0; hazard.setTransform(mtx); }
     ctx.fillStyle = hazard;
     const by = face.ay - h * 0.6, bh = Math.max(2, Math.round(h * 0.22));
     ctx.fillRect(Math.round(face.ax), Math.round(by - bh), Math.round(w), bh);
@@ -751,7 +945,7 @@ export function createRenderer(cvs) {
     const a = fadeIn(face.d);
     if (!a) return;
     ctx.globalAlpha = a;
-    propSparks(p, 'c' + p.id);
+    propSparks(p, p.id);
     const hit = s.t - p.hitT < 0.1;
     ctx.fillStyle = '#F0C27E';
     trap(face.dx, face.cx, face.dy, top.tL, top.tR, top.ty);
@@ -783,7 +977,7 @@ export function createRenderer(cvs) {
     const a = fadeIn(face.d);
     if (!a) return;
     ctx.globalAlpha = a;
-    propSparks(p, 'g' + p.id);
+    propSparks(p, p.id);
     const w = face.bx - face.ax, h = face.ay - face.dy;
     // 바닥판
     ctx.fillStyle = '#596277';
@@ -793,9 +987,9 @@ export function createRenderer(cvs) {
     if (project(view, cx, 0.12, p.z)) {
       const sheet = CAPTIVE_ART[k] || 'captive_medic';
       const want = (P.s * 1.0) / 13;
-      const st = lodStep('cap' + p.id, want, STEPS3);
+      const st = lodStep(lodCage, p.id, want, STEPS3);
       const sad = p.passed;
-      const fr = sad ? 2 : ((time * 4 + p.id) | 0) & 1;
+      const fr = sad ? FR.captive.sad[0] : FR.captive.wave[((time * 4 + p.id) | 0) & 1];
       atlas.draw(ctx, sheet, fr, P.x, P.y, st);
       // 말풍선 '!'
       if (!sad && st === 0 && (((time * 2) | 0) & 1)) atlas.draw(ctx, 'bubble', 0, P.x + 9, P.y - 15);
@@ -831,7 +1025,7 @@ export function createRenderer(cvs) {
     const a = fadeIn(P.d);
     if (!a) return;
     const want = (P.s * 1.6) / 15;
-    const st = lodStep('s' + w.id, want, STEPS3);
+    const st = lodStep(lodSaw, w.id, want, STEPS3);
     ctx.fillStyle = '#3A3550';
     ctx.fillRect(Math.round(P.x) - 1, Math.round(P.y - P.s * 0.7), 2, Math.round(P.s * 0.7));
     if (a < 1) ctx.globalAlpha = a;
@@ -849,18 +1043,19 @@ export function createRenderer(cvs) {
     const sheet = f.kind === 'spit' ? 'spit' : f.kind;
     const sh = atlas.sheet(sheet);
     const want = (P.s * (WORLD_H[sheet] || 1.05)) / (sh.frames[0][0].h - 2);
-    const st = lodStep('f' + f.id, want, STEPS3);
+    const st = lodStep(lodFoe, f.id, want, STEPS3);
     let fr;
     if (f.kind === 'spit') {
       const dzq = f.z - s.squad.z;
       const armed = s.phase === 'run' && dzq < 32 && dzq > 6;
-      if (armed && f.cd < 0.35) fr = f.cd < 0.12 ? 4 : f.cd < 0.23 ? 3 : 2;
-      else if (armed && f.cd > 2.25) fr = 4;   // 방금 쐈다
-      else fr = ((time * 3 + f.seed) | 0) & 1;
+      const T = FR.spit.tell;
+      if (armed && f.cd < 0.35) fr = f.cd < 0.12 ? T[2] : f.cd < 0.23 ? T[1] : T[0];
+      else if (armed && f.cd > 2.25) fr = T[2];   // 방금 쐈다
+      else fr = FR.spit.idle[((time * 3 + f.seed) | 0) & 1];
     } else if (moving) {
       const fps = f.kind === 'runner' ? 12 : f.kind === 'brute' ? 5 : 7;
-      fr = ((time * fps + f.seed) | 0) & 3;
-    } else fr = ((time * 2 + f.seed) | 0) & 1 ? 0 : 2;
+      fr = FR.foe.walk[((time * fps + f.seed) | 0) & 3];
+    } else fr = FR.foe.idle[((time * 2 + f.seed) | 0) & 1];
     const pxs = P.x, pys = P.y, ps = P.s;
     ctx.fillStyle = bio.shadow;
     ellipse(pxs, pys, Math.max(2, f.r * 1.1 * ps), Math.max(1, f.r * 0.4 * ps));
@@ -871,8 +1066,8 @@ export function createRenderer(cvs) {
       const sx = Math.round(pxs), sy = Math.round(pys);
       for (let i = 0; i < 3; i++) ctx.fillRect(sx - 5 + i * 4 + ((f.seed + i) & 1), sy - 22 - ((time * 40 + i * 5) % 6 | 0), 1, 3);
     }
-    const white = flashOn('f' + f.id, f.hitT, s.t);
-    const tell = f.kind === 'spit' && fr >= 2 && fr <= 3;
+    const white = flashFoe.on(f.id, f.hitT, s.t, time, reduce);
+    const tell = f.kind === 'spit' && (fr === FR.spit.tell[0] || fr === FR.spit.tell[1]);
     if (tell) { ctx.fillStyle = '#B9F25B'; ellRing(pxs, pys, Math.max(4, f.r * 1.6 * ps), Math.max(2, f.r * 0.6 * ps), 1); }
     const rr = atlas.draw(ctx, sheet, fr, pxs, pys, st, white ? 'white' : '');
     if (tell && (((time * 12) | 0) & 1)) {
@@ -899,12 +1094,13 @@ export function createRenderer(cvs) {
 
   /* ---------- 보스 ---------- */
   function bossFrame(s, b) {
-    if (b.hp <= 0) return 10;
-    if (time - bossImpactT < 0.28) return 5;
-    if (b.slam) return 4;
-    if (time - roarT < 0.9) return 6 + (((time * 8) | 0) & 1);
-    if (b.clash) return 8 + (((time * 6) | 0) & 1);
-    return ((time * 4 * (b.enraged ? 1.25 : 1)) | 0) & 3;
+    const B = FR.boss;
+    if (b.hp <= 0) return B.dead[0];
+    if (time - bossImpactT < 0.28) return B.slam[0];
+    if (b.slam) return B.windup[0];
+    if (time - roarT < 0.9) return B.roar[((time * 8) | 0) & 1];
+    if (b.clash) return B.stomp[((time * 6) | 0) & 1];
+    return B.walk[((time * 4 * (b.enraged ? 1.25 : 1)) | 0) & 3];
   }
   function drawBoss(s, b, lag, bio) {
     const walking = b.hp > 0 && !b.clash;
@@ -913,12 +1109,13 @@ export function createRenderer(cvs) {
     if (bossDeath) {
       const t = time - bossDeath.t0;
       if (t > 1.15) return;
-      if (t < 0.8 && (frameN & 2)) x += 0.12;
+      if (t < 0.8 && (f60 & 2)) x += 0.12;
     }
     if (!project(view, x, 0, z)) return;
     const sh = atlas.sheet('boss');
     const want = (P.s * 6.4) / (sh.frames[0][0].h - 2);
-    const st = lodStep('boss', want, STEPS4);
+    const st = pickStep(Math.min(1, want), lodBoss, STEPS4);
+    lodBoss = st;
     const px = P.x;
     let py = P.y;
     const it = time - bossIntroT;
@@ -927,11 +1124,18 @@ export function createRenderer(cvs) {
     ctx.fillStyle = bio.shadow;
     ellipse(px, P.y, 2.6 * P.s, 2.6 * P.s * 0.34);
     const fr = bossFrame(s, b);
-    const white = b.hp > 0 ? flashOn('boss', b.hitT, s.t) : bossDeath && ((time - bossDeath.t0 < 0.05) || (time - bossDeath.t0 > 0.4 && time - bossDeath.t0 < 0.45));
-    const variant = white ? 'white' : b.enraged ? 'rage' : '';
-    atlas.draw(ctx, 'boss', fr, px, py, st, variant);
-    // 분노: 머리에서 김
-    if (b.enraged && b.hp > 0 && (frameN % 5 === 0)) part(b.x + (Math.random() - 0.5) * 2.5, 6.2, z, (Math.random() - 0.5) * 0.6, 1.5, 0, 0.7, '#F4F6FA', 1, -1, 'smoke');
+    // 피격: 흰 실루엣을 반투명(50%)으로 덧칠, 0.5초에 한 번(V9). 쓰러질 때의 두 번 번쩍임도 움직임 줄이기면 끈다(T10)
+    const dt0 = bossDeath ? time - bossDeath.t0 : 9;
+    const white = b.hp > 0 ? flashBoss.on(-1, b.hitT, s.t, time, reduce) : !reduce && !!bossDeath && (dt0 < 0.05 || (dt0 > 0.4 && dt0 < 0.45));
+    atlas.draw(ctx, 'boss', fr, px, py, st, b.enraged ? 'rage' : '');
+    if (white) {
+      const ga = ctx.globalAlpha;
+      ctx.globalAlpha = ga * 0.5;
+      atlas.draw(ctx, 'boss', fr, px, py, st, 'white');
+      ctx.globalAlpha = ga;
+    }
+    // 분노: 머리에서 김(초당 12번, 화면 주사율과 상관없이)
+    if (b.enraged && b.hp > 0) for (let k = beats(12); k > 0; k--) part(b.x + (Math.random() - 0.5) * 2.5, 6.2, z, (Math.random() - 0.5) * 0.6, 1.5, 0, 0.7, '#F4F6FA', 1, -1, 'smoke');
     // 쓰러지는 중: 연기 연쇄 + 코인 비
     if (bossDeath) {
       const t = time - bossDeath.t0;
@@ -985,38 +1189,41 @@ export function createRenderer(cvs) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
     if (!project(view, vis.x[i], 0, vis.z[i])) return;
     const won = s.phase === 'won';
-    let y = P.y;
+    // 정수 좌표로 먼저 반올림(가장 많이 그리는 곳이라 실수 인자가 상자에 담기지 않게)
+    const px = Math.round(P.x);
+    let y = Math.round(P.y);
     const age = time - vis.born[i];
     if (age < 0.22) y -= Math.round((1 - age / 0.22) * 6);
     else if (age < 0.27 && vis.born[i] > 0) { part(vis.x[i], 0.05, vis.z[i], 0, 0.5, 0, 0.25, '#E6D2B0', 1, 0, 'dust'); vis.born[i] = -9; }
     if (won) y -= Math.round(Math.abs(Math.sin(time * 9 + i * 0.7)) * 2);
     if (vis.helm[i]) {
-      atlas.draw(ctx, 'helmet', 0, P.x, y - 9);
-      if (!won && q.vz >= 0 && muzzle(i)) atlas.draw(ctx, 'flash', (frameN + i) & 1, P.x + 2, y - 13);
+      atlas.draw(ctx, 'helmet', 0, px, y - 9);
+      if (!won && q.vz >= 0 && s.t > 0 && muzzle(i)) atlas.draw(ctx, 'flash', (f60 + i) & 1, px + 2, y - 13);
       return;
     }
     const moving = q.vz > 0.5 && !won;
-    const fr = moving ? ((time * 10 + i * 0.37) | 0) & 3 : 4 + (((time * 2 + i * 0.31) | 0) & 1);
+    const fr = moving ? FR.soldier.walk[((time * 10 + i * 0.37) | 0) & 3] : FR.soldier.idle[((time * 2 + i * 0.31) | 0) & 1];
     const hurt = time - hurtAt < 0.15 && (i * 7 + hurtSeed) % 11 === 0;
-    const fire = !won && q.n > 0 && vis.z[i] > q.z - 0.1 && muzzle(i);
-    const r = atlas.draw(ctx, 'soldier', fr, P.x, y + (fire ? 1 : 0), 0, hurt ? 'hurt' : '');
+    const fire = !won && q.n > 0 && s.t > 0 && vis.z[i] > q.z - 0.1 && muzzle(i);
+    const r = atlas.draw(ctx, 'soldier', fr, px, y + (fire ? 1 : 0), 0, hurt ? 'hurt' : '');
     if (fire) {
-      const ox = Math.round(P.x) - r.ax, oy = Math.round(y + 1) - r.ay;
+      const ox = px - r.ax, oy = y + 1 - r.ay;
       const my = fr === 1 || fr === 3 ? 3 : 4;
-      atlas.draw(ctx, 'flash', (frameN + i) & 1, ox + 12, oy + my - 1);
+      atlas.draw(ctx, 'flash', (f60 + i) & 1, ox + 12, oy + my - 1);
     }
   }
   function drawFlag(s, i, qx, R, z) {
-    const x = qx + [0, -0.55, 0.55][i] * R;
+    const x = qx + FLAG_X[i] * R;
     if (!project(view, x, 0, z)) return;
     let y = P.y - 12;
     if (s.phase === 'won') y -= Math.round(Math.abs(Math.sin(time * 9 + i)) * 2);
     atlas.draw(ctx, 'flag', ((time * 3 + i * 0.5) | 0) & 1, P.x + 3, y);
   }
   function muzzle(i) {
-    if (quality === 'low' && (frameN & 1)) return false;
+    // 총구 불꽃은 60Hz 시계로(120Hz 화면에서 두 배로 번쩍이지 않게, T8)
+    if (quality === 'low' && (f60 & 1)) return false;
     const D = vis.n;
-    return ((frameN * 3 + i * 7) % Math.max(5, (D / 5) | 0)) === 0;
+    return ((f60 * 3 + i * 7) % Math.max(5, (D / 5) | 0)) === 0;
   }
   function drawSpecial(s, m, i, qx, R) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
@@ -1040,15 +1247,15 @@ export function createRenderer(cvs) {
     const won = s.phase === 'won';
     const moving = q.vz > 0.5 && !won;
     const sheet = UNIT_ART[m.k] || 'soldier';
-    let fr = moving ? ((time * 10 + i * 0.5) | 0) & 3 : 4 + (((time * 2 + i) | 0) & 1);
+    let fr = moving ? FR.special.walk[((time * 10 + i * 0.5) | 0) & 3] : FR.special.idle[((time * 2 + i) | 0) & 1];
     let variant = '';
-    if (m.k === 'rocket') { const t = time - rocketT; if (t < 0.36) fr = t < 0.12 ? 6 : t < 0.24 ? 7 : 0; }
+    if (m.k === 'rocket') { const t = time - rocketT; if (t < 0.36) fr = t < 0.12 ? FR.rocket.fire[0] : t < 0.24 ? FR.rocket.fire[1] : FR.special.walk[0]; }
     if (m.k === 'medic' && time - healT < 0.25) variant = 'glow';
     let py = P.y;
     if (won) py -= Math.round(Math.abs(Math.sin(time * 9 + i)) * 2);
     atlas.draw(ctx, sheet, fr, P.x, py, 0, variant);
     // 저격수 조준 반짝임(쿨이 거의 다 찼을 때)
-    if (m.k === 'sniper' && typeof m.cd === 'number' && m.cd < 0.18 && m.cd > 0 && (frameN & 2)) atlas.draw(ctx, 'glint', 0, P.x + 6, py - 14);
+    if (m.k === 'sniper' && typeof m.cd === 'number' && m.cd < 0.18 && m.cd > 0 && (f60 & 2)) atlas.draw(ctx, 'glint', 0, P.x + 6, py - 14);
   }
   function drawHero(s, h, qx, R) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
@@ -1059,14 +1266,16 @@ export function createRenderer(cvs) {
     const lost = s.phase === 'lost';
     const won = s.phase === 'won';
     let fr;
-    if (lost) fr = 10;
-    else if (h.act > 0 || time - castT < 0.22) fr = 11 + (((time * 6) | 0) & 1);
-    else if (q.vz > 0.5 && !won) fr = (((time * 9) | 0) & 3) + 4 * (((time * 4 + 0.5) | 0) & 1);
+    const HF = FR.hero;
+    if (lost) fr = HF.ko[0];
+    else if (h.act > 0 || time - castT < 0.22) fr = HF.cast[((time * 6) | 0) & 1];
+    else if (q.vz > 0.5 && !won) fr = HF.walk[(((time * 9) | 0) & 3) + 4 * (((time * 4 + 0.5) | 0) & 1)];
     else {
-      fr = 8 + (((time * 2) | 0) & 1);
+      fr = HF.idle[((time * 2) | 0) & 1];
       // 가끔 뒤돌아보며 눈을 깜빡인다
       if (time > lookNext + 1.1) lookNext = time + 3 + Math.random() * 3;
-      if (time > lookNext && time < lookNext + 1.1) fr = time - lookNext > 0.5 && time - lookNext < 0.62 ? 14 : 13;
+      // 뒤돌아보고(1.1초) 그 사이 눈을 0.25초(8fps 두 칸) 감는다
+      if (time > lookNext && time < lookNext + 1.1) { const lt = time - lookNext; fr = lt > 0.45 && lt < 0.7 ? HF.blink[0] : HF.look[0]; }
     }
     let py = P.y;
     if (won) py -= Math.round(Math.abs(Math.sin(time * 7)) * 3);
@@ -1078,36 +1287,50 @@ export function createRenderer(cvs) {
       // 기절: 머리 위 어지러운 별
       for (let i = 0; i < 3; i++) {
         const a = time * 5 + (i * 2 * Math.PI) / 3;
-        atlas.draw(ctx, 'star', 1, P.x + Math.cos(a) * 8, topY + 2 + Math.sin(a) * 2);
+        atlas.draw(ctx, 'star', FR.star.f[0], P.x + Math.cos(a) * 8, topY + 2 + Math.sin(a) * 2);
       }
-    } else if (time - readyT < 0.5 && (frameN & 4)) atlas.draw(ctx, 'glint', 1, P.x + 7, topY + 2);
-    // 스킬 중 효과
+    } else if (time - readyT < 0.5 && (f60 & 4)) atlas.draw(ctx, 'glint', 1, P.x + 7, topY + 2);
+    // 스킬 중 효과(시간 기준 빈도: 고리 초당 60/26번, 하트 초당 6번)
     if (h.act > 0 && !lost) {
-      if (h.id === 'mungchi' && frameN % 26 === 0) ring(qx, z, 0.4, R + 2.5, 0.5, '#FFD84A', { follow: true, thick: 2 });
-      if (h.id === 'bori' && frameN % 10 === 0) part(qx + (Math.random() - 0.5) * 2 * R, 1 + Math.random(), q.z + (Math.random() - 0.5) * R, 0, 1.6, 0, 0.9, '#FF6FA0', 1, 0, 'heart');
+      if (h.id === 'mungchi' && beats(60 / 26) > 0) ring(qx, z, 0.4, R + 2.5, 0.5, '#FFD84A', { follow: true, thick: 2 });
+      if (h.id === 'bori') for (let k = beats(6); k > 0; k--) part(qx + (Math.random() - 0.5) * 2 * R, 1 + Math.random(), q.z + (Math.random() - 0.5) * R, 0, 1.6, 0, 0.9, '#FF6FA0', 1, 0, 'heart');
     }
   }
 
   /* ---------- 분대 숫자 말풍선(분대 위, 가까운 게이트가 있으면 흐리게) ---------- */
+  let countText = '', countTextN = -1;
+  const fOpt = { size: 'big', scale: 1, fill: '#FFFFFF', out: OUT };   // 글자 옵션(재사용)
   function drawCount(s, dt, qx) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
+    pill.on = false;
     if (q.n !== lastN) lastN = q.n;
     shownN += (q.n - shownN) * Math.min(1, dt * 9);
     if (Math.abs(q.n - shownN) < 0.5) shownN = q.n;
     countPop = Math.max(0, countPop - dt * 4);
     countTint *= Math.max(0, 1 - dt * 3);
-    if (q.n <= 0) return;
+    // 출발 전(레벨 카드 뒤)에는 그리지 않는다 — 카드 글자와 겹치지 않게(V6)
+    if (q.n <= 0 || cardOn || s.t === 0) return;
     const R = radius(q.n);
     if (!project(view, qx, 1.5 + R * 0.25, q.z + R * 0.2)) return;
     let gateNear = false;
     for (const row of s.rows) { const d = row.z - q.z; if (!row.done && d > 0 && d <= 6) { gateNear = true; break; } }
     const n = Math.round(shownN);
-    const text = n >= 9999 ? 'MAX' : String(n);
+    if (n !== countTextN) { countTextN = n; countText = n >= 9999 ? 'MAX' : String(n); }
+    const text = countText;
     const pop = countPop > 0.5 ? 1 : 0;
     const tw = font.measure(text, 'big', 2);
     const w = tw + 8 + pop * 2, h = 20 + pop * 2;
     const x = Math.round(P.x - w / 2), y = Math.round(P.y - 20 - h / 2);
-    ctx.globalAlpha = gateNear ? 0.35 : 1;
+    const tierN = clamp(q.tier | 0, 0, 3);
+    const top = tierN ? y - 5 : y;
+    // 게이트 앞에서는 35%로 흐리게, 고른 칸 숫자와 겹치면 아예 비켜 준다(반투명 상자가 숫자 위에 얼룩처럼 남지 않게, V7). 부드럽게 바뀐다
+    let target = 1;
+    if (gateNear) target = selLbl.on && selLbl.x0 < x + w && selLbl.x1 > x && selLbl.y0 < y + h + 3 && selLbl.y1 > top ? 0 : 0.35;
+    pillA += (target - pillA) * Math.min(1, dt * 14);
+    if (Math.abs(target - pillA) < 0.02) pillA = target;
+    pill.on = true; pill.x0 = x; pill.x1 = x + w; pill.y0 = top; pill.y1 = y + h + 2;   // 안 그릴 때도 자리는 남긴다(떠오르는 숫자 기준)
+    if (pillA <= 0) return;
+    ctx.globalAlpha = pillA;
     ctx.fillStyle = OUT;
     ctx.fillRect(x + 2, y, w - 4, h); ctx.fillRect(x, y + 2, w, h - 4); ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
     ctx.fillStyle = countTint > 0.1 ? '#2B5EB8' : countTint < -0.1 ? '#A92644' : '#3A3550';
@@ -1116,11 +1339,16 @@ export function createRenderer(cvs) {
     ctx.fillRect(x + 3, y + 2, w - 6, 1);
     ctx.fillStyle = OUT;
     ctx.fillRect(Math.round(P.x) - 2, y + h - 1, 5, 2); ctx.fillRect(Math.round(P.x) - 1, y + h + 1, 3, 1);
-    font.draw(ctx, text, P.x, y + h / 2, { scale: 2 });
-    for (let i = 0; i < 3; i++) {
-      ctx.fillStyle = OUT; ctx.fillRect(Math.round(P.x) - 8 + i * 6, y - 5, 5, 4);
-      ctx.fillStyle = i < q.tier ? TIER[Math.min(3, i + 1)] : '#5C5070';
-      ctx.fillRect(Math.round(P.x) - 7 + i * 6, y - 4, 3, 2);
+    fOpt.size = 'big'; fOpt.scale = 2; fOpt.fill = '#FFFFFF'; fOpt.out = OUT;
+    font.draw(ctx, text, P.x, y + h / 2, fOpt);
+    // 무기 단계 표시: 단계가 있을 때만, 찬 칸만(V15)
+    if (tierN) {
+      const x0 = Math.round(P.x) - ((tierN * 6 - 1) >> 1);
+      for (let i = 0; i < tierN; i++) {
+        ctx.fillStyle = OUT; ctx.fillRect(x0 + i * 6, y - 5, 5, 4);
+        ctx.fillStyle = TIER[Math.min(3, i + 1)];
+        ctx.fillRect(x0 + 1 + i * 6, y - 4, 3, 2);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -1160,13 +1388,14 @@ export function createRenderer(cvs) {
     const i = (q.sp || []).findIndex((m) => m.k === 'rocket');
     const sl = i >= 0 ? slotPos(q, i, R, qx) : null;
     const ox = sl ? sl.x - qx : 0, oz = sl ? sl.z - q.z : 0;
+    const puffs = beats(30);   // 연기 꼬리: 초당 30번(주사율과 상관없이, T8)
     for (const rk of list) {
       const T = rk.T || 1;
       const u = clamp(1 - (rk.t + lag) / T, 0, 1);
       const x = rk.x0 + (rk.x - rk.x0) * u + ox * (1 - u), z = rk.z0 + (rk.z - rk.z0) * u + oz * (1 - u), y = 0.9 + 3 * 4 * u * (1 - u);
       if (!project(view, x, y, z)) continue;
-      atlas.draw(ctx, 'rocketShot', (frameN >> 1) & 1, P.x, P.y + 3);
-      if (frameN & 1) part(x, y - 0.2, z - 0.4, (Math.random() - 0.5) * 0.4, 0.3, 0, 0.45, '#C9CED6', 1, -0.5, 'smoke');
+      atlas.draw(ctx, 'rocketShot', (f60 >> 1) & 1, P.x, P.y + 3);
+      for (let k = puffs; k > 0; k--) part(x, y - 0.2, z - 0.4, (Math.random() - 0.5) * 0.4, 0.3, 0, 0.45, '#C9CED6', 1, -0.5, 'smoke');
     }
   }
   function drawTracers(dt) {
@@ -1196,8 +1425,10 @@ export function createRenderer(cvs) {
     for (const sp of s.spits) {
       if (!project(view, sp.x, 0.02, sp.z)) continue;
       const k = clamp(1 - (sp.t + lag) / (sp.T || 1), 0, 1);
-      ctx.fillStyle = `rgba(185,242,91,${(0.22 + 0.3 * k).toFixed(2)})`;
+      ctx.fillStyle = '#B9F25B';
+      ctx.globalAlpha = 0.22 + 0.3 * k;
       ellipse(P.x, P.y, 1.2 * P.s, 1.2 * P.s * 0.38);
+      ctx.globalAlpha = 1;
       ctx.fillStyle = '#E8FFB0';
       ellRing(P.x, P.y, Math.max(2, 1.2 * P.s * (1 - k)), Math.max(1, 1.2 * P.s * 0.38 * (1 - k)), 1);
       ctx.fillStyle = '#B9F25B';
@@ -1207,15 +1438,27 @@ export function createRenderer(cvs) {
     if (b && b.slam && b.hp > 0) {   // 보스가 쓰러지면 예고를 그리지 않는다
       const k = clamp(1 - b.slam.t / b.slam.T, 0, 1);
       const pulse = (((time * 4) | 0) & 1) ? 0.06 : 0;
-      ctx.fillStyle = `rgba(232,56,79,${(0.24 + pulse).toFixed(2)})`;
+      ctx.fillStyle = '#E8384F';
+      ctx.globalAlpha = 0.24 + pulse;
       groundQuad(b.slam.x0 + 0.1, b.slam.x1 - 0.1, q.z - 3.5, b.z - 0.5, 0.02);
-      ctx.fillStyle = 'rgba(232,56,79,.5)';
+      ctx.globalAlpha = 0.5;
       groundQuad(b.slam.x0 + 0.1, b.slam.x1 - 0.1, q.z - 3.5, q.z - 3.5 + (b.z - q.z + 3) * k, 0.03);
-      ctx.fillStyle = '#FFE0D8';
+      ctx.globalAlpha = 1;
+      // 분대 쪽으로 행진하는 아래 화살표: 2px 두께의 V(팔 ~1.3u, 깊이 1.1u — 화면에서 납작해지지 않게) + 짙은 그림자 줄(V14)
       const xm = (b.slam.x0 + b.slam.x1) / 2;
       for (let i = 0; i < 6; i++) {
         const zz = q.z - 2 + ((((i * 3 - time * 6) % 18) + 18) % 18);
-        if (zz < b.z - 1) { groundQuad(xm - 0.7, xm - 0.1, zz + 0.3, zz + 0.55, 0.04); groundQuad(xm + 0.1, xm + 0.7, zz + 0.3, zz + 0.55, 0.04); groundQuad(xm - 0.25, xm + 0.25, zz, zz + 0.35, 0.04); }
+        if (zz > b.z - 1.7 || !project(view, xm, 0.04, zz)) continue;
+        const tx = P.x, ty = P.y;
+        project(view, xm - 0.65, 0.04, zz + 1.1);
+        const lx = P.x, ly = P.y;
+        project(view, xm + 0.65, 0.04, zz + 1.1);
+        const rx = P.x, ry = P.y;
+        ctx.fillStyle = '#A92644';
+        pline(lx, ly + 2, tx, ty + 2); pline(tx, ty + 2, rx, ry + 2);
+        ctx.fillStyle = '#FFE0D8';
+        pline(lx, ly, tx, ty); pline(tx, ty, rx, ry);
+        pline(lx, ly + 1, tx, ty + 1); pline(tx, ty + 1, rx, ry + 1);
       }
     }
     for (const r of rings) {
@@ -1263,14 +1506,14 @@ export function createRenderer(cvs) {
         case 'lunge': {
           if (!project(view, f.x, 0, f.z - 0.3)) break;
           const sh = f.sheet === 'brute' ? 'brute' : f.sheet;
-          const fr = sh === 'brute' ? 1 : 4 + (u > 0.5 ? 1 : 0);
+          const fr = sh === 'brute' ? FR.brute.lunge[0] : FR.foe.lunge[u > 0.5 ? 1 : 0];
           atlas.draw(ctx, sh, fr, P.x, P.y);
           break;
         }
         case 'sadCaptive': {
           if (!project(view, f.x, 0.1, f.z)) break;
           const st = P.s > 12 ? 0 : 1;
-          atlas.draw(ctx, CAPTIVE_ART[f.k] || 'captive_medic', 2, P.x, P.y, st);
+          atlas.draw(ctx, CAPTIVE_ART[f.k] || 'captive_medic', FR.captive.sad[0], P.x, P.y, st);
           if (((f.t * 6) | 0) & 1) atlas.draw(ctx, 'tear', 0, P.x + 5, P.y - 7);
           break;
         }
@@ -1279,7 +1522,7 @@ export function createRenderer(cvs) {
           if (!project(view, f.x, 0, f.z)) break;
           const sh = UNIT_ART[f.k] || 'soldier';
           if (u < 0.75) {
-            const r = atlas.draw(ctx, sh, 4, P.x + ((frameN & 2) ? 1 : -1), P.y);
+            const r = atlas.draw(ctx, sh, FR.special.hit[0], P.x + ((f60 & 2) ? 1 : -1), P.y);
             for (let i = 0; i < 3; i++) { const a = f.t * 9 + i * 2.1; atlas.draw(ctx, 'star', 1, P.x + Math.cos(a) * 7, Math.round(P.y) - r.ay + Math.sin(a) * 2); }
           } else if (!f.n) { f.n = 1; fx('puff', f.x, 0.5, f.z, 0.3, { step: 1 }); }
           break;
@@ -1288,9 +1531,14 @@ export function createRenderer(cvs) {
           // 호위가 부족해 울며 떠난다
           const x = f.x + f.vx * f.t, z = f.z + f.vz * f.t;
           if (!project(view, x, 0, z)) break;
-          const sh = UNIT_ART[f.k] || 'soldier';
-          const r = atlas.draw(ctx, sh, ((f.t * 12) | 0) & 3, P.x, P.y);
-          if (((f.t * 8) | 0) & 1) atlas.draw(ctx, 'tear', 0, P.x - 6, Math.round(P.y) - r.ay + 6);
+          // 카메라 쪽으로 뛰어오므로 앞모습(포로 그림의 우는 얼굴)으로, 깡충깡충 + 두 눈 옆으로 눈물이 흐른다(V12)
+          const sh = CAPTIVE_ART[f.k] || 'captive_medic';
+          const hop = Math.round(Math.abs(Math.sin(f.t * 13)) * 3);
+          const r = atlas.draw(ctx, sh, FR.captive.sad[0], P.x, P.y - hop);
+          const eyeY = Math.round(P.y - hop) - r.ay + 7;
+          const drip = ((f.t * 7) | 0) % 3;
+          atlas.draw(ctx, 'tear', 0, P.x - r.ax + 2, eyeY + 2 + drip);
+          atlas.draw(ctx, 'tear', 0, P.x - r.ax + 11, eyeY + 2 + ((drip + 1) % 3));
           break;
         }
         default:
@@ -1298,18 +1546,22 @@ export function createRenderer(cvs) {
     }
     void q; void qx;
   }
+  /* 살아 있는 파편만 돈다. 죽은 칸은 빈 칸 목록으로 돌려주고, 살아 있는 목록은 순서를 지켜 당긴다(그리는 순서가 바뀌어 깜빡이지 않게) */
   function drawParts(dt) {
-    for (const p of parts) {
-      if (!p.on) continue;
+    let j = 0;
+    for (let k = 0; k < nLive; k++) {
+      const idx = pLive[k];
+      const p = parts[idx];
       p.life -= dt;
-      if (p.life <= 0) { p.on = false; continue; }
+      if (p.life <= 0) { p.on = false; pFree[nFree++] = idx; continue; }
+      pLive[j++] = idx;
       p.vy -= p.g * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.y < 0) { p.y = 0; p.vy *= -0.3; p.vx *= 0.6; p.vz *= 0.6; }
       if (!project(view, p.x, p.y, p.z)) continue;
       if (p.spr) {
         const fr = p.spr === 'coin' ? ((time * 10) | 0) & 3 : p.spr === 'smoke' ? (p.life < p.max * 0.5 ? 1 : 0) : 0;
-        if (p.life < p.max * 0.25 && (frameN & 1)) continue;
+        if (p.life < p.max * 0.25 && (f60 & 1)) continue;
         const r = atlas.get(p.spr, fr);
         atlas.blit(ctx, r, Math.round(P.x - r.w / 2), Math.round(P.y - r.h / 2));
         continue;
@@ -1318,20 +1570,24 @@ export function createRenderer(cvs) {
       const sz = P.s > 10 ? p.size : 1;
       ctx.fillRect(Math.round(P.x), Math.round(P.y), sz, sz);
     }
+    nLive = j;
   }
-  function drawFloats(dt) {
+  function drawFloats(dt, show) {
     for (const f of floats) {
       if (!f.on) continue;
       f.life -= dt;
       if (f.life <= 0) { f.on = false; continue; }
       f.y += dt * f.rise;
       f.z += f.vz * dt;
-      if (!project(view, f.x, f.y, f.z)) continue;
+      if (!show || !project(view, f.x, f.y, f.z)) continue;
       const k = 1 - f.life / f.max;
       const scale = f.scale === 2 && k < 0.07 ? 1 : f.scale;   // 작게 떴다가 커진다
+      let y = P.y;
+      // 게이트 결과 숫자는 말풍선(무기 단계 칸 포함) 위 6px 이상에서(V4). 다 큰 크기 기준이라 커질 때 튀지 않는다
+      if (f.pill && pill.on) { const lim = pill.y0 - 6 - font.height('big', f.scale) / 2; if (y > lim) y = lim; }
       ctx.globalAlpha = f.life < 0.2 ? 0.5 : 1;
-      if (f.icon) drawIconText(f.icon, f.text, P.x, P.y, f.fill, f.out, 1);
-      else font.draw(ctx, f.text, P.x, P.y, { scale, fill: f.fill, out: f.out });
+      if (f.icon) drawIconText(f.icon, f.text, P.x, y, f.fill, f.out, 1);
+      else { fOpt.size = 'big'; fOpt.scale = scale; fOpt.fill = f.fill; fOpt.out = f.out; font.draw(ctx, f.text, P.x, y, fOpt); }
       ctx.globalAlpha = 1;
     }
   }
@@ -1361,23 +1617,77 @@ export function createRenderer(cvs) {
     }
   }
 
-  /* ---------- 컷인(첫 스킬, 보스전 첫 스킬만) ---------- */
+  /* ---------- 컷인(첫 스킬, 보스전 첫 스킬만) ----------
+     한글 스킬 이름은 띠 높이만 한 작은 덧캔버스에(전체 화면 크기 캔버스를 첫 스킬 때 만들지 않는다, T5).
+     덧캔버스와 영웅별 제목 그림은 준비가 끝난 뒤·화면 크기가 바뀐 뒤 쉬는 틈에 미리 만든다. */
   let ov = null, octx = null, ovShown = false;
+  const titles = new Map();    // 영웅 id → { c, ox, oy } (미리 그린 제목)
+  let titleKey = '';
+  const idle = (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 400 }) : setTimeout(fn, 30));
+  function band() {
+    const hh = Math.min(66, Math.round(VH * 0.16));
+    return { hh, y0: Math.round(VH * 0.3) };
+  }
   function sizeOverlay() {
-    ov.width = Math.round(cssW * dpr); ov.height = Math.round(cssH * dpr);
-    ov.style.width = cssW + 'px'; ov.style.height = cssH + 'px';
+    if (!ov) return;
+    const { hh, y0 } = band();
+    const w = Math.round(cssW * dpr), h = Math.max(1, hh * K);
+    if (ov.width !== w) ov.width = w;
+    if (ov.height !== h) ov.height = h;
+    ov.style.top = y0 * cssPer + 'px';
+    ov.style.width = cssW + 'px';
+    ov.style.height = hh * cssPer + 'px';
+    ovShown = true; clearOverlay();
   }
   function overlay() {
     if (ov || typeof document === 'undefined' || !cvs.parentNode) return ov;
     ov = document.createElement('canvas');
     ov.setAttribute('aria-hidden', 'true');
-    ov.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none;z-index:1;';
+    ov.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none;z-index:1;display:none;';
     cvs.parentNode.insertBefore(ov, cvs.nextSibling);
     octx = ov.getContext('2d');
     sizeOverlay();
     return ov;
   }
-  function clearOverlay() { if (octx && ovShown) { octx.clearRect(0, 0, ov.width, ov.height); ovShown = false; } }
+  function clearOverlay() {
+    if (octx && ovShown) { octx.clearRect(0, 0, ov.width, ov.height); ovShown = false; ov.style.display = 'none'; }
+  }
+  function titleFont() { const big = Math.round(Math.min(28, cssW * 0.07) * dpr); return { big, small: Math.round(big * 0.55) }; }
+  function renderTitles() {
+    if (typeof document === 'undefined' || !cssW) return;
+    const { big, small } = titleFont();
+    const key = big + '|' + dpr;
+    if (key === titleKey) return;
+    titles.clear();
+    titleKey = key;
+    const lw1 = Math.max(3, big * 0.2), lw2 = Math.max(2, small * 0.25);
+    for (const id of Object.keys(HEROES)) {
+      const H = HEROES[id];
+      if (!H || !H.skill) continue;
+      const c = mkCanvas(1, 1);
+      const g = c.getContext('2d');
+      const f1 = `${big}px Jua, "Black Han Sans", sans-serif`, f2 = `${small}px Jua, "Black Han Sans", sans-serif`;
+      g.font = f1; const w1 = g.measureText(H.skill.name + '!').width;
+      g.font = f2; const w2 = g.measureText(H.name).width;
+      const pad = Math.ceil(lw1) + 2;
+      c.width = Math.ceil(Math.max(w1, w2) + pad * 2);
+      c.height = Math.ceil(big * 0.95 + small + pad * 2 + big * 0.5);
+      const oy = pad + big / 2;
+      g.textAlign = 'left'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+      g.font = f1; g.lineWidth = lw1; g.strokeStyle = OUT;
+      g.strokeText(H.skill.name + '!', pad, oy); g.fillStyle = '#FFF4B0'; g.fillText(H.skill.name + '!', pad, oy);
+      g.font = f2; g.lineWidth = lw2;
+      g.strokeText(H.name, pad, oy + big * 0.95); g.fillStyle = '#FFFFFF'; g.fillText(H.name, pad, oy + big * 0.95);
+      titles.set(id, { c, ox: pad, oy });
+    }
+  }
+  function prepCut() {
+    overlay();
+    const go = () => idle(renderTitles);
+    if (typeof document !== 'undefined' && document.fonts && document.fonts.load) document.fonts.load('28px Jua').then(go, go);
+    else go();
+  }
+  function idleAfterReady() { idle(prepCut); }
   function drawCut(dt) {
     if (!cut) return;
     cut.t += dt;
@@ -1388,8 +1698,7 @@ export function createRenderer(cvs) {
     const t = cut.t;
     const inK = Math.min(1, t / 0.1), outK = t > D - 0.12 ? (t - (D - 0.12)) / 0.12 : 0;
     const slide = Math.round((1 - inK) * -BW + outK * BW);
-    const hh = Math.min(66, Math.round(BH * 0.16));
-    const y0 = Math.round(BH * 0.3);
+    const { hh, y0 } = band();
     for (let y = 0; y < hh; y++) {
       const sk = Math.round((hh - y) * 0.35);
       ctx.fillStyle = y < 2 || y >= hh - 2 ? '#FFD84A' : y === 2 || y === hh - 3 ? OUT : art.color;
@@ -1405,15 +1714,17 @@ export function createRenderer(cvs) {
     const sc = BW >= 170 ? 3 : 2;
     const px = slide + 6, py = y0 + Math.round((hh - fr.h * sc) / 2);
     ctx.drawImage(fr.img, fr.sx, fr.sy, fr.w, fr.h, px, py, fr.w * sc, fr.h * sc);
-    // 한글 스킬 이름은 위 덧캔버스에(Jua)
+    // 한글 스킬 이름은 띠 크기 덧캔버스에(Jua). 띠 위쪽이 덧캔버스 0
     const o = overlay();
     if (!o) return;
+    if (!ovShown) { ov.style.display = 'block'; ovShown = true; }
     octx.clearRect(0, 0, ov.width, ov.height);
-    ovShown = true;
     if (!H) return;
-    const k = cssPer * dpr;
-    const X = (px + fr.w * sc + 8) * k, Y = (y0 + hh * 0.42) * k;
-    const big = Math.round(Math.min(28, cssW * 0.07) * dpr);
+    const X = (px + fr.w * sc + 8) * K, Y = hh * 0.42 * K;
+    const tl = titles.get(cut.id);
+    if (tl) { octx.drawImage(tl.c, Math.round(X - tl.ox), Math.round(Y - tl.oy)); return; }
+    // 아직 제목을 미리 못 그렸으면(글꼴이 늦게 왔을 때) 바로 쓴다
+    const { big, small } = titleFont();
     octx.textAlign = 'left'; octx.textBaseline = 'middle'; octx.lineJoin = 'round';
     octx.font = `${big}px Jua, "Black Han Sans", sans-serif`;
     octx.lineWidth = Math.max(3, big * 0.2);
@@ -1421,7 +1732,6 @@ export function createRenderer(cvs) {
     octx.strokeText(H.skill.name + '!', X, Y);
     octx.fillStyle = '#FFF4B0';
     octx.fillText(H.skill.name + '!', X, Y);
-    const small = Math.round(big * 0.55);
     octx.font = `${small}px Jua, "Black Han Sans", sans-serif`;
     octx.lineWidth = Math.max(2, small * 0.25);
     octx.strokeText(H.name, X, Y + big * 0.95);
@@ -1439,8 +1749,10 @@ export function createRenderer(cvs) {
     if (frozen && !dirty) return;
     dirty = false;
     const rdt = frozen ? 0 : Math.min(0.1, Math.max(0, dt));
+    prevTime = time;
     time += rdt;
-    frameN++;
+    f60 = (time * 60) | 0;      // 60Hz 시계(깜빡임·박자는 프레임 수가 아니라 이것으로, T8)
+    selLbl.on = false;
     const q = s.squad;
     const bio = BIOME[biomeOf(s.L || 1).id] || BIOME.desert;
     alpha = clamp(alpha || 0, 0, 1);
@@ -1488,12 +1800,11 @@ export function createRenderer(cvs) {
     const sp = sq.sp;
     if (q.n > 0) for (let i = 0; i < sp.length; i++) push(slotPos(sq, i, R, qx).z, 7, sp[i], i);
     if (s.hero && (q.n > 0 || s.phase === 'lost')) push(heroZ(sq, R), 8, s.hero);
-    order.length = nItems;
-    for (let i = 0; i < nItems; i++) order[i] = items[i];
-    order.sort(byDepth);
+    const nOrd = sortItems();
     // 길가 소품은 먼저(가까운 나무가 게이트 숫자를 가리지 않게)
-    for (const it of order) if (it.k === 10) drawScenery(it.o, it.i, it.x, it.z);
-    for (const it of order) {
+    for (let j = 0; j < nOrd; j++) { const it = items[sortKeys[j] & 1023]; if (it.k === 10) drawScenery(it.o, it.i, it.x, it.z); }
+    for (let j = 0; j < nOrd; j++) {
+      const it = items[sortKeys[j] & 1023];
       switch (it.k) {
         case 1: drawRow(s, it.o); break;
         case 2: if (it.o.kind === 'wall') drawWall(s, it.o); else if (it.o.kind === 'cage') drawCage(s, it.o); else drawCrate(s, it.o); break;
@@ -1508,9 +1819,13 @@ export function createRenderer(cvs) {
       }
     }
     // 오래된 렌더러 상태 정리
-    if (lod.size > 600) lod.clear();
-    if (flashes.size > 300) flashes.clear();
+    if (lodScen.size > 400) lodScen.clear();
+    if (lodFoe.size > 600) lodFoe.clear();
+    if (lodSaw.size > 200) lodSaw.clear();
+    if (lodCage.size > 200) lodCage.clear();
+    if (flashFoe.size > 300) flashFoe.clear();
     if (hitSeen.size > 300) hitSeen.clear();
+    if (bruteStep.size > 300) bruteStep.clear();
     if (pendingGet.length && time - pendingGet[0].t > 2) pendingGet.shift();
 
     drawSpits(s, lag);
@@ -1521,25 +1836,30 @@ export function createRenderer(cvs) {
     drawFx(s, rdt, qx);
     drawParts(rdt);
     drawCount(s, rdt, qx);
-    drawFloats(rdt);   // 게이트 숫자는 말풍선 위에(R3)
+    drawFloats(rdt, !cardOn && s.t > 0);   // 게이트 숫자는 말풍선 위에(R3·V4), 출발 전에는 안 그린다(V6)
     if (bio === BIOME.snow) drawSnow(rdt);
     drawFlies(rdt);
     drawCut(rdt);
     if (flashA > 0) {
-      ctx.fillStyle = `rgba(${flashRGB},${Math.min(0.5, flashA).toFixed(3)})`;
+      ctx.fillStyle = flashCss;
+      ctx.globalAlpha = Math.min(0.5, flashA);
       ctx.fillRect(0, 0, BW, BH);
+      ctx.globalAlpha = 1;
       flashA = Math.max(0, flashA - rdt * 1.8);
     }
     if (q.n > 0 && q.n < 8 && s.phase !== 'won') {
-      // 병력이 아주 적으면 가장자리를 천천히 붉게(번쩍이지 않게)
-      const a = 0.16 + 0.08 * Math.sin(time * 3);
-      ctx.fillStyle = `rgba(169,38,68,${a.toFixed(3)})`;
+      // 병력이 아주 적으면 보이는 화면 가장자리를 천천히 붉게(번쩍이지 않게)
+      const W = Math.floor(VW), Hh = Math.floor(VH);
+      ctx.fillStyle = '#A92644';
+      ctx.globalAlpha = 0.16 + 0.08 * Math.sin(time * 3);
       for (let i = 0; i < 3; i++) {
         const m = i * 3;
-        ctx.fillRect(m, m, BW - 2 * m, 3); ctx.fillRect(m, BH - m - 3, BW - 2 * m, 3);
-        ctx.fillRect(m, m + 3, 3, BH - 2 * m - 6); ctx.fillRect(BW - m - 3, m + 3, 3, BH - 2 * m - 6);
+        ctx.fillRect(m, m, W - 2 * m, 3); ctx.fillRect(m, Hh - m - 3, W - 2 * m, 3);
+        ctx.fillRect(m, m + 3, 3, Hh - 2 * m - 6); ctx.fillRect(W - m - 3, m + 3, 3, Hh - 2 * m - 6);
       }
+      ctx.globalAlpha = 1;
     }
+    spawnBudget = SPAWN_CAP;
     drawMs += (performance.now() - tg0 - drawMs) * 0.05;
   }
 
@@ -1559,9 +1879,15 @@ export function createRenderer(cvs) {
   function floatCompat(x, y, z, text, color) { float(x, y, z, String(text).replace('−', '-').replace('×', 'x').replace('÷', '/'), color || '#FFFFFF'); }
 
   const api = {
-    view, screen, resize, draw, events, reset, setQuality, setShake, setPreview, setFrozen, setHudTarget,
+    view, screen, resize, draw, events, reset, setQuality, setShake, setPreview, setFrozen, setCard, setHudTarget,
     portrait, icon, ready, burst: burstCompat, float: floatCompat,
-    get info() { return { BW, BH, K, dpr, cssPer, quality, frozen: frozenSet || stillFor > 0.25, pages: atlas.pages.length, groundMs: +groundMs.toFixed(2), putMs: +putMs.toFixed(2), drawMs: +drawMs.toFixed(2) }; },
+    get info() {
+      return {
+        BW, BH, K, dpr, cssPer, quality, frozen: frozenSet || stillFor > 0.25, reduce, pages: atlas.pages.length,
+        groundMs: +groundMs.toFixed(2), putMs: +putMs.toFixed(2), drawMs: +drawMs.toFixed(2),
+        lateBakes: atlas.lateBakes, sealed: atlas.sealed, parts: nLive,
+      };
+    },
   };
   if (typeof window !== 'undefined') window.__squadRenderer = api;
   return api;

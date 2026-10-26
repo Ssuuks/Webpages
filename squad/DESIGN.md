@@ -52,7 +52,7 @@ cell.op         = 'add' | 'mul' | 'div' | 'unit'    // unit 칸: { op:'unit', v,
 
 렌더러 API (`createRenderer(canvas)`):
 - `view` — 버퍼 픽셀 기준 카메라, `screen` — `{ w, h, col }` CSS 픽셀(조작 계산용)
-- `resize(w, h, dpr)`, `draw(s, alpha, dt, prevZ)`, `events(s, ev)`, `reset()`, `setQuality(q)`, `setShake(on)`, `setPreview(on)`, `setFrozen(on)`(일시정지·결과 화면에서 애니메이션 멈춤), `setHudTarget(x, y)`(코인이 날아갈 CSS 좌표)
+- `resize(w, h, dpr)`, `draw(s, alpha, dt, prevZ)`, `events(s, ev)`, `reset()`, `setQuality(q)`, `setShake(on)`, `setPreview(on)`, `setFrozen(on)`(일시정지·결과 화면에서 애니메이션 멈춤), `setCard(on)`(레벨 카드 뒤에서 병력 숫자·떠오르는 숫자 숨김), `setHudTarget(x, y)`(코인이 날아갈 CSS 좌표). 글자·아이콘·시트는 `ready` 전에 모두 굽는다 — 준비 뒤 게임 중 굽기는 0이어야 한다(`info.lateBakes`)
 - `portrait(id, scale)` → 영웅 얼굴 캔버스(DOM 버튼·영웅 화면용), `icon(name, scale)` → 병과·상자 아이콘 캔버스
 
 ## 5. 저장
