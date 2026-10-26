@@ -4,7 +4,7 @@ const VERSION = 'squad-v2.0.0';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './assets/main.js', './assets/core.js', './assets/render.js', './assets/view.js', './assets/sprites.js',
-  './assets/audio.js', './assets/music.js', './assets/store.js', './assets/save.js', './assets/roster.js',
+  './assets/audio.js', './assets/music.js', './assets/store.js', './assets/save.js', './assets/roster.js', './assets/caltable.js',
   './assets/icon.svg', './assets/icon-180.png', './assets/icon-192.png', './assets/icon-512.png',
 ];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];

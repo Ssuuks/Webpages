@@ -585,3 +585,12 @@ test('오프라인 캐시 목록에 게임이 불러오는 모든 파일이 있�
   walk('assets/main.js');
   for (const f of seenFiles) assert.ok(shell.has(f), `sw.js SHELL에 ${f}가 없다`);
 });
+
+test('보정 표는 실제 보정과 같다(규칙을 바꾸면 node squad/tools/caltable.mjs 로 다시 만든다)', async () => {
+  const { CAL } = await import('../assets/caltable.js');
+  assert.equal(CAL.sim, C.SIM, '보정 표의 SIM이 낡았다');
+  for (let L = 1; L <= 60; L += 3) {
+    const real = C.calibrateLevel(L);
+    for (const f of C.CAL_FIELDS) assert.equal(CAL.levels[L][f], real[f], `L${L} ${f}`);
+  }
+});

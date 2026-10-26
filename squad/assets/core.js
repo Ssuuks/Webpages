@@ -1,4 +1,5 @@
 import { HEROES, heroLerp } from './roster.js';
+import { CAL } from './caltable.js';
 
 /* 숫자부대 돌격 — 시뮬레이션 코어 (DOM 없음)
    - 고정 틱 DT, 시드 난수(mulberry32). 상태는 평범한 객체라 structuredClone으로 복제된다.
@@ -1410,11 +1411,27 @@ export function spWorth(s, k) {
   return 3 + q.n * { medic: 0.1, sniper: 0.09, rocket: 0.12 }[k];
 }
 
-/* 기준 봇이 강화 없이 한 판 돌아 보스 체력·별 기준을 정한다. 기준 봇이 지면 다른 시드로 다시 만든다. */
+/* 기준 봇이 강화 없이 한 판 돌아 보스 체력·별 기준을 정한다. 기준 봇이 지면 다른 시드로 다시 만든다.
+   자주 하는 레벨(caltable.js)은 미리 계산해 둔 값을 써서 레벨 시작이 늦지 않게 한다. */
 const cache = new Map();
+export const CAL_FIELDS = ['attempt', 'bossHp', 'arrive', 'arriveStrong', 'arriveWeak', 'par', 'calTier'];
 export function prepareLevel(L) {
   const key = Math.max(1, Math.floor(L));
   if (cache.has(key)) return cache.get(key);
+  const pre = CAL.sim === SIM && CAL.levels[key];
+  if (pre) {
+    const lv = buildLevel(key, pre.attempt);
+    for (const f of CAL_FIELDS) lv[f] = pre[f];
+    cache.set(key, lv);
+    return lv;
+  }
+  const lv = calibrateLevel(key);
+  cache.set(key, lv);
+  return lv;
+}
+
+/* 보정 표를 쓰지 않고 실제로 보정한다(표 만들기·검증용) */
+export function calibrateLevel(key) {
   let lv = null;
   for (let attempt = 0; attempt < 8; attempt++) {
     lv = buildLevel(key, attempt);
@@ -1428,7 +1445,6 @@ export function prepareLevel(L) {
     lv.bossHp = Math.round(dps(lv.arrive) * lv.params.bossKill * 0.6);
     lv.par = Math.max(1, Math.round(lv.arrive * 0.5));
   }
-  cache.set(key, lv);
   return lv;
 }
 
