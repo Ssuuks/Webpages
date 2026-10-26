@@ -5,7 +5,7 @@ export const UNITS = {
   medic: {
     name: '의무병', unlock: 5, color: '#FF8FB8',
     line: '다친 병사를 일으켜 세워요',
-    desc: '좀비·벽·독침에 잃은 병사의 40%를 몇 초 뒤 되살려요(게이트 손실은 제외)',
+    desc: '게이트가 아닌 곳(좀비·벽·독침·톱날·보스)에서 잃은 병사의 60%를 몇 초 뒤 되살려요',
     tip: '의무병 합류! 잃은 병사 일부가 다시 일어나요',
   },
   sniper: {
@@ -27,10 +27,10 @@ export const UNIT_IDS = Object.keys(UNITS);
    스킬은 게이지가 차면 버튼(또는 자동)으로 쓴다. 수치는 Lv1→Lv5 선형. */
 export const HEROES = {
   mungchi: {
-    name: '뭉치 대장', role: '대장', color: '#FF9F43',
+    name: '뭉치 대장', role: '지휘', color: '#FF9F43',
     look: '별 달린 큰 철모가 눈썹까지 덮은 동글이, 주황 스카프, 몸만 한 확성기',
     line: '목소리는 부대 최강, 용기는… 연습 중!',
-    unlock: { type: 'clear', L: 2, text: '레벨 3부터 함께해요' },
+    unlock: { type: 'clear', L: 2, text: '레벨 2를 깨면 합류' },
     passive: { name: '집합 나팔', text: (lv) => `덧셈 게이트를 쏴서 올리는 속도 ×${lerp(1.1, 1.25, lv).toFixed(2)}` },
     skill: { name: '돌격 나팔', cd: 16, dur: 5, text: (lv) => `5초 동안 총알 피해 ×${lerp(1.4, 1.6, lv).toFixed(2)} (게이트 올리기에도 적용)` },
   },
@@ -47,8 +47,8 @@ export const HEROES = {
     look: '고양이귀 비니, 졸린 반달눈, 키 두 배의 총, 꼬리 끝 리본',
     line: '하암… 한 발이면 돼. 깨우지 마.',
     unlock: { type: 'stars', n: 30, text: '별 30개를 모으면 합류' },
-    passive: { name: '고양이 눈', text: (lv) => `1.8초마다 직접 저격(저격수가 있으면 저격 +${Math.round(lerp(30, 50, lv))}%)` },
-    skill: { name: '백발백묘', cd: 15, dur: 3, text: () => '3초 동안 강한 적을 12발 연속 저격' },
+    passive: { name: '고양이 눈', text: (lv) => `1.8초마다 직접 저격(위력 ${Math.round(lerp(18, 28, lv))}%). 저격수가 있으면 대신 저격수 위력 +${Math.round(lerp(30, 50, lv))}%` },
+    skill: { name: '백발백묘', cd: 15, dur: 3, text: (lv) => `3초 동안 강한 적을 12발 연속 저격(한 발 위력 ${Math.round(lerp(40, 60, lv))}%, 보스전 추가 피해 한도 +${30 + 3 * (Math.max(1, Math.min(HERO_MAX_LV, lv)) - 1)}%)` },
   },
 };
 export const HERO_IDS = Object.keys(HEROES);

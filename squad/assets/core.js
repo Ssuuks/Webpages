@@ -19,7 +19,7 @@ export const WEAPON = [1, 1.35, 1.7, 2.1];
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
 export const VERSION = 'squad-v1';   // 레벨 배치의 소금 — 바꾸지 않는다(바꾸면 모든 레벨이 달라진다)
-export const SIM = 3;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
+export const SIM = 4;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
 
 /* 메커닉이 처음 나오는 레벨 */
 export const UNLOCK = {
@@ -31,12 +31,13 @@ export const UNLOCK = {
 export const SP_MAX = 3;      // 분대에 최대 3명
 export const SP_ESCORT = 4;   // 병사가 특수병 수 × 4보다 적으면 가장 늦게 온 특수병이 떠난다
 export const SP = {
-  medic: { share: 0.4 },
+  medic: { share: 0.6 },
   sniper: { every: 1.2, dmg: 0.35, near: 2, far: 36 },
   rocket: { every: 2.4, dmg: 0.6, r: 2.2, speed: 30, near: 8, far: 30 },
 };
 export const SP_KINDS = Object.keys(SP);
 export const BONUS_CAP = 0.3;
+export const NABI_CAP = 0.03;   // 나비 레벨 1당 보스전 추가 피해 한도
 const has = (L, m) => L >= UNLOCK[m];
 
 /* ---------- 난수 ---------- */
@@ -460,7 +461,9 @@ function placeSpecials(lv, p) {
   for (const c of lv.chunks) {
     if (c.kind !== 'rest') continue;
     const force = !introPlaced;
-    if (!force && !chance(sg, 0.5)) continue;
+    // 철창이 처음 나온 뒤 금색 칸이 열리기 전까지(L6~8)도 철창 하나는 꼭 둔다
+    const early = p.L < UNLOCK.recruit && !lv.props.some((q) => q.kind === 'cage');
+    if (!force && !early && !chance(sg, 0.5)) continue;
     const k = force ? intro : pickKind();
     if (force) { introPlaced = true; last = k; }
     const cx = chance(sg, 0.5) ? -2.5 : 2.5;
@@ -478,11 +481,16 @@ function placeSpecials(lv, p) {
     let made = 0;
     for (let i = 0; i < lv.rows.length - 1 && made < 2; i++) {
       const row = lv.rows[i];
-      if (row.cells.length < 2 || row.cells.every((c) => cellGood(c) < 0) || !chance(sg, 0.3)) continue;
+      if (row.cells.length < 2 || row.cells.every((c) => cellGood(c) < 0) || !chance(sg, 0.45)) continue;
+      // 가장 나쁜 칸을 금색으로 — 단, 가만히 선 분대(x=0)가 지나는 칸이면 이 줄은 건너뛴다(서 있기만 해도 얻으면 안 된다)
       let worst = 0;
       for (let j = 1; j < row.cells.length; j++) if (goldenValue(row.ng, row.cells[j]) < goldenValue(row.ng, row.cells[worst])) worst = j;
+      if (worst === pickCell(row, 0)) continue;
+      // 값은 가장 좋은 다른 칸보다 병력 30%만큼 적게 — 특수병과 병사 사이의 진짜 선택이 되게
+      let best = -Infinity;
+      for (let j = 0; j < row.cells.length; j++) if (j !== worst) best = Math.max(best, goldenValue(row.ng, row.cells[j]));
       const old = row.cells[worst];
-      const v = Math.max(3, nice(row.ng * U(sg, 0.08, 0.2)));
+      const v = Math.max(3, nice(best - row.ng - 0.3 * row.ng));
       row.cells[worst] = { ...makeCell('unit', v, row.ng, old.x0, old.x1), k: pickKind() };
       made++;
     }
@@ -706,8 +714,9 @@ export function step(s, input) {
   if (wiped(s)) return s;
   if (s.hero) heroUpdate(s, input);
   if (s.boss) {
-    // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +30%까지
-    const base = BONUS_CAP * dps(q.n, q.tier, s.fireLv);
+    // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +30%까지(나비는 레벨마다 +3%p)
+    const cap = BONUS_CAP + (s.hero && s.hero.id === 'nabi' ? NABI_CAP * (s.hero.lv - 1) : 0);
+    const base = cap * dps(q.n, q.tier, s.fireLv);
     s.boss.bonus = Math.min(s.boss.bonus + base * DT, base * 1.5);
   }
   fire(s, R);
@@ -1495,7 +1504,8 @@ export function parFor(lv, start = START_N, fire = 0, hero = null) {
   if (parCache.has(key)) return parCache.get(key);
   const s = newGame(lv, { start, fire, hero });
   const maxTicks = Math.ceil((lv.arenaZ / lv.speed + 60) / DT);
-  while ((s.phase === 'run' || s.phase === 'arena') && s.tick < maxTicks) step(s, botInput(s));
+  // 영웅 스킬은 쓰지 않고 돈다 — 스킬을 안 누르는 사람이 영웅 때문에 별을 덜 받지 않게
+  while ((s.phase === 'run' || s.phase === 'arena') && s.tick < maxTicks) step(s, { ...botInput(s), skill: false });
   const par = s.phase === 'won' ? Math.max(lv.par, s.squad.n) : lv.par;
   parCache.set(key, par);
   return par;

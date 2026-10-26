@@ -387,7 +387,7 @@ test('의무병: 적에게 잃은 병사의 일부가 돌아오고 게이트 손
   assert.ok(lost >= 40, `잃은 수 ${lost}`);
   for (let i = 0; i < 600; i++) C.step(s, { dir: 0 });
   const back = s.squad.n - (200 - lost);
-  assert.ok(Math.abs(back - Math.round(lost * 0.4)) <= 2, `돌아온 수 ${back} / 잃은 ${lost}`);
+  assert.ok(Math.abs(back - Math.round(lost * C.SP.medic.share)) <= 2, `돌아온 수 ${back} / 잃은 ${lost}`);
   const g = structuredClone(base);
   g.rows = [{ id: 1, z: g.squad.z + 0.01, done: false, cells: [C.makeCell('add', -50, 200, -5, 5)] }];
   for (let i = 0; i < 600; i++) C.step(g, { dir: 0 });
@@ -401,7 +401,7 @@ test('의무병: 적에게 잃은 병사의 일부가 돌아오고 게이트 손
   for (let i = 0; i < 600; i++) C.step(one, { dir: 0 });
   const lost1 = one.stats.lost;
   assert.ok(lost1 >= 18, `한 명씩 잃은 수 ${lost1}`);
-  assert.ok(one.stats.healed >= Math.floor(lost1 * 0.4) - 1, `한 명씩 잃고 돌아온 수 ${one.stats.healed} / ${lost1}`);
+  assert.ok(one.stats.healed >= Math.floor(lost1 * C.SP.medic.share) - 1, `한 명씩 잃고 돌아온 수 ${one.stats.healed} / ${lost1}`);
 });
 
 test('저격수는 다른 차선의 독침 좀비를 먼저 쏘고, 로켓은 무리를 터뜨린다', () => {
@@ -440,8 +440,17 @@ test('레벨 생성: 철창은 L5부터, 금색 칸은 L9부터 레벨당 2줄 �
     for (const r of unitRows) {
       assert.ok(r.cells.length >= 2);
       assert.ok(r.cells.some((c) => c.op !== 'unit'));
+      // 가만히 선 분대가 지나는 칸은 금색이 아니고, 금색 칸은 가장 좋은 다른 칸보다 확실히 좋지는 않다(진짜 선택)
+      assert.notEqual(r.cells[C.pickCell(r, 0)].op, 'unit', `L${L} 제자리 칸이 금색`);
+      const face = (c) => C.applyOp(r.ng, c.op, c.v);
+      const gold = r.cells.find((c) => c.op === 'unit');
+      const best = Math.max(...r.cells.filter((c) => c !== gold).map((c) => C.applyOp(r.ng, c.op, c.op === 'add' ? Math.min(c.cap, c.v + Math.floor(0.3 * r.ng)) : c.v)));
+      assert.ok(face(gold) <= best + 2, `L${L} 금색 ${face(gold)} vs 최선 ${best}`);
+      assert.ok(face(gold) >= Math.min(best, r.ng + 3) - 0.35 * r.ng - 2, `L${L} 금색이 너무 나쁨 ${face(gold)} vs 최선 ${best}`);
     }
-    for (const c of cages) assert.ok(L >= C.UNLOCK[c.reward.k], `L${L} ${c.reward.k}`);
+    // 철창이 처음 나온 레벨부터 금색 칸이 열리기 전까지는 레벨마다 철창이 있다
+    if (L >= C.UNLOCK.cage && L < C.UNLOCK.recruit) assert.ok(cages.length >= 1, `L${L} 철창 없음`);
+    for (const c of cages) assert.ok(c.reward.k && L >= C.UNLOCK[c.reward.k], `L${L} ${c.reward.k}`);
     for (const k of C.SP_KINDS) {
       if (C.UNLOCK[k] !== L) continue;
       assert.ok(cages.some((c) => c.reward.k === k), `L${L} 소개 병과 ${k}`);
@@ -528,6 +537,40 @@ test('강화·영웅·특수병을 갖춰도 보스전은 너무 빨리 끝나�
     assert.ok(mid >= 4, `${id} 보통 갖춤 보스전 중앙값 ${mid.toFixed(1)}초`);
     assert.ok(max >= 2.5, `${id} 최대 갖춤 보스전 중앙값 ${max.toFixed(1)}초`);
   }
+});
+
+test('영웅 스킬을 누르지 않는 사람도 영웅 때문에 별 셋을 덜 받지 않는다(별 기준은 상시 효과만)', () => {
+  let none = 0;
+  let hero = 0;
+  for (let L = 11; L <= MAX_LEVEL; L += 3) for (const seed of [1, 2]) {
+    const lv = C.prepareLevel(L);
+    for (const h of [null, { id: 'mungchi', lv: heroCap(L) }]) {
+      const s = C.newGame(lv, { hero: h });
+      const p = sloppy(seed * 100 + L);
+      const max = Math.ceil((lv.arenaZ / lv.speed + 80) / C.DT);
+      while ((s.phase === 'run' || s.phase === 'arena') && s.tick < max) C.step(s, { ...p(s), skill: false });
+      const three = s.phase === 'won' && C.starsFor(C.parFor(lv, C.START_N, 0, h), s.squad.n, true) === 3;
+      if (h) hero += three; else none += three;
+    }
+  }
+  assert.ok(hero >= none - 2, `별 셋: 영웅(스킬 안 씀) ${hero} vs 영웅 없음 ${none}`);
+});
+
+test('나비 레벨은 보스전 추가 피해 한도를 올린다', () => {
+  const cap = (lvH) => {
+    const { s } = arena(15, { hero: { id: 'nabi', lv: lvH } });
+    s.hero.cd = 99;
+    s.hero.charge = 0;
+    s.squad.sp = [];
+    s.rockets = [];
+    s.boss.bonus = 0;
+    for (let i = 0; i < 200; i++) C.step(s, { dir: 0, tx: null, skill: false });
+    return s.boss.bonus / C.dps(s.squad.n, s.squad.tier, s.fireLv);
+  };
+  const a = cap(1);
+  const b = cap(5);
+  assert.ok(Math.abs(a - 1.5 * C.BONUS_CAP) < 0.02, `Lv1 ${a}`);
+  assert.ok(Math.abs(b - 1.5 * (C.BONUS_CAP + 4 * C.NABI_CAP)) < 0.02, `Lv5 ${b}`);
 });
 
 test('별 기준은 출격 영웅마다 따로 계산한다', () => {
