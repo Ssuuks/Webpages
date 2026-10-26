@@ -1,6 +1,7 @@
 /* 땅 그리기 — 버퍼 한 장(Uint32)에 하늘·언덕·모래·도로·연석·안개를 한 번에 칠한다.
-   하늘과 언덕은 따로 캐시(카메라가 옆으로 움직였을 때만 다시). 줄마다 월드 z를 계산해 줄무늬가 흐르게 하고,
-   멀어서 줄무늬가 한 줄보다 촘촘해지면 중간색으로 바꿔 물결무늬(모아레)를 없앤다. */
+   하늘(그라데이션·해)은 화면 크기가 바뀔 때만, 언덕은 카메라가 옆으로 움직였을 때만 다시 만든다.
+   줄마다 월드 z를 계산해 줄무늬가 흐르게 하고, 멀어서 줄무늬가 한 줄보다 촘촘해지면 중간색으로 바꿔
+   물결무늬(모아레)를 없앤다. 안개는 이웃한 단계끼리만 디더링한다. */
 import { ROAD } from '../core.js';
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
@@ -26,8 +27,11 @@ for (let i = 0; i < NOISE.length; i++) NOISE[i] = hash2(i & 63, i >> 6) & 255;
 
 export function createGround() {
   const pals = new Map();
-  let sky = null, skyKey = '', skyRows = 0, skyW = 0;
+  let base = null, baseKey = '';        // 하늘 그라데이션 + 해
+  let sky = null, skyKey = '', skyRows = 0, skyW = 0;   // + 언덕
   const fogCache = new Map();
+  // 줄 그리기에 쓰는 공유 값(줄마다 함수를 만들지 않게)
+  let U = null, ROW = 0, BWc = 0, CX = 0, S = 1, VX = 0;
 
   function palOf(b) {
     let p = pals.get(b);
@@ -56,34 +60,45 @@ export function createGround() {
     }
     return v;
   }
+  const X = (wx) => CX + (wx - VX) * S;
+  function fill(x0, x1, c) {
+    let a = Math.round(x0), bb = Math.round(x1);
+    if (bb <= a) bb = a + 1;
+    if (a < 0) a = 0;
+    if (bb > BWc) bb = BWc;
+    if (bb > a) U.fill(c, ROW + a, ROW + bb);
+  }
 
-  function buildSky(BW, rows, hz, off, b, p, quality) {
-    sky = new Uint32Array(BW * rows);
-    skyRows = rows; skyW = BW;
-    const fh = new Float32Array(BW), nh = new Float32Array(BW);
-    for (let x = 0; x < BW; x++) {
-      const t = (x + off) * 0.045;
-      fh[x] = 13 + Math.abs(Math.sin(t) * 11 + Math.sin(t * 2.7) * 5);
-      const t2 = (x + off * 1.6) * 0.08 + 4;
-      nh[x] = 5 + Math.abs(Math.sin(t2) * 7 + Math.sin(t2 * 3.1) * 3);
-    }
+  function buildBase(BW, rows, hz, p, quality) {
+    base = new Uint32Array(BW * rows);
     const sunX = BW * 0.72, sunY = hz - Math.max(18, Math.min(34, hz * 0.55)), sunR = 11;
     const n = p.sky.length - 1;
     for (let y = 0; y < rows; y++) {
       const f = Math.max(0, Math.min(0.999, y / Math.max(1, hz))) * n;
       const i0 = Math.floor(f), fr = f - i0;
       const row = y * BW;
-      const up = hz - y;
       for (let x = 0; x < BW; x++) {
         let c = quality === 'low' ? (fr > 0.5 ? p.sky[i0 + 1] : p.sky[i0]) : fr > bay(x, y) ? p.sky[i0 + 1] : p.sky[i0];
         const dx = x + 0.5 - sunX, dy = y + 0.5 - sunY;
         const dd = Math.sqrt(dx * dx + dy * dy);
         if (dd < sunR) c = p.sun;
         else if (dd < sunR + 3 && bay(x, y) < 0.5 - (dd - sunR) * 0.15) c = p.sun;
-        if (up < nh[x]) c = p.hillN;
-        else if (up < fh[x]) c = p.hillF;
-        sky[row + x] = c;
+        base[row + x] = c;
       }
+    }
+  }
+  function buildSky(BW, rows, hz, off, p) {
+    if (!sky || sky.length !== base.length) sky = new Uint32Array(base.length);
+    sky.set(base);
+    skyRows = rows; skyW = BW;
+    // 언덕: 열마다 높이만 계산해 위에서 아래로 칠한다(먼 언덕은 느리게, 가까운 언덕은 빠르게 밀린다)
+    for (let x = 0; x < BW; x++) {
+      const t = (x + off) * 0.045;
+      const fh = 13 + Math.abs(Math.sin(t) * 11 + Math.sin(t * 2.7) * 5);
+      const t2 = (x + off * 1.6) * 0.08 + 4;
+      const nh = 5 + Math.abs(Math.sin(t2) * 7 + Math.sin(t2 * 3.1) * 3);
+      const yF = Math.max(0, Math.ceil(hz - fh)), yN = Math.max(0, Math.ceil(hz - nh));
+      for (let y = yF; y < rows; y++) sky[y * BW + x] = y >= yN ? p.hillN : p.hillF;
     }
   }
 
@@ -94,17 +109,22 @@ export function createGround() {
     const sy = view.shakeY | 0, sx = view.shakeX | 0;
     const hzI = Math.max(0, Math.min(BH, Math.ceil(hz + sy)));
     const off = Math.round(camX * 3);
-    const rows = Math.max(0, Math.min(BH, Math.ceil(hz)) + 4);
-    const key = `${BW}|${rows}|${Math.round(hz)}|${off}|${b.sky[0]}|${quality}`;
-    if (key !== skyKey) { buildSky(BW, rows, Math.round(hz), off, b, p, quality); skyKey = key; }
+    const rows = Math.max(1, Math.min(BH, Math.ceil(hz)) + 4);
+    const hzR = Math.round(hz);
+    const bk = `${BW}|${rows}|${hzR}|${b.sky[0]}|${quality}`;
+    if (bk !== baseKey) { buildBase(BW, rows, hzR, p, quality); baseKey = bk; skyKey = ''; }
+    const key = bk + '|' + off;
+    if (key !== skyKey) { buildSky(BW, rows, hzR, off, p); skyKey = key; }
     // 하늘(흔들림은 줄 단위로 밀어서)
-    for (let y = 0; y < hzI; y++) {
+    if (sy === 0) u32.set(sky.subarray(0, hzI * BW), 0);
+    else for (let y = 0; y < hzI; y++) {
       const src = Math.max(0, Math.min(skyRows - 1, y - sy));
       u32.set(sky.subarray(src * skyW, src * skyW + BW), y * BW);
     }
     const h = view.camH, sin = view.sin, cos = view.cos, F = view.F;
-    const cx = view.cx + sx, cyy = view.cy + sy;
-    const camZ = view.camZ, vcx = view.camX;
+    const cyy = view.cy + sy;
+    const camZ = view.camZ;
+    U = u32; BWc = BW; CX = view.cx + sx; VX = view.camX;
     const dzAt = (yy) => { const t = (cyy - yy) / F; const den = sin - t * cos; return den <= 1e-5 ? 1e9 : (h * (t * sin + cos)) / den; };
     const hiQ = quality !== 'low';
     let dzA = dzAt(hzI + 0.5);
@@ -113,42 +133,38 @@ export function createGround() {
       dzA = dzAt(y + 1.5);
       const span = Math.abs(dz - dzA);
       const d = h * sin + dz * cos;
-      const s = F / d;
+      S = F / d;
+      const s = S;
       const wz = camZ + dz;
       const row = y * BW;
-      const X = (wx) => cx + (wx - vcx) * s;
+      ROW = row;
+      // 완전히 안개 속인 줄(지평선 근처)은 바로 채운다
+      if (d >= 115) { u32.fill(p.fog, row, row + BW); continue; }
       // 모래(땅)
       u32.fill(p.g1, row, row + BW);
-      const fill = (x0, x1, c) => {
-        let a = Math.round(x0), bb = Math.round(x1);
-        if (bb <= a) bb = a + 1;
-        if (a < 0) a = 0;
-        if (bb > BW) bb = BW;
-        if (bb > a) u32.fill(c, row + a, row + bb);
-      };
       // 길가 자갈: 월드 칸 경계를 지나는 줄에만 짧은 점(칸에 고정)
       if (hiQ && s > 3) {
         const zc = Math.floor(wz * 1.5), zn = Math.floor((camZ + dzA) * 1.5);
         if (zc !== zn) {
-          const wx0 = vcx + (0 - cx) / s, wx1 = vcx + (BW - cx) / s;
+          const wx0 = VX - CX / s, wx1 = VX + (BW - CX) / s;
           const len = s > 14 ? 3 : s > 8 ? 2 : 1;
-          for (let xc = Math.floor(wx0 * 1.5); xc <= Math.ceil(wx1 * 1.5); xc++) {
+          const zr = (zc & 63) << 6;
+          for (let xc = Math.floor(wx0 * 1.5), xe = Math.ceil(wx1 * 1.5); xc <= xe; xc++) {
             const wx = xc / 1.5;
             if (wx > -ROAD - 0.7 && wx < ROAD + 0.7) continue;
-            const nv = NOISE[((zc & 63) << 6) | (xc & 63)];
-            if (nv < 46) fill(X(wx + (nv & 7) * 0.08), X(wx + (nv & 7) * 0.08) + len, nv < 14 ? p.edge : p.g2);
+            const nv = NOISE[zr | (xc & 63)];
+            if (nv < 46) { const px = X(wx + (nv & 7) * 0.08); fill(px, px + len, nv < 14 ? p.edge : p.g2); }
           }
         }
       }
       // 도로 + 속도감 띠(4u)
-      const rc = span < 1.6 ? ((Math.floor(wz / 4) & 1) ? p.road2 : p.road) : p.roadMix;
-      fill(X(-ROAD), X(ROAD), rc);
+      fill(X(-ROAD), X(ROAD), span < 1.6 ? ((Math.floor(wz / 4) & 1) ? p.road2 : p.road) : p.roadMix);
       // 도로 금(드문드문)
       if (hiQ && s > 5) {
         const zc = Math.floor(wz * 2), zn = Math.floor((camZ + dzA) * 2);
         if (zc !== zn) {
           const nv = NOISE[((zc & 63) << 6) | ((zc * 7) & 63)];
-          if (nv < 70) { const wx = -ROAD + 0.6 + (nv / 70) * (2 * ROAD - 1.2); fill(X(wx), X(wx) + (s > 12 ? 2 : 1), p.crack); }
+          if (nv < 70) { const px = X(-ROAD + 0.6 + (nv / 70) * (2 * ROAD - 1.2)); fill(px, px + (s > 12 ? 2 : 1), p.crack); }
         }
       }
       // 연석(2u 줄무늬)
@@ -161,17 +177,19 @@ export function createGround() {
       const fogK = (d - 70) / 45;
       if (fogK > 0) {
         const lv = Math.min(4, fogK * 4), i0 = Math.floor(lv), fr = lv - i0;
-        if (!hiQ) {
-          const st = Math.min(4, Math.round(lv));
-          if (st) for (let x = 0; x < BW; x++) u32[row + x] = fogged(u32[row + x], p.fog, st);
-        } else {
-          for (let x = 0; x < BW; x++) {
-            const st = Math.min(4, fr > bay(x, y) ? i0 + 1 : i0);
-            if (st) u32[row + x] = fogged(u32[row + x], p.fog, st);
-          }
+        let lc = -1, ls = -1, lvv = 0;
+        const bo = (y & 3) << 2;
+        const st0 = Math.min(4, i0), st1 = Math.min(4, i0 + 1), stL = Math.min(4, Math.round(lv));
+        for (let x = 0; x < BW; x++) {
+          const st = hiQ ? (fr > BAYER[bo | (x & 3)] ? st1 : st0) : stL;
+          if (!st) continue;
+          const c = u32[row + x];
+          if (c !== lc || st !== ls) { lc = c; ls = st; lvv = fogged(c, p.fog, st); }
+          u32[row + x] = lvv;
         }
       }
     }
+    U = null;
   }
   return { draw };
 }

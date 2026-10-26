@@ -58,8 +58,13 @@ const MEDIC = { ...TEAM, H: '#FFFFFF', h: '#F2F0F7', b: '#D3CFE3', B: '#A8A1C4',
 const SNIPER = { ...TEAM, H: '#E2E0A8', h: '#B5B276', b: '#8C8A52', B: '#6B6A3C', r: '#6B4A3A', o: '#8C8A52', O: '#5E5D34', t: '#7FA040' };
 const ROCKET = { ...TEAM, H: '#FFE6C2', h: '#FFA54A', b: '#EE7A26', B: '#B95514', T: '#7FA040', E: '#3E5126', Y: '#FFD84A', F: '#FFF4B0', f: '#FFB347' };
 
+/* 다친 순간의 붉은 기(병과 고유 색은 그대로 두고 철모·군복만 물들인다) */
+const HURT_CLOTH = { c: '#C24A66', n: '#6A2D4A', o: '#FFB4A0', O: '#C06A5A' };
 export const PAL = {
   team: TEAM, teamHurt: TEAM_HURT, medic: MEDIC, sniper: SNIPER, rocket: ROCKET,
+  medicHurt: { ...MEDIC, ...HURT_CLOTH, H: '#FFE4DC', h: '#FFC8C0', b: '#F0A0A0', B: '#C06A7A' },
+  sniperHurt: { ...SNIPER, ...HURT_CLOTH, H: '#FFD8C8', h: '#E8A08A', b: '#C0706A', B: '#8E4A50', o: '#C0706A', O: '#8E4A50' },
+  rocketHurt: { ...ROCKET, ...HURT_CLOTH, H: '#FFE0D0', h: '#FF9C7C', b: '#E86A5A', B: '#B8405A' },
 };
 
 /* ---------------- 분대 병사(뒷모습, 12×12 → 외곽선 포함 14×14) ---------------- */
@@ -793,12 +798,12 @@ const FX_PAL = {
    out: 외곽선 색(null이면 없음).   detail: 줄일 때 우선할 색. */
 export const SHEETS = {
   soldier: { pal: 'team', frames: crowdFrames(SOL_HEAD, SOL_BODY, 12), alts: { hurt: 'teamHurt' }, muzzle: [11, 3] },
-  medic: { pal: 'medic', frames: crowdFrames(MED_HEAD, MED_BODY, 12), alts: { glow: { pal: 'medic', out: '#FF6FA0' }, hurt: 'teamHurt' } },
-  sniper: { pal: 'sniper', frames: crowdFrames(SNP_HEAD, SNP_BODY, 12), alts: { hurt: 'teamHurt' }, muzzle: [11, 0] },
+  medic: { pal: 'medic', frames: crowdFrames(MED_HEAD, MED_BODY, 12), alts: { glow: { pal: 'medic', out: '#FF6FA0' }, hurt: 'medicHurt' } },
+  sniper: { pal: 'sniper', frames: crowdFrames(SNP_HEAD, SNP_BODY, 12), alts: { hurt: 'sniperHurt' }, muzzle: [11, 0] },
   rocket: {
     pal: 'rocket',
     frames: crowdFrames(RKT_HEAD, RKT_BODY, 12).concat([RKT_CROUCH, RKT_FIRE]),
-    alts: { hurt: 'teamHurt' }, muzzle: [10, 0],
+    alts: { hurt: 'rocketHurt' }, muzzle: [10, 0],
   },
   helmet: { pal: 'team', frames: [HELMET] },
   captive_medic: { pal: PAL_FRONT(MEDIC), frames: captive('medic'), lod: [1, 0.75, 0.5] },
@@ -851,6 +856,11 @@ export const SHEETS = {
   dust: { pal: FX_PAL, frames: [['.dd.', 'dDDd'], ['d..d', '.dd.']], out: null },
   bubble: { pal: { W: '#FFFFFF', K: OUT }, frames: [['.WWWWW.', 'WWWKWWW', 'WWWKWWW', 'WWWKWWW', 'WWWWWWW', 'WWWKWWW', '.WWWWW.', '.W.....']] },
   shard: { pal: FX_PAL, frames: [['hH', 'h.'], ['.h', 'hB']] },
+  /* 큰 부대의 깃발(병력 규모 표시) */
+  flag: { pal: { w: '#8E5A30', b: '#3E8BEA', B: '#2B5EB8', H: '#DDF3FF', y: '#FFD84A' }, frames: [
+    ['wbbbbbb.', 'wbbyybbb', 'wbyyyybB', 'wbbyybB.', 'wbbBBB..', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......'],
+    ['wbbbbb..', 'wbbyybbb', 'wbyyyybb', 'wbbyybBB', 'wBBB.BB.', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......', 'w.......'],
+  ] },
 };
 
 /* HUD·DOM 아이콘(9×9 안팎) — 게이트 칸 아이콘도 같은 그림을 쓴다 */

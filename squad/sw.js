@@ -1,11 +1,12 @@
 /* 오프라인 캐시 — 게임 파일은 네트워크 우선(실패하면 캐시), 글꼴은 캐시 우선 */
-const VERSION = 'squad-v2.0.0';
+const VERSION = 'squad-v2.1.0';
 /* 게임이 불러오는 모든 파일 — tests/run.mjs가 main.js의 import를 따라가며 빠진 것이 없는지 확인한다 */
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
-  './assets/main.js', './assets/core.js', './assets/render.js', './assets/view.js', './assets/sprites.js',
+  './assets/main.js', './assets/core.js', './assets/render.js', './assets/view.js',
+  './assets/pix/art.js', './assets/pix/raster.js', './assets/pix/atlas.js', './assets/pix/font.js', './assets/pix/ground.js',
   './assets/audio.js', './assets/music.js', './assets/store.js', './assets/save.js', './assets/roster.js', './assets/caltable.js',
-  './assets/icon.svg', './assets/icon-180.png', './assets/icon-192.png', './assets/icon-512.png',
+  './assets/icon.svg', './assets/icon-180.png', './assets/icon-192.png', './assets/icon-512.png', './assets/icon-512-maskable.png',
 ];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 

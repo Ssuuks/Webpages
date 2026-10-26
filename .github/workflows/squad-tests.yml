@@ -15,6 +15,8 @@ jobs:
         with:
           node-version: 22
       - name: 문법 검사
-        run: for f in squad/assets/*.js; do node --input-type=module --check < "$f"; done
+        run: for f in squad/assets/*.js squad/assets/pix/*.js; do node --input-type=module --check < "$f"; done
       - name: 규칙·레벨·봇 밸런스 테스트
         run: node --test squad/tests/run.mjs
+      - name: 도트 그림·글꼴·바닥 테스트
+        run: node --test squad/tests/art.mjs
