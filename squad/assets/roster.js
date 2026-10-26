@@ -11,7 +11,7 @@ export const UNITS = {
   sniper: {
     name: '저격수', unlock: 9, color: '#4FD1C5',
     line: '서 있는 칸과 상관없이 멀리 있는 강적부터',
-    desc: '1.2초마다 독침 좀비·거구를 먼저 저격해요. 상자·철창도 쏴요',
+    desc: '1.2초마다 독침 좀비·거구를 먼저 저격해요. 보스전에서는 보스를 쏴요',
     tip: '저격수 합류! 독침 좀비와 거구를 먼저 노려요',
   },
   rocket: {
@@ -31,15 +31,15 @@ export const HEROES = {
     look: '별 달린 큰 철모가 눈썹까지 덮은 동글이, 주황 스카프, 몸만 한 확성기',
     line: '목소리는 부대 최강, 용기는… 연습 중!',
     unlock: { type: 'clear', L: 2, text: '레벨 3부터 함께해요' },
-    passive: { name: '집합 나팔', text: (lv) => `덧셈 게이트를 쏴서 올리는 속도 ×${lerp(1.15, 1.35, lv).toFixed(2)}` },
-    skill: { name: '돌격 나팔', cd: 16, dur: 5, text: (lv) => `5초 동안 총알 피해 ×${lerp(1.5, 1.8, lv).toFixed(2)} (게이트 올리기에도 적용)` },
+    passive: { name: '집합 나팔', text: (lv) => `덧셈 게이트를 쏴서 올리는 속도 ×${lerp(1.1, 1.25, lv).toFixed(2)}` },
+    skill: { name: '돌격 나팔', cd: 16, dur: 5, text: (lv) => `5초 동안 총알 피해 ×${lerp(1.4, 1.6, lv).toFixed(2)} (게이트 올리기에도 적용)` },
   },
   bori: {
     name: '보리', role: '의무', color: '#FF8FB8', match: 'medic',
     look: '토끼귀 간호모, 몸보다 큰 하트 가방, 코에 반창고',
     line: '다치면 혼나요! …그래도 다치면 바로 와요.',
     unlock: { type: 'clear', L: 8, text: '레벨 8을 깨면 합류' },
-    passive: { name: '응급처치', text: (lv) => `잃은 병사의 ${Math.round(lerp(15, 35, lv))}%가 천천히 돌아와요(게이트 손실 제외)` },
+    passive: { name: '응급처치', text: (lv) => `잃은 병사의 ${Math.round(lerp(12, 30, lv))}%가 천천히 돌아와요(게이트 손실 제외)` },
     skill: { name: '괜찮아 주사', cd: 20, dur: 2.5, text: (lv) => `방금 잃은 병사의 ${Math.round(lerp(50, 70, lv))}%를 바로 되살리고, 잠깐 손실을 크게 줄여요` },
   },
   nabi: {
@@ -47,7 +47,7 @@ export const HEROES = {
     look: '고양이귀 비니, 졸린 반달눈, 키 두 배의 총, 꼬리 끝 리본',
     line: '하암… 한 발이면 돼. 깨우지 마.',
     unlock: { type: 'stars', n: 30, text: '별 30개를 모으면 합류' },
-    passive: { name: '고양이 눈', text: (lv) => `1.6초마다 직접 저격(저격수가 있으면 저격 +${Math.round(lerp(30, 50, lv))}%)` },
+    passive: { name: '고양이 눈', text: (lv) => `1.8초마다 직접 저격(저격수가 있으면 저격 +${Math.round(lerp(30, 50, lv))}%)` },
     skill: { name: '백발백묘', cd: 15, dur: 3, text: () => '3초 동안 강한 적을 12발 연속 저격' },
   },
 };

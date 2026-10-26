@@ -1,3 +1,5 @@
+import { HEROES, heroLerp } from './roster.js';
+
 /* 숫자부대 돌격 — 시뮬레이션 코어 (DOM 없음)
    - 고정 틱 DT, 시드 난수(mulberry32). 상태는 평범한 객체라 structuredClone으로 복제된다.
    - 화면·소리·진동은 state.ev(이번 틱에 생긴 일)만 보고 반응한다.
@@ -15,10 +17,25 @@ export const BULLET_RANGE = 30;
 export const WEAPON = [1, 1.35, 1.7, 2.1];
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
-export const VERSION = 'squad-v1';
+export const VERSION = 'squad-v1';   // 레벨 배치의 소금 — 바꾸지 않는다(바꾸면 모든 레벨이 달라진다)
+export const SIM = 2;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
 
 /* 메커닉이 처음 나오는 레벨 */
-export const UNLOCK = { mul: 2, shoot: 2, wall: 3, summon: 3, crate: 4, runner: 4, spit: 5, saw: 6, brute: 7, div: 8, triple: 10, mul3: 10 };
+export const UNLOCK = {
+  mul: 2, shoot: 2, wall: 3, summon: 3, hero: 3, crate: 4, runner: 4, spit: 5, cage: 5, medic: 5, saw: 6, brute: 7, div: 8,
+  recruit: 9, sniper: 9, triple: 10, mul3: 10, rocket: 13,
+};
+
+/* 특수병과 수치(이름·소개는 roster.js) */
+export const SP_MAX = 3;      // 분대에 최대 3명
+export const SP_ESCORT = 4;   // 병사가 특수병 수 × 4보다 적으면 가장 늦게 온 특수병이 떠난다
+export const SP = {
+  medic: { share: 0.4 },
+  sniper: { every: 1.2, dmg: 0.35, near: 2, far: 36 },
+  rocket: { every: 2.4, dmg: 0.6, r: 2.2, speed: 30, near: 8, far: 30 },
+};
+export const SP_KINDS = Object.keys(SP);
+export const BONUS_CAP = 0.3;
 const has = (L, m) => L >= UNLOCK[m];
 
 /* ---------- 난수 ---------- */
@@ -65,18 +82,19 @@ export function nice(x) {
 /* 게이트 연산. 결과가 0 이하면 전멸(덧셈만 가능, 나눗셈은 올림이라 0이 되지 않는다) */
 export function applyOp(n, op, v) {
   let r;
-  if (op === 'add') r = n + v;
+  if (op === 'add' || op === 'unit') r = n + v;
   else if (op === 'mul') r = n * v;
   else r = Math.ceil(n / v);
   return Math.min(MAX_N, r);
 }
 export function cellLabel(c) {
-  if (c.op === 'add') return (c.v >= 0 ? '+' : '−') + Math.abs(c.v);
+  if (c.op === 'add' || c.op === 'unit') return (c.v >= 0 ? '+' : '−') + Math.abs(c.v);
   if (c.op === 'mul') return '×' + c.v;
   return '÷' + c.v;
 }
 /* 게이트가 이로운지(파랑) 해로운지(빨강) — 숫자만으로 정한다 */
 export function cellGood(c) {
+  if (c.op === 'unit') return 1;
   if (c.op === 'add') return c.v > 0 ? 1 : c.v < 0 ? -1 : 0;
   if (c.op === 'mul') return c.v > 1 ? 1 : 0;
   return -1;
@@ -285,6 +303,14 @@ const CHUNK = {
     const rowZ = z + 30;
     // 첫 판 첫 줄은 고르기 쉬운 +10 대 −5
     const ch = p.L === 1 && !lv.rows.length ? [['add', 10], ['add', -5]] : gateChoices(g, p, ng, target, ctx);
+    // 손대지 않은 분대(x=0)는 왼쪽 칸을 지난다. 왼쪽이 정답인 줄이 절반을 넘지 않게 해서 가만히 있으면 이길 수 없게.
+    // (첫 판은 둘째 줄부터 늘 오른쪽이 정답)
+    if (ch.length === 2 && lv.rows.length) {
+      const leftBest = applyOp(ng, ch[0][0], ch[0][1]) > applyOp(ng, ch[1][0], ch[1][1]);
+      if (leftBest && (p.L === 1 || ctx.leftBest >= Math.ceil(ctx.twoRows / 2))) ch.reverse();
+      ctx.twoRows++;
+      if (applyOp(ng, ch[0][0], ch[0][1]) > applyOp(ng, ch[1][0], ch[1][1])) ctx.leftBest++;
+    }
     const ln = lanes(ch.length);
     const cells = ch.map(([op, v], i) => makeCell(op, v, ng, ln[i].x0, ln[i].x1));
     makeRow(lv, rowZ, cells, ng);
@@ -413,12 +439,61 @@ const CHUNK = {
   },
 };
 
+/* 특수병 배치 — 기존 배치를 바꾸지 않도록 레벨 생성이 끝난 뒤 별도 난수 흐름으로 넣는다.
+   쉼 청크에 철창(L5+), 일부 'men' 상자를 철창으로(L5+), 게이트 줄의 가장 덜 좋은 칸을 금색 특수병 칸으로(L9+). */
+function placeSpecials(lv, p) {
+  const kinds = SP_KINDS.filter((k) => p.L >= UNLOCK[k]);
+  if (!kinds.length || p.L < UNLOCK.cage) return;
+  const sg = { rs: hash(VERSION, 'sp', p.L, lv.attempt) };
+  const intro = kinds.find((k) => UNLOCK[k] === p.L);
+  let last = '';
+  const pickKind = () => {
+    let list = kinds.filter((k) => k !== last);
+    if (!list.length) list = kinds;
+    const k = list[Math.floor(rand(sg) * list.length)];
+    last = k;
+    return k;
+  };
+  let introPlaced = !intro;
+  // 1) 쉼 청크의 철창
+  for (const c of lv.chunks) {
+    if (c.kind !== 'rest') continue;
+    const force = !introPlaced;
+    if (!force && !chance(sg, 0.5)) continue;
+    const k = force ? intro : pickKind();
+    if (force) { introPlaced = true; last = k; }
+    const cx = chance(sg, 0.5) ? -2.5 : 2.5;
+    const hp = Math.round(0.9 * dps(c.ng));
+    lv.props.push({ id: lv.nextId++, kind: 'cage', x0: cx - 1, x1: cx + 1, z: c.z + 14, hp, max: hp, alive: true, hitT: -9, reward: { type: 'unit', k } });
+  }
+  // 2) 지원병 상자 일부를 철창으로
+  for (const pr of lv.props) {
+    if (pr.kind !== 'crate' || pr.reward.type !== 'men' || !chance(sg, 0.35)) continue;
+    pr.kind = 'cage';
+    pr.reward = { type: 'unit', k: pickKind() };
+  }
+  // 3) 금색 특수병 칸(L9+): 마지막·1칸·'덜 나쁜 쪽' 줄은 빼고, 레벨당 최대 2줄
+  if (p.L >= UNLOCK.recruit) {
+    let made = 0;
+    for (let i = 0; i < lv.rows.length - 1 && made < 2; i++) {
+      const row = lv.rows[i];
+      if (row.cells.length < 2 || row.cells.every((c) => cellGood(c) < 0) || !chance(sg, 0.3)) continue;
+      let worst = 0;
+      for (let j = 1; j < row.cells.length; j++) if (goldenValue(row.ng, row.cells[j]) < goldenValue(row.ng, row.cells[worst])) worst = j;
+      const old = row.cells[worst];
+      const v = Math.max(3, nice(row.ng * U(sg, 0.08, 0.2)));
+      row.cells[worst] = { ...makeCell('unit', v, row.ng, old.x0, old.x1), k: pickKind() };
+      made++;
+    }
+  }
+}
+
 export function buildLevel(L, attempt = 0) {
   const p = levelParams(L);
   const g = { rs: hash(VERSION, p.L, attempt) };
   const lv = {
     L: p.L, attempt, seed: hash(VERSION, 'run', p.L, attempt), speed: p.speed, params: p,
-    rows: [], foes: [], props: [], saws: [], plan: [], golden: [], nextId: 1,
+    rows: [], foes: [], props: [], saws: [], plan: [], golden: [], chunks: [], nextId: 1,
     arenaZ: 0, bossHp: 0, par: 0, arrive: 0,
   };
   const plan = planChunks(p, g);
@@ -429,7 +504,7 @@ export function buildLevel(L, attempt = 0) {
   lv.force = force;
   // ×는 하나를 보스 직전 줄 몫으로 남겨 둔다(L3부터)
   const reserve = p.maxMul >= 2 ? 1 : 0;
-  const ctx = { mulLeft: p.maxMul, reserve, lessBad: p.L >= UNLOCK.div ? 1 : 0, late: false, last: false, force };
+  const ctx = { mulLeft: p.maxMul, reserve, lessBad: p.L >= UNLOCK.div ? 1 : 0, late: false, last: false, force, leftBest: 0, twoRows: 0 };
   let z = 34;
   let ng = START_N;
   for (let i = 0; i < plan.length; i++) {
@@ -438,12 +513,15 @@ export function buildLevel(L, attempt = 0) {
     const target = START_N * Math.pow(p.P / START_N, (i + 1) / plan.length);
     // 너무 앞서가면 다음 줄은 덜 주고, 처지면 더 준다
     const t = ng > target * 1.25 ? target * 0.9 : ng < target * 0.8 ? target * 1.15 : target;
+    const rowsBefore = lv.rows.length;
     const r = CHUNK[plan[i]](lv, g, p, z, ng, t, ctx);
+    lv.chunks.push({ kind: plan[i], z, len: r.len, ng, rows: lv.rows.length - rowsBefore });
     z += r.len;
     ng = Math.max(1, Math.round(r.ng));
     lv.golden.push(ng);
   }
   lv.arenaZ = z + 12;
+  placeSpecials(lv, p);
   lv.foes.sort((a, b) => a.z - b.z || a.id - b.id);
   lv.missing = [...force];   // 끝까지 못 넣은 소개 항목(테스트에서 비어 있어야 함)
   delete lv.force;
@@ -459,7 +537,12 @@ export function newGame(lv, opt = {}) {
     speed: lv.speed, arenaZ: lv.arenaZ, stopZ: lv.arenaZ + 6,
     fireLv: opt.fire ?? 0,
     params: lv.params,
-    squad: { x: 0, vx: 0, z: 0, vz: lv.speed, n: start, peak: start, tier: 0, fireAcc: 0, volley: 0, lossAcc: 0, hurtT: -9, lastGain: 0 },
+    squad: {
+      x: 0, vx: 0, z: 0, vz: lv.speed, n: start, peak: start, tier: 0, fireAcc: 0, volley: 0, lossAcc: 0, hurtT: -9, lastGain: 0,
+      sp: [], pool: 0, healAcc: 0, recent: 0, lossFrac: 0,
+    },
+    rockets: [],
+    hero: opt.hero && HEROES[opt.hero.id] ? { id: opt.hero.id, lv: Math.max(1, Math.min(5, opt.hero.lv | 0 || 1)), charge: 0.35, act: 0, T: 0, cd: 0, shot: 0 } : null,
     rows: structuredClone(lv.rows),
     foes: structuredClone(lv.foes),
     props: structuredClone(lv.props),
@@ -471,22 +554,96 @@ export function newGame(lv, opt = {}) {
     bossRef: lv.arrive || lv.params.P,
     nextId: lv.nextId + 1,
     ev: [],
-    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start },
+    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0 },
   };
+  if (s.hero) {
+    const h = s.hero;
+    if (h.id === 'mungchi') {
+      // 패시브 '집합 나팔': 덧셈 게이트가 빨리 오른다 — 칸마다 한 번에 반영
+      const mul = heroLerp(1.1, 1.25, h.lv);
+      for (const row of s.rows) for (const c of row.cells) if (c.op === 'add') c.step /= mul;
+    }
+  }
   return s;
+}
+
+/* 판 중간 저장: 상태는 평범한 JSON이라 그대로 복제한다(이번 틱 이벤트만 비운다) */
+export function snapshot(s) {
+  const o = JSON.parse(JSON.stringify(s));
+  o.ev = [];
+  return o;
+}
+export function restore(o) {
+  const ok = o && typeof o === 'object' && o.squad && Array.isArray(o.rows) && Array.isArray(o.foes) && Array.isArray(o.props)
+    && Array.isArray(o.saws) && Array.isArray(o.bullets) && Array.isArray(o.spits) && typeof o.squad.n === 'number' && o.params;
+  if (!ok) return null;
+  o.ev = [];
+  o.rockets = o.rockets || [];
+  o.squad.sp = o.squad.sp || [];
+  return o;
 }
 
 function emit(s, e) { s.ev.push(e); }
 
-function lose(s, k, cause, x, z) {
+/* 병사를 잃는다. 게이트·톱날이 아닌 손실은 보리 스킬로 줄고, 일부는 회복 풀(의무병·보리)로 간다.
+   한 번에 크게 맞거나 내려찍기에 맞으면 가장 늦게 온 특수병이 쓰러진다. */
+function lose(s, k, cause, x, z, sub) {
   const q = s.squad;
   if (k <= 0 || q.n <= 0) return;
+  const soft = cause !== 'gate' && cause !== 'saw';
+  const h = s.hero;
+  if (soft && h && h.id === 'bori' && h.act > 0) {
+    const a = k * 0.3 + q.lossFrac;
+    k = Math.floor(a);
+    q.lossFrac = a - k;
+    if (k <= 0) return;
+  }
+  const before = q.n;
   const real = Math.min(q.n, k);
   q.n -= real;
   q.hurtT = s.t;
   s.stats.lost += real;
   emit(s, { t: 'loss', n: real, cause, x: x ?? q.x, z: z ?? q.z });
-  if (q.n <= 0) { s.cause = cause; }
+  if (q.n <= 0) { s.cause = cause; return; }
+  if (cause !== 'gate') {
+    q.recent += real;
+    const share = Math.min(0.8, (hasSp(q, 'medic') ? SP.medic.share : 0) + (h && h.id === 'bori' ? heroLerp(0.12, 0.3, h.lv) : 0));
+    q.pool += real * share;
+  }
+  if (soft && q.sp.length && (sub === 'slam' || real >= Math.max(3, Math.ceil(0.15 * before)))) spDrop(s, 'hit');
+  escort(s);
+}
+
+const hasSp = (q, k) => q.sp.some((m) => m.k === k);
+
+function spDrop(s, cause) {
+  const q = s.squad;
+  const m = q.sp.pop();
+  if (!m) return;
+  s.stats.spLost++;
+  emit(s, { t: 'spLose', k: m.k, cause, x: q.x, z: q.z });
+}
+
+/* 병사가 너무 적으면 특수병이 떠난다 */
+function escort(s) {
+  const q = s.squad;
+  while (q.sp.length && q.n < SP_ESCORT * q.sp.length) spDrop(s, 'escort');
+}
+
+/* 특수병 합류. 자리가 없거나 같은 병과가 있으면 병사로 바꿔 준다 */
+function addSpecial(s, k, via, x, z) {
+  const q = s.squad;
+  if (q.sp.length >= SP_MAX || hasSp(q, k) || q.n < SP_ESCORT * (q.sp.length + 1)) {
+    const n = Math.max(5, nice(0.12 * q.n));
+    gain(s, n, x, z, 'spFull');
+    emit(s, { t: 'spFull', k, n, x: x ?? q.x, z: z ?? q.z });
+    return;
+  }
+  q.sp.push({ id: s.nextId++, k, cd: 0.6 });
+  s.stats.spGot++;
+  emit(s, { t: 'spGet', k, via, x: x ?? q.x, z: z ?? q.z });
+  const h = s.hero;
+  if (h && HEROES[h.id].match === k) chargeHero(s, 0.25);
 }
 
 function gain(s, k, x, z, why) {
@@ -498,7 +655,7 @@ function gain(s, k, x, z, why) {
   emit(s, { t: 'gain', n: q.n - before, why, x: x ?? q.x, z: z ?? q.z });
 }
 
-/* 입력: { dir: -1|0|1, tx: 목표 x 또는 null } */
+/* 입력: { dir: -1|0|1, tx: 목표 x 또는 null, skill: 영웅 스킬 버튼(이번 틱에 눌림) } */
 export function step(s, input) {
   s.ev.length = 0;
   if (s.phase === 'won' || s.phase === 'lost') { s.endT += DT; s.tick++; s.t += DT; return s; }
@@ -539,8 +696,15 @@ export function step(s, input) {
   foesUpdate(s, R);
   spitsUpdate(s, R);
   if (wiped(s)) return s;
+  if (s.hero) heroUpdate(s, input);
+  if (s.boss) {
+    // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +30%까지
+    const base = BONUS_CAP * dps(q.n, q.tier, s.fireLv);
+    s.boss.bonus = Math.min(s.boss.bonus + base * DT, base * 1.5);
+  }
   fire(s, R);
   bulletsUpdate(s);
+  specialsUpdate(s, R);
   if (s.boss) bossUpdate(s, R);
   wiped(s);
   return s;
@@ -565,8 +729,10 @@ function enterArena(s) {
   const hp = s.bossHp > 0 ? s.bossHp : Math.round(dps(s.bossRef) * p.bossKill);
   s.boss = {
     z: s.stopZ + BOSS_GAP, x: 0, hp, max: hp, r: 2.5, walk: 1.3, hitT: -9,
-    slam: null, slamCd: 2.2, summonCd: 4.5, enraged: false, clashCd: 0, clash: false, t: 0,
+    slam: null, slamCd: 2.2, summonCd: 4.5, enraged: false, clashCd: 0, clash: false, t: 0, bonus: 0,
   };
+  s.stats.healedAtArena = s.stats.healed;
+  chargeHero(s, 0.5);
   // 남은 잡몹은 정리한다(경기장에서는 보스에게 집중)
   for (const f of s.foes) if (f.alive && f.z > s.stopZ + 4) f.alive = false;
   emit(s, { t: 'boss' });
@@ -590,12 +756,13 @@ function rowsUpdate(s) {
     const before = q.n;
     const after = applyOp(before, c.op, c.v);
     s.stats.gates++;
-    emit(s, { t: 'gate', op: c.op, v: c.v, before, after, good: after >= before, x: (c.x0 + c.x1) / 2, z: row.z, row: row.id });
+    emit(s, { t: 'gate', op: c.op, v: c.v, k: c.k, before, after, good: after >= before, x: (c.x0 + c.x1) / 2, z: row.z, row: row.id });
     if (after > before) gain(s, after - before, q.x, row.z, 'gate');
     else if (after < before) {
       if (after <= 0) { lose(s, before, 'gate'); }
       else lose(s, before - after, 'gate');
     }
+    if (c.op === 'unit' && q.n > 0) addSpecial(s, c.k, 'gate', q.x, row.z);
   }
 }
 
@@ -611,6 +778,7 @@ function propsUpdate(s, R) {
     if (ov <= 0) { p.passed = true; continue; }
     p.alive = false;
     if (p.kind === 'crate') { emit(s, { t: 'crateMiss', x: (p.x0 + p.x1) / 2, z: p.z }); continue; }
+    if (p.kind === 'cage') { emit(s, { t: 'cageMiss', k: p.reward.k, x: (p.x0 + p.x1) / 2, z: p.z }); continue; }
     const k = Math.ceil((p.hp / SOLDIER_HP) * Math.min(1, ov * 2));
     emit(s, { t: 'wallCrash', x: (p.x0 + p.x1) / 2, z: p.z, n: k });
     lose(s, Math.max(1, k), 'wall');
@@ -695,7 +863,7 @@ function fire(s, R) {
     q.fireAcc -= per;
     q.volley++;
     const b = volleySize(q.n);
-    const dmg = dps(q.n, q.tier, s.fireLv) / (VOLLEY_HZ * b);
+    const dmg = (dps(q.n, q.tier, s.fireLv) * heroDmg(s)) / (VOLLEY_HZ * b);
     const span = R + 0.3;
     for (let i = 0; i < b; i++) {
       // 고르게 퍼뜨리되 매번 조금씩 어긋나게(황금비 수열 — 난수를 쓰지 않는다)
@@ -750,29 +918,8 @@ function bulletsUpdate(s) {
       if (ticks) emit(s, { t: 'tick', row: hitObj.id, v: c.v, x: b.x, z: hitObj.z });
       continue;
     }
-    if (hitKind === 2) {
-      const p = hitObj;
-      p.hp -= b.dmg;
-      p.hitT = s.t;
-      if (p.hp <= 0) {
-        p.alive = false;
-        if (p.kind === 'crate') openCrate(s, p);
-        else emit(s, { t: 'wallBreak', x: (p.x0 + p.x1) / 2, z: p.z });
-      }
-      continue;
-    }
-    if (hitKind === 3) {
-      const f = hitObj;
-      f.hp -= b.dmg;
-      f.hitT = s.t;
-      if (f.hp <= 0) {
-        f.alive = false;
-        s.stats.kills++;
-        s.stats.killHp += f.max;
-        emit(s, { t: 'kill', kind: f.kind, x: f.x, z: f.z });
-      }
-      continue;
-    }
+    if (hitKind === 2) { hitProp(s, hitObj, b.dmg); continue; }
+    if (hitKind === 3) { hitFoe(s, hitObj, b.dmg, 'gun'); continue; }
     if (hitKind === 4) {
       bo.hp -= b.dmg;
       bo.hitT = s.t;
@@ -786,11 +933,48 @@ function bulletsUpdate(s) {
   void q;
 }
 
+/* 피해 공용 처리(총알·저격·로켓·영웅) */
+function hitProp(s, p, dmg) {
+  p.hp -= dmg;
+  p.hitT = s.t;
+  if (p.hp > 0) return;
+  p.alive = false;
+  if (p.kind === 'wall') emit(s, { t: 'wallBreak', x: (p.x0 + p.x1) / 2, z: p.z });
+  else openCrate(s, p);
+}
+function hitFoe(s, f, dmg, by) {
+  f.hp -= dmg;
+  f.hitT = s.t;
+  if (f.hp > 0) return false;
+  f.alive = false;
+  s.stats.kills++;
+  s.stats.killHp += f.max;
+  emit(s, { t: 'kill', kind: f.kind, x: f.x, z: f.z, by });
+  chargeHero(s, 0.01);
+  return true;
+}
+/* 특수병·영웅이 보스에게 주는 피해는 병사 화력의 +60%까지(쌓인 몫 b.bonus 안에서) */
+function hitBossBonus(s, dmg) {
+  const b = s.boss;
+  if (!b || b.hp <= 0) return 0;
+  const d = Math.min(dmg, b.bonus);
+  if (d <= 0) return 0;
+  b.bonus -= d;
+  b.hp -= d;
+  b.hitT = s.t;
+  return d;
+}
+
 function openCrate(s, p) {
   const q = s.squad;
   const r = p.reward;
   s.stats.crates++;
   const x = (p.x0 + p.x1) / 2;
+  if (r.type === 'unit') {
+    emit(s, { t: 'cageOpen', k: r.k, x, z: p.z });
+    addSpecial(s, r.k, 'cage', x, p.z);
+    return;
+  }
   if (r.type === 'gun') {
     if (q.tier < 3) { q.tier++; emit(s, { t: 'crate', type: 'gun', tier: q.tier, x, z: p.z }); }
     else { gain(s, Math.max(5, nice(q.n * 0.2)), x, p.z, 'crate'); emit(s, { t: 'crate', type: 'men', x, z: p.z }); }
@@ -847,7 +1031,7 @@ function bossUpdate(s, R) {
     if (b.slam.t <= 0) {
       const hit = q.x >= b.slam.x0 && q.x <= b.slam.x1;
       emit(s, { t: 'slam', x0: b.slam.x0, x1: b.slam.x1, hit });
-      if (hit) lose(s, Math.ceil(0.18 * q.n), 'boss');
+      if (hit) lose(s, Math.ceil(0.18 * q.n), 'boss', q.x, q.z, 'slam');
       b.slam = null;
       b.slamCd = p.slamEvery * (b.enraged ? 0.8 : 1);
     }
@@ -879,6 +1063,208 @@ function bossUpdate(s, R) {
       emit(s, { t: 'summon', n: m });
     }
   }
+}
+
+/* ---------- 영웅 ---------- */
+function chargeHero(s, a) {
+  const h = s.hero;
+  if (!h || h.act > 0 || h.charge >= 1) return;
+  h.charge = Math.min(1, h.charge + a);
+  if (h.charge >= 1) emit(s, { t: 'heroReady', id: h.id });
+}
+
+export function heroDmg(s) {
+  const h = s.hero;
+  return h && h.id === 'mungchi' && h.act > 0 ? heroLerp(1.4, 1.6, h.lv) : 1;
+}
+
+function heroUpdate(s, input) {
+  const h = s.hero;
+  const H = HEROES[h.id];
+  if (h.act > 0) {
+    h.act -= DT;
+    if (h.act <= 0) { h.act = 0; emit(s, { t: 'heroEnd', id: h.id }); }
+  }
+  if (h.act <= 0 && h.charge < 1) chargeHero(s, DT / (H.skill.cd * (1 - 0.06 * (h.lv - 1))));
+  if (input && input.skill && h.charge >= 1 && h.act <= 0) castHero(s);
+}
+
+function castHero(s) {
+  const h = s.hero;
+  const q = s.squad;
+  const H = HEROES[h.id];
+  h.charge = 0;
+  h.T = H.skill.dur;
+  h.act = h.T;
+  h.shot = 0;
+  s.stats.heroUses++;
+  emit(s, { t: 'heroCast', id: h.id, x: q.x, z: q.z });
+  if (h.id === 'bori') {
+    const k = Math.round(heroLerp(0.5, 0.7, h.lv) * q.recent);
+    q.recent = 0;
+    if (k > 0) {
+      q.pool = Math.max(0, q.pool - k);
+      s.stats.healed += k;
+      gain(s, k, q.x, q.z, 'hero');
+      emit(s, { t: 'heal', n: k, x: q.x, z: q.z });
+    }
+  }
+}
+
+/* 스킬을 지금 쓰면 좋은가 — 자동 발동 설정과 봇이 같은 규칙을 쓴다 */
+export function heroWants(s) {
+  const h = s.hero;
+  if (!h || h.charge < 1 || h.act > 0 || (s.phase !== 'run' && s.phase !== 'arena')) return false;
+  const q = s.squad;
+  const boss = s.boss && s.boss.hp > 0;
+  if (h.id === 'bori') return q.recent >= Math.max(4, 0.12 * q.n) || !!(s.boss && s.boss.clash);
+  if (boss) return true;
+  if (h.id === 'mungchi') {
+    const D = dps(q.n, q.tier, s.fireLv);
+    const R = radius(q.n);
+    let threat = 0;
+    for (const f of s.foes) if (f.alive && f.z > q.z && f.z - q.z < 25 && Math.abs(f.x - q.x) < R + 1.5) threat += f.hp;
+    if (threat >= 1.2 * D) return true;
+    for (const row of s.rows) {
+      const dz = row.z - q.z;
+      if (row.done || dz < 10 || dz > 30) continue;
+      const c = row.cells[pickCell(row, q.x)];
+      if (c.op === 'add' && c.v < c.cap) return true;
+    }
+    return false;
+  }
+  if (h.id === 'nabi') {
+    for (const f of s.foes) if (f.alive && (f.kind === 'spit' || f.kind === 'brute') && f.z - q.z > 2 && f.z - q.z < 36) return true;
+  }
+  return false;
+}
+
+/* ---------- 특수병 ---------- */
+const SNIPE_W = { spit: 4, brute: 2, runner: 1.5, grunt: 1 };
+
+/* 저격 표적: 독침 > 거구 > 질주 > 졸개(남은 체력 × 가중치), 없으면 보스 */
+function snipeTarget(s, near, far) {
+  const q = s.squad;
+  let best = null;
+  let bestScore = -1;
+  for (const f of s.foes) {
+    if (!f.alive) continue;
+    const dz = f.z - q.z;
+    if (dz < near || dz > far) continue;
+    const sc = f.hp * (SNIPE_W[f.kind] || 1);
+    if (sc > bestScore || (sc === bestScore && f.id < best.o.id)) { bestScore = sc; best = { kind: 'foe', o: f }; }
+  }
+  if (best) return best;
+  // 상자·철창은 쏘지 않는다(보상은 분대가 직접 쏴서 얻는 것)
+  if (s.boss && s.boss.hp > 0 && s.boss.z - q.z < far) return { kind: 'boss', o: s.boss };
+  return null;
+}
+
+function snipe(s, dmg, src) {
+  const q = s.squad;
+  const t = snipeTarget(s, SP.sniper.near, SP.sniper.far);
+  if (!t) return false;
+  let kill = false;
+  let x1;
+  let z1;
+  if (t.kind === 'foe') { x1 = t.o.x; z1 = t.o.z; kill = hitFoe(s, t.o, dmg, src === 'hero' ? 'hero' : 'sniper'); }
+  else if (t.kind === 'prop') { x1 = (t.o.x0 + t.o.x1) / 2; z1 = t.o.z; hitProp(s, t.o, dmg); kill = !t.o.alive; }
+  else { x1 = t.o.x; z1 = t.o.z - 1; hitBossBonus(s, dmg); }
+  emit(s, { t: 'snipe', x0: q.x, z0: q.z, x1, z1, src, kill });
+  return true;
+}
+
+/* 로켓 표적: 8–30m 안 반경 안의 체력 합이 가장 큰 무리(0.3D 이상) → 분대 통로의 벽 → 보스 */
+function rocketTarget(s, D) {
+  const q = s.squad;
+  const R = radius(q.n);
+  const r = SP.rocket.r;
+  let best = null;
+  let bestHp = 0.3 * D;
+  for (const f of s.foes) {
+    if (!f.alive) continue;
+    const dz = f.z - q.z;
+    if (dz < SP.rocket.near || dz > SP.rocket.far) continue;
+    let sum = 0;
+    for (const g of s.foes) if (g.alive && Math.abs(g.x - f.x) < r && Math.abs(g.z - f.z) < r) sum += g.hp;
+    if (sum > bestHp) { bestHp = sum; best = { x: f.x, z: f.z, fid: f.id }; }
+  }
+  if (best) return best;
+  for (const p of s.props) {
+    if (!p.alive || p.passed || p.kind !== 'wall') continue;
+    const dz = p.z - q.z;
+    if (dz < 4 || dz > SP.rocket.far || overlap(q.x - R, q.x + R, p.x0, p.x1) <= 0) continue;
+    if (!best || p.z < best.z) best = { x: clamp(q.x, p.x0, p.x1), z: p.z, fid: -1 };
+  }
+  if (best) return best;
+  if (s.boss && s.boss.hp > 0) return { x: s.boss.x, z: s.boss.z - 1, fid: -1 };
+  return null;
+}
+
+function specialsUpdate(s, R) {
+  const q = s.squad;
+  if (q.n <= 0) return;
+  const D = dps(q.n, q.tier, s.fireLv) * heroDmg(s);
+  // 회복 풀(의무병·보리)
+  q.recent *= 1 - DT / 4;
+  if (q.pool > 0) {
+    q.healAcc += Math.max(1.5, 0.35 * q.pool) * DT;
+    const k = Math.floor(Math.min(q.healAcc, q.pool));
+    if (k >= 1) {
+      q.pool -= k;
+      q.healAcc -= k;
+      s.stats.healed += k;
+      gain(s, k, q.x, q.z, 'heal');
+      emit(s, { t: 'heal', n: k, x: q.x, z: q.z });
+    } else if (q.pool < 1) { q.pool = 0; q.healAcc = 0; }
+  }
+  const h = s.hero;
+  const nabiBoost = h && h.id === 'nabi' ? 1 + heroLerp(0.3, 0.5, h.lv) : 1;
+  for (const m of q.sp) {
+    m.cd -= DT;
+    if (m.cd > 0) continue;
+    if (m.k === 'sniper') m.cd = snipe(s, SP.sniper.dmg * D * nabiBoost, 'sniper') ? SP.sniper.every : 0.25;
+    else if (m.k === 'rocket') {
+      const t = rocketTarget(s, D);
+      if (!t) { m.cd = 0.25; continue; }
+      const T = Math.max(0.25, (t.z - q.z) / SP.rocket.speed);
+      const rk = { id: s.nextId++, x0: q.x, z0: q.z + 0.5, x: t.x, z: t.z, t: T, T, r: SP.rocket.r, dmg: SP.rocket.dmg * D, fid: t.fid };
+      s.rockets.push(rk);
+      emit(s, { t: 'rocket', id: rk.id, x0: rk.x0, z0: rk.z0, x: rk.x, z: rk.z });
+      m.cd = SP.rocket.every;
+    } else m.cd = 1;
+  }
+  // 영웅 나비: 패시브 직접 저격(저격수가 없을 때), 스킬 중에는 연속 저격
+  if (h && h.id === 'nabi') {
+    if (h.act > 0) {
+      h.shot -= DT;
+      if (h.shot <= 0) { h.shot = 0.25; snipe(s, heroLerp(0.4, 0.6, h.lv) * D, 'hero'); }
+    } else if (!hasSp(q, 'sniper')) {
+      h.cd -= DT;
+      if (h.cd <= 0) h.cd = snipe(s, heroLerp(0.18, 0.28, h.lv) * D, 'hero') ? 1.8 : 0.25;
+    }
+  }
+  // 날아가는 로켓
+  if (s.rockets.length) {
+    for (const rk of s.rockets) {
+      if (rk.fid >= 0) {
+        const f = s.foes.find((g) => g.id === rk.fid);
+        if (f && f.alive) { rk.x = f.x; rk.z = f.z; }
+      }
+      rk.t -= DT;
+      if (rk.t > 0) continue;
+      for (const f of s.foes) if (f.alive && Math.abs(f.x - rk.x) < rk.r + f.r && Math.abs(f.z - rk.z) < rk.r + f.r) hitFoe(s, f, rk.dmg, 'rocket');
+      for (const p of s.props) {
+        if (!p.alive || p.passed || Math.abs(p.z - rk.z) > rk.r || overlap(rk.x - rk.r, rk.x + rk.r, p.x0, p.x1) <= 0) continue;
+        hitProp(s, p, rk.dmg);
+      }
+      const b = s.boss;
+      if (b && b.hp > 0 && Math.abs(b.z - 1 - rk.z) < rk.r + 1 && Math.abs(b.x - rk.x) < rk.r + b.r) hitBossBonus(s, rk.dmg);
+      emit(s, { t: 'boom', x: rk.x, z: rk.z, r: rk.r });
+    }
+    s.rockets = s.rockets.filter((rk) => rk.t > 0);
+  }
+  void R;
 }
 
 /* ---------- 봇 ---------- */
@@ -930,6 +1316,7 @@ export function botTarget(s, opt = {}) {
       }
       const after = applyOp(q.n, c.op, v);
       val += after <= 0 ? -q.n * 2 : after - q.n;
+      if (c.op === 'unit' && opt.specials !== false) val += spWorth(s, c.k);
     }
     // 벽: 그 자리에서 쏴서 못 부수면 남은 만큼 잃는다
     for (const p of s.props) {
@@ -941,9 +1328,10 @@ export function botTarget(s, opt = {}) {
         if (ov <= 0) continue;
         const left = p.hp - shot;
         if (left > 0) val -= contactCost(left) * Math.min(1, ov * 2) + 1;
-      } else if (opt.crates !== false && !row && shot >= p.hp) {
+      } else if (!row && shot >= p.hp) {
         const r = p.reward;
-        val += r.type === 'gun' ? (q.tier < 3 ? q.n * 0.25 + 3 : 2) : r.type === 'men' ? r.v : 2;
+        if (r.type === 'unit') { if (opt.specials !== false) val += spWorth(s, r.k); }
+        else if (opt.crates !== false) val += r.type === 'gun' ? (q.tier < 3 ? q.n * 0.25 + 3 : 2) : r.type === 'men' ? r.v : 2;
       }
     }
     // 무리: 이 자리 앞에 몰린 적 중 쏴서 못 잡는 만큼
@@ -1010,7 +1398,16 @@ function bossDodge(s, R) {
 }
 
 export function botInput(s, opt) {
-  return steer(s, botTarget(s, opt));
+  const inp = steer(s, botTarget(s, opt));
+  inp.skill = heroWants(s);
+  return inp;
+}
+
+/* 특수병 한 명이 병사 몇 명 몫인가(봇 판단용) */
+export function spWorth(s, k) {
+  const q = s.squad;
+  if (q.sp.length >= SP_MAX || hasSp(q, k) || q.n < SP_ESCORT * (q.sp.length + 1)) return Math.max(5, nice(0.12 * q.n));
+  return 3 + q.n * { medic: 0.1, sniper: 0.09, rocket: 0.12 }[k];
 }
 
 /* 기준 봇이 강화 없이 한 판 돌아 보스 체력·별 기준을 정한다. 기준 봇이 지면 다른 시드로 다시 만든다. */
@@ -1037,9 +1434,9 @@ export function prepareLevel(L) {
 
 export function calibrate(lv) {
   const maxTicks = Math.ceil((lv.arenaZ / lv.speed + 60) / DT);
-  // 약한 기준: 게이트를 쏴서 올릴 줄 모르고 상자도 안 여는(그래도 피하기는 하는) 플레이
+  // 약한 기준: 게이트를 쏴서 올릴 줄 모르고 상자·특수병도 안 챙기는(그래도 피하기는 하는) 플레이
   const w = newGame(lv, { start: START_N, fire: 0 });
-  while (w.phase === 'run' && w.tick < maxTicks) step(w, botInput(w, { pump: false, crates: false }));
+  while (w.phase === 'run' && w.tick < maxTicks) step(w, botInput(w, { pump: false, crates: false, specials: false }));
   if (w.phase !== 'arena') return { ok: false };
   const s = newGame(lv, { start: START_N, fire: 0 });
   while (s.phase === 'run' && s.tick < maxTicks) step(s, botInput(s));
@@ -1047,7 +1444,8 @@ export function calibrate(lv) {
   const arrive = s.squad.n;
   // 기준 봇보다 병력이 25% 적고 상자를 하나도 안 연 사람도 보스가 닿기 전에 잡도록.
   // 약한 기준이 기준 봇의 절반도 못 되는 레벨(쏴서 키우기·상자에 기대는 레벨)은 약한 기준 쪽으로 낮춘다.
-  const ref = Math.min(arrive, 2 * w.squad.n);
+  // 의무병이 되살린 몫은 빼고 본다(특수병 없이도 같은 보스를 잡을 수 있게).
+  const ref = Math.max(START_N, Math.min(arrive - s.stats.healedAtArena, 2 * w.squad.n));
   const hp = Math.max(30, Math.round(dps(ref * 0.75, 0, 0) * lv.params.bossKill));
   s.boss.hp = s.boss.max = hp;
   s.bossRef = ref;
@@ -1056,13 +1454,14 @@ export function calibrate(lv) {
   return { ok: true, lv: { bossHp: hp, arrive: ref, arriveStrong: arrive, arriveWeak: w.squad.n, par: s.squad.n, calTier: s.squad.tier, calTicks: s.tick } };
 }
 
-/* 별 기준 병력: 기준 봇이 '그 플레이어의 강화'를 달고 돌았을 때 남기는 병력. 강화는 이기기 쉽게 해 주지만 별은 실력으로. */
+/* 별 기준 병력: 기준 봇이 '그 플레이어의 강화와 출격 영웅'을 달고 돌았을 때 남기는 병력.
+   강화·영웅은 이기기 쉽게 해 주지만 별은 실력으로. */
 const parCache = new Map();
-export function parFor(lv, start = START_N, fire = 0) {
-  if (start === START_N && fire === 0) return lv.par;
-  const key = `${lv.L}:${lv.attempt}:${start}:${fire}`;
+export function parFor(lv, start = START_N, fire = 0, hero = null) {
+  if (start === START_N && fire === 0 && !hero) return lv.par;
+  const key = `${lv.L}:${lv.attempt}:${start}:${fire}:${hero ? hero.id + hero.lv : '-'}`;
   if (parCache.has(key)) return parCache.get(key);
-  const s = newGame(lv, { start, fire });
+  const s = newGame(lv, { start, fire, hero });
   const maxTicks = Math.ceil((lv.arenaZ / lv.speed + 60) / DT);
   while ((s.phase === 'run' || s.phase === 'arena') && s.tick < maxTicks) step(s, botInput(s));
   const par = s.phase === 'won' ? Math.max(lv.par, s.squad.n) : lv.par;
@@ -1086,7 +1485,8 @@ export function starsFor(par, n, won) {
 export function coinsFor(lv, s, won, stars, bonusPct = 0) {
   const base = won ? 10 + 2 * lv.L + 5 * stars : Math.floor((10 + 2 * lv.L) * 0.25);
   const kills = Math.floor(s.stats.kills / 10);
-  return Math.round((base + kills) * (1 + bonusPct / 100)) + s.stats.coins;
+  const sp = won ? 3 * s.squad.sp.length : 0;   // 살아남은 특수병 1명당 3코인
+  return Math.round((base + kills) * (1 + bonusPct / 100)) + s.stats.coins + sp;
 }
 
 /* 진행률(0~1) — 보스전이면 보스 체력으로 */
@@ -1102,5 +1502,9 @@ export function stateHash(s) {
   for (const f of s.foes) if (f.alive) h = hash(h, f.id, f.hp.toFixed(4), f.x.toFixed(4), f.z.toFixed(4));
   for (const r of s.rows) for (const c of r.cells) h = hash(h, c.v, c.acc.toFixed(4));
   if (s.boss) h = hash(h, s.boss.hp.toFixed(4), s.boss.z.toFixed(4));
+  for (const m of q.sp) h = hash(h, m.k, m.cd.toFixed(4));
+  h = hash(h, q.pool.toFixed(4), q.recent.toFixed(4));
+  for (const rk of s.rockets) h = hash(h, rk.x.toFixed(4), rk.z.toFixed(4), rk.t.toFixed(4));
+  if (s.hero) h = hash(h, s.hero.charge.toFixed(4), s.hero.act.toFixed(4));
   return h;
 }

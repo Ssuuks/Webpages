@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as C from '../assets/core.js';
 import { load, save, wipe, upgCost, UPGRADES } from '../assets/store.js';
+import { HERO_IDS, heroCap } from '../assets/roster.js';
 
 const MAX_LEVEL = 40;
 
@@ -313,4 +314,221 @@ test('저장: 저장소가 없어도 돌고, 강화 비용은 오른다', () => 
   assert.equal(wipe().coins, 0);
   for (const u of UPGRADES) assert.ok(u.effect(0) && u.effect(u.max));
   for (let i = 1; i < 10; i++) assert.ok(upgCost(i) > upgCost(i - 1));
+});
+
+/* ---------- v2: 특수병과·영웅·이어하기 ---------- */
+function arena(L, opt = {}) {
+  const lv = C.prepareLevel(L);
+  const s = C.newGame(lv, opt);
+  while (s.phase === 'run') C.step(s, C.botInput(s));
+  return { lv, s };
+}
+
+test('금색 특수병 칸: +v와 특수병 합류, 같은 병과·자리 초과는 병사로', () => {
+  assert.equal(C.applyOp(10, 'unit', 5), 15);
+  assert.equal(C.cellGood({ op: 'unit', v: 5, k: 'medic' }), 1);
+  assert.equal(C.cellLabel({ op: 'unit', v: 5, k: 'medic' }), '+5');
+  const s = C.newGame(C.prepareLevel(9), {});
+  s.squad.n = 60;
+  const row = { id: 1, z: 0.05, done: false, cells: [{ ...C.makeCell('unit', 5, 60, -5, 5), k: 'sniper' }] };
+  s.rows = [row];
+  C.step(s, { dir: 0 });
+  assert.equal(s.squad.n, 65);
+  assert.deepEqual(s.squad.sp.map((m) => m.k), ['sniper']);
+  // 같은 병과는 병사로
+  s.rows = [{ id: 2, z: s.squad.z + 0.01, done: false, cells: [{ ...C.makeCell('unit', 5, 60, -5, 5), k: 'sniper' }] }];
+  C.step(s, { dir: 0 });
+  assert.equal(s.squad.sp.length, 1);
+  assert.ok(s.ev.some((e) => e.t === 'spFull'));
+});
+
+test('곱셈·나눗셈은 특수병을 바꾸지 않고, 병사가 너무 적으면 특수병이 떠난다', () => {
+  const s = C.newGame(C.prepareLevel(9), {});
+  s.squad.n = 14;
+  s.squad.sp = [{ id: 1, k: 'medic', cd: 1 }, { id: 2, k: 'sniper', cd: 1 }, { id: 3, k: 'rocket', cd: 1 }];
+  s.rows = [{ id: 1, z: s.squad.z + 0.01, done: false, cells: [C.makeCell('div', 2, 14, -5, 5)] }];
+  C.step(s, { dir: 0 });
+  assert.equal(s.squad.n, 7);
+  assert.equal(s.squad.sp.length, 1, '7명 < 4×2 → 둘이 떠남');
+  assert.ok(s.ev.filter((e) => e.t === 'spLose' && e.cause === 'escort').length === 2);
+});
+
+test('큰 타격은 특수병을 쓰러뜨리지만 게이트·톱날 손실은 아니다', () => {
+  const s = C.newGame(C.prepareLevel(9), {});
+  s.squad.n = 100;
+  s.squad.sp = [{ id: 1, k: 'medic', cd: 1 }, { id: 2, k: 'sniper', cd: 1 }];
+  s.props = [{ id: 5, kind: 'wall', x0: -5, x1: 5, z: s.squad.z + 0.2, hp: 400, max: 400, alive: true, hitT: -9 }];
+  C.step(s, { dir: 0 });
+  assert.ok(s.squad.n <= 60);
+  assert.equal(s.squad.sp.length, 1);
+  const t = C.newGame(C.prepareLevel(9), {});
+  t.squad.n = 100;
+  t.squad.sp = [{ id: 1, k: 'medic', cd: 1 }];
+  t.rows = [{ id: 1, z: t.squad.z + 0.01, done: false, cells: [C.makeCell('add', -40, 100, -5, 5)] }];
+  C.step(t, { dir: 0 });
+  assert.equal(t.squad.n, 60);
+  assert.equal(t.squad.sp.length, 1, '게이트 손실은 특수병을 쓰러뜨리지 않는다');
+});
+
+test('의무병: 적에게 잃은 병사의 일부가 돌아오고 게이트 손실은 돌아오지 않는다', () => {
+  const lv = C.prepareLevel(9);
+  const base = C.newGame(lv, {});
+  base.foes = [];
+  base.props = [];
+  base.saws = [];
+  base.rows = [];
+  base.squad.n = 200;
+  base.squad.sp = [{ id: 1, k: 'medic', cd: 1 }];
+  const bite = (s) => { for (let i = 0; i < 10; i++) s.foes.push({ id: 100 + i, kind: 'grunt', x: s.squad.x, z: s.squad.z + 0.3, hp: 50, max: 50, alive: true, awake: true, hitT: -9, cd: 0, seed: 0, r: 0.42, spd: 0, home: 0, homeDist: 0 }); };
+  const s = structuredClone(base);
+  bite(s);
+  C.step(s, { dir: 0 });
+  const lost = 200 - s.squad.n;
+  assert.ok(lost >= 40, `잃은 수 ${lost}`);
+  for (let i = 0; i < 600; i++) C.step(s, { dir: 0 });
+  const back = s.squad.n - (200 - lost);
+  assert.ok(Math.abs(back - Math.round(lost * 0.4)) <= 2, `돌아온 수 ${back} / 잃은 ${lost}`);
+  const g = structuredClone(base);
+  g.rows = [{ id: 1, z: g.squad.z + 0.01, done: false, cells: [C.makeCell('add', -50, 200, -5, 5)] }];
+  for (let i = 0; i < 600; i++) C.step(g, { dir: 0 });
+  assert.equal(g.squad.n, 150);
+});
+
+test('저격수는 다른 차선의 독침 좀비를 먼저 쏘고, 로켓은 무리를 터뜨린다', () => {
+  const s = C.newGame(C.prepareLevel(13), {});
+  s.foes = [
+    { id: 1, kind: 'grunt', x: 0, z: s.squad.z + 20, hp: 20, max: 20, alive: true, awake: false, hitT: -9, cd: 0, seed: 0, r: 0.42, spd: 0, home: 0, homeDist: 0 },
+    { id: 2, kind: 'spit', x: 4, z: s.squad.z + 25, hp: 20, max: 20, alive: true, awake: false, hitT: -9, cd: 9, seed: 0, r: 0.5, spd: 0, home: 0, homeDist: 0 },
+  ];
+  s.rows = [];
+  s.props = [];
+  s.squad.sp = [{ id: 7, k: 'sniper', cd: 0 }];
+  C.step(s, { dir: 0 });
+  const sn = s.ev.find((e) => e.t === 'snipe');
+  assert.ok(sn && sn.x1 === 4, '독침 좀비를 노린다');
+  const r = C.newGame(C.prepareLevel(13), {});
+  r.rows = [];
+  r.props = [];
+  r.foes = [];
+  for (let i = 0; i < 8; i++) r.foes.push({ id: 10 + i, kind: 'grunt', x: -3 + (i % 3) * 0.5, z: r.squad.z + 20 + (i % 2) * 0.5, hp: 5, max: 5, alive: true, awake: false, hitT: -9, cd: 0, seed: 0, r: 0.42, spd: 0, home: 0, homeDist: 0 });
+  r.squad.sp = [{ id: 8, k: 'rocket', cd: 0 }];
+  let booms = 0;
+  for (let i = 0; i < 120; i++) { C.step(r, { dir: 0 }); booms += r.ev.filter((e) => e.t === 'boom').length; }
+  assert.ok(booms >= 1);
+  assert.ok(r.foes.filter((f) => f.alive).length <= 4, '무리의 절반 이상이 터진다');
+});
+
+test('레벨 생성: 철창은 L5부터, 금색 칸은 L9부터 레벨당 2줄 이하, 마지막·1칸 줄에는 없음, 소개 레벨에는 그 병과', () => {
+  for (let L = 1; L <= 60; L++) {
+    const lv = C.buildLevel(L);
+    const cages = lv.props.filter((p) => p.kind === 'cage');
+    if (L < C.UNLOCK.cage) assert.equal(cages.length, 0, `L${L}`);
+    const unitRows = lv.rows.filter((r) => r.cells.some((c) => c.op === 'unit'));
+    if (L < C.UNLOCK.recruit) assert.equal(unitRows.length, 0, `L${L}`);
+    assert.ok(unitRows.length <= 2);
+    assert.ok(!lv.rows.at(-1).cells.some((c) => c.op === 'unit'));
+    for (const r of unitRows) {
+      assert.ok(r.cells.length >= 2);
+      assert.ok(r.cells.some((c) => c.op !== 'unit'));
+    }
+    for (const c of cages) assert.ok(L >= C.UNLOCK[c.reward.k], `L${L} ${c.reward.k}`);
+    for (const k of C.SP_KINDS) {
+      if (C.UNLOCK[k] !== L) continue;
+      assert.ok(cages.some((c) => c.reward.k === k), `L${L} 소개 병과 ${k}`);
+    }
+  }
+});
+
+test('영웅: 게이지가 차야 쓰고, 경기장에 들어서면 +0.5, 쓰는 중엔 다시 못 쓴다', () => {
+  const lv = C.prepareLevel(6);
+  const s = C.newGame(lv, { hero: { id: 'mungchi', lv: 1 } });
+  assert.equal(s.hero.charge, 0.35);
+  C.step(s, { dir: 0, skill: true });
+  assert.equal(s.hero.act, 0, '게이지 부족');
+  s.hero.charge = 1;
+  C.step(s, { dir: 0, skill: true });
+  assert.ok(s.hero.act > 0 && s.hero.charge === 0);
+  assert.ok(C.heroDmg(s) > 1);
+  const used = s.stats.heroUses;
+  C.step(s, { dir: 0, skill: true });
+  assert.equal(s.stats.heroUses, used);
+  const a = arena(6, { hero: { id: 'nabi', lv: 2 } }).s;
+  assert.ok(a.hero.charge >= 0.5 || a.hero.act > 0 || a.stats.heroUses > 0);
+});
+
+test('영웅을 달아도 가만히 있으면 지고, 영웅은 해가 되지 않는다', () => {
+  // 그 레벨에서 가질 수 있는 최고 영웅 레벨(heroCap)로, 스킬은 자동 발동
+  for (const id of HERO_IDS) {
+    let idleWins = 0;
+    let all = 0;
+    for (let L = 3; L <= MAX_LEVEL; L += 2) {
+      const lv = C.prepareLevel(L);
+      const s = C.newGame(lv, { hero: { id, lv: heroCap(L) } });
+      const max = Math.ceil((lv.arenaZ / lv.speed + 80) / C.DT);
+      while ((s.phase === 'run' || s.phase === 'arena') && s.tick < max) C.step(s, { dir: 0, tx: null, skill: C.heroWants(s) });
+      all++;
+      if (s.phase === 'won') idleWins++;
+    }
+    assert.ok(idleWins / all <= 0.25, `${id} 달고 가만히 ${idleWins}/${all}`);
+  }
+  for (const id of ['mungchi', 'bori', 'nabi']) {
+    let withHero = 0;
+    let without = 0;
+    for (let L = 10; L <= MAX_LEVEL; L += 3) {
+      const lv = C.prepareLevel(L);
+      const a = C.newGame(lv, { hero: { id, lv: 1 } });
+      const b = C.newGame(lv, {});
+      const max = Math.ceil((lv.arenaZ / lv.speed + 80) / C.DT);
+      while ((a.phase === 'run' || a.phase === 'arena') && a.tick < max) C.step(a, C.botInput(a));
+      while ((b.phase === 'run' || b.phase === 'arena') && b.tick < max) C.step(b, C.botInput(b));
+      assert.equal(a.phase, 'won', `L${L} ${id}`);
+      withHero += a.squad.n;
+      without += b.squad.n;
+    }
+    assert.ok(withHero >= without * 0.98, `${id}: ${withHero} vs ${without}`);
+  }
+});
+
+test('강화·영웅·특수병을 갖춰도 보스전은 너무 빨리 끝나지 않는다', () => {
+  const median = (opt) => {
+    const times = [];
+    for (let L = 10; L <= MAX_LEVEL; L += 3) {
+      const { s } = arena(L, opt);
+      s.squad.sp = [{ id: 901, k: 'medic', cd: 0 }, { id: 902, k: 'sniper', cd: 0 }, { id: 903, k: 'rocket', cd: 0 }];
+      while (s.phase === 'arena' && s.tick < 60000) C.step(s, C.botInput(s));
+      if (s.phase === 'won') times.push(s.stats.bossT);
+    }
+    times.sort((a, b) => a - b);
+    return times[Math.floor(times.length / 2)];
+  };
+  // 그 무렵 흔한 갖춤(강화 5단계씩, 영웅 Lv3, 특수병 3명)과 끝까지 다 갖춘 경우
+  const mid = median({ start: C.START_N + 10, fire: 5, hero: { id: 'nabi', lv: 3 } });
+  const max = median({ start: C.START_N + 20, fire: 10, hero: { id: 'nabi', lv: 5 } });
+  assert.ok(mid >= 4, `보통 갖춤 보스전 중앙값 ${mid.toFixed(1)}초`);
+  assert.ok(max >= 2.5, `최대 갖춤 보스전 중앙값 ${max.toFixed(1)}초`);
+});
+
+test('별 기준은 출격 영웅마다 따로 계산한다', () => {
+  const lv = C.prepareLevel(11);
+  const a = C.parFor(lv, C.START_N, 0, { id: 'mungchi', lv: 3 });
+  const b = C.parFor(lv, C.START_N, 0, { id: 'bori', lv: 3 });
+  assert.ok(a >= lv.par && b >= lv.par);
+  assert.equal(C.parFor(lv, C.START_N, 0, { id: 'mungchi', lv: 3 }), a, '캐시');
+});
+
+test('이어하기: 스냅숏에서 되살린 판은 원래 판과 매 틱 똑같이 흘러간다(특수병·영웅·로켓 포함)', () => {
+  const lv = C.prepareLevel(14);
+  const s = C.newGame(lv, { hero: { id: 'nabi', lv: 3 } });
+  s.squad.sp = [{ id: 901, k: 'medic', cd: 0 }, { id: 902, k: 'rocket', cd: 0 }];
+  for (let i = 0; i < 1500; i++) C.step(s, C.botInput(s));
+  const copy = C.restore(JSON.parse(JSON.stringify(C.snapshot(s))));
+  assert.ok(copy);
+  let ticks = 0;
+  while ((s.phase === 'run' || s.phase === 'arena') && ticks < 20000) {
+    C.step(s, C.botInput(s));
+    C.step(copy, C.botInput(copy));
+    assert.equal(C.stateHash(copy), C.stateHash(s), `틱 ${s.tick}`);
+    ticks++;
+  }
+  assert.equal(C.restore({ nope: 1 }), null);
 });
