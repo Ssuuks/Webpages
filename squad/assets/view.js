@@ -18,13 +18,16 @@ export function makeView() {
   };
 }
 
-/* 카메라 배치와 화면 크기로 렌즈를 정한다. extra(0~1)는 보스전에서 뒤로 빠지는 정도. */
-export function fitView(v, w, h, roadHalf, extra = 0) {
+/* 카메라 배치와 화면 크기로 렌즈를 정한다. extra(0~1)는 보스전에서 뒤로 빠지는 정도.
+   opt(생략 가능): at = 분대가 올 화면 높이 비율(기본 0.74), up·back = 카메라 높이·거리,
+   minHz = 지평선이 이보다 위로 올라가지 않게(화면 높이 비율) — 낮은 화면에서는 분대가 그만큼 내려온다. */
+export function fitView(v, w, h, roadHalf, extra = 0, opt = null) {
+  const at = opt && opt.at != null ? opt.at : 0.74;
   v.w = w;
   v.h = h;
   v.col = Math.min(w, h * 0.62);
-  v.back = 16 + 6 * extra;
-  v.up = 13 + 3 * extra;
+  v.back = (opt && opt.back != null ? opt.back : 16) + 6 * extra;
+  v.up = (opt && opt.up != null ? opt.up : 13) + 3 * extra;
   v.camH = v.up;
   const th = Math.atan2(v.up, v.back + v.ahead);
   v.sin = Math.sin(th);
@@ -35,9 +38,14 @@ export function fitView(v, w, h, roadHalf, extra = 0) {
   v.squadD = dS;
   v.F = (v.col * 0.9 * dS) / (2 * roadHalf * (1 + 0.12 * extra));
   v.cx = w / 2;
-  // 분대가 화면 높이 74% 지점에 오도록
-  v.cy = h * 0.74 + (vS * v.F) / dS;
+  // 분대가 화면 높이 at 지점에 오도록
+  v.cy = h * at + (vS * v.F) / dS;
   v.horizon = v.cy - (v.sin / v.cos) * v.F;
+  if (opt && opt.minHz != null && v.horizon < opt.minHz * h) {
+    const dy = opt.minHz * h - v.horizon;
+    v.cy += dy;
+    v.horizon += dy;
+  }
 }
 
 /* 투영 결과를 담는 재사용 객체 — 프레임마다 객체를 만들지 않는다 */
