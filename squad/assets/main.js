@@ -10,7 +10,7 @@ import {
   load, save, wipe, normalize, probe, storageMode, keepBackup, readBackup, UPGRADES, upgCost, totalStars, seen, SAVE_V,
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
-import { HEROES, HERO_IDS, UNITS, HERO_MAX_LV, heroCost, heroCap, heroesEarned, biomeOf } from './roster.js';
+import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, heroCost, heroCap, heroesEarned, biomeOf } from './roster.js';
 
 const $ = (id) => document.getElementById(id);
 const cvs = $('cv');
@@ -143,11 +143,13 @@ document.addEventListener('pointerdown', () => unlock(), { capture: true });
 const LEFT = (e) => e.key === 'ArrowLeft' || e.code === 'KeyA';
 const RIGHT = (e) => e.key === 'ArrowRight' || e.code === 'KeyD';
 const SKILL = (e) => e.key === ' ' || e.key === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space';
+/* 마우스·키보드 기기면 안내에 글쇠도 적는다 */
+const FINE = typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches;
 window.addEventListener('keydown', (e) => {
   unlock();
   if (LEFT(e)) { keys.left = true; if (mode === 'play') { markInput(); e.preventDefault(); } }
   else if (RIGHT(e)) { keys.right = true; if (mode === 'play') { markInput(); e.preventDefault(); } }
-  else if (SKILL(e) && mode === 'play') { skillPressed = true; e.preventDefault(); }
+  else if (SKILL(e) && mode === 'play') { pressSkill(); e.preventDefault(); }
   else if (e.key === 'Escape' || e.code === 'KeyP') {
     if (mode === 'play') pause();
     else if (mode === 'pause') resume();
@@ -196,7 +198,7 @@ function armHistory() {
 }
 window.addEventListener('popstate', () => {
   historyArmed = false;
-  if (!$('scrJoin').hidden) { closeJoin(false); armHistory(); return; }
+  if (!$('scrJoin').hidden) { joinAfter = null; closeJoin(false); armHistory(); return; }
   if (!$('scrNotice').hidden) { $('scrNotice').hidden = true; armHistory(); return; }
   if (mode === 'play') { pause(); armHistory(); return; }
   if (mode === 'pause' || mode === 'card') { armHistory(); return; }
@@ -380,8 +382,10 @@ function renderHero() {
   const skill = document.createElement('div');
   skill.className = 'skill-box';
   const shown = Math.max(1, lvH);
-  const nextTxt = lvH && lvH < HERO_MAX_LV ? `<br><em>Lv${lvH + 1}: ${H.skill.text(lvH + 1)}</em>` : '';
-  skill.innerHTML = `<b>스킬 · ${H.skill.name}</b>${H.skill.text(shown)}${nextTxt}<b style="margin-top:6px">패시브 · ${H.passive.name}</b>${H.passive.text(shown)}`;
+  const next = lvH && lvH < HERO_MAX_LV;
+  const nextSkill = next ? `<br><em>Lv${lvH + 1}: ${H.skill.text(lvH + 1)}</em>` : '';
+  const nextPassive = next ? `<br><em>Lv${lvH + 1}: ${H.passive.text(lvH + 1)}</em>` : '';
+  skill.innerHTML = `<b>스킬 · ${H.skill.name}</b>${H.skill.text(shown)}${nextSkill}<b style="margin-top:6px">패시브 · ${H.passive.name}</b>${H.passive.text(shown)}${nextPassive}`;
   box.appendChild(skill);
   const actions = document.createElement('div');
   actions.className = 'stack';
@@ -394,13 +398,12 @@ function renderHero() {
   } else {
     if (lvH < HERO_MAX_LV) {
       const cost = heroCost(lvH);
-      const up = document.createElement('button');
-      up.className = 'btn';
+      const up = document.createElement(lvH >= cap ? 'p' : 'button');
+      up.className = lvH >= cap ? 'muted hero-cap' : 'btn';
       if (lvH >= cap) {
-        up.disabled = true;
-        up.textContent = `상한 Lv${cap} — 레벨 ${(cap - 1) * 10}을 깨면 Lv${cap + 1}까지`;
+        up.textContent = `레벨 ${(cap - 1) * 10}을 깨면 Lv${cap + 1}까지 올릴 수 있어요`;
       } else {
-        up.innerHTML = `Lv${lvH + 1}로 올리기 · <span class="coinchip">${cost}</span>`;
+        up.innerHTML = `Lv${lvH} → Lv${lvH + 1} · <span class="coinchip">${cost}</span>`;
         up.disabled = data.coins < cost;
         up.addEventListener('click', () => {
           if (data.coins < cost) { sfx.deny(); return; }
@@ -451,17 +454,24 @@ function newlyEarned() {
   return HERO_IDS.filter((id) => ownedHero(id) && !data.seenHeroes.includes(id));
 }
 const modalOpen = () => !$('scrJoin').hidden || !$('scrNotice').hidden;
+let joinAfter = null;   // 결과 화면에서 띄웠을 때: 닫은 뒤 이어서 할 일
 function nextJoinNotice() {
   if (mode !== 'title' || modalOpen()) return;
   const id = newlyEarned()[0];
   if (!id) { maybeNudge(); return; }
+  openJoin(id);
+}
+function openJoin(id) {
   const H = HEROES[id];
+  const already = data.heroes.sel === id;
+  $('joinTake').textContent = already ? '좋아요!' : '지금 데려가기';
+  $('joinLater').hidden = already;
   const face = $('joinFace');
   face.textContent = '';
   face.appendChild(faceEl(id, 6));
   $('joinName').textContent = `${H.name} · ${H.role}`;
   $('joinLine').textContent = `“${H.line}”`;
-  $('joinSkill').innerHTML = `<b>${H.skill.name}</b>${H.skill.text(1)}`;
+  $('joinSkill').innerHTML = `<b>${H.skill.name}</b>${H.skill.text(1)}<br><small>게이지가 다 차면 화면 아래 가운데 영웅 버튼${FINE ? '(또는 Space 키)' : ''}을 눌러요</small>`;
   $('scrJoin').hidden = false;
   $('scrJoin').dataset.id = id;
   setTimeout(() => { if (!$('scrJoin').hidden) $('joinTake').focus({ preventScroll: true }); }, 30);
@@ -473,6 +483,9 @@ function closeJoin(take) {
   if (id && !data.seenHeroes.includes(id)) data.seenHeroes.push(id);
   if (take && id) data.heroes.sel = id;
   save(data);
+  const after = joinAfter;
+  joinAfter = null;
+  if (after) { after(); return; }
   renderTitle();
   setTimeout(nextJoinNotice, 300);
 }
@@ -726,6 +739,9 @@ function startLevel(L, opts = {}) {
   const firstInRegion = (L - 1) % 10 === 0 && L > 1;
   $('cardRegion').textContent = firstInRegion ? `새 지역: ${b.name} · 레벨 ${L}~${L + 9}` : b.name;
   $('cardNew').textContent = NEW_THING[L] || (L % 5 === 0 ? '강한 보스가 기다려요' : '');
+  const newUnit = UNIT_IDS.find((k) => UNITS[k].unlock === L);
+  $('cardUnit').hidden = !newUnit;
+  $('cardUnit').textContent = newUnit ? `${UNITS[newUnit].name}: ${UNITS[newUnit].desc}` : '';
   $('cardGoal').textContent = '준비 중…';
   $('cardHero').hidden = true;
   $('cardGo').hidden = true;
@@ -791,6 +807,7 @@ function begin(L) {
   skillPressed = false;
   tutorial = L === 1 && !data.tips.moved;
   $('tut').hidden = !tutorial;
+  if (tutorial && FINE) $('tutText').textContent = '←/→ 키나 화면 왼쪽·오른쪽을 눌러 이동';
   $('cardGo').hidden = true;
   slowUntil = 0;
   tipQueue.length = 0;
@@ -822,7 +839,26 @@ function pause() {
   keys.left = keys.right = false;
   releaseWake();
   saveRunNow();
+  renderPauseUnits();
   show('scrPause');
+}
+function renderPauseUnits() {
+  const box = $('pSp');
+  box.textContent = '';
+  const sp = (s && s.squad.sp) || [];
+  box.hidden = !sp.length;
+  for (const m of sp) {
+    const U = UNITS[m.k];
+    if (!U) continue;
+    const row = document.createElement('div');
+    row.appendChild(iconEl(m.k, 2));
+    const t = document.createElement('span');
+    t.innerHTML = `<b></b> — `;
+    t.querySelector('b').textContent = U.name;
+    t.append(U.desc);
+    row.appendChild(t);
+    box.appendChild(row);
+  }
 }
 function resume() {
   if (mode !== 'pause' || attract || !s) return;
@@ -874,6 +910,7 @@ function resumeRun() {
   save(data);
   // 멈춘 채로 시작 — 준비되면 계속하기
   mode = 'pause';
+  renderPauseUnits();
   show('scrPause');
   toast('준비되면 계속하기를 누르세요');
 }
@@ -895,7 +932,7 @@ function updateTips(now) {
   data.tips[t.key] = 1;
   save(data);
   el.textContent = t.text;
-  el.classList.toggle('low', !!(s && s.boss));
+  el.classList.add('low');   // 분대 아래 빈 길 위 — 다가오는 게이트를 가리지 않는다
   el.hidden = false;
   el.classList.remove('pop');
   void el.offsetWidth;
@@ -906,7 +943,7 @@ function watchTips() {
   const q = s.squad;
   for (const row of s.rows) {
     if (row.done || row.z - q.z > 34) continue;
-    tip('gate', '큰 숫자 게이트 쪽으로 가세요. 총알이 닿으면 숫자가 올라가요!');
+    tip('gate', '큰 숫자 게이트로! 쏘면 숫자가 올라가요');
     if (row.cells.some((c) => c.op === 'mul')) tip('mul', '×는 병력이 많을수록 유리해요');
     if (row.cells.some((c) => c.op === 'div')) tip('div', '÷2는 병력이 반으로 줄어요');
     if (row.cells.some((c) => c.op === 'unit')) tip('unitGate', '금색 게이트: 숫자만큼 병사가 늘고 특수병이 합류해요');
@@ -915,7 +952,7 @@ function watchTips() {
   for (const p of s.props) {
     if (!p.alive || p.passed || p.z - q.z > 32) continue;
     if (p.kind === 'wall') tip('wall', '벽의 숫자는 체력이에요. 약한 벽을 쏴서 뚫고 지나가세요');
-    else if (p.kind === 'cage') tip('cage', '철창을 쏴서 부수면 갇힌 동료가 합류해요');
+    else if (p.kind === 'cage') tip('cage', '철창을 쏴서 부수면 갇힌 특수병이 합류해요');
     else tip('crate', '상자를 쏴서 부수면 무기·병력 보상을 받아요');
   }
   for (const w of s.saws) if (w.z - q.z < 26 && w.z > q.z) tip('saw', '톱날이 움직이는 범위를 피하세요');
@@ -951,19 +988,30 @@ function handleEvents(ev) {
         if (UNITS[e.k]) tip('sp-' + e.k, UNITS[e.k].tip);
         seen(data, 'unit', e.k);
         break;
-      case 'spFull': sfx.coin(); break;
-      case 'spLose':
-        sfx.leave();
-        if (e.cause === 'escort') tip('escort', '병사가 너무 적으면 특수병이 떠나요');
-        else tip('spHit', '크게 맞거나 내려찍기에 맞으면 특수병이 쓰러져요');
+      case 'spFull': {
+        sfx.coin();
+        const sp = s.squad.sp;
+        const why = sp.some((m) => m.k === e.k) ? '같은 특수병이 이미 있어서' : sp.length >= 3 ? '특수병 자리(3명)가 꽉 차서' : '병사가 적어서';
+        toast(`${why} 병사 +${e.n}명이 대신 왔어요`, 1800);
         break;
+      }
+      case 'spLose': {
+        sfx.leave();
+        const nm = UNITS[e.k] ? UNITS[e.k].name : '특수병';
+        if (e.cause === 'escort') { toast(`병사가 너무 적어서 ${nm}이 떠났어요`, 1400); tip('escort', '특수병 1명마다 병사가 4명은 있어야 함께해요'); }
+        else { toast(`${nm}이 쓰러졌어요`, 1400); tip('spHit', '크게 맞거나 내려찍기에 맞으면 특수병이 쓰러져요'); }
+        break;
+      }
       case 'snipe': sfx.snipe(); break;
       case 'rocket': sfx.rocket(); break;
       case 'boom': sfx.boom(); vibe(15); break;
       case 'heal': sfx.heal(); break;
       case 'heroReady':
         sfx.ready();
-        if (!data.set.autoSkill) tip('heroReady', '영웅 스킬 준비! 아래 가운데 버튼을 누르세요');
+        if (!data.set.autoSkill && s.hero && HEROES[s.hero.id]) {
+          const H = HEROES[s.hero.id];
+          tip('heroReady', `${H.skill.name} 준비! ${FINE ? 'Space 키나 ' : ''}아래 가운데 버튼: ${H.skill.text(s.hero.lv)}`);
+        }
         break;
       case 'heroCast': sfx.cast(); vibe([20, 30, 20]); seen(data, 'hero', e.id); slow(0.35, 300); break;
       case 'spitFire': tip('spit', '땅에 초록 표시가 보이면 옆으로 피하세요'); break;
@@ -1083,11 +1131,13 @@ function finish() {
   const helpN = Math.max(5, Math.round((lv.arrive || 30) * 0.2));
   const offerHelp = !won && (data.fails[L] | 0) >= 3;
   $('resHelp').hidden = !offerHelp;
-  $('resHelp').textContent = `지원 병력 +${helpN}명 받고 다시 (별 최대 1개)`;
+  $('resHelp').textContent = `지원 +${helpN}명 받고 다시 (별 1개까지)`;
   $('resHelp').dataset.n = helpN;
   $('resBackup').hidden = storageMode() === 'ok';
   const cheapest = Math.min(...UPGRADES.map((u) => (data.upg[u.id] >= u.max ? Infinity : upgCost(data.upg[u.id]))));
   $('resUpg').classList.toggle('glow', data.coins >= cheapest);
+  $('hudCoins').textContent = compact(data.coins);
+  hudCache = '';
   show('scrResult');
 }
 
@@ -1221,6 +1271,12 @@ function resize() {
   }
 }
 window.addEventListener('resize', resize);
+(function watchDpr() {
+  if (typeof matchMedia !== 'function') return;
+  try {
+    matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`).addEventListener('change', () => { resize(); watchDpr(); }, { once: true });
+  } catch { /* 옛 브라우저 */ }
+})();
 
 /* ---------- 화면 꺼짐 방지 ---------- */
 async function requestWake() {
@@ -1255,7 +1311,21 @@ for (const b of document.querySelectorAll('[data-back]')) {
   });
 }
 on('btnPause', () => { sfx.click(); pause(); });
-on('skillBtn', () => { if (mode === 'play') skillPressed = true; });
+on('skillBtn', () => pressSkill());
+function pressSkill() {
+  if (mode !== 'play') return;
+  const h = s && s.hero;
+  if (h && h.charge < 1 && h.act <= 0) {
+    sfx.deny();
+    const btn = $('skillBtn');
+    btn.classList.remove('nope');
+    void btn.offsetWidth;
+    btn.classList.add('nope');
+    tip('skillWait', '주황 고리가 다 차면 쓸 수 있어요');
+    return;
+  }
+  skillPressed = true;
+}
 on('pResume', () => { sfx.click(); resume(); });
 on('pRestart', () => { clearRun(); startLevel(lv.L, { support }); });
 on('pSet', () => { sfx.click(); mode = 'set'; $('setBack').dataset.back = 'pause'; renderSet(); show('scrSet'); armHistory(); });
@@ -1266,8 +1336,10 @@ on('pSaveQuit', () => {
   goTitle();
 });
 on('resPrimary', () => {
-  if (s.phase === 'won') tryStart(lv.L + 1);
-  else tryStart(lv.L);
+  const next = s.phase === 'won' ? lv.L + 1 : lv.L;
+  const id = newlyEarned()[0];
+  if (id) { sfx.click(); joinAfter = () => tryStart(next); openJoin(id); return; }
+  tryStart(next);
 });
 on('resHelp', () => tryStart(lv.L, { support: Number($('resHelp').dataset.n) || 0 }));
 on('resUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); $('upgBack').dataset.back = 'result'; });

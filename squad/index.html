@@ -39,6 +39,7 @@
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; background: var(--ink); color: var(--text); }
+body { word-break: keep-all; overflow-wrap: break-word; }   /* 한글이 낱말 가운데서 끊기지 않게 */
 body {
   font-family: var(--body);
   -webkit-font-smoothing: antialiased;
@@ -96,11 +97,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .btn.primary { background: var(--amber); color: var(--amber-ink); font-size: 24px; box-shadow: 0 4px 0 var(--amber-dark), 0 7px 0 var(--edge); }
 .btn.primary:active { box-shadow: 0 1px 0 var(--amber-dark), 0 3px 0 var(--edge); }
 .btn.glow { box-shadow: 0 0 0 3px var(--amber) inset, 0 4px 0 var(--edge); }
-.btn.small { min-height: 42px; font-size: 16px; padding: 0 12px; }
+.btn.small { min-height: 44px; font-size: 16px; padding: 0 12px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; gap: 10px; }
 .row > * { flex: 1; min-width: 0; }
-.back { font-family: var(--display); font-size: 16px; color: var(--muted); padding: 8px 4px; }
+.back { font-family: var(--display); font-size: 16px; color: var(--muted); padding: 10px 8px; min-width: 44px; min-height: 44px; }
 .muted { color: var(--muted); font-size: 13px; line-height: 1.5; }
 .coinchip {
   display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
@@ -117,7 +118,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .logo .l1, .logo .l2 { display: block; font-family: var(--display); font-weight: 400; }
 .logo .l1 { font-size: clamp(50px, 16vw, 82px); color: #FFFFFF; text-shadow: 0 4px 0 var(--edge), 3px 0 0 var(--edge), -3px 0 0 var(--edge), 0 -3px 0 var(--edge); }
 .logo .l2 { font-size: clamp(62px, 21vw, 104px); color: var(--amber); transform: rotate(-4deg); margin-top: 2px; text-shadow: 0 6px 0 var(--amber-dark), 0 9px 0 var(--edge), 3px 0 0 var(--edge), -3px 0 0 var(--edge), 0 -3px 0 var(--edge); }
-.tag { margin-top: 12px; text-align: center; font-size: 14px; font-weight: 600; text-shadow: 0 2px 2px rgba(0, 0, 0, 0.8); }
+.tag { margin: 12px auto 0; width: max-content; max-width: 92vw; text-align: center; font-size: 14px; font-weight: 600; text-shadow: 0 2px 2px rgba(0, 0, 0, 0.8); background: rgba(14, 10, 26, 0.62); border-radius: 999px; padding: 5px 14px; }
 .menu { width: min(380px, 100%); display: flex; flex-direction: column; gap: 10px; }
 .menu .btn.primary { min-height: 64px; font-size: 28px; }
 .menu-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
@@ -199,6 +200,12 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .card .region { font-family: var(--display); font-size: 15px; color: var(--blue); }
 .card .new { margin-top: 6px; font-family: var(--display); font-size: 18px; color: var(--amber); text-shadow: 0 2px 0 var(--edge); }
 .card .goal { margin-top: 2px; font-size: 13px; font-weight: 600; text-shadow: 0 1px 2px #000; }
+.card .unit-tip { margin: 6px auto 0; max-width: 300px; font-size: 13px; font-weight: 600; line-height: 1.45; background: rgba(14, 10, 26, 0.62); border-radius: 12px; padding: 6px 10px; }
+.sp-list { display: grid; gap: 6px; text-align: left; font-size: 13px; line-height: 1.4; }
+.sp-list div { display: flex; gap: 8px; align-items: flex-start; background: rgba(14, 10, 26, 0.45); border-radius: 10px; padding: 6px 8px; }
+.sp-list canvas, .sp-list .dot { width: 22px; height: 22px; flex: none; border-radius: 50%; }
+.sp-list b { font-family: var(--display); font-weight: 400; }
+.hero-cap { font-size: 13px; text-align: center; }
 .card-hero { pointer-events: auto; margin-top: 10px; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--panel); border: 3px solid var(--edge); font-family: var(--display); font-size: 15px; box-shadow: 0 3px 0 var(--edge); }
 .card-hero canvas, .card-hero .fallback { width: 32px; height: 32px; border-radius: 50%; background: var(--panel2); }
 .card-go { pointer-events: auto; margin-top: 10px; }
@@ -247,6 +254,8 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 #skillBtn.ready { animation: bounce 0.6s ease-in-out infinite; }
 #skillBtn.ready .lbl { color: #3A2306; background: var(--amber); }
 #skillBtn.active { background: conic-gradient(var(--green) calc(var(--p, 0) * 1turn), rgba(14, 10, 26, 0.75) 0); }
+#skillBtn.nope { animation: nope 0.32s ease-in-out; }
+@keyframes nope { 25% { transform: translateX(calc(-50% - 6px)); } 75% { transform: translateX(calc(-50% + 6px)); } }
 @keyframes bounce { 50% { transform: translate(-50%, -6px); } }
 #tut { position: fixed; inset: auto 0 22%; z-index: 11; pointer-events: none; text-align: center; }
 #tut .hands { display: flex; justify-content: space-between; padding: 0 12%; }
@@ -261,6 +270,7 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 }
 #tip.pop { animation: tipIn 0.25s ease-out; }
 #tip.low { top: auto; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 104px); }
+@media (max-height: 600px) { #tip { font-size: 13px; padding: 6px 10px; } }
 @keyframes tipIn { from { opacity: 0; transform: translate(-50%, -8px); } }
 #toast { position: fixed; left: 50%; top: calc(max(12px, env(safe-area-inset-top)) + 64px); transform: translateX(-50%); width: max-content; max-width: min(420px, 90vw); text-align: center; z-index: 40; pointer-events: none; padding: 10px 16px; border-radius: 14px; background: var(--amber); color: var(--amber-ink); font-family: var(--display); font-size: 16px; border: 3px solid var(--edge); box-shadow: 0 4px 0 var(--edge); }
 
@@ -298,7 +308,7 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
     <div class="prog" aria-hidden="true"><i id="hudBar"></i></div>
     <span class="skull" aria-hidden="true">☠</span>
     <span class="hud-coins coinchip" id="hudCoins">0</span>
-    <button id="btnPause" aria-label="일시정지"></button>
+    <button id="btnPause" aria-label="일시정지" title="일시정지 (Esc)"></button>
   </div>
   <div id="bossBar" hidden><span>보스</span><div class="bar"><i id="bossFill"></i></div></div>
   <div id="spChips" aria-label="함께하는 특수병"></div>
@@ -306,7 +316,7 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 <div id="touchL" class="touch-hint" hidden aria-hidden="true">◀</div>
 <div id="touchR" class="touch-hint" hidden aria-hidden="true">▶</div>
 <button id="skillBtn" hidden aria-label="영웅 스킬"><span class="face" id="skillFace"></span><span class="lbl" id="skillLbl">스킬</span></button>
-<div id="tut" hidden><div class="hands"><span class="hand"></span><span class="hand"></span></div><p>화면 왼쪽·오른쪽을 꾹 눌러 이동</p></div>
+<div id="tut" hidden><div class="hands"><span class="hand"></span><span class="hand"></span></div><p id="tutText">화면 왼쪽·오른쪽을 꾹 눌러 이동</p></div>
 <div id="tip" hidden role="status"></div>
 <div id="toast" hidden role="status"></div>
 
@@ -407,11 +417,12 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 
 <section id="scrCard" class="screen" hidden>
   <div class="card">
-    <div class="eyebrow">LEVEL</div>
+    <div class="eyebrow">레벨</div>
     <div class="big" id="cardL">1</div>
     <div class="region" id="cardRegion"></div>
     <div class="new" id="cardNew"></div>
     <div class="goal" id="cardGoal"></div>
+    <div class="unit-tip" id="cardUnit" hidden></div>
     <button class="card-hero" id="cardHero" hidden></button>
     <button class="btn primary card-go" id="cardGo" hidden>출격!</button>
   </div>
@@ -420,6 +431,7 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 <section id="scrPause" class="screen dim" hidden>
   <div class="sheet stack">
     <h2>일시정지</h2>
+    <div class="sp-list" id="pSp" hidden></div>
     <button id="pResume" class="btn primary" data-focus>계속하기</button>
     <button id="pRestart" class="btn">처음부터 다시</button>
     <div class="row"><button id="pSet" class="btn">설정</button><button id="pSaveQuit" class="btn">저장하고 나가기</button></div>
