@@ -1292,8 +1292,10 @@ on('cardGo', () => { if (mode === 'card') begin(run ? run.L : data.cur); });
 on('joinTake', () => { sfx.click(); closeJoin(true); });
 on('joinLater', () => { sfx.click(); closeJoin(false); });
 on('storeChip', () => {
-  notice(storageMode() === 'full' ? '저장 공간이 가득 찼어요' : '저장이 꺼져 있어요',
-    '지금 이 브라우저는 저장을 막고 있어요(사생활 보호 모드 등). 창을 닫으면 진행이 사라져요. 백업 코드를 복사해 두면 나중에 되살릴 수 있어요.', [
+  const full = storageMode() === 'full';
+  notice(full ? '저장 공간이 가득 찼어요' : '저장이 꺼져 있어요',
+    full ? '기기 저장 공간이 모자라 진행을 저장하지 못하고 있어요. 창을 닫으면 최근 진행이 사라질 수 있으니 백업 코드를 만들어 두세요.'
+      : '지금 이 브라우저는 저장을 막고 있어요(사생활 보호 모드 등). 창을 닫으면 진행이 사라져요. 백업 코드를 만들어 두면 나중에 되살릴 수 있어요.', [
       { label: '백업 코드 만들기', primary: true, fn: () => { $('bkBack').dataset.back = 'title'; openBackup('make'); } },
       { label: '괜찮아요' },
     ]);
