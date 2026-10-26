@@ -532,3 +532,56 @@ test('이어하기: 스냅숏에서 되살린 판은 원래 판과 매 틱 똑�
   }
   assert.equal(C.restore({ nope: 1 }), null);
 });
+
+/* ---------- v2: 저장 ---------- */
+import { normalize, defaults, SAVE_V, totalStars } from '../assets/store.js';
+import { encodeBackup, decodeBackup } from '../assets/save.js';
+import fs from 'node:fs';
+import path from 'node:path';
+
+test('저장 v1 → v2: 필드는 더하기만, 값은 범위 안으로, 지난 진행으로 얻은 영웅을 채운다', () => {
+  const v1 = { maxL: 12, cur: 12, stars: { 1: 3, 2: 5, 3: -1 }, best: { 1: 40 }, coins: -20, upg: { start: 99, fire: 2 }, set: { sound: false }, tips: { moved: 1 }, fails: {}, plays: 7 };
+  const d = normalize(v1);
+  assert.equal(d.v, SAVE_V);
+  assert.equal(d.maxL, 12);
+  assert.equal(d.coins, 0);
+  assert.equal(d.stars[2], 3);
+  assert.equal(d.stars[3], 0);
+  assert.equal(d.upg.start, 10);
+  assert.equal(d.set.sound, false, '옛 설정 유지');
+  assert.equal(d.set.music, true, '새 설정 기본값');
+  assert.ok(d.heroes.lv.mungchi >= 1, 'L3 이후 진행이면 뭉치 합류');
+  assert.ok(d.heroes.lv.bori >= 1, 'L8을 깼으면 보리 합류');
+  assert.ok(!d.heroes.lv.nabi, '별 30개 미만이면 나비는 아직');
+  assert.equal(d.heroes.sel, 'mungchi');
+  assert.deepEqual(normalize(d), d, '두 번 해도 같다');
+  // 더 새 버전의 저장은 버전을 낮추지 않는다
+  assert.equal(normalize({ ...v1, v: SAVE_V + 1 }).v, SAVE_V + 1);
+  assert.equal(normalize(defaults()).heroes.sel, '', '처음에는 영웅이 없다');
+});
+
+test('백업 코드 왕복과 오타 검사', async () => {
+  const d = normalize({ ...defaults(), maxL: 30, coins: 1234, stars: { 1: 3, 2: 3 } });
+  const code = await encodeBackup(d);
+  assert.ok(code.startsWith('SQD'));
+  const back = await decodeBackup(code);
+  assert.equal(back.data.coins, 1234);
+  assert.equal(totalStars(back.data), 6);
+  await assert.rejects(decodeBackup(code.slice(0, -2) + 'zz'));
+  await assert.rejects(decodeBackup('hello'));
+});
+
+test('오프라인 캐시 목록에 게임이 불러오는 모든 파일이 있다', () => {
+  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const shell = new Set([...sw.matchAll(/'\.\/([^']+)'/g)].map((m) => m[1]));
+  const seenFiles = new Set();
+  const walk = (rel) => {
+    if (seenFiles.has(rel)) return;
+    seenFiles.add(rel);
+    const src = fs.readFileSync(path.join(root, rel), 'utf8');
+    for (const m of src.matchAll(/^\s*import\s[^;]*?from\s+'(\.[^']+)'/gm)) walk(path.posix.normalize(path.posix.join(path.posix.dirname(rel), m[1])));
+  };
+  walk('assets/main.js');
+  for (const f of seenFiles) assert.ok(shell.has(f), `sw.js SHELL에 ${f}가 없다`);
+});

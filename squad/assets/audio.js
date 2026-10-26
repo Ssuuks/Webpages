@@ -2,6 +2,8 @@
    브라우저 정책상 첫 터치·클릭 뒤에 unlock()을 불러야 소리가 난다. 실패해도 게임은 그대로 돈다. */
 let ctx = null;
 let master = null;
+let bus = null;          // 효과음과 음악이 함께 지나는 압축기
+const onReady = [];
 let noiseBuf = null;
 let enabled = true;
 const lastAt = Object.create(null);
@@ -24,10 +26,18 @@ export function unlock() {
     comp.ratio.value = 6;
     master.connect(comp);
     comp.connect(ctx.destination);
+    bus = comp;
+    for (const fn of onReady.splice(0)) { try { fn(ctx, bus); } catch { /* 무시 */ } }
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.6, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   } catch { ctx = null; }
+}
+
+/* 오디오가 준비되면(첫 터치 뒤) 불린다 — 배경 음악이 같은 출력에 붙는다 */
+export function whenAudio(fn) {
+  if (ctx && bus) fn(ctx, bus);
+  else onReady.push(fn);
 }
 
 /* 탭이 가려지면 소리를 멈춘다 */
@@ -164,5 +174,43 @@ export const sfx = {
   deny() {
     if (!ready('deny', 60)) return;
     tone(200, 0.12, { type: 'square', vol: 0.08 });
+  },
+  snipe() {
+    if (!ready('snipe', 90)) return;
+    noise(0.07, { vol: 0.16, freq: 3200, q: 0.9, kind: 'highpass' });
+    tone(1400, 0.06, { type: 'square', vol: 0.05, slide: 0.4 });
+  },
+  rocket() {
+    if (!ready('rocket', 120)) return;
+    noise(0.35, { vol: 0.1, freq: 600, q: 0.6, slide: 3 });
+  },
+  boom() {
+    if (!ready('boom', 90)) return;
+    noise(0.4, { vol: 0.24, freq: 500, q: 0.5, slide: 0.2 });
+    tone(80, 0.3, { type: 'sine', vol: 0.25, slide: 0.5 });
+  },
+  heal() {
+    if (!ready('heal', 140)) return;
+    tone(988, 0.08, { type: 'sine', vol: 0.07 });
+    tone(1319, 0.12, { type: 'sine', vol: 0.07, delay: 0.06 });
+  },
+  join() {
+    if (!ready('join', 150)) return;
+    [659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.12, { type: 'square', vol: 0.06, delay: i * 0.06 }));
+  },
+  leave() {
+    if (!ready('leave', 150)) return;
+    tone(523, 0.18, { type: 'triangle', vol: 0.1, slide: 0.6 });
+    tone(392, 0.25, { type: 'triangle', vol: 0.08, slide: 0.6, delay: 0.12 });
+  },
+  ready() {
+    if (!ready('heroReady', 400)) return;
+    tone(1047, 0.08, { type: 'square', vol: 0.06 });
+    tone(1568, 0.16, { type: 'square', vol: 0.06, delay: 0.07 });
+  },
+  cast() {
+    if (!ready('cast', 300)) return;
+    [392, 523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.1, { type: 'sawtooth', vol: 0.06, delay: i * 0.035 }));
+    noise(0.3, { vol: 0.1, freq: 2000, q: 0.5, slide: 0.3, delay: 0.05 });
   },
 };
