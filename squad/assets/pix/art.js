@@ -218,8 +218,8 @@ const MUN_HEAD = [
   'hhhhhhyhyhhbbb..',
   'BBBBBBBBBBBBBB..',
 ];
-const MUN_NAPE = ['.ssseeeeeeeess...'];
-const MUN_LOOK = [['.sKpeeeeeeeess...'], ['.sKpeeeeeeeess...'.replace('K', 's')]];
+const MUN_NAPE = ['.ssseeeeeeeess..'];
+const MUN_LOOK = [['.sKpeeeeeeeess..'], ['.sKpeeeeeeeess..'.replace('K', 's')]];
 const MUN_BODY = [
   [
     'EEcceeEccccc.M..',
@@ -302,34 +302,23 @@ const BORI_HEAD = [
   '..wuw...wuw.....',
   '...ww...ww......',
   '...vwwwwwwv.....',
-  '..vwwwqwqwwv....',
-  '..vwwwwqwwwv....',
-  '.rrvvvvvvvvrr...',
+  '..vwwqwqwwwv....',
+  '..vwwqqqwwwv....',
+  '.rrvvvqvvvvrr...',
 ];
-const BORI_NAPE = ['.rrRrrrrrrRrr....'];
-const BORI_LOOK = [['.rsKprrrrrRrr....'], ['.rssprrrrrRrr....']];
-const BORI_BODY = [
-  [
-    '.qqq..qqq.......',
-    'qQQqqqqqqqz.....',
-    'qQqqqqqqqqz.....',
-    'sqqqqWqqqzzs....',
-    '.qqqWWWqqzz.....',
-    '..qqqWqqzzC.....',
-    '..cqqqqzzcC.....',
-    '..nnnqzzncn.....',
-  ],
-  [
-    '.qqq..qqq.......',
-    'qQQqqqqqqqz.....',
-    'qQqqqqqqqqz.....',
-    'sqqqqWqqqzzs....',
-    '.qqqWWWqqzz.....',
-    '..qqqWqqzzC.....',
-    '..cqqqqzzcC.....',
-    '..nnnqzzncn.....',
-  ],
+const BORI_NAPE = ['.rrRrrrrrrRrr...'];
+const BORI_LOOK = [['.rsKprrrrrRrr...'], ['.rssprrrrrRrr...']];
+const BORI_BAG = [
+  '.cqqqcqqqc......',
+  '.qQQqqqqqqz.....',
+  'sqQqqWqWqqzs....',
+  '.qqqqWWWqqz.....',
+  '..qqqqWqqz......',
+  '..cqqqqqzc......',
+  '..ccqqqzcc......',
+  '..nnnqznnn......',
 ];
+const BORI_BODY = [BORI_BAG, BORI_BAG];
 const BORI_EARS_B = [
   '...wu.....wu....',
   '..wu.....wu.....',
@@ -338,24 +327,24 @@ const BORI_EARS_B = [
 ];
 const BORI_ACT = [
   [
-    's.qqq..qqq.s....',
-    'sqQQqqqqqqqzs...',
-    '.qQqqqqqqqqz....',
-    '.qqqqqWqqqzz....',
-    '.qqqqWWWqqzz....',
-    '..qqqqWqqzzC....',
-    '..cqqqqqzzcC....',
-    '..nnnnqzzncn....',
+    's.cqqqcqqqc.s...',
+    's.qQQqqqqqqzs...',
+    '.cqQqqWqWqqzc...',
+    '..qqqqWWWqqz....',
+    '...qqqqWqqz.....',
+    '...cqqqqqzc.....',
+    '...ccqqqzcc.....',
+    '...nnnqznnn.....',
   ],
   [
-    '.sqqq..qqqs.....',
-    '.qQQqqqqqqqz....',
-    '.qQqqqqqqqqz....',
-    '.qqqqqWqqqzz....',
-    '.qqqqWWWqqzz....',
-    '..qqqqWqqzzC....',
-    '..cqqqqqzzcC....',
-    '..nnnnqzzncn....',
+    '.scqqqcqqqcs....',
+    '.cqQQqqqqqqzc...',
+    '..qQqqWqWqqz....',
+    '..qqqqWWWqqz....',
+    '...qqqqWqqz.....',
+    '...cqqqqqzc.....',
+    '...ccqqqzcc.....',
+    '...nnnqznnn.....',
   ],
 ];
 const BORI_KO = [
@@ -364,15 +353,15 @@ const BORI_KO = [
   '....wu...wu.....',
   '....wuw.wuw.....',
   '....vwwwwwwv....',
-  '...vwwwqwqwwv...',
-  '...vwwwwqwwwv...',
-  '..rrvvvvvvvvrr..',
+  '...vwwqwqwwwv...',
+  '...vwwqqqwwwv...',
+  '..rrvvvqvvvvrr..',
   '..rrRrrrrrrRrr..',
-  '..qqq..qqq......',
-  '.qQQqqqqqqqz....',
-  'kqqqqqWqqqzzk...',
-  'kqqqqWWWqqzzk...',
-  '..qqqqWqqzz.....',
+  '..cqqqcqqqc.....',
+  '.sqQQqqqqqqzs...',
+  'kkqQqqWqWqqzkk..',
+  '..qqqqWWWqqz....',
+  '...qqqqWqqz.....',
 ];
 
 /* 나비: 고양이귀 비니, 키 두 배의 총(등에 비스듬히), 꼬리 끝 리본 */
@@ -387,8 +376,8 @@ const NABI_HEAD = [
   '.hHhhhhhghbb....',
   '.BBBBBBBgBBB....',
 ];
-const NABI_NAPE = ['..rrrrrwrrr......'];
-const NABI_LOOK = [['..sKprrwrrr......'], ['..sspprwrrr......']];
+const NABI_NAPE = ['..rrrrrwrrr.....'];
+const NABI_LOOK = [['..sKprrwrrr.....'], ['..sspprwrrr.....']];
 const NABI_BODY = [
   [
     '..ccccwcccc.....',
@@ -495,7 +484,7 @@ const FACE_BORI = [
   '...wuw........wuw...',
   '....wuw......wuw....',
   '.....vwwwwwwwwv.....',
-  '....vwwwwwqwwwwwv...',
+  '....vwwwwqwqwwwwv...',
   '...vwwwwwqqqwwwwwv..',
   '..rrvvvvvvqvvvvvvrr.',
   '.rrrrrrrrrrrrrrrrrrr',
@@ -503,9 +492,9 @@ const FACE_BORI = [
   'rrsKKKssssssssKKKsrr',
   'rrKWKKKssssssKWKKKrr',
   'rrKKKKKssssssKKKKKrr',
-  'rrsKKKsvvvvvvsKKKsrr',
-  'rrppsssvGvvGvssspprr',
-  '.rppssssvvvvssssppr.',
+  'rrsKKKssssssssKKKsrr',
+  'rrppssssvGGvsssspprr',
+  '.rppssssssssssssppr.',
   '..sssssssKKssssss...',
   '...ssssssssssssss...',
   '...cccccqqqqccccc...',
