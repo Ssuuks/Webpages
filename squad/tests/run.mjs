@@ -392,6 +392,16 @@ test('의무병: 적에게 잃은 병사의 일부가 돌아오고 게이트 손
   g.rows = [{ id: 1, z: g.squad.z + 0.01, done: false, cells: [C.makeCell('add', -50, 200, -5, 5)] }];
   for (let i = 0; i < 600; i++) C.step(g, { dir: 0 });
   assert.equal(g.squad.n, 150);
+  // 한 명씩 잃어도(풀에 1명이 안 되는 몫) 버려지지 않고 모여서 돌아온다
+  const one = structuredClone(base);
+  for (let k = 0; k < 20; k++) {
+    one.foes.push({ id: 300 + k, kind: 'grunt', x: one.squad.x, z: one.squad.z + 0.3, hp: 5, max: 5, alive: true, awake: true, hitT: -9, cd: 0, seed: 0, r: 0.42, spd: 0, home: 0, homeDist: 0 });
+    for (let i = 0; i < 40; i++) C.step(one, { dir: 0 });
+  }
+  for (let i = 0; i < 600; i++) C.step(one, { dir: 0 });
+  const lost1 = one.stats.lost;
+  assert.ok(lost1 >= 18, `한 명씩 잃은 수 ${lost1}`);
+  assert.ok(one.stats.healed >= Math.floor(lost1 * 0.4) - 1, `한 명씩 잃고 돌아온 수 ${one.stats.healed} / ${lost1}`);
 });
 
 test('저격수는 다른 차선의 독침 좀비를 먼저 쏘고, 로켓은 무리를 터뜨린다', () => {
@@ -454,6 +464,16 @@ test('영웅: 게이지가 차야 쓰고, 경기장에 들어서면 +0.5, 쓰는
   assert.equal(s.stats.heroUses, used);
   const a = arena(6, { hero: { id: 'nabi', lv: 2 } }).s;
   assert.ok(a.hero.charge >= 0.5 || a.hero.act > 0 || a.stats.heroUses > 0);
+  // 경기장 직전에 스킬을 써도 입장 +0.5는 쌓인다
+  const lv6 = C.prepareLevel(6);
+  const b = C.newGame(lv6, { hero: { id: 'mungchi', lv: 1 } });
+  while (b.phase === 'run' && b.squad.z < b.arenaZ - 6) C.step(b, C.botInput(b));
+  b.hero.charge = 1;
+  C.step(b, { ...C.botInput(b), skill: true });
+  assert.ok(b.hero.act > 0);
+  while (b.phase === 'run') C.step(b, { ...C.botInput(b), skill: false });
+  assert.ok(b.hero.act > 0, '스킬이 켜진 채 경기장에 들어감');
+  assert.ok(b.hero.charge >= 0.5, `입장 충전 ${b.hero.charge}`);
 });
 
 test('영웅을 달아도 가만히 있으면 지고, 영웅은 해가 되지 않는다', () => {
@@ -502,10 +522,12 @@ test('강화·영웅·특수병을 갖춰도 보스전은 너무 빨리 끝나�
     return times[Math.floor(times.length / 2)];
   };
   // 그 무렵 흔한 갖춤(강화 5단계씩, 영웅 Lv3, 특수병 3명)과 끝까지 다 갖춘 경우
-  const mid = median({ start: C.START_N + 10, fire: 5, hero: { id: 'nabi', lv: 3 } });
-  const max = median({ start: C.START_N + 20, fire: 10, hero: { id: 'nabi', lv: 5 } });
-  assert.ok(mid >= 4, `보통 갖춤 보스전 중앙값 ${mid.toFixed(1)}초`);
-  assert.ok(max >= 2.5, `최대 갖춤 보스전 중앙값 ${max.toFixed(1)}초`);
+  for (const id of ['nabi', 'mungchi']) {
+    const mid = median({ start: C.START_N + 10, fire: 5, hero: { id, lv: 3 } });
+    const max = median({ start: C.START_N + 20, fire: 10, hero: { id, lv: 5 } });
+    assert.ok(mid >= 4, `${id} 보통 갖춤 보스전 중앙값 ${mid.toFixed(1)}초`);
+    assert.ok(max >= 2.5, `${id} 최대 갖춤 보스전 중앙값 ${max.toFixed(1)}초`);
+  }
 });
 
 test('별 기준은 출격 영웅마다 따로 계산한다', () => {
@@ -531,6 +553,19 @@ test('이어하기: 스냅숏에서 되살린 판은 원래 판과 매 틱 똑�
     ticks++;
   }
   assert.equal(C.restore({ nope: 1 }), null);
+  // v2 필드가 빠진 스냅숏도 숫자가 깨지지 않는다(NaN이면 보스를 못 잡는다)
+  const { s: b } = arena(12, { hero: { id: 'nabi', lv: 2 } });
+  const o = JSON.parse(JSON.stringify(C.snapshot(b)));
+  for (const k of ['pool', 'healAcc', 'recent', 'lossFrac']) delete o.squad[k];
+  delete o.hero;
+  delete o.boss.bonus;
+  for (const bl of o.bullets) delete bl.hm;
+  const r = C.restore(o);
+  assert.ok(r);
+  r.squad.sp = [{ id: 1, k: 'sniper', cd: 0 }];
+  for (let i = 0; i < 600 && r.phase === 'arena'; i++) C.step(r, C.botInput(r));
+  assert.ok(Number.isFinite(r.boss.hp) && Number.isFinite(r.boss.bonus) && Number.isFinite(r.squad.pool));
+  assert.equal(typeof C.stateHash(r), 'number');
 });
 
 /* ---------- v2: 저장 ---------- */

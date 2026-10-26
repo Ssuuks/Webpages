@@ -111,7 +111,8 @@ export function save(data) {
     mode = e && (e.name === 'QuotaExceededError' || e.code === 22) ? 'full' : 'memory';
     if (mode === 'full') {
       // 부수적인 칸부터 비우고 한 번 더
-      try { localStorage.removeItem('squad.run.v1'); localStorage.removeItem(CORRUPT); localStorage.removeItem(BAK); localStorage.setItem(KEY, raw); mode = 'ok'; } catch { /* 메모리에만 */ }
+      // 되돌리기용 보관(BAK)은 남긴다 — 방금 약속한 되돌리기가 사라지지 않게
+      try { localStorage.removeItem('squad.run.v1'); localStorage.removeItem(CORRUPT); localStorage.setItem(KEY, raw); mode = 'ok'; } catch { /* 메모리에만 */ }
     }
   }
 }
@@ -122,17 +123,24 @@ export function wipe() {
   return normalize(defaults());
 }
 
-/* 가져오기·초기화 전에 지금 진행을 한 칸 보관(되돌리기용) */
+/* 가져오기·초기화 전에 지금 진행을 한 칸 보관(되돌리기용). 저장소에 못 쓰면 이 탭 동안만 메모리에 둔다. */
+let bakMemory = null;
+let bakMemoryOnly = false;
 export function keepBackup(data) {
-  try { localStorage.setItem(BAK, JSON.stringify({ at: Date.now(), data })); return true; } catch { return false; }
+  bakMemory = { at: Date.now(), data: JSON.parse(JSON.stringify(data)) };
+  try { localStorage.setItem(BAK, JSON.stringify(bakMemory)); bakMemoryOnly = false; } catch { bakMemoryOnly = true; }
+  return true;
 }
 export function readBackup() {
+  let raw;
+  try { raw = localStorage.getItem(BAK); } catch { return bakMemory; }
+  if (!raw) return bakMemoryOnly ? bakMemory : null;
   try {
-    const o = JSON.parse(localStorage.getItem(BAK) || 'null');
+    const o = JSON.parse(raw);
     return o && o.data ? o : null;
   } catch { return null; }
 }
-export function dropBackup() { try { localStorage.removeItem(BAK); } catch { /* 무시 */ } }
+export function dropBackup() { bakMemory = null; bakMemoryOnly = false; try { localStorage.removeItem(BAK); } catch { /* 무시 */ } }
 
 /* 강화 */
 export const UPGRADES = [

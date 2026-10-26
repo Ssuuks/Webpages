@@ -19,7 +19,7 @@ export const WEAPON = [1, 1.35, 1.7, 2.1];
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
 export const VERSION = 'squad-v1';   // 레벨 배치의 소금 — 바꾸지 않는다(바꾸면 모든 레벨이 달라진다)
-export const SIM = 2;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
+export const SIM = 3;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
 
 /* 메커닉이 처음 나오는 레벨 */
 export const UNLOCK = {
@@ -579,8 +579,15 @@ export function restore(o) {
     && Array.isArray(o.saws) && Array.isArray(o.bullets) && Array.isArray(o.spits) && typeof o.squad.n === 'number' && o.params;
   if (!ok) return null;
   o.ev = [];
-  o.rockets = o.rockets || [];
-  o.squad.sp = o.squad.sp || [];
+  const q = o.squad;
+  const num0 = (obj, keys) => { for (const k of keys) if (typeof obj[k] !== 'number' || !Number.isFinite(obj[k])) obj[k] = 0; };
+  if (!Array.isArray(o.rockets)) o.rockets = [];
+  if (!Array.isArray(q.sp)) q.sp = [];
+  num0(q, ['pool', 'healAcc', 'recent', 'lossFrac']);
+  if (o.hero === undefined) o.hero = null;
+  if (o.hero) num0(o.hero, ['charge', 'act', 'T', 'cd', 'shot']);
+  if (o.boss) num0(o.boss, ['bonus']);
+  for (const b of o.bullets) if (typeof b.hm !== 'number') b.hm = 1;
   return o;
 }
 
@@ -733,7 +740,12 @@ function enterArena(s) {
     slam: null, slamCd: 2.2, summonCd: 4.5, enraged: false, clashCd: 0, clash: false, t: 0, bonus: 0,
   };
   s.stats.healedAtArena = s.stats.healed;
-  chargeHero(s, 0.5);
+  // 경기장 입장 +0.5 — 스킬이 켜져 있어도 쌓아 두고, 끝나면 이어서 찬다
+  const h = s.hero;
+  if (h && h.charge < 1) {
+    h.charge = Math.min(1, h.charge + 0.5);
+    if (h.charge >= 1 && h.act <= 0) emit(s, { t: 'heroReady', id: h.id });
+  }
   // 남은 잡몹은 정리한다(경기장에서는 보스에게 집중)
   for (const f of s.foes) if (f.alive && f.z > s.stopZ + 4) f.alive = false;
   emit(s, { t: 'boss' });
@@ -864,13 +876,14 @@ function fire(s, R) {
     q.fireAcc -= per;
     q.volley++;
     const b = volleySize(q.n);
-    const dmg = (dps(q.n, q.tier, s.fireLv) * heroDmg(s)) / (VOLLEY_HZ * b);
+    const hm = heroDmg(s);
+    const dmg = (dps(q.n, q.tier, s.fireLv) * hm) / (VOLLEY_HZ * b);
     const span = R + 0.3;
     for (let i = 0; i < b; i++) {
       // 고르게 퍼뜨리되 매번 조금씩 어긋나게(황금비 수열 — 난수를 쓰지 않는다)
       const j = ((q.volley * 0.618034 + i * 0.381966) % 1) - 0.5;
       const x = q.x - span + ((i + 0.5 + j * 0.8) / b) * 2 * span;
-      s.bullets.push({ x, z: q.z + 0.4 * R, d: 0, dmg });
+      s.bullets.push({ x, z: q.z + 0.4 * R, d: 0, dmg, hm });
     }
     emit(s, { t: 'shot', b });
   }
@@ -922,7 +935,10 @@ function bulletsUpdate(s) {
     if (hitKind === 2) { hitProp(s, hitObj, b.dmg); continue; }
     if (hitKind === 3) { hitFoe(s, hitObj, b.dmg, 'gun'); continue; }
     if (hitKind === 4) {
-      bo.hp -= b.dmg;
+      // 뭉치 스킬로 늘어난 몫은 특수병·영웅 보너스 예산에서만 들어간다(보스가 너무 빨리 녹지 않게)
+      const base = b.hm > 1 ? b.dmg / b.hm : b.dmg;
+      bo.hp -= base;
+      if (base < b.dmg) hitBossBonus(s, b.dmg - base);
       bo.hitT = s.t;
       continue;
     }
@@ -954,7 +970,7 @@ function hitFoe(s, f, dmg, by) {
   chargeHero(s, 0.01);
   return true;
 }
-/* 특수병·영웅이 보스에게 주는 피해는 병사 화력의 +60%까지(쌓인 몫 b.bonus 안에서) */
+/* 특수병·영웅이 보스에게 주는 피해는 병사 화력의 +30%(BONUS_CAP)까지(쌓인 몫 b.bonus 안에서) */
 function hitBossBonus(s, dmg) {
   const b = s.boss;
   if (!b || b.hp <= 0) return 0;
@@ -1217,7 +1233,7 @@ function specialsUpdate(s, R) {
       s.stats.healed += k;
       gain(s, k, q.x, q.z, 'heal');
       emit(s, { t: 'heal', n: k, x: q.x, z: q.z });
-    } else if (q.pool < 1) { q.pool = 0; q.healAcc = 0; }
+    } else if (q.pool < 1) q.healAcc = 0;   // 1명이 안 되는 몫은 남겨 두고 다음 손실과 합친다
   }
   const h = s.hero;
   const nabiBoost = h && h.id === 'nabi' ? 1 + heroLerp(0.3, 0.5, h.lv) : 1;
@@ -1519,8 +1535,9 @@ export function stateHash(s) {
   for (const r of s.rows) for (const c of r.cells) h = hash(h, c.v, c.acc.toFixed(4));
   if (s.boss) h = hash(h, s.boss.hp.toFixed(4), s.boss.z.toFixed(4));
   for (const m of q.sp) h = hash(h, m.k, m.cd.toFixed(4));
-  h = hash(h, q.pool.toFixed(4), q.recent.toFixed(4));
+  h = hash(h, q.pool.toFixed(4), q.recent.toFixed(4), q.healAcc.toFixed(4), q.lossFrac.toFixed(4));
+  if (s.boss) h = hash(h, s.boss.bonus.toFixed(4));
   for (const rk of s.rockets) h = hash(h, rk.x.toFixed(4), rk.z.toFixed(4), rk.t.toFixed(4));
-  if (s.hero) h = hash(h, s.hero.charge.toFixed(4), s.hero.act.toFixed(4));
+  if (s.hero) h = hash(h, s.hero.charge.toFixed(4), s.hero.act.toFixed(4), s.hero.cd.toFixed(4), s.hero.shot.toFixed(4));
   return h;
 }

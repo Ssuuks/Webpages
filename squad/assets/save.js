@@ -5,17 +5,19 @@ const RUN_KEY = 'squad.run.v1';
 const PREFIX_Z = 'SQD1.';   // 압축(deflate-raw) + base64url
 const PREFIX_P = 'SQD0.';   // 압축을 못 쓰는 브라우저용(그대로 base64url)
 let runMemory = null;
+let runMemoryOnly = false;   // 저장소에 못 쓰고 메모리에만 있는 판
 
 /* ---------- 진행 중인 판 ---------- */
 export function saveRun(snap) {
   const raw = JSON.stringify(snap);
   runMemory = raw;
-  try { localStorage.setItem(RUN_KEY, raw); return true; } catch { return false; }
+  try { localStorage.setItem(RUN_KEY, raw); runMemoryOnly = false; return true; } catch { runMemoryOnly = true; return false; }
 }
 
 export function loadRun() {
-  let raw = runMemory;
-  try { raw = localStorage.getItem(RUN_KEY) ?? runMemory; } catch { /* 메모리 */ }
+  // 메모리 사본은 저장소를 못 쓸 때만 본다(다른 탭이 지운 판을 되살리지 않게)
+  let raw;
+  try { raw = localStorage.getItem(RUN_KEY) ?? (runMemoryOnly ? runMemory : null); } catch { raw = runMemory; }
   if (!raw) return null;
   try {
     const o = JSON.parse(raw);
@@ -26,6 +28,7 @@ export function loadRun() {
 
 export function clearRun() {
   runMemory = null;
+  runMemoryOnly = false;
   try { localStorage.removeItem(RUN_KEY); } catch { /* 무시 */ }
 }
 

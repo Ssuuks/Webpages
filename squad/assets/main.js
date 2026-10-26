@@ -165,17 +165,24 @@ window.addEventListener('blur', () => {
   if (mode === 'play') pause();
 });
 window.addEventListener('focus', () => { blurred = false; });
+/* 승패가 정해진 뒤 결과 화면 전(1~2초 연출 중)에 페이지를 떠나면 그 자리에서 정산한다 */
+function settleIfOver() {
+  if (mode === 'play' && s && !attract && (s.phase === 'won' || s.phase === 'lost')) { finish(); return true; }
+  return false;
+}
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    if (mode === 'play') pause();
+    if (settleIfOver()) { /* 정산함 */ }
+    else if (mode === 'play') pause();
     else if (mode === 'pause') saveRunNow();
     suspend();
   } else if (mode === 'play') requestWake();
 });
-window.addEventListener('pagehide', () => { if (mode === 'play' || mode === 'pause') saveRunNow(); });
-/* 다른 탭에서 진행이 바뀌면(같은 게임을 두 탭에 열었을 때) 다시 읽는다 */
+window.addEventListener('pagehide', () => { if (!settleIfOver() && (mode === 'play' || mode === 'pause')) saveRunNow(); });
+/* 다른 탭에서 진행이 바뀌면(같은 게임을 두 탭에 열었을 때) 어느 화면에서든 다시 읽는다.
+   판 진행(run·par·지원)은 따로 있어서, 판 도중에 읽어도 그 판은 그대로 이어진다. */
 window.addEventListener('storage', (e) => {
-  if (e.key !== 'squad.v1' || mode === 'play' || mode === 'pause' || mode === 'card') return;
+  if (e.key !== 'squad.v1') return;
   data = load();
   applySettings();
   if (mode === 'title') renderTitle();
@@ -189,10 +196,16 @@ function armHistory() {
 }
 window.addEventListener('popstate', () => {
   historyArmed = false;
-  if (mode === 'play') { pause(); armHistory(); }
-  else if (mode === 'pause' || mode === 'card') armHistory();
-  else if (mode === 'result') { goTitle(); }
-  else if (mode !== 'title') { goTitle(); armHistory(); }
+  if (!$('scrJoin').hidden) { closeJoin(false); armHistory(); return; }
+  if (!$('scrNotice').hidden) { $('scrNotice').hidden = true; armHistory(); return; }
+  if (mode === 'play') { pause(); armHistory(); return; }
+  if (mode === 'pause' || mode === 'card') { armHistory(); return; }
+  if (mode === 'result') { goTitle(); return; }
+  if (mode === 'title') return;
+  // 하위 화면은 그 화면의 돌아가기 버튼과 똑같이(일시정지·카드·결과·설정으로 한 단계씩)
+  const bk = document.querySelector('.screen:not([hidden]) [data-back]');
+  if (bk) bk.click(); else goTitle();
+  if (mode !== 'title') armHistory();
 });
 
 /* ---------- 진동 ---------- */
@@ -451,6 +464,7 @@ function nextJoinNotice() {
   $('joinSkill').innerHTML = `<b>${H.skill.name}</b>${H.skill.text(1)}`;
   $('scrJoin').hidden = false;
   $('scrJoin').dataset.id = id;
+  setTimeout(() => { if (!$('scrJoin').hidden) $('joinTake').focus({ preventScroll: true }); }, 30);
   sfx.join();
 }
 function closeJoin(take) {
@@ -469,7 +483,7 @@ function maybeNudge() {
   data.nagged = Date.now();
   save(data);
   notice('진행을 지키는 방법', '홈 화면에 추가하거나 백업 코드를 복사해 두세요. 오래 열지 않으면 브라우저가 저장을 지울 수 있어요.', [
-    { label: '백업 코드 만들기', primary: true, fn: () => openBackup('make') },
+    { label: '백업 코드 만들기', primary: true, fn: () => { $('bkBack').dataset.back = 'title'; openBackup('make'); } },
     { label: '다음에' },
   ]);
 }
@@ -557,9 +571,10 @@ function renderSet() {
     input.type = 'checkbox';
     input.id = 'set-' + it.id;
     input.className = 'switch';
-    input.checked = !!data.set[it.id];
+    input.checked = !!data.set[it.id] || (it.id === 'low' && autoLow);
     input.addEventListener('change', () => {
       data.set[it.id] = input.checked;
+      if (it.id === 'low' && !input.checked) { autoLow = false; frameTimes = []; }
       save(data);
       applySettings();
       sfx.click();
@@ -592,8 +607,6 @@ async function openBackup(kind) {
     try {
       $('bkCode').value = await encodeBackup(data);
       $('bkSummary').textContent = `레벨 ${data.maxL} · ★ ${totalStars(data)} · 코인 ${data.coins.toLocaleString('ko')} 기준`;
-      data.backupAt = Date.now();
-      save(data);
     } catch { $('bkCode').value = '코드를 만들지 못했어요. 다시 시도해 주세요.'; }
   }
 }
@@ -645,10 +658,18 @@ async function copyText(text, el) {
   try {
     await navigator.clipboard.writeText(text);
     toast('복사했어요');
+    return true;
   } catch {
     if (el) { el.focus(); el.select(); }
-    toast('길게 눌러 직접 복사해 주세요');
+    toast(el ? '길게 눌러 직접 복사해 주세요' : '복사하지 못했어요');
+    return false;
   }
+}
+/* 백업 코드를 실제로 옮겨 적었을 때만 '마지막 백업'으로 친다 */
+function markBackedUp() {
+  data.backupAt = Date.now();
+  save(data);
+  if (mode === 'set') renderSet();
 }
 
 /* ---------- 레벨 시작 ---------- */
@@ -670,8 +691,17 @@ let support = 0;        // 연패 지원 병력
 
 /* 진행 중인 판이 있으면 먼저 물어본다 */
 function tryStart(L, opts = {}) {
+  if (modalOpen()) return;
   const r = pendingRun();
   if (!r) { startLevel(L, opts); return; }
+  if (r.L === L && !opts.support) {
+    notice('하던 판이 있어요', `레벨 ${L}을(를) 저장한 곳부터 이어서 할까요? 처음부터 하면 하던 판은 진 판으로 기록돼요.`, [
+      { label: '이어서 하기', primary: true, fn: resumeRun },
+      { label: '처음부터', fn: () => { abandonRun(r); startLevel(L, opts); } },
+      { label: '취소' },
+    ]);
+    return;
+  }
   notice('진행 중인 판이 있어요', `레벨 ${r.L}을(를) 포기하고 레벨 ${L}을(를) 시작할까요? 포기한 판은 진 판으로 기록돼요.`, [
     { label: '포기하고 시작', primary: true, fn: () => { abandonRun(r); startLevel(L, opts); } },
     { label: '취소' },
@@ -709,6 +739,7 @@ function startLevel(L, opts = {}) {
   pointers.clear();
   activeId = null;
   show('scrCard');
+  armHistory();
   sfx.click();
   const token = ++startToken;
   const t0 = performance.now();
@@ -809,6 +840,7 @@ function saveRunNow() {
   lastSaveT = s.t;
 }
 function resumeRun() {
+  if (modalOpen()) return;
   const r = pendingRun();
   if (!r) { renderTitle(); return; }
   const level = prepareLevel(r.L);
@@ -980,14 +1012,18 @@ function finish() {
   const won = s.phase === 'won';
   const L = lv.L;
   const n = s.squad.n;
+  // 다른 탭이 이미 정산(또는 포기)한 판이면 결과만 보여 주고 보상은 다시 주지 않는다
+  if (storageMode() === 'ok') { const fresh = load(); if (!fresh.corrupt) data = fresh; }
+  const paid = !(run && data.lastRunId === run.id);
   const stars = won ? (support ? 1 : starsFor(par, n, true)) : 0;
   const prevStars = data.stars[L] | 0;
-  let coins = coinsFor(lv, s, won, stars, 10 * data.upg.coin);
-  const newStars = Math.max(0, stars - prevStars);
+  let coins = paid ? coinsFor(lv, s, won, stars, 10 * data.upg.coin) : 0;
+  const newStars = paid ? Math.max(0, stars - prevStars) : 0;
   coins += newStars * 20;
   data.coins += coins;
   const before = new Set(HERO_IDS.filter((id) => ownedHero(id)));
-  if (won) {
+  if (!paid) { /* 이미 정산된 판 */ }
+  else if (won) {
     data.stars[L] = Math.max(prevStars, stars);
     data.best[L] = Math.max(data.best[L] | 0, n);
     data.maxL = Math.max(data.maxL, L + 1);
@@ -999,10 +1035,12 @@ function finish() {
   } else {
     data.fails[L] = (data.fails[L] | 0) + 1;
   }
-  data.stats.kills += s.stats.kills;
-  data.stats.maxN = Math.max(data.stats.maxN, s.squad.peak);
-  data.stats.spGot += s.stats.spGot;
-  data.stats.heroUses += s.stats.heroUses;
+  if (paid) {
+    data.stats.kills += s.stats.kills;
+    data.stats.maxN = Math.max(data.stats.maxN, s.squad.peak);
+    data.stats.spGot += s.stats.spGot;
+    data.stats.heroUses += s.stats.heroUses;
+  }
   // 진행으로 새 영웅이 합류했는지
   for (const id of heroesEarned(data.maxL, totalStars(data))) if (!data.heroes.lv[id]) data.heroes.lv[id] = 1;
   if (!data.heroes.sel) data.heroes.sel = HERO_IDS.find((id) => ownedHero(id)) || '';
@@ -1057,6 +1095,7 @@ function finish() {
 function setSkillFace() {
   const face = $('skillFace');
   face.textContent = '';
+  skillState = '';   // 다음 갱신에서 글자·모양을 다시 맞춘다
   if (s && s.hero) {
     face.appendChild(faceEl(s.hero.id, 3));
     $('skillLbl').textContent = HEROES[s.hero.id].skill.name;
@@ -1097,7 +1136,10 @@ function updateSpChips() {
 /* ---------- 배경 음악 ---------- */
 function updateMusic() {
   if (!music) return;
-  const want = mode === 'play' || mode === 'pause' || mode === 'card' ? (s && s.boss && s.boss.hp > 0 ? 'boss' : 'run') : 'title';
+  // 일시정지에서 연 설정·백업 화면은 판 음악을 그대로, 카드는 늘 출발 곡(뒤의 시연 상태를 보지 않는다)
+  const fromRun = (mode === 'set' && $('setBack').dataset.back === 'pause') || (mode === 'backup' && $('setBack').dataset.back === 'pause' && $('bkBack').dataset.back === 'set');
+  const inRun = mode === 'play' || mode === 'pause' || fromRun;
+  const want = mode === 'card' ? 'run' : inRun ? (s && s.boss && s.boss.hp > 0 ? 'boss' : 'run') : 'title';
   if (music.current !== want) music.play(want);
 }
 whenAudio((ctx, bus) => {
@@ -1151,7 +1193,7 @@ function frame(now) {
     if (frameTimes.length > 120) {
       frameTimes.shift();
       const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
-      if (avg > 0.024) { autoLow = true; applySettings(); }
+      if (avg > 0.024) { autoLow = true; applySettings(); toast('느려서 저사양 모드로 바꿨어요 · 설정에서 끌 수 있어요', 3000); }
     }
   }
 }
@@ -1216,7 +1258,7 @@ on('btnPause', () => { sfx.click(); pause(); });
 on('skillBtn', () => { if (mode === 'play') skillPressed = true; });
 on('pResume', () => { sfx.click(); resume(); });
 on('pRestart', () => { clearRun(); startLevel(lv.L, { support }); });
-on('pSet', () => { sfx.click(); mode = 'set'; renderSet(); show('scrSet'); $('setBack').dataset.back = 'pause'; });
+on('pSet', () => { sfx.click(); mode = 'set'; $('setBack').dataset.back = 'pause'; renderSet(); show('scrSet'); armHistory(); });
 on('pSaveQuit', () => {
   sfx.click();
   saveRunNow();
@@ -1230,7 +1272,7 @@ on('resPrimary', () => {
 on('resHelp', () => tryStart(lv.L, { support: Number($('resHelp').dataset.n) || 0 }));
 on('resUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); $('upgBack').dataset.back = 'result'; });
 on('resMenu', () => { sfx.click(); goTitle(); });
-on('resBackup', async () => { try { await copyText(await encodeBackup(data)); data.backupAt = Date.now(); save(data); } catch { /* 무시 */ } });
+on('resBackup', () => { sfx.click(); $('bkBack').dataset.back = 'result'; openBackup('make'); });
 on('resumeGo', () => { sfx.click(); resumeRun(); });
 on('resumeDrop', () => { sfx.click(); $('resumeConfirm').hidden = false; });
 on('resumeDropNo', () => { sfx.click(); $('resumeConfirm').hidden = true; });
@@ -1244,6 +1286,7 @@ on('cardHero', () => {
   $('heroBack').dataset.back = 'card';
   renderHero();
   show('scrHero');
+  armHistory();
 });
 on('cardGo', () => { if (mode === 'card') begin(run ? run.L : data.cur); });
 on('joinTake', () => { sfx.click(); closeJoin(true); });
@@ -1251,20 +1294,20 @@ on('joinLater', () => { sfx.click(); closeJoin(false); });
 on('storeChip', () => {
   notice(storageMode() === 'full' ? '저장 공간이 가득 찼어요' : '저장이 꺼져 있어요',
     '지금 이 브라우저는 저장을 막고 있어요(사생활 보호 모드 등). 창을 닫으면 진행이 사라져요. 백업 코드를 복사해 두면 나중에 되살릴 수 있어요.', [
-      { label: '백업 코드 복사', primary: true, fn: async () => { try { await copyText(await encodeBackup(data)); } catch { /* 무시 */ } } },
+      { label: '백업 코드 만들기', primary: true, fn: () => { $('bkBack').dataset.back = 'title'; openBackup('make'); } },
       { label: '괜찮아요' },
     ]);
 });
-on('bkMake', () => { sfx.click(); openBackup('make'); });
-on('bkEnter', () => { sfx.click(); openBackup('enter'); });
+on('bkMake', () => { sfx.click(); $('bkBack').dataset.back = 'set'; openBackup('make'); });
+on('bkEnter', () => { sfx.click(); $('bkBack').dataset.back = 'set'; openBackup('enter'); });
 on('bkUndo', () => {
   notice('이전 진행으로 되돌릴까요?', '백업 코드를 넣거나 초기화하기 직전의 진행으로 돌아가요. 지금 진행은 다시 되돌릴 수 있게 보관돼요.', [
     { label: '되돌리기', primary: true, fn: undoImport },
     { label: '취소' },
   ]);
 });
-on('bkCopy', () => copyText($('bkCode').value, $('bkCode')));
-on('bkShare', async () => { try { await navigator.share({ title: '숫자부대 돌격 백업 코드', text: $('bkCode').value }); } catch { /* 무시 */ } });
+on('bkCopy', async () => { if (/^SQD/.test($('bkCode').value) && await copyText($('bkCode').value, $('bkCode'))) markBackedUp(); });
+on('bkShare', async () => { try { await navigator.share({ title: '숫자부대 돌격 백업 코드', text: $('bkCode').value }); markBackedUp(); } catch { /* 무시 */ } });
 on('bkCheck', () => { sfx.click(); checkImport(); });
 on('bkApply', () => { sfx.click(); applyImport(); });
 on('resetAsk', () => { sfx.click(); $('resetAsk').hidden = true; $('resetConfirm').hidden = false; });
