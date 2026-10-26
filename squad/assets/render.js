@@ -831,7 +831,15 @@ export function createRenderer(cvs) {
         unitIcon(ic, mx - (tw1 + 1) / 2, my);
         font.draw(ctx, txt, mx + (fw + 1) / 2, my, { fill: '#FFFFFF', out: st.out });
         markSel(sel, mx - (fw + tw1 + 1) / 2, my - 7, mx + (fw + tw1 + 1) / 2, my + 7);
-      } else if (room >= fw && ph >= 13) unitIcon(ic, mx, my);
+      } else if (room >= fw + font.measure(txt, 'small') + 1 && ph >= 13) {
+        // 아이콘 + 작은 숫자(먼 세 갈래 줄에서도 '+N'이 보이게)
+        const sw = font.measure(txt, 'small');
+        unitIcon(ic, mx - (sw + 1) / 2, my);
+        font.draw(ctx, txt, mx + (fw + 1) / 2, my, { size: 'small', fill: '#FFFFFF', out: st.out });
+        markSel(sel, mx - (fw + sw + 1) / 2, my - 7, mx + (fw + sw + 1) / 2, my + 7);
+      } else if (tw1 <= room && ph >= 11) font.draw(ctx, txt, mx, my, { fill: '#FFFFFF', out: st.out });   // 금색 판이 이미 '특수병'이라 숫자가 먼저
+      else if (font.measure(txt, 'small') <= room + 2 && ph >= 7) font.draw(ctx, txt, mx, my, { size: 'small', fill: '#FFFFFF', out: st.out });
+      else if (room >= fw && ph >= 13) unitIcon(ic, mx, my);
       // 좁은 금색 판: 흰 글자 + 갈색 외곽선, 더 좁으면 외곽선 없는 갈색 글자(노랑 위 노랑은 안 읽힌다)
       else if (font.measure(txt, 'small') <= pw + 2 && ph >= 7) font.draw(ctx, txt, mx, my, { size: 'small', fill: '#FFFFFF', out: st.out });
       else if (font.measure(txt, 'tight') <= pw && ph >= 5) font.draw(ctx, txt, mx, my, { size: 'tight', fill: st.out });
@@ -840,18 +848,25 @@ export function createRenderer(cvs) {
     }
     let size = '', scale = 1, t = txt;
     if (room >= 44 && ph >= 26 && font.measure(txt, 'big', 2) <= room) { size = 'big'; scale = 2; }
+    // '+'는 큰 글꼴로 '+N' 전체가 들어갈 때만 붙인다(그보다 좁으면 'N'·'Nk' — 파란 판과 ▲가 이미 '더하기').
+    // 다가오는 동안 'N' → '+N'으로 한 번만 바뀌고, '+'가 붙었다 떨어졌다 하지 않는다
+    const noPlus = c.op === 'add' && txt[0] === '+';
     if (!size && room >= 15) {
       for (let j = 0; j < texts.length && !size; j++) {
+        if (noPlus && texts[j][0] === '+') {
+          if (j === 0 && font.measure(txt, 'big', 1) <= room) { size = 'big'; t = txt; }
+          continue;
+        }
         if (font.measure(texts[j], 'big', 1) <= room) { size = 'big'; t = texts[j]; }
         else if (font.measure(texts[j], 'slim', 1) <= room) { size = 'slim'; t = texts[j]; }   // 가는 기호로 한 번 더
       }
     }
     if (!size && ph >= 7) {
-      for (let j = 0; j < texts.length && !size; j++) if (font.measure(texts[j], 'small') <= room + 2) { size = 'small'; t = texts[j]; }
+      for (let j = 0; j < texts.length && !size; j++) if (!(noPlus && texts[j][0] === '+') && font.measure(texts[j], 'small') <= room + 2) { size = 'small'; t = texts[j]; }
       // 판 전체 폭(기둥까지)을 쓴다
-      for (let j = 0; j < texts.length && !size; j++) if (font.measure(texts[j], 'small') <= pw + 2) { size = 'small'; t = texts[j]; }
+      for (let j = 0; j < texts.length && !size; j++) if (!(noPlus && texts[j][0] === '+') && font.measure(texts[j], 'small') <= pw + 2) { size = 'small'; t = texts[j]; }
     }
-    if (!size && ph >= 5) for (let j = 0; j < texts.length && !size; j++) if (font.measure(texts[j], 'tight') <= pw) { size = 'tight'; t = texts[j]; }
+    if (!size && ph >= 5) for (let j = 0; j < texts.length && !size; j++) if (!(noPlus && texts[j][0] === '+') && font.measure(texts[j], 'tight') <= pw) { size = 'tight'; t = texts[j]; }
     if (size) {
       font.draw(ctx, t, mx, my, { size, scale, fill: '#FFFFFF', out: st.out });
       const lw = font.measure(t, size, scale), lh = font.height(size, scale);
@@ -1514,7 +1529,6 @@ export function createRenderer(cvs) {
           if (!project(view, f.x, 0.1, f.z)) break;
           const st = P.s > 12 ? 0 : 1;
           atlas.draw(ctx, CAPTIVE_ART[f.k] || 'captive_medic', FR.captive.sad[0], P.x, P.y, st);
-          if (((f.t * 6) | 0) & 1) atlas.draw(ctx, 'tear', 0, P.x + 5, P.y - 7);
           break;
         }
         case 'spHit': {
@@ -1626,7 +1640,7 @@ export function createRenderer(cvs) {
   const idle = (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 400 }) : setTimeout(fn, 30));
   function band() {
     const hh = Math.min(66, Math.round(VH * 0.16));
-    return { hh, y0: Math.round(VH * 0.3) };
+    return { hh, y0: Math.round(VH * 0.13) };
   }
   function sizeOverlay() {
     if (!ov) return;

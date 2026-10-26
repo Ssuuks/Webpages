@@ -763,7 +763,8 @@ function startLevel(L, opts = {}) {
   setTimeout(() => {
     if (token !== startToken || mode !== 'card') return;
     prepareRun(L);
-    const wait = Math.max(0, 1300 - (performance.now() - t0));
+    const intro = NEW_THING[L] || UNIT_IDS.some((k) => UNITS[k].unlock === L);
+    const wait = Math.max(0, (intro ? 3000 : 1300) - (performance.now() - t0));
     setTimeout(() => { if (token === startToken && mode === 'card') begin(L); }, wait);
   }, 30);
 }
@@ -919,6 +920,7 @@ function resumeRun() {
 /* ---------- 안내 ---------- */
 const tipQueue = [];
 let tipUntil = 0;
+let tipKey = '';
 function tip(key, text) {
   if (data.tips[key] || tipQueue.some((t) => t.key === key)) return;
   tipQueue.push({ key, text });
@@ -930,6 +932,8 @@ function updateTips(now) {
   if (now < tipUntil) return;
   if (!tipQueue.length) { el.hidden = true; return; }
   const t = tipQueue.shift();
+  if (t.key === 'heroReady' && s && s.hero && (s.hero.charge < 1 || s.hero.act > 0)) return;   // 그새 써 버렸다 — 다음에 다시
+  tipKey = t.key;
   data.tips[t.key] = 1;
   save(data);
   el.textContent = t.text;
@@ -1014,7 +1018,10 @@ function handleEvents(ev) {
           tip('heroReady', `${H.skill.name} 준비! ${FINE ? 'Space 키나 ' : ''}아래 가운데 버튼: ${H.skill.text(s.hero.lv)}`);
         }
         break;
-      case 'heroCast': sfx.cast(); vibe([20, 30, 20]); seen(data, 'hero', e.id); slow(0.35, 300); break;
+      case 'heroCast':
+        sfx.cast(); vibe([20, 30, 20]); seen(data, 'hero', e.id); slow(0.35, 300);
+        if (tipKey === 'heroReady' && !$('tip').hidden) { $('tip').hidden = true; tipUntil = 0; }
+        break;
       case 'spitFire': tip('spit', '땅에 초록 표시가 보이면 옆으로 피하세요'); break;
       case 'spitHit': if (e.hit) { sfx.hurt(); vibe(30); } break;
       case 'boss':
@@ -1125,7 +1132,9 @@ function finish() {
   lines.push(['획득 코인', `+${coins}`]);
   if (joined.length) lines.push(['새 영웅 합류', joined.map((id) => HEROES[id].name).join(', ')]);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
-  const cause = CAUSE[s.cause] || CAUSE.foe;
+  const cause = !won && !anyInput
+    ? ['한 번도 움직이지 않았어요', FINE ? '←/→ 키로 큰 숫자 게이트 쪽으로 가세요' : '화면 왼쪽·오른쪽을 꾹 눌러 큰 숫자 게이트로 가세요']
+    : CAUSE[s.cause] || CAUSE.foe;
   $('resCause').hidden = won;
   $('resCause').innerHTML = won ? '' : `<b>${cause[0]}</b><span>${cause[1]}</span>`;
   $('resPrimary').textContent = won ? '다음 레벨' : '다시 도전';
@@ -1173,6 +1182,7 @@ function updateSpChips() {
   const key = sp.map((m) => m.k).join(',');
   if (key === spKey) return;
   spKey = key;
+  document.body.classList.toggle('has-sp', sp.length > 0);
   const box = $('spChips');
   box.textContent = '';
   for (const m of sp) {
@@ -1266,6 +1276,8 @@ function resize() {
   const w = window.innerWidth;
   const h = window.innerHeight;
   renderer.resize(w, h, window.devicePixelRatio || 1);
+  // '세로로 돌려 주세요'가 떠 있는 동안 판은 멈춘다
+  if (mode === 'play' && getComputedStyle($('rotate')).display !== 'none') pause();
   if (renderer.setHudTarget) {
     const r = $('hudCoins').getBoundingClientRect();
     renderer.setHudTarget(r.width ? r.left + 10 : w - 90, r.height ? r.top + r.height / 2 : 26);
@@ -1350,6 +1362,8 @@ on('resumeGo', () => { sfx.click(); resumeRun(); });
 on('resumeDrop', () => { sfx.click(); $('resumeConfirm').hidden = false; });
 on('resumeDropNo', () => { sfx.click(); $('resumeConfirm').hidden = true; });
 on('resumeDropYes', () => { sfx.click(); const r = pendingRun(); if (r) abandonRun(r); renderTitle(); });
+// 영웅 칩에 손가락이 닿으면 자동 출발을 멈추고 출격 버튼을 보인다(떼기 전에 출발해 버리지 않게)
+$('cardHero').addEventListener('pointerdown', () => { if (mode !== 'card') return; startToken++; $('cardGo').hidden = false; });
 on('cardHero', () => {
   sfx.click();
   startToken++;          // 자동 출발을 멈춘다
@@ -1400,6 +1414,8 @@ on('resetYes', () => {
 
 /* ---------- 시작 ---------- */
 function start(hotData) {
+  // HUD의 보스 표시도 도트 아이콘으로(글꼴마다 ☠ 모양이 다르다)
+  try { const sk = document.querySelector('#hud .skull'); const ic = renderer.icon && renderer.icon('skull', 2); if (sk && ic) { ic.classList.add('pix'); sk.replaceChildren(ic); } } catch { /* 글자 그대로 */ }
   if (hotData && hotData.save) data = normalize({ ...data, ...hotData.save });
   if (hotData && hotData.run && !loadRun()) saveRun(hotData.run);
   applySettings();

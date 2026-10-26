@@ -217,7 +217,8 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .hud-lvl { font-family: var(--display); font-size: 20px; text-shadow: 0 2px 0 var(--edge); white-space: nowrap; }
 .prog { flex: 1; position: relative; height: 12px; border-radius: 6px; background: rgba(14, 10, 26, 0.65); border: 2px solid var(--edge); overflow: hidden; }
 .prog i { position: absolute; inset: 0; background: linear-gradient(90deg, #3E8BEA, #6CC0FF); transform-origin: left; transform: scaleX(0); }
-.skull { font-size: 18px; filter: drop-shadow(0 1px 0 #000); }
+.skull { font-size: 18px; filter: drop-shadow(0 1px 0 #000); display: inline-grid; place-items: center; }
+.skull canvas { width: 22px; height: 22px; image-rendering: pixelated; }
 .hud-coins { background: rgba(14, 10, 26, 0.65); padding: 4px 9px; border-radius: 10px; font-size: 14px; border: 2px solid var(--edge); }
 #btnPause { pointer-events: auto; width: 44px; height: 44px; border-radius: 12px; background: rgba(14, 10, 26, 0.65); border: 2px solid var(--edge); display: grid; place-items: center; }
 #btnPause::before { content: ""; width: 12px; height: 16px; border-left: 4px solid #fff; border-right: 4px solid #fff; }
@@ -271,7 +272,18 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 #tip.pop { animation: tipIn 0.25s ease-out; }
 #tip.low { top: auto; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 104px); }
 @media (max-height: 600px) { #tip { font-size: 13px; padding: 6px 10px; } }
+/* 낮은 가로 화면: 안내는 길 옆 빈 곳(왼쪽 위)에 — 분대를 가리지 않게 */
+@media (orientation: landscape) and (max-height: 500px) {
+  #tip.low { bottom: auto; top: calc(max(10px, env(safe-area-inset-top)) + 64px); left: max(12px, env(safe-area-inset-left)); transform: none; max-width: calc(50vw - 31vh - 24px); }
+  #tip.low.pop { animation-name: tipInSide; }
+}
+@keyframes tipInSide { from { opacity: 0; transform: translateY(-8px); } }
+/* 휴대폰을 가로로 돌리면 세로로 돌려 달라고(세로 전용 게임) */
+#rotate { display: none; position: fixed; inset: 0; z-index: 60; place-items: center; background: var(--ink); text-align: center; font-family: var(--display); font-size: 22px; color: var(--text); padding: 24px; }
+#rotate span { display: block; font-size: 48px; margin-bottom: 10px; }
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) { #rotate { display: grid; } }
 @keyframes tipIn { from { opacity: 0; transform: translate(-50%, -8px); } }
+body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
 #toast { position: fixed; left: 50%; top: calc(max(12px, env(safe-area-inset-top)) + 64px); transform: translateX(-50%); width: max-content; max-width: min(420px, 90vw); text-align: center; z-index: 40; pointer-events: none; padding: 10px 16px; border-radius: 14px; background: var(--amber); color: var(--amber-ink); font-family: var(--display); font-size: 16px; border: 3px solid var(--edge); box-shadow: 0 4px 0 var(--edge); }
 
 /* 결과 */
@@ -318,6 +330,7 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 <button id="skillBtn" hidden aria-label="영웅 스킬"><span class="face" id="skillFace"></span><span class="lbl" id="skillLbl">스킬</span></button>
 <div id="tut" hidden><div class="hands"><span class="hand"></span><span class="hand"></span></div><p id="tutText">화면 왼쪽·오른쪽을 꾹 눌러 이동</p></div>
 <div id="tip" hidden role="status"></div>
+<div id="rotate" role="alert"><div><span aria-hidden="true">📱</span>세로로 돌려 주세요</div></div>
 <div id="toast" hidden role="status"></div>
 
 <section id="scrTitle" class="screen" hidden>
