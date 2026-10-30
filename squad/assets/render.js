@@ -4,6 +4,7 @@
 import { makeView, fitView, project, P } from './view.js';
 import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT } from './core.js';
 import { HEROES, biomeOf } from './roster.js';
+import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL } from './pix/art.js';
 import { createAtlas, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
 import { createFont, opText, compactTexts } from './pix/font.js';
@@ -344,7 +345,7 @@ export function createRenderer(cvs) {
     for (const f of floats) { if (!f.on) { slot = f; break; } if (f.life < slot.life) slot = f; }
     slot.on = true; slot.x = x; slot.y = y; slot.z = z; slot.text = text; slot.fill = fill; slot.out = o.out || OUT;
     slot.scale = o.scale || 1; slot.life = o.life || 1; slot.max = slot.life; slot.vz = o.vz || 0; slot.icon = o.icon || null; slot.rise = o.rise ?? 1.4;
-    slot.pill = !!o.pill;
+    slot.pill = !!o.pill; slot.alpha = o.alpha ?? 1;
   }
   function ring(x, z, r0, r1, dur, c, o = {}) {
     for (const r of rings) if (!r.on) { Object.assign(r, { on: true, x, z, r0, r1, t: 0, dur, c, follow: o.follow || false, thick: o.thick || 1 }); return; }
@@ -354,6 +355,17 @@ export function createRenderer(cvs) {
   }
   function shake(a) { if (shakeOn && !reduce) trauma = Math.min(1, trauma + a); }
   function screenFlash(a, rgb) { if (reduce) a *= 0.25; if (a > flashA) { flashA = a; if (rgb !== flashRGB) { flashRGB = rgb; flashCss = 'rgb(' + rgb + ')'; } } }
+
+  /* 유령 숫자: 게이트를 지난 뒤 0.6초 동안, 고르지 않은 칸으로 갔으면 몇 명이었는지 흐리게(다른 칸 하나가 20% 이상 나았을 때만).
+     분대와 같은 깊이에서 그 칸 자리에 뜨고 분대를 따라간다. 가장 좋았던 칸은 파랑, 나머지는 더 흐린 흰색 */
+  function ghosts(s, e, q) {
+    const row = s.rows && s.rows.find((r) => r.id === e.row);
+    const g = gateAlts(row, e);
+    if (!g || !g.worth) return;
+    for (const a of g.alts) {
+      float(a.x, 2.1, q.z, '=' + a.n, a.best ? '#DDF3FF' : '#FFFFFF', { out: a.best ? PANEL.good.out : OUT, life: 0.6, vz: q.vz, rise: 0.4, alpha: a.best ? 0.72 : 0.5 });
+    }
+  }
 
   /* 코인이 HUD로 날아갈 자리(버퍼 픽셀) */
   function hudTarget() {
@@ -404,6 +416,7 @@ export function createRenderer(cvs) {
           for (let i = 0; i < 20; i++) part(e.x + (Math.random() - 0.5) * 3, 0.4 + Math.random() * 2.2, e.z, (Math.random() - 0.5) * 6, 1 + Math.random() * 4, -1 - Math.random() * 3, 0.5 + Math.random() * 0.3, cols[i % 3], Math.random() < 0.4 ? 2 : 1);
           countPop = 1;
           if (!good) { screenFlash(0.22, '232,56,79'); shake(0.25); }
+          ghosts(s, e, q);
           break;
         }
         case 'tick': tickAt.set(e.row, time); if (Math.random() < 0.5) fx('spark', e.x, 1.2 + Math.random(), e.z, 0.07); break;
@@ -951,6 +964,7 @@ export function createRenderer(cvs) {
     const t = String(Math.max(1, Math.ceil(p.hp)));
     const big = h > 14 && font.measure(t, 'big') <= w - 2;
     if (big || font.measure(t, 'small') <= w) font.draw(ctx, t, mx, face.ay - h * 0.22 - 1, { size: big ? 'big' : 'small' });
+    if (p.key === true) keyMark(mx, top.ty, w);
     ctx.globalAlpha = 1;
   }
   function crateIcon(type) { return type === 'coin' ? 'coin' : type === 'men' ? 'men' : 'gun'; }
@@ -983,7 +997,22 @@ export function createRenderer(cvs) {
     const t = String(Math.max(1, Math.ceil(p.hp)));
     const big = h > 16;
     font.draw(ctx, t, mx, top.ty - (big ? 6 : 4), { size: big ? 'big' : 'small', fill: '#FFE08A' });
+    if (p.key === true) keyMark(mx, top.ty - (big ? 6 : 4) - font.height(big ? 'big' : 'small') / 2, w);
     ctx.globalAlpha = 1;
+  }
+  /* 열쇠 상자 표시(prop.key): 체력 숫자 위에 금테 두른 열쇠가 살짝 통통 — 멀리서도 '이건 꼭 깨야 한다'가 보이게 */
+  function keyMark(cx, yTop, w) {
+    if (w < 5) return;
+    const ic = atlas.icon('key');
+    const bob = ((time * 3) | 0) & 1;
+    const x = Math.round(cx - ic.w / 2), y = Math.round(yTop - ic.h - 4 - bob);
+    ctx.fillStyle = OUT; ctx.fillRect(x - 2, y - 2, ic.w + 4, ic.h + 4);
+    ctx.fillStyle = '#FFD84A'; ctx.fillRect(x - 1, y - 1, ic.w + 2, ic.h + 2);
+    ctx.fillStyle = '#5A3B2E'; ctx.fillRect(x, y, ic.w, ic.h);
+    atlas.blit(ctx, ic, x, y);
+    // 아래로 뾰족한 꼬리(어느 상자인지)
+    ctx.fillStyle = OUT; ctx.fillRect(Math.round(cx) - 2, y + ic.h + 2, 5, 1); ctx.fillRect(Math.round(cx) - 1, y + ic.h + 3, 3, 1);
+    ctx.fillStyle = '#FFD84A'; ctx.fillRect(Math.round(cx) - 1, y + ic.h + 2, 3, 1); ctx.fillRect(Math.round(cx), y + ic.h + 3, 1, 1);
   }
   function drawCage(s, p) {
     const k = (p.reward && p.reward.k) || 'medic';
@@ -1024,6 +1053,7 @@ export function createRenderer(cvs) {
     ctx.fillRect(Math.round(face.ax), Math.round(face.ay) - 1, Math.round(w), 1);
     const t = String(Math.max(1, Math.ceil(p.hp)));
     if (!p.passed) font.draw(ctx, t, (face.ax + face.bx) / 2, top.ty - (h > 16 ? 6 : 4), { size: h > 16 ? 'big' : 'small', fill: '#FFF09A' });
+    if (p.key === true && !p.passed) keyMark((face.ax + face.bx) / 2, top.ty - (h > 16 ? 6 : 4) - font.height(h > 16 ? 'big' : 'small') / 2, w);
     ctx.globalAlpha = 1;
   }
 
@@ -1599,7 +1629,7 @@ export function createRenderer(cvs) {
       let y = P.y;
       // 게이트 결과 숫자는 말풍선(무기 단계 칸 포함) 위 6px 이상에서(V4). 다 큰 크기 기준이라 커질 때 튀지 않는다
       if (f.pill && pill.on) { const lim = pill.y0 - 6 - font.height('big', f.scale) / 2; if (y > lim) y = lim; }
-      ctx.globalAlpha = f.life < 0.2 ? 0.5 : 1;
+      ctx.globalAlpha = (f.life < 0.2 ? 0.5 : 1) * f.alpha;
       if (f.icon) drawIconText(f.icon, f.text, P.x, y, f.fill, f.out, 1);
       else { fOpt.size = 'big'; fOpt.scale = scale; fOpt.fill = f.fill; fOpt.out = f.out; font.draw(ctx, f.text, P.x, y, fOpt); }
       ctx.globalAlpha = 1;

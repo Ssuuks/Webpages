@@ -9,8 +9,12 @@ import { createMusic } from './music.js';
 import {
   load, save, wipe, normalize, probe, storageMode, keepBackup, readBackup, UPGRADES, upgCost, totalStars, seen, SAVE_V,
 } from './store.js';
+import * as STORE from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, heroCost, heroCap, heroesEarned, biomeOf } from './roster.js';
+import {
+  tagOf, hasTags, mulText, TAG_FIRE, upgState, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
+} from './insight.js';
 
 const $ = (id) => document.getElementById(id);
 const cvs = $('cv');
@@ -280,6 +284,8 @@ function goTitle() {
   setTimeout(nextJoinNotice, 600);
 }
 
+/* 숫자 뒤 조사: 레벨 15를 · 레벨 13을 (끝자리 0·1·3·6·7·8은 받침이 있다) */
+const eul = (n) => ('013678'.includes(String(Math.abs(Math.floor(n))).slice(-1)) ? '을' : '를');
 const compact = (n) => {
   try { return n >= 10000 ? new Intl.NumberFormat('ko', { notation: 'compact', maximumFractionDigits: 1 }).format(n) : String(n); } catch { return String(n); }
 };
@@ -312,6 +318,8 @@ function renderTitle() {
     const st = r.state;
     const where = st.boss ? '보스전' : `보스까지 ${Math.round(Math.min(1, st.squad.z / st.arenaZ) * 100)}%`;
     $('resumeInfo').textContent = `레벨 ${r.L} · ${st.squad.n}명 · ${where} · ${ago(r.at)} 저장`;
+    // 첫 게이트를 지난 판만 진 판으로 센다
+    $('resumeConfirm').querySelector('.warn').textContent = restartCounts(st) ? '이 판을 포기할까요? 진 판으로 기록돼요.' : '이 판을 포기할까요?';
   }
 }
 
@@ -356,6 +364,28 @@ function iconEl(k, scale) {
   d.style.background = (UNITS[k] && UNITS[k].color) || '#fff';
   return d;
 }
+/* 레벨 태그 배지: 도트 불꽃(어려움 1개·매우 어려움 2개) + 이름. 쉼은 글자만. 글꼴마다 🔥 모양이 달라 도트 아이콘을 쓴다 */
+function tagBadge(t, label = true, scale = 2) {
+  const el = document.createElement('span');
+  el.className = 'tagb tag-' + t.tag;
+  const fires = TAG_FIRE[t.tag] || 0;
+  for (let i = 0; i < fires; i++) {
+    let c = null;
+    try { c = renderer.icon && renderer.icon('fire', scale); } catch { /* 아직 그림이 없다 */ }
+    if (c) { c.classList && c.classList.add('pix'); el.appendChild(c); } else el.append('🔥');
+  }
+  if (label || !fires) {
+    const b = document.createElement('b');
+    b.textContent = t.label;
+    el.appendChild(b);
+  }
+  return el;
+}
+const TAG_LINE = {
+  hard: '강한 보스 — 상자·철창도 챙겨 가세요',
+  super: '지역의 끝 — 아주 강한 보스가 기다려요',
+  rest: '쉬어 가는 판이에요',
+};
 
 let heroView = '';
 function renderHero() {
@@ -456,11 +486,20 @@ function newlyEarned() {
 }
 const modalOpen = () => !$('scrJoin').hidden || !$('scrNotice').hidden;
 let joinAfter = null;   // 결과 화면에서 띄웠을 때: 닫은 뒤 이어서 할 일
+let balanceNote = false;   // 난이도 개편 뒤 처음: 기존 플레이어에게 한 번
 function nextJoinNotice() {
   if (mode !== 'title' || modalOpen()) return;
   const id = newlyEarned()[0];
-  if (!id) { maybeNudge(); return; }
+  if (!id) { if (!showBalanceNote()) maybeNudge(); return; }
   openJoin(id);
+}
+function showBalanceNote() {
+  if (!balanceNote) return false;
+  balanceNote = false;
+  data.seenSim = SIM;
+  save(data);
+  notice('난이도가 새로 맞춰졌어요', '5레벨마다 불꽃 표시가 붙은 어려운 판이 있어요(코인을 더 줘요). 그 바로 다음 판은 쉬어 가요. 이미 받은 별과 산 강화는 그대로예요.', [{ label: '알겠어요', primary: true }]);
+  return true;
 }
 function openJoin(id) {
   const H = HEROES[id];
@@ -514,7 +553,14 @@ function renderLevels() {
     b.disabled = !open;
     const st = data.stars[L] | 0;
     b.innerHTML = `<b>${L}</b><span class="st" aria-label="별 ${st}개">${'★'.repeat(st)}${'☆'.repeat(3 - st)}</span>`;
-    if (!open) b.setAttribute('aria-label', `레벨 ${L} 잠김`);
+    // 어려움·매우 어려움·쉼 배지(잠긴 레벨에도 — 벽이 어디 있는지 미리 보이게)
+    const tg = tagOf(L);
+    if (tg.tag) {
+      b.classList.add('tag-' + tg.tag);
+      b.appendChild(tagBadge(tg, false, 1));
+    }
+    if (!open) b.setAttribute('aria-label', `레벨 ${L}${tg.label ? ' ' + tg.label : ''} 잠김`);
+    else if (tg.label) b.setAttribute('aria-label', `레벨 ${L} ${tg.label}, 별 ${st}개`);
     if (L === data.cur) b.classList.add('cur');
     // 지난 레벨을 골라도 '이어하기' 위치(data.cur)는 바꾸지 않는다
     b.addEventListener('click', () => { sfx.click(); tryStart(L); });
@@ -528,20 +574,32 @@ function renderUpg() {
   const list = $('upgList');
   list.textContent = '';
   for (const u of UPGRADES) {
-    const lvU = data.upg[u.id] | 0;
-    const maxed = lvU >= u.max;
+    // 진행에 따른 상한은 새로 사는 것만 막는다 — 이미 산 단계(상한보다 높아도)는 그대로 둔다
+    const st = upgState(data, u, undefined, STORE);
+    const lvU = st.lv;
+    const maxed = st.maxed;
+    const locked = st.locked;
     const cost = upgCost(lvU);
     const card = document.createElement('div');
-    card.className = 'upg';
+    card.className = 'upg' + (locked ? ' locked' : '');
+    const pip = (i) => (i < lvU ? 'on' : i >= Math.max(st.cap, lvU) ? 'cap' : '');
     card.innerHTML = `
-      <div class="upg-head"><b>${u.name}</b><span class="pips">${Array.from({ length: u.max }, (_, i) => `<i class="${i < lvU ? 'on' : ''}"></i>`).join('')}</span></div>
-      <p class="upg-eff">${u.effect(lvU)}${maxed ? '' : ` → <em>${u.effect(lvU + 1)}</em>`}</p>`;
+      <div class="upg-head"><b>${u.name}</b><span class="pips" aria-hidden="true">${Array.from({ length: u.max }, (_, i) => `<i class="${pip(i)}"></i>`).join('')}</span></div>
+      <p class="upg-eff">${u.effect(lvU)}${maxed || locked ? '' : ` → <em>${u.effect(lvU + 1)}</em>`}</p>`;
+    const capText = st.at ? `레벨 ${st.at}${eul(st.at)} 깨면 더 올릴 수 있어요` : '지금은 더 올릴 수 없어요';
+    if (locked) {
+      const note = document.createElement('p');
+      note.className = 'upg-cap';
+      note.textContent = capText;
+      card.appendChild(note);
+    }
     const btn = document.createElement('button');
     btn.className = 'buy';
-    btn.textContent = maxed ? '최대' : `${cost} 코인`;
-    btn.disabled = maxed || data.coins < cost;
+    btn.textContent = maxed ? '최대' : locked ? '상한' : `${cost} 코인`;
+    btn.disabled = maxed || locked || data.coins < cost;
+    if (locked) btn.setAttribute('aria-label', `${u.name} 상한 — ${capText}`);
     btn.addEventListener('click', () => {
-      if (data.coins < cost || maxed) { sfx.deny(); return; }
+      if (data.coins < cost || maxed || !upgState(data, u, undefined, STORE).canBuy) { sfx.deny(); return; }
       data.coins -= cost;
       data.upg[u.id] = lvU + 1;
       save(data);
@@ -708,26 +766,64 @@ function tryStart(L, opts = {}) {
   if (modalOpen()) return;
   const r = pendingRun();
   if (!r) { startLevel(L, opts); return; }
+  // 첫 게이트를 지난 판만 진 판으로 센다(그 전에 그만둔 판은 공짜)
+  const counts = restartCounts(r.state);
   if (r.L === L && !opts.support) {
-    notice('하던 판이 있어요', `레벨 ${L}을(를) 저장한 곳부터 이어서 할까요? 처음부터 하면 하던 판은 진 판으로 기록돼요.`, [
+    notice('하던 판이 있어요', `레벨 ${L}${eul(L)} 저장한 곳부터 이어서 할까요?${counts ? ' 처음부터 하면 하던 판은 진 판으로 기록돼요.' : ''}`, [
       { label: '이어서 하기', primary: true, fn: resumeRun },
       { label: '처음부터', fn: () => { abandonRun(r); startLevel(L, opts); } },
       { label: '취소' },
     ]);
     return;
   }
-  notice('진행 중인 판이 있어요', `레벨 ${r.L}을(를) 포기하고 레벨 ${L}을(를) 시작할까요? 포기한 판은 진 판으로 기록돼요.`, [
+  notice('진행 중인 판이 있어요', `레벨 ${r.L}${eul(r.L)} 포기하고 레벨 ${L}${eul(L)} 시작할까요?${counts ? ' 포기한 판은 진 판으로 기록돼요.' : ''}`, [
     { label: '포기하고 시작', primary: true, fn: () => { abandonRun(r); startLevel(L, opts); } },
     { label: '취소' },
   ]);
 }
 function abandonRun(r) {
-  data.fails[r.L] = (data.fails[r.L] | 0) + 1;
+  if (restartCounts(r.state)) data.fails[r.L] = (data.fails[r.L] | 0) + 1;
   data.lastRunId = r.id;
   clearRun();
   save(data);
 }
 
+/* 레벨 카드 글자(지역·태그·새 메커닉) */
+function fillCard(L) {
+  $('cardL').textContent = L;
+  const b = biomeOf(L);
+  const firstInRegion = (L - 1) % 10 === 0 && L > 1;
+  $('cardRegion').textContent = firstInRegion ? `새 지역: ${b.name} · 레벨 ${L}~${L + 9}` : b.name;
+  const tg = tagOf(L);
+  const tagEl = $('cardTag');
+  tagEl.textContent = '';
+  tagEl.hidden = !tg.tag;
+  if (tg.tag) {
+    tagEl.appendChild(tagBadge(tg, true, 2));
+    if (tg.coinMul > 1) {
+      const m = document.createElement('span');
+      m.className = 'coinmul';
+      m.innerHTML = `<span class="coinchip">코인 ${mulText(tg.coinMul)}</span>`;
+      tagEl.appendChild(m);
+    }
+  }
+  tagEl.className = 'card-tag' + (tg.tag ? ' tag-' + tg.tag : '');
+  // 예전 '강한 보스' 문구는 태그가 없는 시뮬레이션에서만(수치가 같은데 약속하지 않게)
+  $('cardNew').textContent = NEW_THING[L] || TAG_LINE[tg.tag] || (!hasTags() && L % 5 === 0 ? '강한 보스가 기다려요' : '');
+  const newUnit = UNIT_IDS.find((k) => UNITS[k].unlock === L);
+  $('cardUnit').hidden = !newUnit;
+  $('cardUnit').textContent = newUnit ? `${UNITS[newUnit].name}: ${UNITS[newUnit].desc}` : '';
+  return tg;
+}
+/* 카드가 떠 있는 시간: 새 메커닉 소개 3초, 어려움·매우 어려움 2.2초, 나머지 1.3초 */
+function cardWait(L) {
+  const intro = NEW_THING[L] || UNIT_IDS.some((k) => UNITS[k].unlock === L);
+  if (intro) return 3000;
+  const t = tagOf(L).tag;
+  return t === 'hard' || t === 'super' ? 2200 : 1300;
+}
+
+/* opts.support: 지원 병력. opts.quick: 카드 없이 바로 달린다(다시 도전·처음부터 다시 — 카드 내용은 짧은 알림으로) */
 function startLevel(L, opts = {}) {
   attract = false;
   mode = 'card';
@@ -735,36 +831,40 @@ function startLevel(L, opts = {}) {
   tutorial = false;
   heroPickFromCard = false;
   $('tut').hidden = true;
-  $('cardL').textContent = L;
-  const b = biomeOf(L);
-  const firstInRegion = (L - 1) % 10 === 0 && L > 1;
-  $('cardRegion').textContent = firstInRegion ? `새 지역: ${b.name} · 레벨 ${L}~${L + 9}` : b.name;
-  $('cardNew').textContent = NEW_THING[L] || (L % 5 === 0 ? '강한 보스가 기다려요' : '');
-  const newUnit = UNIT_IDS.find((k) => UNITS[k].unlock === L);
-  $('cardUnit').hidden = !newUnit;
-  $('cardUnit').textContent = newUnit ? `${UNITS[newUnit].name}: ${UNITS[newUnit].desc}` : '';
+  const tg = fillCard(L);
   $('cardGoal').textContent = '준비 중…';
   $('cardHero').hidden = true;
   $('cardGo').hidden = true;
   $('hudL').textContent = L;
   $('bossBar').hidden = true;
   $('bossBar').classList.remove('rage');
+  hideEta();
   $('hudBar').style.transform = 'scaleX(0)';
   $('spChips').textContent = '';
   spKey = '';
   hudCache = '';
   pointers.clear();
   activeId = null;
+  const token = ++startToken;
+  if (opts.quick) {
+    sfx.click();
+    prepareRun(L);
+    begin(L);
+    const g = starGoals(par, lv);
+    const bits = [`레벨 ${L}`];
+    if (tg.label) bits.push(tg.label + (tg.coinMul > 1 ? ` 코인 ${mulText(tg.coinMul)}` : ''));
+    bits.push(support ? `지원 +${support}명` : `★★★ ${g.three}명`);
+    toast(bits.join(' · '), 1600);
+    return;
+  }
   show('scrCard');
   armHistory();
   sfx.click();
-  const token = ++startToken;
   const t0 = performance.now();
   setTimeout(() => {
     if (token !== startToken || mode !== 'card') return;
     prepareRun(L);
-    const intro = NEW_THING[L] || UNIT_IDS.some((k) => UNITS[k].unlock === L);
-    const wait = Math.max(0, (intro ? 3000 : 1300) - (performance.now() - t0));
+    const wait = Math.max(0, cardWait(L) - (performance.now() - t0));
     setTimeout(() => { if (token === startToken && mode === 'card') begin(L); }, wait);
   }, 30);
 }
@@ -774,12 +874,13 @@ function prepareRun(L) {
   lv = prepareLevel(L);
   const hero = heroForRun(L);
   const base = START_N + 2 * data.upg.start;
-  run = { id: Math.random().toString(36).slice(2, 10), L, start: base + support, fire: data.upg.fire, support, hero };
+  // worst: 가장 아까운 게이트 { k(몇 번째 줄), m(가장 좋은 다른 칸보다 덜 얻은 병사) }, arenaN: 경기장에 들어설 때 병력(근소한 패배 계산용)
+  run = { id: Math.random().toString(36).slice(2, 10), L, start: base + support, fire: data.upg.fire, support, hero, worst: null, arenaN: 0 };
   par = parFor(lv, base, data.upg.fire, hero);
   s = newGame(lv, { start: run.start, fire: run.fire, hero });
   prevZ = s.squad.z;
   renderer.reset();
-  const g = starGoals(par);
+  const g = starGoals(par, lv);
   $('cardGoal').textContent = support ? `지원 병력 +${support}명 (별 최대 1개)` : `★★★ 목표: 보스를 잡고 ${g.three}명 이상 남기기`;
   const chip = $('cardHero');
   chip.textContent = '';
@@ -842,7 +943,23 @@ function pause() {
   releaseWake();
   saveRunNow();
   renderPauseUnits();
+  renderPauseRestart();
   show('scrPause');
+}
+/* 일시정지의 '처음부터 다시': 첫 게이트를 지났으면 진 판으로 센다고 알리고, 3번째면 지원 받고 다시도 고를 수 있게 */
+function renderPauseRestart() {
+  const counts = !!(s && lv && restartCounts(s));
+  const f = lv ? (data.fails[lv.L] | 0) + (counts ? 1 : 0) : 0;
+  const help = counts && !support && f >= 3;
+  const note = $('pRestartNote');
+  note.hidden = !counts;
+  note.textContent = help || support ? '첫 게이트를 지나서 진 판으로 세요' : `첫 게이트를 지나서 진 판으로 세요 · 지원까지 ${Math.max(1, 3 - f)}번`;
+  $('pHelp').hidden = !help;
+  if (help) {
+    const n = supportSize(lv);
+    $('pHelp').textContent = `지원 +${n}명 받고 처음부터 (별 1개까지)`;
+    $('pHelp').dataset.n = n;
+  }
 }
 function renderPauseUnits() {
   const box = $('pSp');
@@ -874,7 +991,7 @@ function resume() {
 /* ---------- 이어하기 ---------- */
 function saveRunNow() {
   if (!s || !run || attract || !(s.phase === 'run' || s.phase === 'arena')) return;
-  saveRun({ v: 1, sim: SIM, id: run.id, at: Date.now(), L: run.L, attempt: lv.attempt, start: run.start, fire: run.fire, support: run.support, hero: run.hero, par, state: snapshot(s) });
+  saveRun({ v: 1, sim: SIM, id: run.id, at: Date.now(), L: run.L, attempt: lv.attempt, start: run.start, fire: run.fire, support: run.support, hero: run.hero, par, worst: run.worst || null, arenaN: run.arenaN | 0, state: snapshot(s) });
   lastSaveT = s.t;
 }
 function resumeRun() {
@@ -892,7 +1009,7 @@ function resumeRun() {
   attract = false;
   lv = level;
   s = st;
-  run = { id: r.id, L: r.L, start: r.start, fire: r.fire, support: r.support | 0, hero: r.hero || null };
+  run = { id: r.id, L: r.L, start: r.start, fire: r.fire, support: r.support | 0, hero: r.hero || null, worst: r.worst && r.worst.k ? r.worst : null, arenaN: r.arenaN | 0 };
   support = run.support;
   par = r.par || lv.par;
   prevZ = s.squad.z;
@@ -905,6 +1022,7 @@ function resumeRun() {
   $('hudL').textContent = r.L;
   $('bossBar').hidden = !s.boss;
   $('bossBar').classList.toggle('rage', !!(s.boss && s.boss.enraged));
+  hideEta();
   spKey = '';
   hudCache = '';
   setSkillFace();
@@ -913,6 +1031,7 @@ function resumeRun() {
   // 멈춘 채로 시작 — 준비되면 계속하기
   mode = 'pause';
   renderPauseUnits();
+  renderPauseRestart();
   show('scrPause');
   toast('준비되면 계속하기를 누르세요');
 }
@@ -956,6 +1075,7 @@ function watchTips() {
   }
   for (const p of s.props) {
     if (!p.alive || p.passed || p.z - q.z > 32) continue;
+    if (p.key === true) tip('key', '열쇠 표시 상자: 다음 난관을 넘을 보급이에요. 꼭 쏴서 부수세요!');
     if (p.kind === 'wall') tip('wall', '벽의 숫자는 체력이에요. 약한 벽을 쏴서 뚫고 지나가세요');
     else if (p.kind === 'cage') tip('cage', '철창을 쏴서 부수면 갇힌 특수병이 합류해요');
     else tip('crate', '상자를 쏴서 부수면 무기·병력 보상을 받아요');
@@ -976,6 +1096,7 @@ function handleEvents(ev) {
       case 'gate':
         if (e.after >= e.before) { sfx.gateGood(e.op === 'mul'); vibe(12); } else { sfx.gateBad(); vibe(35); }
         endTutorial();   // 첫 게이트를 지나면 손대지 않았어도 느린 진행을 끝낸다
+        noteGate(e);
         break;
       case 'kill': sfx.kill(); seen(data, 'foe', e.kind); break;
       case 'bite': sfx.hurt(); break;
@@ -1027,6 +1148,7 @@ function handleEvents(ev) {
       case 'boss':
         sfx.bossIn();
         $('bossBar').hidden = false;
+        if (run) run.arenaN = s.squad.n;
         tip('boss', '빨간 구역을 피하면서 보스를 쏘세요!');
         slow(0.45, 700);
         saveRunNow();
@@ -1041,6 +1163,15 @@ function handleEvents(ev) {
       default:
     }
   }
+}
+
+/* 가장 아까운 게이트: 같은 줄의 가장 좋은 다른 칸보다 20% 이상(2명 이상) 덜 얻은 줄 중 차이가 가장 큰 것 */
+function noteGate(e) {
+  if (!run || !s) return;
+  const row = s.rows.find((r) => r.id === e.row);
+  const g = gateAlts(row, e);
+  if (!g || !g.worth) return;
+  if (!run.worst || g.gap > run.worst.m) run.worst = { k: rowOrdinal(s.rows, row), m: g.gap };
 }
 
 function slow(scale, ms) {
@@ -1065,13 +1196,14 @@ function finish() {
   resultShown = true;
   mode = 'result';
   releaseWake();
+  hideEta();
   const won = s.phase === 'won';
   const L = lv.L;
   const n = s.squad.n;
   // 다른 탭이 이미 정산(또는 포기)한 판이면 결과만 보여 주고 보상은 다시 주지 않는다
   if (storageMode() === 'ok') { const fresh = load(); if (!fresh.corrupt) data = fresh; }
   const paid = !(run && data.lastRunId === run.id);
-  const stars = won ? (support ? 1 : starsFor(par, n, true)) : 0;
+  const stars = won ? (support ? 1 : starsFor(par, n, true, lv)) : 0;
   const prevStars = data.stars[L] | 0;
   let coins = paid ? coinsFor(lv, s, won, stars, 10 * data.upg.coin) : 0;
   const newStars = paid ? Math.max(0, stars - prevStars) : 0;
@@ -1117,38 +1249,78 @@ function finish() {
     if (i < stars) setTimeout(() => { starEls[i].className = 'on'; sfx.coin(); }, 350 + i * 300);
   }
   $('resStars').hidden = !won;
-  const g = starGoals(par);
+  const g = starGoals(par, lv);
+  const tg = tagOf(L);
   const lines = [];
   if (won) {
     lines.push(['남은 병력', `${n}명`]);
     lines.push(['★★★ 기준', `${g.three}명`]);
     if (support) lines.push(['지원 병력 사용', '별 최대 1개']);
     if (s.squad.sp.length) lines.push(['살아남은 특수병', `${s.squad.sp.length}명 · +${3 * s.squad.sp.length}코인`]);
-  } else {
-    const pct = s.boss ? Math.round(100 * (1 - Math.max(0, s.boss.hp) / s.boss.max)) : Math.round(progress(s) * 100);
-    lines.push([s.boss ? '보스 체력 깎음' : '진행', `${pct}%`]);
+    // 별을 다 못 받았으면 어디서 놓쳤는지 한 줄
+    if (stars < 3 && !support && run && run.worst) lines.push(['가장 아까운 게이트', `${run.worst.k}번째 줄 −${run.worst.m}명`]);
+  } else if (!s.boss) {
+    lines.push(['진행', `${Math.round(progress(s) * 100)}%`]);
   }
   lines.push(['처치', `${s.stats.kills}`]);
-  lines.push(['획득 코인', `+${coins}`]);
+  lines.push(['획득 코인', `+${coins}` + (tg.coinMul > 1 ? ` (${tg.label} ${mulText(tg.coinMul)})` : '')]);
   if (joined.length) lines.push(['새 영웅 합류', joined.map((id) => HEROES[id].name).join(', ')]);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
+  renderNear(won);
   const cause = !won && !anyInput
     ? ['한 번도 움직이지 않았어요', FINE ? '←/→ 키로 큰 숫자 게이트 쪽으로 가세요' : '화면 왼쪽·오른쪽을 꾹 눌러 큰 숫자 게이트로 가세요']
     : CAUSE[s.cause] || CAUSE.foe;
   $('resCause').hidden = won;
   $('resCause').innerHTML = won ? '' : `<b>${cause[0]}</b><span>${cause[1]}</span>`;
   $('resPrimary').textContent = won ? '다음 레벨' : '다시 도전';
-  const helpN = Math.max(5, Math.round((lv.arrive || 30) * 0.2));
+  const helpN = supportSize(lv);
   const offerHelp = !won && (data.fails[L] | 0) >= 3;
   $('resHelp').hidden = !offerHelp;
   $('resHelp').textContent = `지원 +${helpN}명 받고 다시 (별 1개까지)`;
   $('resHelp').dataset.n = helpN;
   $('resBackup').hidden = storageMode() === 'ok';
-  const cheapest = Math.min(...UPGRADES.map((u) => (data.upg[u.id] >= u.max ? Infinity : upgCost(data.upg[u.id]))));
-  $('resUpg').classList.toggle('glow', data.coins >= cheapest);
+  $('resUpg').classList.toggle('glow', canAffordUpg());
   $('hudCoins').textContent = compact(data.coins);
   hudCache = '';
   show('scrResult');
+}
+
+/* 진 판(또는 별을 다 못 받은 판)에서 '조금만 더' 보여 주기: 보스 남은 체력 막대, 몇 명만 더 있었으면, 가장 아까운 게이트 */
+function renderNear(won) {
+  const box = $('resNear');
+  box.textContent = '';
+  box.hidden = true;
+  if (won) return;
+  const nm = nearMiss(s, run ? run.arenaN : 0);
+  const rows = [];
+  if (nm && nm.pct > 0) {
+    const bar = document.createElement('div');
+    bar.className = 'near-boss';
+    bar.innerHTML = '<span>보스 체력</span><div class="bar"><i></i></div><b></b>';
+    bar.querySelector('i').style.transform = `scaleX(${nm.left.toFixed(3)})`;
+    bar.querySelector('b').textContent = `${nm.pct}% 남음`;
+    bar.setAttribute('aria-label', `보스 체력 ${nm.pct}% 남음`);
+    box.appendChild(bar);
+    // 반 넘게 깎았을 때만(멀리 못 미친 판에 큰 숫자를 들이밀지 않게)
+    if (nm.more && nm.left <= 0.5) rows.push(['near-more', `${nm.more}명만 더 있었으면 잡았어요!`]);
+  }
+  if (run && run.worst) rows.push(['near-gate', `가장 아까운 게이트: ${run.worst.k}번째 줄 −${run.worst.m}명`]);
+  for (const [cls, text] of rows) {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = text;
+    box.appendChild(p);
+  }
+  box.hidden = !box.childNodes.length;
+}
+/* 지금 살 수 있는 강화가 있나(진행 상한 안에서) */
+function canAffordUpg() {
+  let cheapest = Infinity;
+  for (const u of UPGRADES) {
+    const st = upgState(data, u, undefined, STORE);
+    if (st.canBuy) cheapest = Math.min(cheapest, upgCost(st.lv));
+  }
+  return data.coins >= cheapest;
 }
 
 /* ---------- 영웅 버튼·특수병 칩 ---------- */
@@ -1269,6 +1441,42 @@ function updateHud() {
   const key = `${data.coins + s.stats.coins}`;
   if (key !== hudCache) { hudCache = key; $('hudCoins').textContent = key; }
   if (s.boss) $('bossFill').style.transform = `scaleX(${Math.max(0, s.boss.hp) / s.boss.max})`;
+  updateEta();
+}
+
+/* 보스전: 보스 막대 줄 끝에 '닿기까지 n초'(막대 앞의 '보스'와 이어 읽힌다 — 막대·특수병 칩·다가오는 보스를 가리지 않게).
+   3초 이하면 빨갛게 깜빡이고, 맞붙으면 '맞붙었어요!' */
+let etaKey = '';
+function updateEta() {
+  const el = $('bossEta');
+  let k = '';
+  let text = '';
+  let label = '';
+  if (s && s.boss && s.boss.hp > 0 && s.phase === 'arena') {
+    const eta = bossEtaOf(s);
+    if (eta != null) {
+      const n = Math.max(0, Math.ceil(eta - 1e-6));
+      k = (n <= 3 ? 'soon:' : 'far:') + n;
+      text = `닿기까지 ${n}초`;
+      label = `보스가 닿기까지 ${n}초`;
+    } else if (bossClash(s)) {
+      k = 'clash';
+      text = '맞붙었어요!';
+      label = '보스와 맞붙었어요. 계속 쏘세요';
+    }
+  }
+  if (k === etaKey) return;
+  etaKey = k;
+  el.hidden = !k;
+  if (!k) return;
+  $('bossEtaT').textContent = text;
+  el.setAttribute('aria-label', label);
+  el.classList.toggle('soon', k.startsWith('soon'));
+  el.classList.toggle('clash', k === 'clash');
+}
+function hideEta() {
+  etaKey = '';
+  $('bossEta').hidden = true;
 }
 
 /* ---------- 화면 크기 ---------- */
@@ -1340,7 +1548,19 @@ function pressSkill() {
   skillPressed = true;
 }
 on('pResume', () => { sfx.click(); resume(); });
-on('pRestart', () => { clearRun(); startLevel(lv.L, { support }); });
+/* 처음부터 다시(일시정지): 카드 없이 바로. 첫 게이트를 지난 뒤면 진 판으로 센다(3번이면 지원) — 그 전에는 공짜 */
+function restartRun(opts = {}) {
+  if (!lv) return;
+  if (run && s && !attract && restartCounts(s) && data.lastRunId !== run.id) {
+    data.fails[lv.L] = (data.fails[lv.L] | 0) + 1;
+    data.lastRunId = run.id;
+    save(data);
+  }
+  clearRun();
+  startLevel(lv.L, { support: opts.support ?? support, quick: true });
+}
+on('pRestart', () => restartRun());
+on('pHelp', () => restartRun({ support: Number($('pHelp').dataset.n) || 0 }));
 on('pSet', () => { sfx.click(); mode = 'set'; $('setBack').dataset.back = 'pause'; renderSet(); show('scrSet'); armHistory(); });
 on('pSaveQuit', () => {
   sfx.click();
@@ -1349,12 +1569,15 @@ on('pSaveQuit', () => {
   goTitle();
 });
 on('resPrimary', () => {
-  const next = s.phase === 'won' ? lv.L + 1 : lv.L;
+  const won = s.phase === 'won';
+  const next = won ? lv.L + 1 : lv.L;
+  // 다시 도전은 카드 없이 바로 달린다(카드 내용은 짧은 알림으로)
+  const opts = won ? {} : { quick: true };
   const id = newlyEarned()[0];
-  if (id) { sfx.click(); joinAfter = () => tryStart(next); openJoin(id); return; }
-  tryStart(next);
+  if (id) { sfx.click(); joinAfter = () => tryStart(next, opts); openJoin(id); return; }
+  tryStart(next, opts);
 });
-on('resHelp', () => tryStart(lv.L, { support: Number($('resHelp').dataset.n) || 0 }));
+on('resHelp', () => tryStart(lv.L, { support: Number($('resHelp').dataset.n) || 0, quick: true }));
 on('resUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); $('upgBack').dataset.back = 'result'; });
 on('resMenu', () => { sfx.click(); goTitle(); });
 on('resBackup', () => { sfx.click(); $('bkBack').dataset.back = 'result'; openBackup('make'); });
@@ -1420,7 +1643,18 @@ function start(hotData) {
   if (hotData && hotData.run && !loadRun()) saveRun(hotData.run);
   applySettings();
   resize();
+  // 규칙(SIM)이 바뀌기 전에 저장한 판은 이어 할 수 없다 — 조용히 사라지지 않게 알린다(진 판으로 세지 않는다)
+  const oldRun = loadRun();
+  const dropped = oldRun && oldRun.sim !== SIM && oldRun.id !== data.lastRunId ? oldRun : null;
+  if (dropped) clearRun();
   goTitle();
+  if (dropped) toast(`게임이 업데이트돼서 하던 판(레벨 ${dropped.L})은 처음부터 다시 해요`, 3600);
+  // 난이도 개편 뒤 처음 열었을 때 한 번: 기존 플레이어에게 무엇이 바뀌었는지
+  // (영웅 합류 안내 다음 차례에 — nextJoinNotice)
+  if (hasTags() && (data.seenSim | 0) < SIM) {
+    if (!data.corrupt && data.maxL > 1 && !(data.v > SAVE_V)) balanceNote = true;
+    else { data.seenSim = SIM; save(data); }
+  }
   if (data.corrupt) {
     notice('저장을 읽지 못했어요', '저장된 진행이 손상되어 새로 시작했어요. 백업 코드가 있으면 설정 → 데이터 → 백업 코드 넣기로 되살릴 수 있어요.', [{ label: '알겠어요', primary: true }]);
   } else if (data.v > SAVE_V) {

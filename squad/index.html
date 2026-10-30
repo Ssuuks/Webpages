@@ -300,6 +300,56 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
 #resStats span { color: var(--muted); }
 #resStats b { font-variant-numeric: tabular-nums; }
 
+/* 레벨 태그 배지(어려움 🔥 · 매우 어려움 🔥🔥 · 쉼) — 불꽃은 도트 아이콘 */
+.tagb { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; font-family: var(--display); font-weight: 400; line-height: 1; }
+.tagb.tag-hard { color: #FFB25C; }
+.tagb.tag-super { color: #FF7A6B; }
+.tagb.tag-rest { color: #B6F08A; }
+#levelGrid { padding-top: 7px; }
+.lv { position: relative; min-width: 0; }
+/* 칸 위 테두리에 걸친 작은 배지(불꽃은 1배 도트 11px). 배지가 있는 칸은 숫자·별을 3px 내려 겹치지 않게(transform이라 칸 크기는 그대로) */
+.lv .tagb { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); padding: 1px 3px; border-radius: 999px; border: 2px solid var(--edge); background: #5A2A1E; font-size: 10px; line-height: 11px; }
+.lv .tagb.tag-super { background: #6E1A33; }
+.lv .tagb.tag-rest { background: #24452A; padding: 1px 5px; top: -8px; }
+.lv .tagb b { font-size: 10px; line-height: 11px; }
+.lv.tag-hard > b, .lv.tag-super > b, .lv.tag-rest > b { transform: translateY(3px); }
+.lv.tag-hard > .st, .lv.tag-super > .st, .lv.tag-rest > .st { transform: translateY(1px); }
+.lv.tag-hard { border-color: #B4561A; }
+.lv.tag-super { border-color: #C0304A; box-shadow: 0 3px 0 var(--edge), inset 0 0 0 2px rgba(255, 93, 93, 0.25); }
+.lv.cur { border-color: var(--amber); }
+.card-tag { margin-top: 6px; display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 8px; border-radius: 999px; background: rgba(14, 10, 26, 0.72); border: 3px solid var(--edge); font-size: 18px; text-shadow: 0 2px 0 var(--edge); }
+.card-tag.tag-hard { border-color: #B4561A; }
+.card-tag.tag-super { border-color: #C0304A; }
+.card-tag.tag-rest { border-color: #3F7A44; }
+.card-tag .coinmul { font-family: var(--body); font-size: 14px; font-weight: 700; }
+
+/* 보스가 닿기까지 n초: 보스 막대 줄 끝에('보스 ▬▬ 닿기까지 n초') — 막대 아래로 내리면 다가오는 보스 머리를 가린다 */
+#bossEta { flex: none; padding: 1px 9px; border-radius: 999px; background: rgba(14, 10, 26, 0.72); border: 2px solid var(--edge); font-size: 14px; line-height: 1.3; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#bossEta.soon { color: #FFD0C4; border-color: #E8384F; animation: etaPulse 0.5s ease-in-out infinite alternate; }
+#bossEta.clash { color: #fff; background: rgba(169, 38, 68, 0.9); }
+@keyframes etaPulse { to { box-shadow: 0 0 10px 2px rgba(255, 70, 50, 0.7); } }
+@media (max-width: 380px) { #bossEta { font-size: 13px; padding: 1px 7px; } #bossBar { gap: 6px; } }
+
+/* 근소한 패배 */
+#resNear { display: grid; gap: 6px; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 201, 60, 0.1); border: 2px solid rgba(255, 201, 60, 0.45); }
+.near-boss { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.near-boss span { color: var(--muted); white-space: nowrap; }
+.near-boss b { font-family: var(--display); font-weight: 400; font-size: 17px; color: #FFD0C4; white-space: nowrap; }
+.near-boss .bar { flex: 1; height: 12px; border-radius: 6px; overflow: hidden; background: rgba(14, 10, 26, 0.7); border: 2px solid var(--edge); position: relative; }
+.near-boss .bar i { position: absolute; inset: 0; background: linear-gradient(90deg, #E8384F, #FF8A5C); transform-origin: left; }
+#resNear p { font-size: 14px; font-weight: 600; line-height: 1.4; }
+#resNear .near-more { font-family: var(--display); font-weight: 400; font-size: 19px; color: var(--amber); }
+#resNear .near-gate { color: #EADCF0; }
+
+/* 강화 상한 */
+.pips i.cap { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22); }
+.upg-cap { grid-column: 1; font-size: 12px; font-weight: 600; color: var(--amber); }
+.upg.locked .buy:disabled { font-size: 15px; }
+
+/* 일시정지: 처음부터 다시를 눈에 띄게 */
+.btn.restart { background: #3A2A20; color: var(--amber); border-color: var(--edge); box-shadow: 0 0 0 3px var(--amber) inset, 0 4px 0 var(--edge); font-size: 20px; }
+.restart-note { text-align: center; margin-top: -4px; }
+
 /* 합류 안내 */
 #scrJoin .sheet { text-align: center; }
 #scrJoin .portrait { margin: 6px auto 8px; width: 140px; height: 140px; }
@@ -322,7 +372,7 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
     <span class="hud-coins coinchip" id="hudCoins">0</span>
     <button id="btnPause" aria-label="일시정지" title="일시정지 (Esc)"></button>
   </div>
-  <div id="bossBar" hidden><span>보스</span><div class="bar"><i id="bossFill"></i></div></div>
+  <div id="bossBar" hidden><span>보스</span><div class="bar"><i id="bossFill"></i></div><span id="bossEta" hidden role="timer"><span id="bossEtaT"></span></span></div>
   <div id="spChips" aria-label="함께하는 특수병"></div>
 </div>
 <div id="touchL" class="touch-hint" hidden aria-hidden="true">◀</div>
@@ -433,6 +483,7 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
     <div class="eyebrow">레벨</div>
     <div class="big" id="cardL">1</div>
     <div class="region" id="cardRegion"></div>
+    <div class="card-tag" id="cardTag" hidden></div>
     <div class="new" id="cardNew"></div>
     <div class="goal" id="cardGoal"></div>
     <div class="unit-tip" id="cardUnit" hidden></div>
@@ -446,7 +497,9 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
     <h2>일시정지</h2>
     <div class="sp-list" id="pSp" hidden></div>
     <button id="pResume" class="btn primary" data-focus>계속하기</button>
-    <button id="pRestart" class="btn">처음부터 다시</button>
+    <button id="pRestart" class="btn restart">처음부터 다시</button>
+    <p class="muted restart-note" id="pRestartNote" hidden></p>
+    <button id="pHelp" class="btn small" hidden></button>
     <div class="row"><button id="pSet" class="btn">설정</button><button id="pSaveQuit" class="btn">저장하고 나가기</button></div>
   </div>
 </section>
@@ -456,6 +509,7 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
     <div id="resTitle">승리!</div>
     <div id="resStars"><span>★</span><span>★</span><span>★</span></div>
     <div id="resCause" hidden></div>
+    <div id="resNear" hidden></div>
     <div id="resStats"></div>
     <div class="stack">
       <button id="resPrimary" class="btn primary" data-focus>다음 레벨</button>
