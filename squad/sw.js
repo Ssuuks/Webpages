@@ -1,5 +1,5 @@
 /* 오프라인 캐시 — 게임 파일은 네트워크 우선(실패하면 캐시), 글꼴은 캐시 우선 */
-const VERSION = 'squad-v2.1.0';
+const VERSION = 'squad-v2.2.0';
 /* 게임이 불러오는 모든 파일 — tests/run.mjs가 main.js의 import를 따라가며 빠진 것이 없는지 확인한다 */
 const SHELL = [
   './', './index.html', './manifest.webmanifest',

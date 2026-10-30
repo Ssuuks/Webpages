@@ -32,7 +32,7 @@ export const HEROES = {
     line: '목소리는 부대 최강, 용기는… 연습 중!',
     unlock: { type: 'clear', L: 2, text: '레벨 2를 깨면 합류' },
     passive: { name: '집합 나팔', text: (lv) => `덧셈 게이트를 쏴서 올리는 속도 ×${lerp(1.1, 1.25, lv).toFixed(2)}` },
-    skill: { name: '돌격 나팔', cd: 16, dur: 5, text: (lv) => `5초 동안 총알 피해 ×${lerp(1.4, 1.6, lv).toFixed(2)} (게이트 올리기에도 적용)` },
+    skill: { name: '돌격 나팔', cd: 16, dur: 5, text: (lv) => `5초 동안 총알 피해 ×${lerp(1.25, 1.4, lv).toFixed(2)} (게이트 올리기에도 적용)` },
   },
   bori: {
     name: '보리', role: '의무', color: '#FF8FB8', match: 'medic',
@@ -48,7 +48,7 @@ export const HEROES = {
     line: '하암… 한 발이면 돼. 깨우지 마.',
     unlock: { type: 'stars', n: 30, text: '별 30개를 모으면 합류' },
     passive: { name: '고양이 눈', text: (lv) => `1.8초마다 직접 저격(위력 ${Math.round(lerp(18, 28, lv))}%). 저격수가 있으면 대신 저격수 위력 +${Math.round(lerp(30, 50, lv))}%` },
-    skill: { name: '백발백묘', cd: 15, dur: 3, text: (lv) => `3초 동안 강한 적을 12발 연속 저격(한 발 위력 ${Math.round(lerp(40, 60, lv))}%, 보스전 추가 피해 한도 +${30 + 3 * (Math.max(1, Math.min(HERO_MAX_LV, lv)) - 1)}%)` },
+    skill: { name: '백발백묘', cd: 15, dur: 3, text: (lv) => `3초 동안 강한 적을 12발 연속 저격(한 발 위력 ${Math.round(lerp(40, 60, lv))}%, 보스전 추가 피해 한도 +${10 + 2 * (Math.max(1, Math.min(HERO_MAX_LV, lv)) - 1)}%)` },
   },
 };
 export const HERO_IDS = Object.keys(HEROES);
