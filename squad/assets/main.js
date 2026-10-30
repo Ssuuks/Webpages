@@ -13,7 +13,7 @@ import * as STORE from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, heroCost, heroCap, heroesEarned, biomeOf } from './roster.js';
 import {
-  tagOf, hasTags, mulText, TAG_FIRE, upgState, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
+  tagOf, hasTags, mulText, TAG_FIRE, upgState, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss, gearGap,
 } from './insight.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1272,6 +1272,15 @@ function finish() {
     : CAUSE[s.cause] || CAUSE.foe;
   $('resCause').hidden = won;
   $('resCause').innerHTML = won ? '' : `<b>${cause[0]}</b><span>${cause[1]}</span>`;
+  // 레벨은 그 무렵 흔한 강화를 단 사람에 맞춰 두었다 — 강화가 모자라서 졌을 수 있으면 알려 준다
+  const gg = won ? null : gearGap(data, L, UPGRADES);
+  const affordable = canAffordUpg();
+  if (gg && gg.below.length && affordable) {
+    const tip = document.createElement('span');
+    tip.className = 'gear-tip';
+    tip.textContent = `${gg.below.join('·')} 강화가 이 레벨 권장보다 낮아요. 강화하고 다시 하면 훨씬 수월해요.`;
+    $('resCause').appendChild(tip);
+  }
   $('resPrimary').textContent = won ? '다음 레벨' : '다시 도전';
   const helpN = supportSize(lv);
   const offerHelp = !won && (data.fails[L] | 0) >= 3;
@@ -1279,7 +1288,7 @@ function finish() {
   $('resHelp').textContent = `지원 +${helpN}명 받고 다시 (별 1개까지)`;
   $('resHelp').dataset.n = helpN;
   $('resBackup').hidden = storageMode() === 'ok';
-  $('resUpg').classList.toggle('glow', canAffordUpg());
+  $('resUpg').classList.toggle('glow', affordable);
   $('hudCoins').textContent = compact(data.coins);
   hudCache = '';
   show('scrResult');

@@ -158,3 +158,21 @@ export function nearMiss(s, arenaN, core = C) {
   }
   return { left, pct, more };
 }
+
+/* 이 레벨을 맞춘 '기대 강화'(core.expectAt)보다 시작 병력·화력이 낮은가. 진 판에서 '강화하고 다시'를 권할 때 쓴다.
+   { below: 강화 이름 목록, gap: 모자란 단계 합 }. core.expectAt이 없으면 빈 목록 */
+export function gearGap(data, L, upgrades, core = C) {
+  const f = fn(core, 'expectAt');
+  const out = { below: [], gap: 0 };
+  if (!f || !data || !data.upg) return out;
+  let e;
+  try { e = f(L); } catch { return out; }
+  if (!e) return out;
+  for (const u of upgrades || []) {
+    if (u.id !== 'start' && u.id !== 'fire') continue;   // 보급(코인)은 판 난이도와 상관없다
+    const want = e[u.id] | 0;
+    const have = data.upg[u.id] | 0;
+    if (have < want) { out.below.push(u.name); out.gap += want - have; }
+  }
+  return out;
+}
