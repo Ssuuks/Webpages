@@ -138,6 +138,7 @@ export const METRICS = {
   lossPre: '경기장 전 패배 % (진 판 중)',
   atPeak: '최고 병력으로 끝난 % (이긴 판)',
   dd: '달리기 중 최고 대비 최대 낙폭 중앙값',
+  dd30: '달리기 중 최고 대비 30% 넘게 줄어든 판 % (경기장 전에 진 판 포함)',
   s3: '★★★ % (이긴 판)',
   s2: '★★ 이상 % (이긴 판)',
   bossLeft: '질 때 보스 남은 체력 중앙값 (경기장에서 진 판)',
@@ -166,6 +167,7 @@ export function summarize(runs) {
     lossPre: pct(losses.filter((r) => r.arr < 0).length, losses.length),
     atPeak: pct(wins.filter((r) => r.atPeak).length, wins.length),
     dd: median(arena.map((r) => r.dd)),
+    dd30: pct(runs.filter((r) => r.dd >= 0.3 || (!r.won && r.arr < 0)).length, runs.length),
     s3: pct(wins.filter((r) => r.stars === 3).length, wins.length),
     s2: pct(wins.filter((r) => r.stars >= 2).length, wins.length),
     bossLeft: median(bossLoss.map((r) => r.bossLeft)),
@@ -425,6 +427,7 @@ for (const [g, sel, bots] of winTargets) {
   // 스킬 끈 sloppy0.1: 하한 −10%p 안
   TARGETS.push({ id: `win ${g} sloppy0.1-noskill`, cond: ['expect'], bot: 'sloppy0.1-noskill', metric: 'win', sel, lo: bots['sloppy0.1'][0] - 10, hi: 100 });
 }
+/* 2단계 '판 중 긴장' 목표(P07~P10, P14): 위 TARGETS 뒤쪽과 tools/stakes.mjs의 STAKE_TARGETS(판돈 줄)에 있다 */
 const exploit = [
   ['idle', 'all', () => true, 5],
   ['random', 'all', () => true, 10],
@@ -443,8 +446,13 @@ TARGETS.push(
   { id: 'slam hit sloppy0.1 L5+', cond: ['expect'], bot: 'sloppy0.1', metric: 'slamHit', sel: (L) => L >= 5, lo: 15, hi: 30 },
   { id: 'slam hit sloppy0.3 L5+', cond: ['expect'], bot: 'sloppy0.3', metric: 'slamHit', sel: (L) => L >= 5, lo: 15, hi: 30 },
   { id: 'slam hit expert L5+', cond: ['expect'], bot: 'expert', metric: 'slamHit', sel: (L) => L >= 5, lo: 0, hi: 10 },
-  { id: 'losses before arena (hard+super)', cond: ['expect'], bot: 'sloppy0.1', metric: 'lossPre', sel: (L, c) => HARDISH(c), lo: 30, hi: 100 },
+  // L5·L10은 소개 레벨이라 태그가 보스와 마지막 두 청크에만 걸린다(보스 한정 어려움, P09) — 판 중 실패 목표는 태그 전체가 걸리는 L15부터
+  { id: 'losses before arena (hard+super L15+)', cond: ['expect'], bot: 'sloppy0.1', metric: 'lossPre', sel: (L, c) => L >= C.TAG_FULL_FROM && HARDISH(c), lo: 30, hi: 100 },
   { id: 'wins ending at peak L5+', cond: ['expect'], bot: 'sloppy0.1', metric: 'atPeak', sel: (L) => L >= 5, lo: 0, hi: 40 },
+  // P09: 첫 레벨들 — 산만한 사람도 L1-4는 거의 이기고(≥95), L3·L4에서는 한 번 크게(30% 넘게) 줄었다가 회복한다(≥70%)
+  { id: 'onboard sloppy0.3 (P09)', cond: ['expect'], bot: 'sloppy0.3', metric: 'win', sel: (L, c) => c === 'onboard', lo: 95, hi: 100 },
+  { id: 'L3-4 crisis sloppy0.1 (dd≥30%)', cond: ['expect'], bot: 'sloppy0.1', metric: 'dd30', sel: (L) => L === 3 || L === 4, lo: 70, hi: 100 },
+  { id: 'L3-4 crisis sloppy0.3 (dd≥30%)', cond: ['expect'], bot: 'sloppy0.3', metric: 'dd30', sel: (L) => L === 3 || L === 4, lo: 70, hi: 100 },
   { id: 'drawdown median L5+', cond: ['expect'], bot: 'sloppy0.1', metric: 'dd', sel: (L) => L >= 5, lo: 0.2, hi: 0.4 },
   { id: '3★ share of wins sloppy0.1', cond: ['expect'], bot: 'sloppy0.1', metric: 's3', sel: () => true, lo: 25, hi: 45 },
   { id: '≥2★ share of wins sloppy0.1', cond: ['expect'], bot: 'sloppy0.1', metric: 's2', sel: () => true, lo: 60, hi: 80 },
