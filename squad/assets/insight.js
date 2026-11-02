@@ -79,10 +79,11 @@ export function bossEtaOf(s, core = C) {
 export const bossClash = (s) => !!(s && s.boss && s.boss.hp > 0 && s.boss.clash);
 
 /* 3패 지원 병력(시작 병력에 더한다): core.supportFor(lv) → lv.helpStart → 예전 식 max(5, 도착 병력의 20%) */
-export function supportSize(lv, core = C) {
+/* own = 그 플레이어가 실제로 들고 가는 { start(시작 병력), fire(화력 단계) } — 기대 강화보다 모자라면 core.supportFor가 그만큼 더 준다 */
+export function supportSize(lv, own = null, core = C) {
   const f = fn(core, 'supportFor');
   if (f) {
-    try { const v = f(lv); if (finite(v) && v > 0) return Math.round(v); } catch { /* 아래로 */ }
+    try { const v = own ? f(lv, own) : f(lv); if (finite(v) && v > 0) return Math.round(v); } catch { /* 아래로 */ }
   }
   if (lv && finite(lv.helpStart) && lv.helpStart > 0) return Math.round(lv.helpStart);
   return Math.max(5, Math.round(((lv && lv.arrive) || 30) * 0.2));

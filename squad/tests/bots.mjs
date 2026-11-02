@@ -7,9 +7,12 @@
    - strong   기준 봇(C.botInput). 실현 가능성 증명이지 사람이 아니다
    - expert   strong의 판단 + 0.2초 늦은 반응 + 가끔(3%) 엉뚱한 곳 — 숙련자 대리
    - sloppy   0.3초 늦은 반응, 게이트 쏘기·상자 모름, err 확률로 엉뚱한 곳 — 0.1은 집중한 일반 플레이어, 0.3은 산만한 초보
+              -pump: 같은 손놀림인데 덧셈 칸을 쏘면 오르는 것을 안다(L1 안내를 따르는 사람). -hold: 같은 판단을 '꾹 누르기'로만 움직인다
+              (0.1초마다 0.2초 전 자리를 보고 누르거나 뗀다 — 끌기처럼 딱 서지 못한다)
    - naive    보이는 숫자로 가장 커 보이는 칸, 쏘기·피하기 없음
    - misjudge sloppy와 같은 손놀림 + 결과가 15% 안으로 비슷한 줄에서 30% 틀린 칸 — 계산 실수형
-   - 꼼수: idle(가만히), random(마구), hold(x 고정), worst(늘 가장 나쁜 칸) */
+   - 꼼수: idle(가만히), random(마구), hold(x 고정), faceworst(늘 겉보기로 가장 나쁜 칸 — 잭팟 줄에서는 쏘아 올리기 전략이 된다,
+     옛 이름 worst), trueworst(늘 끝까지 쏘아 올려도 가장 나쁜 칸) */
 import * as C from '../assets/core.js';
 
 /* mulberry32 — 상태를 객체에 둬서 복제할 수 있게 */
@@ -76,10 +79,37 @@ export function expert(seed, opt = {}) {
    세 번째 인자는 { skill } 또는 true/false */
 export function sloppy(seed, err = 0.1, opt = {}) {
   const on = skillOf(opt, false);
-  const lag = (typeof opt === 'object' && opt.lag) || 18;
-  const st = { a: seed >>> 0, hist: [], wrongUntil: -1, wrongX: 0 };
-  const f = (s) => withSkill(s, C.steer(s, lagged(st, s, C.botTarget(s, { pump: false, crates: false }), lag, err)), on);
-  return mark(f, `sloppy${err}`, st, () => { const g = sloppy(seed, err, opt); Object.assign(g.st, structuredClone(st)); return g; });
+  const o = typeof opt === 'object' ? opt : {};
+  const lag = o.lag || 18;
+  const bo = { pump: !!o.pump, crates: false };
+  const st = { a: seed >>> 0, hist: [], wrongUntil: -1, wrongX: 0, hx: [], dir: 0 };
+  const f = (s) => {
+    const tx = lagged(st, s, C.botTarget(s, bo), lag, err);
+    if (!o.hold) return withSkill(s, C.steer(s, tx), on);
+    return withSkill(s, holdSteer(st, s, tx), on);
+  };
+  return mark(f, `sloppy${err}${o.pump ? '-pump' : ''}${o.hold ? '-hold' : ''}`, st, () => { const g = sloppy(seed, err, opt); Object.assign(g.st, structuredClone(st)); return g; });
+}
+/* '꾹 누르기'만 쓰는 손(F2): HOLD_EVERY틱마다 HOLD_SEE틱 전의 자리·속도를 보고, 멈출 거리를 더한 자리가 목표에서 HOLD_DEAD m 넘게 떨어져
+   있으면 그쪽을 누르고 아니면 뗀다. 그 사이에는 고른 것을 그대로 유지한다(끌기·기준 봇처럼 딱 서지 못하고 조금씩 오간다).
+   보스전에서 내려찍기 예고가 없을 때는 HOLD_DEAD_ARENA m 안이면 서 있는다(보스 몸통 ±BOSS_HIT 안이면 맞으니 사람은 보스를 쫓아 계속 누르지 않는다 —
+   0.35m로 쫓으면 늦은 손 때문에 ±2m로 흔들리기만 한다) */
+export const HOLD_EVERY = 6;
+export const HOLD_SEE = 12;
+export const HOLD_DEAD = 0.35;
+export const HOLD_DEAD_ARENA = 1.2;
+function holdSteer(st, s, tx) {
+  const q = s.squad;
+  st.hx.push([q.x, q.vx]);
+  if (st.hx.length > 40) st.hx.splice(0, st.hx.length - 20);
+  if (s.tick % HOLD_EVERY === 0) {
+    const [x, vx] = st.hx[Math.max(0, st.hx.length - 1 - HOLD_SEE)];
+    const stop = x + (Math.sign(vx) * vx * vx) / 200;
+    const d = tx - stop;
+    const dead = s.phase === 'arena' && s.boss && !s.boss.slam ? HOLD_DEAD_ARENA : HOLD_DEAD;
+    st.dir = Math.abs(d) > dead ? Math.sign(d) : 0;
+  }
+  return { dir: st.dir, tx: null };
 }
 
 /* naive: 앞 줄에서 '지금 병력에 겉보기 숫자를 적용한 결과'가 가장 큰 칸(금색 칸은 +0.5)의 가운데로 간다.
@@ -166,8 +196,11 @@ export function hold(x, opt = {}) {
   const on = skillOf(opt, false);
   return mark((s) => withSkill(s, C.steer(s, x), on), `hold${x}`);
 }
-/* worst: 손놀림은 sloppy(err)인데, 칸이 둘 이상인 줄이 40m 안에 오면 그때 겉보기 결과가 가장 나쁜 칸을 정해(줄마다 한 번)
-   그 칸 가운데로 곧장 간다(늦지 않게). 쏘아서 숫자가 바뀌어도 처음 고른 칸을 지킨다. opt.mode='second'면 두 번째로 좋은 칸 */
+/* worst: 손놀림은 sloppy(err)인데, 칸이 둘 이상인 줄이 40m 안에 오면 그때 결과가 가장 나쁜 칸을 정해(줄마다 한 번)
+   그 칸 가운데로 곧장 간다(늦지 않게). 쏘아서 숫자가 바뀌어도 처음 고른 칸을 지킨다.
+   opt.mode: 'face'(기본, faceworst) 겉보기 숫자로 가장 나쁜 칸 — 잭팟·보스 직전 줄에서는 그 칸이 쏘아 올리면 최선이라 '쏘아 올리기 전략'이다.
+   'true'(trueworst) 덧셈 칸을 끝(cap)까지 쏘아 올려도 가장 나쁜 칸 — 정말 나쁜 선택만 하는 사람. 'second' 겉보기 두 번째로 좋은 칸 */
+const fullValue = (n, c) => C.applyOp(n, c.op, c.op === 'add' ? Math.max(c.v, c.cap) : c.v);
 export function worst(seed, opt = {}) {
   const err = opt.err ?? 0.1;
   const on = skillOf(opt, false);
@@ -181,12 +214,13 @@ export function worst(seed, opt = {}) {
     let i = st.pick[row.id];
     if (i === undefined) {
       const n = s.squad.n;
-      const v = row.cells.map((c, k) => ({ v: C.applyOp(n, c.op, c.v), k })).sort((a, b) => a.v - b.v || a.k - b.k);
+      const val = opt.mode === 'true' ? (c) => fullValue(n, c) : (c) => C.applyOp(n, c.op, c.v);
+      const v = row.cells.map((c, k) => ({ v: val(c), k })).sort((a, b) => a.v - b.v || a.k - b.k);
       i = st.pick[row.id] = (opt.mode === 'second' ? v[v.length - 2] : v[0]).k;
     }
     return withSkill(s, C.steer(s, center(row.cells[i]), 0.1), on);
   };
-  return mark(f, opt.mode === 'second' ? 'second' : 'worst', st, () => {
+  return mark(f, opt.mode === 'second' ? 'second' : opt.mode === 'true' ? 'trueworst' : 'faceworst', st, () => {
     const g = worst(seed, opt);
     Object.assign(g.st.sl, structuredClone(st.sl));
     g.st.pick = { ...st.pick };
@@ -195,7 +229,8 @@ export function worst(seed, opt = {}) {
 }
 
 /* ---------- 이름으로 만들기(벤치·도구용) ----------
-   makeBot('sloppy0.1', seed, { skill }) / 'sloppy0.3' / 'expert' / 'strong' / 'naive' / 'misjudge' / 'idle' / 'random' / 'hold2.5' / 'worst'.
+   makeBot('sloppy0.1', seed, { skill }) / 'sloppy0.3' / 'sloppy0.1-pump' / 'sloppy0.1-hold' / 'expert' / 'strong' / 'naive' / 'misjudge' /
+   'idle' / 'random' / 'hold2.5' / 'faceworst'(= 'worst') / 'trueworst'.
    이름 끝의 '-noskill'은 skill을 끈다. seeded=false인 봇은 시드와 상관없이 같은 판을 돈다(한 번만 돌리면 된다). */
 export const BOT_INFO = {
   strong: { seeded: false, skill: true, desc: '기준 봇(C.botInput)' },
@@ -206,7 +241,9 @@ export const BOT_INFO = {
   idle: { seeded: false, skill: true, desc: '가만히' },
   random: { seeded: true, skill: true, desc: '마구(50틱마다 아무 데나)' },
   hold: { seeded: false, skill: true, desc: 'x 고정' },
-  worst: { seeded: true, skill: true, desc: '늘 가장 나쁜 칸' },
+  worst: { seeded: true, skill: true, desc: '늘 겉보기로 가장 나쁜 칸(= faceworst)' },
+  faceworst: { seeded: true, skill: true, desc: '늘 겉보기로 가장 나쁜 칸(잭팟 줄에서는 쏘아 올리기 전략)' },
+  trueworst: { seeded: true, skill: true, desc: '늘 끝까지 쏘아 올려도 가장 나쁜 칸' },
 };
 export function botKind(name) {
   const base = name.replace(/-noskill$/, '');
@@ -220,13 +257,18 @@ export function makeBot(name, seed = 0, opt = {}) {
   const o = { ...opt, skill: noskill ? false : opt.skill ?? true };
   if (base === 'strong') return strong(o);
   if (base === 'expert') return expert(seed, o);
-  if (base.startsWith('sloppy')) return sloppy(seed, Number(base.slice(6) || 0.1), o);
+  if (base.startsWith('sloppy')) {
+    // sloppy0.1, sloppy0.1-pump, sloppy0.3-hold, sloppy0.1-pump-hold
+    const parts = base.slice(6).split('-');
+    return sloppy(seed, Number(parts[0] || 0.1), { ...o, pump: parts.includes('pump'), hold: parts.includes('hold') });
+  }
   if (base === 'naive') return naive(seed, o);
   if (base === 'misjudge') return misjudge(seed, o);
   if (base === 'idle') return idle(o);
   if (base === 'random') return random(seed, o);
   if (base.startsWith('hold')) return hold(Number(base.slice(4)), o);
-  if (base === 'worst') return worst(seed, o);
+  if (base === 'worst' || base === 'faceworst') return worst(seed, o);
+  if (base === 'trueworst') return worst(seed, { ...o, mode: 'true' });
   if (base === 'second') return worst(seed, { ...o, mode: 'second' });
   throw new Error(`모르는 봇: ${name}`);
 }

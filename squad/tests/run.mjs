@@ -9,6 +9,7 @@ import { HERO_IDS, heroCap } from '../assets/roster.js';
 import { sloppy, random, makeBot } from './bots.mjs';
 import { makePool, checkTargets, tagClass, loadoutCap, summarize, seedOf } from '../tools/benchlib.mjs';
 import { checkStakes } from '../tools/stakes.mjs';
+import { fairStats } from '../tools/fairprobe.mjs';
 
 const MAX_LEVEL = 40;
 /* 표(caltable.js)가 덮는 가장 높은 레벨 — 그 뒤는 게임이 처음 열 때 보정한다 */
@@ -365,6 +366,8 @@ test('공정성: 내려찍기·독침 예고는 피하는 데 드는 이동 + �
           if (e.t === 'slamWarn') {
             const d = C.slamDodgeDist(x, R, e.x0, e.x1);
             assert.ok(e.warn >= rule(d, (2 * C.ROAD) / parts) - 1e-9 && e.warn >= C.WARN_MIN - 1e-9, `L${L} 예고 ${e.warn.toFixed(2)}초, 피할 거리 ${d.toFixed(2)}m`);
+            // 반대쪽으로 움직이던 분대: 멈추고 돌아서는 시간·밀린 거리까지(3단계)
+            assert.ok(e.warn >= C.slamFairWarn(x, s.squad.vx, R, e.x0, e.x1, (2 * C.ROAD) / parts) - 1e-9, `L${L} 움직이는 분대 예고 ${e.warn.toFixed(2)}초`);
             if (d > (2 * C.ROAD) / parts) far++;
             pending = { t: s.t, warn: e.warn };
             checked++;
@@ -375,6 +378,23 @@ test('공정성: 내려찍기·독침 예고는 피하는 데 드는 이동 + �
     }
   }
   assert.ok(checked >= 40 && far >= 1, `예고 ${checked}번(먼 회피 ${far}번)`);
+});
+
+/* 공정성(P14, 3단계 — 갈라 보기, tools/fairprobe.mjs): 독침 발사·내려찍기 예고·보스 소환·톱날(26m 안)마다 판을 갈라, 0.3초 늦게 반응하는
+   한 손 조작(그대로 / 왼쪽·오른쪽을 0.15~끝까지 누르기) 중 하나는 독침·내려찍기를 피한다. 그리고 '그 위협을 지운 판에서 가장 덜 잃는 손'보다
+   병력 5%(2명) 넘게 더 잃을 수밖에 없는 위협(피할 길이 벽·무리·길 끝에 막힌 것)은 종류마다 4% 이하 — 독침 좀비는 피할 쪽이 있을 때만 쏜다(spitEscape) */
+test('공정성(갈라 보기): 독침·내려찍기·톱날은 0.3초 늦은 한 손 조작으로 늘 피할 수 있고, 피할 길이 막혀 크게 잃는 위협(독침·내려찍기·소환)은 거의 없다', async () => {
+  const Ls = [6, 9, 12, 15, 18, 22, 26, 30, 33, 37, 41, 45, 48, 52, 56, 60];
+  const recs = (await Promise.all(Ls.map((L) => POOL.run({ kind: 'call', module: new URL('../tools/fairprobe.mjs', import.meta.url).href, fn: 'fairProbe', args: [L, { seeds: 2, rho: 0.3 }] })))).flat();
+  const st = fairStats(recs);
+  const txt = Object.entries(st).map(([k, b]) => `${k} ${b.n}번 피할 수 없음 ${b.undodge} 억지 ${b.forced}`).join(' · ');
+  for (const k of ['spit', 'slam', 'summon', 'saw']) assert.ok(st[k] && st[k].n >= (k === 'saw' ? 8 : 20), `${k} 표본 — ${txt}`);
+  for (const k of ['spit', 'slam', 'saw']) {
+    const bad = recs.filter((r) => r.kind === k && !r.dodge).map((r) => `L${r.L} 시드${r.k} x ${r.x} vx ${r.vx} n ${r.n}`);
+    assert.deepEqual(bad, [], `피할 수 없는 ${k} — ${txt}`);
+  }
+  // 톱날의 억지 손해는 재기만 한다(약한 칸을 지키는 톱날은 일부러 '톱날이냐 센 벽이냐'의 값을 매긴다)
+  for (const k of ['spit', 'slam', 'summon']) assert.ok(st[k].forced <= Math.max(1, Math.ceil(0.04 * st[k].n)), `피할 길이 막혀 병력 5% 넘게 잃는 ${k} ${st[k].forced}/${st[k].n} — ${txt}`);
 });
 
 /* ---------- 보정: 기준 봇, 별 기준, 배치 검사 ---------- */
@@ -402,7 +422,7 @@ test(`배치 검사: 판 내내 한 자리(${C.QA_XS.join('·')})에 서 있으�
 
 test('측정용 봇(tests/bots.mjs)은 시드가 같으면 같은 판을 돌고, 복제하면 그 자리부터 똑같이 이어 간다', () => {
   const lv = C.prepareLevel(9);
-  for (const name of ['strong', 'expert', 'sloppy0.1', 'misjudge', 'naive', 'random', 'hold2.5', 'worst']) {
+  for (const name of ['strong', 'expert', 'sloppy0.1', 'sloppy0.1-pump', 'sloppy0.1-hold', 'misjudge', 'naive', 'random', 'hold2.5', 'faceworst', 'trueworst']) {
     assert.equal(C.stateHash(run(lv, makeBot(name, 7))), C.stateHash(run(lv, makeBot(name, 7))), name);
     const s = C.newGame(lv, { hero: { id: 'mungchi', lv: 2 } });
     const p = makeBot(name, 7);
@@ -460,13 +480,27 @@ test('패배 원인이 기록된다', () => {
   if (s.phase === 'lost') assert.ok(['gate', 'foe', 'brute', 'wall', 'saw', 'spit', 'boss'].includes(s.cause), s.cause);
 });
 
-test(`표 밖 레벨(L${TABLE_MAX + 1}~)은 그 자리에서 빨리 보정된다(휴대폰에서도 레벨 시작이 늦지 않게)`, () => {
-  C.prepareLevel(TABLE_MAX + 40);   // 첫 호출(JIT 데우기)은 빼고 잰다
-  const Ls = range(TABLE_MAX + 7, TABLE_MAX + 12);
+test(`표 밖 레벨은 그 자리에서 빨리 보정된다(휴대폰에서도 레벨 시작이 늦지 않게) — L121~${TABLE_MAX}은 표, 그 뒤는 배치 ${C.RUNTIME_TRIES}번까지(L121~200으로 잰다)`, async () => {
+  assert.ok(TABLE_MAX >= 300, `표는 L1~${TABLE_MAX} — 그 뒤만 그 자리에서 보정한다`);
+  // L121~TABLE_MAX: 표에서 바로(레벨당 몇 ms)
+  for (const L of range(121, TABLE_MAX)) {
+    const t0 = performance.now();
+    const lv = C.prepareLevel(L);
+    assert.ok(performance.now() - t0 < 50 && !lv.failed, `L${L} 표에서 읽기`);
+  }
+  // 그 자리 보정(게임이 L${TABLE_MAX + 1}+에서 하는 것)을 L121~200 전부에 대해 재서 가장 긴 것 — 워커마다 한 레벨씩
+  const out = await Promise.all(range(121, 200).map((L) => POOL.run({ kind: 'call', module: new URL('../tools/benchlib.mjs', import.meta.url).href, fn: 'timeCal', args: [L] })));
+  const avg = out.reduce((a, r) => a + r.ms, 0) / out.length;
+  const worst = out.reduce((a, r) => (r.ms > a.ms ? r : a));
+  for (const r of out) {
+    assert.ok(!r.failed, `L${r.L} 보정 실패`);
+    assert.ok(r.attempt < C.RUNTIME_TRIES, `L${r.L} 배치 ${r.attempt}`);
+  }
+  assert.ok(avg < 500 && worst.ms < 1500, `L121~200 그 자리 보정: 레벨당 평균 ${avg.toFixed(0)}ms, 가장 긴 ${worst.ms.toFixed(0)}ms (L${worst.L})`);
+  // 표 바로 뒤 레벨도 실제로 그 자리에서 보정된다
   const t0 = performance.now();
-  for (const L of Ls) assert.ok(!C.prepareLevel(L).failed, `L${L} 보정 실패`);
-  const ms = (performance.now() - t0) / Ls.length;
-  assert.ok(ms < 600, `레벨당 ${ms.toFixed(0)}ms`);
+  assert.ok(!C.prepareLevel(TABLE_MAX + 3).failed);
+  assert.ok(performance.now() - t0 < 2000);
 });
 
 /* ---------- 난이도 구간(plan.difficulty_targets 1·2단계) ----------
@@ -478,6 +512,7 @@ const TOL = 5;
 const KNOWN = {
   'win super L5-10 sloppy0.1 ': 'L10: 영웅 스킬이 보스를 잡는 힘의 큰 몫(영웅 Lv1) — 스킬 쓰는 사람 구간과 안 쓰는 사람 하한을 한 체력으로 둘 다 맞출 수 없다',
   'win super L5-10 sloppy0.1-noskill': '위와 같은 이유',
+  'win super L5-10 sloppy0.3': 'L10(한 레벨·한 배치, 영웅 Lv1): 집중한 사람과 산만한 사람의 차이가 60%p 안팎 — 집중한 사람을 구간 위쪽에 두어도 산만한 사람은 10~15%(L5와 같은 이유, 3패 지원으로 받친다)',
   'win hard L5-10 sloppy0.3': 'L5(첫 어려움, 한 레벨·한 배치)에서 집중한 사람과 산만한 사람의 차이가 50%p를 넘는다(구간은 20~40%p를 뜻한다) — 집중한 사람을 구간(≤85 허용)에 두면 산만한 사람은 30% 안팎',
   'win super L11+ expert': 'expert는 strong과 같은 판단이라 strong이 이기는 체력(H*) 아래에서는 거의 늘 이긴다 — 사람 숙련자 플레이테스트로 확인',
   'win hard L11+ expert': '같은 이유 — 2단계에서 판 중 실력 차이(쏘아 올리기·상자·열쇠)가 커져 사람 흉내 무리에 맞춘 체력은 숙련자에게 쉽다(무리에 숙련자를 넣어도 H* 상한 때문에 그대로)',
@@ -489,31 +524,39 @@ const KNOWN = {
   'misjudge ≤ sloppy0.1 − 10': '비슷한 줄(겉보기 15% 안)은 병력이 골든 패스 근처일 때만 비슷하다 — 사람 흉내 봇의 병력은 크게 갈라져 오판할 줄이 판당 0.3개쯤이고, 한 번 오판의 손해(도착 4~8%)는 뒤의 덧셈 칸이 메운다(갈라 보기: 생각 줄 뒤집힘 10~17%)',
   'slam hit sloppy0.1': '공정성 규칙(옆 칸 회피 ≥0.7초): 0.3초 늦은 반응으로도 늘 피한다 — 예고 1.0/0.85/0.7/0.6초에서 5~7%, 0.5초(규칙 위반)에서야 61%',
   'face-value best = true best (normal': '겉보기로 가장 큰 칸이 실제로도 가장 좋은 줄 65~69%(시드 둘이면 ±3%p) — 잭팟·쏴서 키우는 +·지킨 줄을 늘렸지만, 사람 흉내 봇의 병력이 골든 패스에서 크게 갈라지면 큰 숫자가 그대로 답이 된다',
+  'win hard L5-10 sloppy0.1-pump': 'L5(첫 어려움, L15 전이라 잭팟 줄이 많다 — 4줄 중 3줄)는 덧셈 칸을 쏘아 올리면 거의 늘 이긴다 — 쏘아 올리지 않는 집중한 사람을 구간(70~80)에 두면 쏘아 올리는 사람은 95% 안팎',
+  'slam hit sloppy0.3': '내려찍기 예고 중 빨간 띠 밖의 분대는 가장자리에서 멈춘다(3단계 — 꾹 누르기로 피한 뒤 되돌아오다 다시 맞는 일을 막는다). 산만한 사람도 덜 맞는다(15% → 13%)',
+  'face-value best = true best (hard': 'N2: L15+ 어려운 레벨의 첫 줄을 늘 판돈 줄로(늘 진짜 최악 칸 0%), 잭팟 줄을 줄였다(ROW_MIX.hard) — 판돈·함정·지킨 줄은 겉보기 1등이 곧 실제 1등이라 57% → 77~81%. 계산이 갈리는 줄(잭팟·쏴서 키우는 +)과 정말 나쁜 선택의 대가 사이에서 대가 쪽을 골랐다',
   'losses before arena': '매우 어려움은 경기장 전 실패를 늘리면(몰이 ×1.75 이상) 기준 봇이 판 중에 죽어 보정이 안 된다(L40) — 어려움은 맞고 매우 어려움이 모자란다',
 };
 const QA_EXCEPT_MAX = 4;   // L5+에서 배치 검사를 못 넘어도 되는 레벨 수(쉼 레벨처럼 산만한 사람이 이기게 두면 서 있기도 이기는 곳)
-const BAND_BOTS = ['expert', 'sloppy0.1', 'sloppy0.1-noskill', 'sloppy0.3'];
-/* 레벨마다 시드 수: 묶음마다 48판 이상 */
+/* 3단계: 덧셈 칸을 쏘아 올리는 사람(sloppy0.1-pump)도 구간에 — 산만하게 쏘아 올리는 사람(sloppy0.3-pump)은 어려움·매우 어려움 L11+만 */
+const BAND_BOTS = ['expert', 'sloppy0.1', 'sloppy0.1-noskill', 'sloppy0.3', 'sloppy0.1-pump'];
+/* 레벨마다 시드 수: 묶음마다 48판 이상(일반 L11+는 레벨마다 6판 — 30레벨 180판, 레벨 하나가 묶음을 기울이지 않게) */
 function bandSeeds(L) {
   const c = tagClass(L);
   if (c === 'onboard') return 12;
   if (L === 5 || L === 10) return 48;
   if (L <= 10) return c === 'rest' ? 5 : 16;
   if (c === 'rest') return 5;
-  if (c === 'normal') return 2;
+  if (c === 'normal') return 6;
   return 10;   // 어려움·매우 어려움 L15~60 (각 5레벨)
 }
 let bandRuns = null;
 /* 오판 봇(misjudge)은 일반 레벨에만(목표가 일반 L5+) — 같은 판 수 */
 const bands = () => (bandRuns ||= Promise.all(range(1, 60).map((L) => levelJob(L, 'expect', C.expectLoadout(L), [
   ...BAND_BOTS.map((name) => ({ name, seeds: bandSeeds(L) })),
+  ...(L >= 11 && (tagClass(L) === 'hard' || tagClass(L) === 'super') ? [{ name: 'sloppy0.3-pump', seeds: bandSeeds(L) }] : []),
   ...(L >= 5 && tagClass(L) === 'normal' ? [{ name: 'misjudge', seeds: bandSeeds(L) }] : []),
 ]))).then((a) => a.flat()));
-const EXPLOIT_BOTS = [['idle', 1], ['random', 4], ['hold-4.4', 1], ['hold-2.5', 1], ['hold0', 1], ['hold2.5', 1], ['hold4.4', 1], ['worst', 4], ['naive', 1]];
+/* faceworst(옛 worst — 겉보기 최악 칸, 잭팟 줄에서는 쏘아 올리기 전략)와 trueworst(끝까지 쏘아 올려도 최악 칸).
+   trueworst는 어려움·매우 어려움 L15+에서 레벨마다 8판(한 레벨 상한 35%를 본다) */
+const EXPLOIT_BOTS = [['idle', 1], ['random', 4], ['hold-4.4', 1], ['hold-2.5', 1], ['hold0', 1], ['hold2.5', 1], ['hold4.4', 1], ['faceworst', 4], ['trueworst', 4], ['naive', 1]];
+const exploitBots = (L) => EXPLOIT_BOTS.map(([name, seeds]) => ({ name, seeds: name === 'trueworst' && L >= C.TAG_FULL_FROM && /hard|super/.test(tagClass(L)) ? 8 : seeds }));
 let exploitRuns = null;
 const exploits = () => (exploitRuns ||= Promise.all(range(1, 60).flatMap((L) => [
-  levelJob(L, 'expect', C.expectLoadout(L), EXPLOIT_BOTS.map(([name, seeds]) => ({ name, seeds }))),
-  levelJob(L, 'cap', loadoutCap(L), EXPLOIT_BOTS.map(([name, seeds]) => ({ name, seeds }))),
+  levelJob(L, 'expect', C.expectLoadout(L), exploitBots(L)),
+  levelJob(L, 'cap', loadoutCap(L), exploitBots(L)),
 ])).then((a) => a.flat()));
 const fmtV = (r) => r.value.toFixed(r.metric === 'arrRef' || r.metric === 'dd' || r.metric === 'bossLeft' || r.metric === 'cost' ? 2 : 1);
 async function checkBand(t, results, pick) {
@@ -581,7 +624,7 @@ test('영웅 동등성: 뭉치·보리·나비의 집중한 사람 승률 차이
   assert.ok(Math.max(...v) - Math.min(...v) <= HERO_PARITY, `영웅별 승률 ${txt}`);
 });
 
-test('꼼수 상한: 가만히·마구·고정 위치 5곳·늘 최악 칸·숫자만 보기 — 기대 강화로도 살 수 있는 최대 강화로도', async (t) => {
+test('꼼수 상한: 가만히·마구·고정 위치 5곳·늘 겉보기 최악 칸·늘 진짜 최악 칸·숫자만 보기 — 기대 강화로도 살 수 있는 최대 강화로도', async (t) => {
   const runs = await exploits();
   const res = checkTargets(runs, range(1, 60));
   await checkBand(t, res, (r) => r.id.startsWith('exploit '));
@@ -605,16 +648,26 @@ test('3패 지원은 이기기 버튼이 아니다: 지원을 받은 산만한 �
   assert.ok(rate(hs) >= 85 - TOL && rate(hs) <= 95 + TOL, `어려움·매우 어려움 지원 승률 ${rate(hs).toFixed(0)}%`);
   assert.ok(rate(runs) >= 85 - TOL && rate(runs) <= 97, `전체 지원 승률 ${rate(runs).toFixed(0)}%`);
   for (const L of range(1, TABLE_MAX)) assert.ok(C.prepareLevel(L).helpStart >= 5, `L${L} helpStart`);
+  // N5(3단계): 강화를 하나도 안 산 저장(시작 12명·화력 0, 영웅 Lv1)도 지원(supportFor(lv, own))을 받으면 어려움·매우 어려움 L15+를 대부분 넘는다
+  const hardL = range(15, 60).filter((L) => tagClass(L) === 'hard' || tagClass(L) === 'super');
+  const bare = (await Promise.all(hardL.map((L) => {
+    const lv = C.prepareLevel(L);
+    const E = C.expectLoadout(L);
+    const sup = C.supportFor(lv, { start: C.START_N, fire: 0 });
+    assert.ok(sup >= lv.helpStart + (E.start - C.START_N), `L${L} 강화 없는 저장의 지원 ${sup}`);
+    return levelJob(L, 'support-bare', { start: C.START_N + sup, fire: 0, hero: E.hero ? { id: E.hero.id, lv: 1 } : null }, [{ name: 'sloppy0.1', seeds: 8 }]);
+  }))).flat();
+  assert.ok(rate(bare) >= 75 - TOL, `강화 없는 저장 + 지원: 집중한 사람 승률 ${rate(bare).toFixed(0)}%`);
 });
 
 test('보정 무리의 사람 흉내 봇(core.humanBot)은 측정 봇 sloppy(tests/bots.mjs)와 같은 시드면 같은 입력을 낸다', () => {
-  for (const [L, err, sk] of [[9, 0.1, true], [15, 0.3, false], [22, 0.1, false]]) {
+  for (const [L, err, sk, pump] of [[9, 0.1, true, false], [15, 0.3, false, false], [22, 0.1, false, false], [25, 0.1, true, true]]) {
     const lv = C.prepareLevel(L);
     const co = C.expectLoadout(L);
     const a = C.newGame(lv, co);
     const b = C.newGame(lv, co);
-    const p = C.humanBot(77, err, sk);
-    const q = sloppy(77, err, { skill: sk });
+    const p = C.humanBot(77, err, sk, { pump });
+    const q = sloppy(77, err, { skill: sk, pump });
     while ((a.phase === 'run' || a.phase === 'arena') && a.tick < 6000) {
       const i = p(a);
       const j = q(b);
@@ -624,10 +677,11 @@ test('보정 무리의 사람 흉내 봇(core.humanBot)은 측정 봇 sloppy(tes
     }
     assert.equal(C.stateHash(a), C.stateHash(b));
     // 복제하면 그 자리부터 똑같이
-    const c = structuredClone(a);
     const r = p.clone();
     assert.deepEqual(r.st, p.st);
   }
+  // 무리의 쏘아 올리는 사람(pump)은 측정 봇 sloppy0.1-pump와 같다
+  assert.ok(C.POP.some((t) => t.id === 'pump' && t.pump && t.err === 0.1 && t.skill));
 });
 
 test('화면 약속(UI가 쓰는 내보내기): levelTag·upgCap·bossEta·supportFor·starGoals(lv)·gate 이벤트', () => {
@@ -664,6 +718,24 @@ test('화면 약속(UI가 쓰는 내보내기): levelTag·upgCap·bossEta·suppo
   while (s.phase === 'arena' && !s.boss.clash) C.step(s, { dir: 0, tx: null });
   if (s.boss && s.boss.clash) assert.equal(C.bossEta(s), null);
   assert.ok(C.supportFor(lv) >= 5);
+  // 3패 지원은 플레이어가 실제로 들고 가는 강화를 본다: 기대 강화 이상이면 helpStart, 모자라면 그만큼 더(강화를 안 산 저장도 지원으로 넘게)
+  for (const L of [12, 20, 30, 45]) {
+    const l = C.prepareLevel(L);
+    const E = C.expectLoadout(L);
+    assert.equal(C.supportFor(l, { start: E.start, fire: E.fire }), l.helpStart, `L${L} 기대 강화`);
+    assert.equal(C.supportFor(l, { start: E.start + 10, fire: E.fire + 3 }), l.helpStart, `L${L} 더 산 저장`);
+    const bare = C.supportFor(l, { start: C.START_N, fire: 0 });
+    assert.ok(bare >= l.helpStart + (E.start - C.START_N), `L${L} 강화 없음 ${bare} vs ${l.helpStart}`);
+  }
+  // 내려찍기: 화면에 빨갛게 그리는 범위(slamZone)가 곧 맞는 범위(slamHits) — 분대 중심이 그 안이면 맞는다
+  for (const n of [5, 60, 900]) {
+    const R = C.radius(n);
+    for (const sl of [{ x0: -5, x1: 0 }, { x0: 0, x1: 5 }, { x0: -5 / 3, x1: 5 / 3 }]) {
+      const z = C.slamZone(sl, R);
+      for (let x = -C.EDGE; x <= C.EDGE + 1e-9; x += 0.05) assert.equal(C.slamHits(x, R, sl), x >= z.x0 && x <= z.x1, `n${n} x${x.toFixed(2)}`);
+      assert.ok(z.x0 < sl.x0 || sl.x0 <= -C.ROAD, '그리는 범위는 칸보다 넓다(분대 몸의 바깥쪽 일부가 걸려도 맞는다)');
+    }
+  }
 });
 
 test('저장: 저장소가 없어도 돌고, 강화 비용은 오른다', () => {
@@ -963,6 +1035,38 @@ test('이어하기: 스냅숏에서 되살린 판은 원래 판과 매 틱 똑�
     ticks++;
   }
   assert.equal(C.restore({ nope: 1 }), null);
+  // 3단계: 2단계 상태(열쇠 상자·몰이 알림·톱날·독침·무기 단계)까지 — 어려움 L15(열쇠 상자 + 몰이)를 몰이 알림 뒤, 열쇠 상자가 살아 있을 때 저장해
+  // 되살린 판의 상태 전체(JSON)가 20틱마다 원래 판과 같다
+  {
+    const lv15 = C.prepareLevel(15);
+    assert.ok(lv15.props.some((p) => p.key) && lv15.marks.some((m) => m.t === 'surge'), 'L15에 열쇠 상자와 몰이');
+    const a = C.newGame(lv15, C.expectLoadout(15));
+    const pol = makeBot('sloppy0.1', 11);
+    const keyZ = lv15.props.find((p) => p.key).z;
+    while (a.phase === 'run' && !(a.marks.length && a.marks[0].done) && a.squad.z < keyZ - 12) C.step(a, pol(a));
+    assert.equal(a.phase, 'run');
+    const b = C.restore(JSON.parse(JSON.stringify(C.snapshot(a))));
+    const pa = pol.clone ? pol.clone() : pol;
+    const pb = pol.clone ? pol.clone() : pol;
+    const strip = (x) => { const o = C.snapshot(x); delete o.ev; return JSON.stringify(o); };
+    for (let i = 0; (a.phase === 'run' || a.phase === 'arena') && i < 30000; i++) {
+      C.step(a, pa(a));
+      C.step(b, pb(b));
+      assert.equal(C.stateHash(b), C.stateHash(a), `L15 틱 ${a.tick}`);
+      if (i % 20 === 0) assert.equal(strip(b), strip(a), `L15 상태 틱 ${a.tick}`);
+    }
+    assert.equal(strip(b), strip(a));
+  }
+  // 해시는 2단계 상태도 본다(열쇠 상자 체력·몰이 알림·톱날 자리·무기 단계·난수)
+  {
+    const t = C.newGame(C.prepareLevel(15), C.expectLoadout(15));
+    const h0 = C.stateHash(t);
+    for (const mut of [(x) => { x.props[0].hp -= 1; }, (x) => { x.marks[0].done = true; }, (x) => { x.squad.tier = 1; }, (x) => { x.rs ^= 1; }, (x) => { x.squad.vx = 0.5; }]) {
+      const u = structuredClone(t);
+      mut(u);
+      assert.notEqual(C.stateHash(u), h0);
+    }
+  }
   // v2 필드가 빠진 스냅숏도 숫자가 깨지지 않는다(NaN이면 보스를 못 잡는다)
   const { s: b } = arena(12, { hero: { id: 'nabi', lv: 2 } });
   const o = JSON.parse(JSON.stringify(C.snapshot(b)));
@@ -1034,9 +1138,10 @@ test('오프라인 캐시 목록에 게임이 불러오는 모든 파일이 있�
 test('보정 표는 실제 보정과 같다(규칙을 바꾸면 node squad/tools/caltable.mjs 로 다시 만든다)', async () => {
   assert.equal(CAL.sim, C.SIM, '보정 표의 SIM이 낡았다');
   assert.ok(TABLE_MAX >= 120, `표는 L1~${TABLE_MAX}`);
-  for (let L = 1; L <= TABLE_MAX; L++) assert.ok(CAL.levels[L] && CAL.expect[L], `L${L} 없음`);
-  // 표본: 튜토리얼·첫 레벨들(배치 검사·보스 올리기)·일반·쉼·어려움(무리 보정)·매우 어려움 — 워커로 나눠 다시 보정
-  const sample = [1, 3, 8, 13, 16, 20, 25, 44];
+  // 보정 결과는 L1~TABLE_MAX(300), EXPECT는 캠페인이 도는 L1~POP_MAX(120) — 그 뒤 EXPECT는 expectAt이 늘려 쓴다
+  for (let L = 1; L <= TABLE_MAX; L++) assert.ok(CAL.levels[L] && (L > C.POP_MAX || CAL.expect[L]), `L${L} 없음`);
+  // 표본: 튜토리얼·첫 레벨들(배치 검사·보스 올리기)·일반·쉼·어려움(무리 보정)·매우 어려움, 표 뒤쪽(L121+: H* × 체력/H* 중앙값) — 워커로 나눠 다시 보정
+  const sample = [1, 3, 8, 13, 16, 20, 25, 44, 141, 150];
   const out = await Promise.all(sample.map((L) => POOL.run({ kind: 'cal', L })));
   sample.forEach((L, i) => { for (const f of C.CAL_FIELDS) assert.equal(CAL.levels[L][f], out[i][f], `L${L} ${f}`); });
 });

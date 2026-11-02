@@ -1,16 +1,18 @@
-/* 보정 표 만들기: node squad/tools/caltable.mjs [--max 120] [--iters 2] [--seeds 8] [--workers 4] [--expect f.json] [--json log.json]
+/* 보정 표 만들기: node squad/tools/caltable.mjs [--max 120] [--table 300] [--iters 2] [--seeds 8] [--workers 4] [--expect f.json] [--json log.json]
    1) EXPECT(L)을 정한다: 지금 EXPECT로 L1~max를 보정 → 그 표로 sloppy0.1 캠페인(스킬 켬, 지원 받음, 코인 → 가장 싼 강화·영웅 레벨,
       강화 상한 EXPECT+1)을 seeds개 돌려 레벨별 첫 시도 중앙 강화를 새 EXPECT로. 보정과 EXPECT가 서로 물리므로 iters번(기본 2) 되풀이한다.
       처음 EXPECT: --expect 파일(bench JSON의 expect) → 지금 caltable.js(같은 SIM이면) → tools/bench-baseline.json → 초안 공식.
       --iters 0이면 지금 EXPECT 그대로 보정만 다시 한다(규칙은 그대로이고 상수만 바꿨을 때).
-   2) 마지막 EXPECT로 L1~max를 보정해 assets/caltable.js에 적는다(EXPECT 표도 함께). L(max+1) 이후는 게임이 처음 열 때 계산한다.
+   2) 마지막 EXPECT로 L1~max를 보정하고, 이어서 L(max+1)~table을 그 표를 깔고(어려운 레벨은 H* × 표의 '체력/H*' 중앙값 — 게임이 그 자리에서
+      보정하는 것과 같다) 보정해 assets/caltable.js에 적는다(EXPECT 표도 함께). L(table+1) 이후는 게임이 처음 열 때 계산한다.
    tests/run.mjs가 표와 실제 보정이 같은지 표본으로 확인한다. 규칙(SIM)이 바뀌면 다시 돌린다. */
 import fs from 'node:fs';
 import os from 'node:os';
 import { C, makePool, expectFromCampaigns, cliArgs } from './benchlib.mjs';
 
-const o = cliArgs(process.argv.slice(2), { levels: '1', max: 120, iters: 2, seeds: 8, workers: Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length) });
+const o = cliArgs(process.argv.slice(2), { levels: '1', max: 120, table: 300, iters: 2, seeds: 8, workers: Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length) });
 const MAX = Math.max(1, +o.max);
+const TABLE = Math.max(MAX, +o.table);
 const ITERS = Math.max(0, +o.iters);
 const T0 = performance.now();
 const log = (...a) => console.log(...a);
@@ -33,9 +35,9 @@ function fillExpect(E) {
   return out;
 }
 const pool = makePool(o.workers);
-async function calAll(E) {
-  const cal = { sim: C.SIM, expect: E, levels: {} };
-  const order = Array.from({ length: MAX }, (_, i) => MAX - i);
+async function calAll(E, from = 1, to = MAX, under = {}) {
+  const cal = { sim: C.SIM, expect: E, levels: strip(under) };
+  const order = Array.from({ length: to - from + 1 }, (_, i) => to - i);
   const levels = {};
   await Promise.all(order.map((L) => pool.run({ kind: 'cal', L, cal }).then((r) => { levels[L] = r; })));
   const failed = Object.entries(levels).filter(([, r]) => r.failed).map(([L]) => L);
@@ -70,6 +72,11 @@ try {
     E = E2;
   }
   const { levels, failed } = await calAll(E);
+  if (TABLE > MAX) {
+    const more = await calAll(E, MAX + 1, TABLE, levels);
+    Object.assign(levels, more.levels);
+    failed.push(...more.failed);
+  }
   if (failed.length) log(`보정 실패 레벨: ${failed.join(',')}`);
   const body = Object.keys(levels).map(Number).sort((a, b) => a - b).map((L) => `    ${L}: ${JSON.stringify(Object.fromEntries(C.CAL_FIELDS.map((f) => [f, levels[L][f]])))},`).join('\n');
   const ex = Object.keys(E).map(Number).sort((a, b) => a - b).map((L) => `    ${L}: ${JSON.stringify(E[L])},`).join('\n');
@@ -87,7 +94,7 @@ ${body}
 `;
   fs.writeFileSync(new URL('../assets/caltable.js', import.meta.url), out);
   if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sim: C.SIM, max: MAX, iters: ITERS, hist, expect: E, levels }, null, 1));
-  log(`${MAX}개 레벨 → assets/caltable.js (${((performance.now() - T0) / 1000).toFixed(0)}초)`);
+  log(`${TABLE}개 레벨 → assets/caltable.js (${((performance.now() - T0) / 1000).toFixed(0)}초)`);
 } finally {
   pool.close();
 }

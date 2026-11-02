@@ -47,9 +47,10 @@ export function tagClass(L, tag = tagOf(L)) {
   if (/rest|easy|break|calm/.test(t)) return 'rest';
   return t;
 }
-/* 3패 지원 병력: core.js의 supportFor(lv) → 보정 표의 lv.helpStart → 지금 main.js 식 */
-export function supportFor(lv) {
-  if (typeof C.supportFor === 'function') return C.supportFor(lv);
+/* 3패 지원 병력: core.js의 supportFor(lv, own) → 보정 표의 lv.helpStart → 지금 main.js 식.
+   own = 그 플레이어의 { start(시작 병력), fire(화력 단계) } — 기대 강화보다 모자라면 그만큼 더 준다(main.js와 같다) */
+export function supportFor(lv, own) {
+  if (typeof C.supportFor === 'function') return C.supportFor(lv, own);
   if (Number.isFinite(lv.helpStart)) return lv.helpStart;
   return Math.max(5, Math.round((lv.arrive || 30) * 0.2));
 }
@@ -243,7 +244,7 @@ export function campaign(opt = {}) {
       const id = forceHero === 'none' ? '' : d.heroes.sel;
       const hero = L >= C.UNLOCK.hero && id && d.heroes.lv[id] ? { id, lv: d.heroes.lv[id] } : null;
       const base = C.START_N + 2 * d.upg.start;
-      const sup = useSupport && (d.fails[L] | 0) >= 3 ? supportFor(lv) : 0;
+      const sup = useSupport && (d.fails[L] | 0) >= 3 ? supportFor(lv, { start: base, fire: d.upg.fire }) : 0;
       const par = parOf(lv, base, d.upg.fire, hero);
       const coins0 = d.coins;
       const pol = makeBot(bot, C.hash('camp', bot, seed, L, a) >>> 0, opt.skill === false ? { skill: false } : {});
@@ -342,6 +343,14 @@ export function calJob(job) {
   for (const f of C.CAL_FIELDS) out[f] = lv[f];
   return out;
 }
+/* 표 밖 레벨을 게임처럼 그 자리에서 보정하는 데 걸린 ms(배치는 tries번까지 — 게임은 C.RUNTIME_TRIES). 표가 있는 레벨도 표를 쓰지 않고 잰다 */
+let calWarm = false;
+export function timeCal(L, tries = C.RUNTIME_TRIES) {
+  if (!calWarm) { C.calibrateLevel(L + 1000, tries); calWarm = true; }   // 워커의 첫 호출(JIT 데우기)은 빼고 잰다
+  const t0 = performance.now();
+  const lv = C.calibrateLevel(L, tries);
+  return { L, ms: performance.now() - t0, attempt: lv.attempt, failed: !!lv.failed, qa: !!lv.qa };
+}
 export function runJob(job) {
   if (job.cal) C.useCal(job.cal);
   if (job.kind === 'cal') return calJob(job);
@@ -422,22 +431,34 @@ const winTargets = [
   ['super L11+', (L, c) => L11(L) && c === 'super', { expert: [65, 85], 'sloppy0.1': [30, 55], 'sloppy0.3': [0, 25], strong: [100, 100] }],
 ];
 export const TARGETS = [];
+/* 3단계: 덧셈 칸을 쏘아 올리는 사람(sloppy0.1-pump — L1 안내 '쏘면 숫자가 올라가요'를 따르는 사람)은 쏘아 올리지 않는 집중한 사람(sloppy0.1)과
+   숙련자(expert) 사이: [sloppy0.1 하한, (sloppy0.1 상한 + expert 상한)/2]. 산만하게 쏘아 올리는 사람(sloppy0.3-pump, 어려움·매우 어려움 L11+)은
+   산만한 사람(sloppy0.3)과 집중한 사람 사이: [sloppy0.3 하한, (sloppy0.3 상한 + sloppy0.1 상한)/2]. 계획 문서에는 없는 해석 — README '난이도 구간' */
+const mid = (a, b) => Math.round((a + b) / 2);
 for (const [g, sel, bots] of winTargets) {
   for (const [bot, [lo, hi]] of Object.entries(bots)) TARGETS.push({ id: `win ${g} ${bot}`, cond: ['expect'], bot, metric: 'win', sel, lo, hi });
   // 스킬 끈 sloppy0.1: 하한 −10%p 안
   TARGETS.push({ id: `win ${g} sloppy0.1-noskill`, cond: ['expect'], bot: 'sloppy0.1-noskill', metric: 'win', sel, lo: bots['sloppy0.1'][0] - 10, hi: 100 });
+  TARGETS.push({ id: `win ${g} sloppy0.1-pump`, cond: ['expect'], bot: 'sloppy0.1-pump', metric: 'win', sel, lo: bots['sloppy0.1'][0], hi: mid(bots['sloppy0.1'][1], bots.expert[1]) });
+  if (/^(hard|super) L11/.test(g)) TARGETS.push({ id: `win ${g} sloppy0.3-pump`, cond: ['expect'], bot: 'sloppy0.3-pump', metric: 'win', sel, lo: bots['sloppy0.3'][0], hi: mid(bots['sloppy0.3'][1], bots['sloppy0.1'][1]) });
 }
 /* 2단계 '판 중 긴장' 목표(P07~P10, P14): 위 TARGETS 뒤쪽과 tools/stakes.mjs의 STAKE_TARGETS(판돈 줄)에 있다 */
 const exploit = [
   ['idle', 'all', () => true, 5],
   ['random', 'all', () => true, 10],
   ...['-4.4', '-2.5', '0', '2.5', '4.4'].flatMap((x) => [[`hold${x}`, 'L5+', (L) => L >= 5, 15], [`hold${x}`, 'L1-4', (L) => L <= 4, 30]]),
-  ['worst', 'L11+', (L) => L >= 11, 20],
-  ['worst', 'L1-10', (L) => L <= 10, 50],
+  // faceworst(옛 worst): 늘 겉보기로 가장 나쁜 칸. 잭팟·보스 직전 줄에서는 그 칸이 쏘아 올리면 최선이라 반쯤은 쏘아 올리기 전략이다
+  ['faceworst', 'L11+', (L) => L >= 11, 20],
+  ['faceworst', 'L1-10', (L) => L <= 10, 50],
+  // trueworst(3단계): 끝까지 쏘아 올려도 가장 나쁜 칸 — 정말 나쁜 선택만 하는 사람. 어려움·매우 어려움(L15+)은 따로 더 낮게
+  ['trueworst', 'L11+', (L) => L >= 11, 20],
+  ['trueworst', 'hard+super L15+', (L, c) => L >= C.TAG_FULL_FROM && HARDISH(c), 15],
   ['naive', 'normal L5+', (L, c) => L >= 5 && NORMALISH(c), 70],
   ['naive', 'hard+super', (L, c) => HARDISH(c), 40],
 ];
 for (const [bot, g, sel, hi] of exploit) TARGETS.push({ id: `exploit ${bot} ${g}`, cond: ['expect', 'cap'], bot, metric: 'win', sel, lo: 0, hi });
+// 한 레벨에서도: 어려움·매우 어려움(L15+)의 어느 레벨에서도 trueworst가 35%를 넘지 않는다(레벨마다 판 수가 8판 이상일 때만 본다)
+TARGETS.push({ id: 'exploit trueworst any hard+super level L15+', cond: ['expect', 'cap'], bot: 'trueworst', metric: 'win', per: 'level', minN: 8, sel: (L, c) => L >= C.TAG_FULL_FROM && HARDISH(c), lo: 0, hi: 35 });
 TARGETS.push(
   { id: 'misjudge ≤ sloppy0.1 − 10 (normal L5+)', cond: ['expect'], bot: 'misjudge', metric: 'win', sel: (L, c) => L >= 5 && NORMALISH(c), rel: 'sloppy0.1', lo: -100, hi: -10 },
   { id: 'arrive/ref sloppy0.1 L11+', cond: ['expect'], bot: 'sloppy0.1', metric: 'arrRef', sel: (L) => L >= 11, lo: 0, hi: 0.85 },
@@ -487,7 +508,18 @@ export function checkTargets(runs, levels) {
       const pick = (bot) => (by.get(`${cond}|${bot}`) || []).filter((r) => t.sel(r.L, cls[r.L]));
       const mine = pick(t.bot);
       if (!mine.length) continue;
-      let v = summarize(mine)[t.metric];
+      let v;
+      if (t.per === 'level') {
+        // 레벨마다 따로 재서 가장 큰 값(판 수가 minN 이상인 레벨만)
+        const byL = new Map();
+        for (const r of mine) { if (!byL.has(r.L)) byL.set(r.L, []); byL.get(r.L).push(r); }
+        const vals = [...byL.values()].filter((a) => a.length >= (t.minN || 1)).map((a) => summarize(a)[t.metric]);
+        if (!vals.length) continue;
+        v = Math.max(...vals);
+        out.push({ id: t.id, cond, bot: t.bot, metric: t.metric, value: v, lo: t.lo, hi: t.hi, n: mine.length, status: statusOf(v, t.lo, t.hi) });
+        continue;
+      }
+      v = summarize(mine)[t.metric];
       if (t.rel) { const other = pick(t.rel); if (!other.length) continue; v -= summarize(other)[t.metric]; }
       out.push({ id: t.id, cond, bot: t.bot, metric: t.metric, value: v, lo: t.lo, hi: t.hi, n: mine.length, status: statusOf(v, t.lo, t.hi) });
     }

@@ -323,3 +323,19 @@ test('게이트 글자: 짧은 꼴 후보와 미리 굽는 글자(그리는 중�
   assert.ok(area < 256 * 256 * 0.7, `글자 면적 ${area}`);
   void opText;
 });
+
+/* F1(3단계): 내려찍기 빨간 띠는 실제로 맞는 범위 — 렌더러는 core.slamZone(칸 ± SLAM_EDGE·분대 반지름)으로 그리고, core.slamHits도 같은 범위를 쓴다 */
+test('내려찍기 빨간 띠 = 맞는 범위: 렌더러는 slamZone으로 그리고 slamHits와 같은 가장자리를 쓴다(F1)', async () => {
+  const fs = await import('node:fs');
+  const C = await import('../assets/core.js');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  assert.match(src, /const zn = slamZone\(b\.slam, radius\(q\.n\)\)/, '렌더러가 slamZone으로 범위를 구한다');
+  assert.match(src, /groundQuad\(zn\.x0, zn\.x1,/, '빨간 띠를 그 범위로 그린다');
+  assert.doesNotMatch(src, /groundQuad\(b\.slam\.x0 \+ 0\.1, b\.slam\.x1 - 0\.1/, '예전처럼 칸보다 좁게 그리지 않는다');
+  for (const n of [3, 40, 400]) {
+    const R = C.radius(n);
+    const sl = { x0: 0, x1: 5 };
+    const z = C.slamZone(sl, R);
+    assert.ok(C.slamHits(z.x0, R, sl) && !C.slamHits(z.x0 - 0.01, R, sl), `n${n}: 띠 왼쪽 끝이 맞는 범위의 끝`);
+  }
+});

@@ -6,7 +6,7 @@
 
 - 시뮬레이션(`assets/core.js`)은 DOM 없는 순수·결정적 코드다. 새 상태도 평범한 JSON 객체(Map·Set·함수 금지)라 판 중간 저장이 그대로 된다.
 - `VERSION = 'squad-v1'`은 레벨 배치의 소금이라 **바꾸지 않는다**. 규칙이 바뀌면 `SIM`(정수)을 올린다. 이어하기 스냅숏과 보정 표는 `SIM`이 같을 때만 쓴다.
-- 보정은 그 레벨의 기대 강화(EXPECT)와 기대 영웅의 상시 효과를 단 기준 봇으로 한다. **일반·쉼 레벨**의 보스는 특수병·상자 없이도 기준 병력으로 깰 수 있게, **어려움·매우 어려움**은 사람 흉내 봇 무리의 첫 시도 승률이 목표 구간에 들게(상자·철창을 챙겨야 수월할 수 있다 — 기준 봇은 늘 이긴다). 판 내내 한 자리에 서 있기만 해서 이기는 배치는 쓰지 않는다(배치 검사). 별 기준(par)은 플레이어의 강화와 출격 영웅을 단 기준 봇으로 정한다(영웅은 상시 효과만 — 스킬은 쓰지 않는다. 스킬을 안 누르는 사람이 영웅 때문에 별을 덜 받지 않게). 별 문턱은 par의 45%·90%(집중한 사람이 이긴 판의 25~45%가 ★★★, 60~80%가 ★★ 이상). 강화·영웅은 이기기 쉽게, 별은 실력으로.
+- 보정은 그 레벨의 기대 강화(EXPECT)와 기대 영웅의 상시 효과를 단 기준 봇으로 한다. **일반·쉼 레벨**의 보스는 특수병·상자 없이도 기준 병력으로 깰 수 있게, **어려움·매우 어려움**은 사람 흉내 봇 무리의 첫 시도 승률이 목표 구간에 들게(상자·철창을 챙겨야 수월할 수 있다 — 기준 봇은 늘 이긴다). 판 내내 한 자리에 서 있기만 해서 이기는 배치는 쓰지 않는다(배치 검사). 별 기준(par)은 플레이어의 강화와 출격 영웅을 단 기준 봇으로 정한다(영웅은 상시 효과만 — 스킬은 쓰지 않는다. 스킬을 안 누르는 사람이 영웅 때문에 별을 덜 받지 않게). 별 문턱은 par의 55%·90%(`STARS`, 집중한 사람이 이긴 판의 25~45%가 ★★★, 60~80%가 ★★ 이상). 강화·영웅은 이기기 쉽게, 별은 실력으로.
 - 화면에 쓰는 한국어는 DOM(Jua 글꼴)에서만. 게임 화면 안에는 숫자·기호·아이콘만 그린다.
 - 2단계(판 중 긴장): 난이도는 보이는 숫자·예고·판단에서만 나온다 — 숨은 난수·결제 벽 없음, 한 손으로 반응할 수 없는 것 없음. 예고 공정성: 옆 칸 회피는 `WARN_MIN` 0.7초 이상, 한 칸 넘게 움직여야 하면 `moveTime(d) + REACT_FAR`(0.45초) 이상(`fairWarn`, 테스트로 확인). 어려움·매우 어려움은 상자·철창을 챙겨야 할 수 있고(열쇠 상자), 일반 레벨은 없이도 깬다. 별 기준(par)은 그대로 스킬 없는 기준 봇, 이미 받은 별·산 강화는 줄이지 않는다.
 
@@ -52,9 +52,9 @@ prop.kind       = 'wall' | 'crate' | 'cage'        // cage.reward = { type: 'uni
 cell.op         = 'add' | 'mul' | 'div' | 'unit'    // unit 칸: { op:'unit', v, k } → "+v" + 병과 아이콘, 금색 테두리
 ```
 
-1단계 난이도 약속(main.js·insight.js가 쓴다): `levelTag(L)` → `{ tag: '' | 'hard' | 'super' | 'rest', label, coinMul }`(lv.tag도 같다), `upgCap(maxL)`, `bossEta(s)`(보스가 닿기까지 초, 없거나 닿았으면 null), `supportFor(lv)`(= lv.helpStart), `starGoals(par, lv)`·`starsFor(par, n, won, lv)`, `coinsFor`가 태그 배수를 곱한다. 'gate' 이벤트는 `{ before, after, x, row, alt }` — alt는 그 순간 줄의 칸마다 결과.
+1단계 난이도 약속(main.js·insight.js가 쓴다): `levelTag(L)` → `{ tag: '' | 'hard' | 'super' | 'rest', label, coinMul }`(lv.tag도 같다), `upgCap(maxL)`, `bossEta(s)`(보스가 닿기까지 초, 없거나 닿았으면 null), `supportFor(lv, own?)`(= lv.helpStart, own = 그 저장의 `{ start, fire }`가 기대 강화보다 낮으면 모자란 만큼 더 — 3단계), `starGoals(par, lv)`·`starsFor(par, n, won, lv)`, `coinsFor`가 태그 배수를 곱한다. 'gate' 이벤트는 `{ before, after, x, row, alt }` — alt는 그 순간 줄의 칸마다 결과.
 
-2단계 약속(SIM 6, 렌더러·화면이 쓸 수 있는 것 — 지금은 그리지 않아도 판은 돈다):
+2단계 약속(SIM 6, 렌더러·화면이 쓸 수 있는 것 — 지금은 그리지 않아도 판은 돈다). 3단계(SIM 7, 검증 뒤 수정)에서 더한 것은 이 블록 아래:
 
 ```js
 row.kind     = 'plain'|'stake'|'think'|'jack'|'last'|'guard'|'trap'|'crisis'|'shoot'|'gold'   // 줄 종류
@@ -65,6 +65,17 @@ lv.marks / s.marks = [{ t:'surge', z }]   // 몰이 청크 시작 — MARK_AHEAD
 ```
 
 2단계 이벤트: `surge {z, x}`(몰이 45m 앞 한 번), `slamWarn {x0, x1, warn}`(warn = 이번 예고 초 — 가장자리에 서 있으면 길어진다), `crateMiss {x, z, n, key}`·`cageMiss {k, x, z, n}`(n = 부딪혀 잃은 병사, key = 열쇠 상자), `summon {n}`(그중 둘은 가장자리 질주 좀비 L4+).
+
+3단계 약속(SIM 7):
+
+- `slamZone(slam, R)` → `{ x0, x1 }`: 내려찍기가 실제로 맞는 범위(칸 ± `SLAM_EDGE`·R, 길 안). 렌더러는 이 범위를 빨갛게, 가장자리에 밝은 선을 그린다 — `slamHits`와 같은 범위(테스트). 예고 중 범위 밖의 분대는 가장자리(`SLAM_STOP`)에서 멈춘다.
+- `slamFairWarn(x, vx, R, x0, x1, laneW)`·`moveTimeFrom(d, vx)`·`TURN`: 움직이는 분대의 공정한 예고(반대로 가던 속도를 멈추는 시간 + 밀린 거리).
+- 독침은 `spitEscape`가 피할 쪽을 찾을 때만 쏜다(없으면 `SPIT_WAIT` 0.25초 뒤 다시 본다).
+- `POP`에 `pump`(덧셈 칸을 쏘아 올리는 집중한 사람) — `humanBot(seed, err, skill, { pump })`. `POP_K` 48. `BOSS_SPEC.*.band.pump`, `band.w`.
+- `ROW_MIX.hard`·`LAST_THINK_HARD`: L15+ 어려운 레벨의 줄 구성. 그 첫 게이트 줄은 늘 판돈 줄(금색 제외).
+- `calibrateLevel(key, tries)`, `CAL_TRIES` 8(표), `RUNTIME_TRIES` 4(표 밖 L301+를 게임이 처음 열 때). 표(`caltable.js`)는 L1~300.
+- `stateHash`는 2단계 상태(상자·열쇠·몰이 알림·톱날·줄·독침·총알·난수·무기 단계·속도·코인·보스 타이머)까지 본다.
+- 화면: `surge` → 알림 글자·경보음(`sfx.surge`)·진동 + 렌더러 양옆 붉은 화살표. 상자·철창 접촉 손실(`loss` cause 'crate')은 상자 자리에 '−n', 결과 화면 원인 `CAUSE.crate`. 보스전에서 끌기를 한 번도 안 쓴 사람(L5+)에게 끌기 안내. 규칙이 바뀐 뒤 처음 연 기존 플레이어에게 SIM마다 바뀐 것만 알린다(`BALANCE_NOTES`).
 
 새 이벤트(`s.ev`): `spGet {k, via:'gate'|'cage', x, z}`, `spFull {k, n, x, z}`, `spLose {k, cause:'hit'|'escort', x, z}`, `snipe {x0, z0, x1, z1, src:'sniper'|'hero', kill}`, `rocket {id, x0, z0, x, z}`, `boom {x, z, r}`, `heal {n, x, z}`, `cageMiss {k, x, z}`, `heroReady {id}`, `heroCast {id}`, `heroEnd {id}`. `kill`에는 `by: 'gun'|'sniper'|'rocket'|'hero'`.
 

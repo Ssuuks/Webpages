@@ -88,6 +88,8 @@ function onMove(e) {
     p.drag = true;
     p.x0 = p.x;
     p.sx0 = restX();
+    // 끌기를 한 번이라도 써 봤으면 보스전의 '끌기' 안내는 띄우지 않는다(다음 저장 때 함께 남는다)
+    if (mode === 'play' && !data.tips.dragged) data.tips.dragged = 1;
   }
 }
 function onUp(e) {
@@ -493,12 +495,25 @@ function nextJoinNotice() {
   if (!id) { if (!showBalanceNote()) maybeNudge(); return; }
   openJoin(id);
 }
+/* 규칙(SIM)이 바뀔 때마다 기존 플레이어에게 그 사이 바뀐 것만 한 번 알린다. 키 = 그 규칙이 들어온 SIM */
+const BALANCE_NOTES = [
+  [5, '5레벨마다 불꽃 표시가 붙은 어려운 판이 있어요(코인을 더 줘요). 그 바로 다음 판은 쉬어 가요.'],
+  [6, '판 중간이 조여졌어요: 판돈 걸린 게이트 줄, 보스 앞 몰이(양옆에서도 와요), 어려운 판의 열쇠 상자. 못 부순 상자·철창에 부딪히면 병사를 잃어요.'],
+  [7, '보스 내려찍기의 빨간 구역이 실제로 맞는 범위만큼 넓게 보여요. 몰이가 오면 알림이 뜨고, 3번 지면 받는 지원은 강화가 적을수록 커져요.'],
+];
+function balanceNoteText(seen) {
+  const lines = BALANCE_NOTES.filter(([v]) => v > seen && v <= SIM).map(([, t]) => t);
+  if (!lines.length) return '';
+  return lines.join(' ') + ' 이미 받은 별과 산 강화는 그대로예요.';
+}
 function showBalanceNote() {
   if (!balanceNote) return false;
   balanceNote = false;
+  const text = balanceNoteText(data.seenSim | 0);
   data.seenSim = SIM;
   save(data);
-  notice('난이도가 새로 맞춰졌어요', '5레벨마다 불꽃 표시가 붙은 어려운 판이 있어요(코인을 더 줘요). 그 바로 다음 판은 쉬어 가요. 이미 받은 별과 산 강화는 그대로예요.', [{ label: '알겠어요', primary: true }]);
+  if (!text) return false;
+  notice('난이도가 새로 맞춰졌어요', text, [{ label: '알겠어요', primary: true }]);
   return true;
 }
 function openJoin(id) {
@@ -750,7 +765,7 @@ const NEW_THING = {
   2: '새로 나와요: ×2 게이트, 쏴서 올리는 마이너스 게이트',
   3: '새로 나와요: 바리케이드, 영웅 합류',
   4: '새로 나와요: 보급 상자, 질주 좀비',
-  5: '새로 나와요: 독침 좀비, 철창 속 의무병',
+  5: '새로 나와요: 독침 좀비, 보스 앞 몰이(양옆에서도 와요), 철창 속 의무병',
   6: '새로 나와요: 톱날',
   7: '새로 나와요: 거구 좀비',
   8: '새로 나와요: ÷2 게이트',
@@ -786,6 +801,11 @@ function abandonRun(r) {
   data.lastRunId = r.id;
   clearRun();
   save(data);
+}
+
+/* 이 저장이 실제로 들고 가는 강화(3패 지원 크기: 기대 강화보다 모자라면 그만큼 더 준다) */
+function ownLoadout() {
+  return { start: START_N + 2 * (data.upg.start | 0), fire: data.upg.fire | 0 };
 }
 
 /* 레벨 카드 글자(지역·태그·새 메커닉) */
@@ -956,7 +976,7 @@ function renderPauseRestart() {
   note.textContent = help || support ? '첫 게이트를 지나서 진 판으로 세요' : `첫 게이트를 지나서 진 판으로 세요 · 지원까지 ${Math.max(1, 3 - f)}번`;
   $('pHelp').hidden = !help;
   if (help) {
-    const n = supportSize(lv);
+    const n = supportSize(lv, ownLoadout());
     $('pHelp').textContent = `지원 +${n}명 받고 처음부터 (별 1개까지)`;
     $('pHelp').dataset.n = n;
   }
@@ -1078,7 +1098,7 @@ function watchTips() {
     if (p.key === true) tip('key', '열쇠 표시 상자: 다음 난관을 넘을 보급이에요. 꼭 쏴서 부수세요!');
     if (p.kind === 'wall') tip('wall', '벽의 숫자는 체력이에요. 약한 벽을 쏴서 뚫고 지나가세요');
     else if (p.kind === 'cage') tip('cage', '철창을 쏴서 부수면 갇힌 특수병이 합류해요');
-    else tip('crate', '상자를 쏴서 부수면 무기·병력 보상을 받아요');
+    else tip('crate', '상자를 쏴서 부수면 무기·병력 보상! 못 부수고 부딪히면 병사를 잃어요');
   }
   for (const w of s.saws) if (w.z - q.z < 26 && w.z > q.z) tip('saw', '톱날이 움직이는 범위를 피하세요');
   for (const f of s.foes) if (f.alive && f.kind === 'brute' && f.z - q.z < 36) tip('brute', '거구 좀비는 단단해요. 옆으로 비켜 가세요');
@@ -1144,12 +1164,27 @@ function handleEvents(ev) {
         if (tipKey === 'heroReady' && !$('tip').hidden) { $('tip').hidden = true; tipUntil = 0; }
         break;
       case 'spitFire': tip('spit', '땅에 초록 표시가 보이면 옆으로 피하세요'); break;
+      case 'surge':
+        // 몰이(보스 앞 좀비 떼, 양옆 가장자리에서도 파고든다): 글자 + 경보음 + 진동. 화면 양옆 붉은 화살표는 renderer가 그린다
+        sfx.surge();
+        vibe([30, 60, 30]);
+        toast('몰려와요! 양옆에서도 파고들어요', 1600);
+        break;
+      case 'crateMiss':
+      case 'cageMiss':
+        if (e.n > 0) {
+          sfx.hurt();
+          tip('crateHit', '못 부순 상자·철창에 부딪히면 병사를 잃어요(남은 숫자가 클수록 많이). 다 부수거나 비켜 가세요');
+        }
+        break;
       case 'spitHit': if (e.hit) { sfx.hurt(); vibe(30); } break;
       case 'boss':
         sfx.bossIn();
         $('bossBar').hidden = false;
         if (run) run.arenaN = s.squad.n;
         tip('boss', '빨간 구역을 피하면서 보스를 쏘세요!');
+        // 꾹 누르기만 써 온 사람에게(어려운 보스부터): 끌기는 원하는 자리에 딱 선다 — 내려찍기 피하기가 쉬워진다
+        if (!data.tips.dragged && lv && lv.L >= 5) tip('dragBoss', '손가락을 댄 채 옆으로 끌면 그 자리에 딱 서요 — 빨간 구역 피하기가 쉬워요');
         slow(0.45, 700);
         saveRunNow();
         updateMusic();
@@ -1189,6 +1224,7 @@ const CAUSE = {
   spit: ['독침에 당했어요', '초록 표시가 보이면 바로 옆으로 피하세요'],
   boss: ['보스를 막지 못했어요', '빨간 구역을 피하고 보스 정면에 서세요. 병력이 많을수록 빨리 잡혀요'],
   summon: ['보스가 부른 졸개에게 당했어요', '졸개가 다가오기 전에 쏘세요. 보스 쪽으로 오는 길목에 서 있으면 함께 맞아요'],
+  crate: ['부수지 못한 상자·철창에 부딪혔어요', '상자 숫자는 체력이에요. 다 부수거나 비켜 가세요'],
 };
 
 function finish() {
@@ -1282,7 +1318,7 @@ function finish() {
     $('resCause').appendChild(tip);
   }
   $('resPrimary').textContent = won ? '다음 레벨' : '다시 도전';
-  const helpN = supportSize(lv);
+  const helpN = supportSize(lv, ownLoadout());
   const offerHelp = !won && (data.fails[L] | 0) >= 3;
   $('resHelp').hidden = !offerHelp;
   $('resHelp').textContent = `지원 +${helpN}명 받고 다시 (별 1개까지)`;

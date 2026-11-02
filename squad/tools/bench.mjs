@@ -9,7 +9,7 @@
 
    옵션
    --levels 1-60 | 5,10,15     재는 레벨(캠페인은 늘 L1부터 가장 큰 레벨까지)
-   --seeds N                  시드가 있는 봇의 판 수(레벨·조건마다, 기본 8). 꼼수 봇 random·worst는 N/2
+   --seeds N                  시드가 있는 봇의 판 수(레벨·조건마다, 기본 8). 꼼수 봇 random·faceworst·trueworst는 N/2
    --campaign-seeds N         캠페인 수(기본 8, nosupport는 N/2)
    --conds none,expect,cap    조건 고르기
    --bots a,b,...             봇 고르기(기본: 전부). 이름은 tests/bots.mjs의 makeBot
@@ -51,7 +51,9 @@ const withHero = (co) => (co && HERO && co.hero ? { ...co, hero: { id: HERO, lv:
 const MAXL = LEVELS[LEVELS.length - 1];
 
 const MAIN = ['strong', 'expert', 'sloppy0.1', 'sloppy0.1-noskill', 'sloppy0.3', 'misjudge', 'naive'];
-const EXPLOIT = ['idle', 'random', 'hold-4.4', 'hold-2.5', 'hold0', 'hold2.5', 'hold4.4', 'worst'];
+/* 3단계: 쏘아 올리는 사람(-pump)과 '꾹 누르기'만 쓰는 사람(-hold, 구간 없이 참고용) — 기대 강화 조건에서만 */
+const MAIN_EXPECT = ['sloppy0.1-pump', 'sloppy0.3-pump', 'sloppy0.1-hold'];
+const EXPLOIT = ['idle', 'random', 'hold-4.4', 'hold-2.5', 'hold0', 'hold2.5', 'hold4.4', 'faceworst', 'trueworst'];
 const PICK = arg('--bots', '') ? arg('--bots', '').split(',') : null;
 const want = (b) => !PICK || PICK.includes(b);
 const seedsFor = (b) => {
@@ -63,7 +65,7 @@ const botsFor = (cond) => {
   let list;
   if (cond === 'none') list = [...MAIN.filter((b) => b !== 'sloppy0.1-noskill'), ...EXPLOIT];   // 영웅이 없으면 스킬 켬·끔이 같다
   else if (cond === 'cap') list = [...EXPLOIT, 'naive'];
-  else list = [...MAIN, ...EXPLOIT];
+  else list = [...MAIN, ...MAIN_EXPECT, ...EXPLOIT];
   return list.filter(want).map((name) => ({ name, seeds: seedsFor(name) }));
 };
 const CAMPAIGNS = {
@@ -240,7 +242,7 @@ for (const cond of CONDS) {
     for (const L of LEVELS) log(lpad(`L${L}${tagName[L] ? ' #' + tagName[L] : ''}`, 10) + bots.map((b) => { const o = perLevel[cond][b] && perLevel[cond][b][L]; return pad(o ? `${o[0]}/${o[1]}` : '-', 9); }).join(''));
   }
   if (BRIEF) continue;
-  const mainBots = bots.filter((b) => MAIN.includes(b));
+  const mainBots = bots.filter((b) => MAIN.includes(b) || MAIN_EXPECT.includes(b));
   if (!mainBots.length) continue;
   for (const k of DETAIL) table(`${METRICS[k]}`, mainBots, cols, (b, g) => { const m = stats[cond][b][g]; return m ? fmt(m[k], DEC[k] ?? 0) : '-'; });
 }

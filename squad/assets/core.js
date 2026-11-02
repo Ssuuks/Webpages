@@ -22,7 +22,7 @@ export const WEAPON = [1, 1.35, 1.7, 2.1];
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
 export const VERSION = 'squad-v1';   // 레벨 배치의 소금 — 바꾸지 않는다(바꾸면 모든 레벨이 달라진다)
-export const SIM = 6;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
+export const SIM = 7;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
 /* 보스: 피하기에 대가가 있게 — 좌우로 천천히 따라오고(초당 m), 총알은 가운데 ±BOSS_HIT m 안만 맞고, 첫 내려찍기는 빨리 온다 */
 export const BOSS_TRACK = 0.6;
 export const BOSS_HIT = 1.8;
@@ -43,11 +43,28 @@ export function moveTime(d) {
   const d1 = (VMAX * VMAX) / (2 * ACCEL);
   return a <= d1 ? Math.sqrt((2 * a) / ACCEL) : VMAX / ACCEL + (a - d1) / VMAX;
 }
-/* 공정한 예고 시간: 안전한 곳까지 d m를 움직여야 하고 칸 너비가 laneW m일 때 — 옆 칸이면 WARN_MIN, 한 칸 넘게면 moveTime(d) + REACT_FAR */
+/* 지금 vx m/s로 움직이는 분대가 x를 d m(부호 있음) 옮기는 데 걸리는 초 — 반대로 가고 있으면 먼저 멈춘다(방향 전환 가속 ACCEL+60) */
+export const TURN = ACCEL + 60;
+export function moveTimeFrom(d, vx = 0) {
+  if (!vx || Math.sign(vx) === Math.sign(d) || d === 0) {
+    // 같은 쪽으로 이미 움직이는 중: 서 있을 때보다 빠르거나 같다(보수적으로 서 있을 때 값)
+    return moveTime(d);
+  }
+  const v = Math.abs(vx);
+  return v / TURN + moveTime(Math.abs(d) + (v * v) / (2 * TURN));
+}
+/* 공정한 예고 시간: 안전한 곳까지 d m를 움직여야 하고 칸 너비가 laneW m일 때 — 옆 칸이면 WARN_MIN, 한 칸 넘게면 moveTime(d) + REACT_FAR.
+   turn = 반대쪽으로 움직이던 분대가 멈추고 돌아서는 데 더 드는 초(fairWarnFrom이 더한다) */
 export function fairWarn(d, laneW) {
   if (d <= 0) return 0;
   return d > laneW ? Math.max(WARN_MIN, moveTime(d) + REACT_FAR) : WARN_MIN;
 }
+/* 내려찍기 구역이 맞히는 범위: 분대 중심이 [x0 − SLAM_EDGE·R, x1 + SLAM_EDGE·R] 안이면 맞는다. 화면도 이 범위를 빨갛게 그린다(길 밖은 자른다) */
+export function slamZone(slam, R) {
+  return { x0: Math.max(-ROAD, slam.x0 - SLAM_EDGE * R), x1: Math.min(ROAD, slam.x1 + SLAM_EDGE * R) };
+}
+/* 예고 중인 내려찍기의 맞는 범위 밖에 있던 분대가 멈추는 자리(가장자리에서 이만큼 밖) */
+export const SLAM_STOP = 0.02;
 /* 내려찍기 구역 [x0, x1]을 피하려면 분대 중심이 움직여야 하는 거리(맞는 자리가 아니면 0). 길 끝을 넘는 쪽으로는 못 간다 */
 export function slamDodgeDist(x, R, x0, x1) {
   const a = x0 - SLAM_EDGE * R;
@@ -56,6 +73,22 @@ export function slamDodgeDist(x, R, x0, x1) {
   const left = a - 0.01 >= -EDGE ? x - (a - 0.01) : Infinity;
   const right = b + 0.01 <= EDGE ? b + 0.01 - x : Infinity;
   return Math.min(left, right);
+}
+/* 움직이는 분대의 공정한 내려찍기 예고(P14, 3단계): 양쪽 출구마다 '반대로 가던 속도를 멈추는 시간 + 그 사이 밀린 거리'를 더해 가장 짧은 쪽 */
+export function slamFairWarn(x, vx, R, x0, x1, laneW) {
+  const a = x0 - SLAM_EDGE * R;
+  const b = x1 + SLAM_EDGE * R;
+  if (x < a || x > b) return 0;
+  let best = Infinity;
+  for (const [ok, d] of [[a - 0.01 >= -EDGE, -(x - (a - 0.01))], [b + 0.01 <= EDGE, b + 0.01 - x]]) {
+    if (!ok) continue;
+    const away = vx && Math.sign(vx) !== Math.sign(d);
+    const v = Math.abs(vx);
+    const turn = away ? v / TURN : 0;
+    const extra = away ? (v * v) / (2 * TURN) : 0;
+    best = Math.min(best, fairWarn(Math.abs(d) + extra, laneW) + turn);
+  }
+  return best === Infinity ? WARN_MIN : best;
 }
 
 /* 메커닉이 처음 나오는 레벨 */
@@ -192,10 +225,13 @@ export const BOSS_SPEC = {
   rest: { mode: 'ref', m: 0.42, c: 1.4, qaKeep: 0.88 },
   // band: 사람 흉내 무리(POP)의 첫 시도 승률 목표 [하한, 상한] — on 집중(스킬 씀), off 집중(스킬 안 씀), sl3 산만
   // band.w를 주면 POP의 w 대신 그 가중치로 벌점을 매긴다
-  hard5: { mode: 'pop', c: 0.9, band: { on: [0.72, 0.8], off: [0.6, 1], sl3: [0.42, 0.58] } },
-  super10: { mode: 'pop', c: 0.9, band: { on: [0.55, 0.65], off: [0.45, 1], sl3: [0.22, 0.38] } },
-  hard: { mode: 'pop', c: 0.9, band: { on: [0.45, 0.57], off: [0.33, 1], sl3: [0.18, 0.38] } },
-  super: { mode: 'pop', c: 0.9, band: { on: [0.32, 0.48], off: [0.2, 1], sl3: [0, 0.24] } },
+  // pump(3단계): 덧셈 칸을 쏘아 올리는 집중한 사람 — 쏘아 올리지 않는 사람(on)과 숙련자(expert) 구간 사이
+  // L5(첫 어려움): 산만한 사람의 하한과 집중한 사람의 상한을 한 체력으로 둘 다 맞출 수 없다 — 집중한 사람 쪽을 지킨다(sl3 가중치 0.25, README 알려진 차이)
+  hard5: { mode: 'pop', c: 0.9, band: { on: [0.72, 0.8], off: [0.6, 1], sl3: [0.42, 0.58], pump: [0.75, 0.88], w: { on: 1.5, off: 0.6, sl3: 0.25, pump: 1 } } },
+  super10: { mode: 'pop', c: 0.9, band: { on: [0.55, 0.65], off: [0.45, 1], sl3: [0.22, 0.38], pump: [0.6, 0.8] } },
+  // 어려움 L11+: 산만한 사람 가중치 1(무리 기본 0.5) — 새 표본에서 산만한 사람이 구간 아래(13%)로 떨어졌다
+  hard: { mode: 'pop', c: 0.9, band: { on: [0.5, 0.62], off: [0.38, 1], sl3: [0.18, 0.38], pump: [0.58, 0.74], w: { on: 1.5, off: 0.6, sl3: 1, pump: 1 } } },
+  super: { mode: 'pop', c: 0.9, band: { on: [0.32, 0.48], off: [0.2, 1], sl3: [0, 0.24], pump: [0.38, 0.6] } },
 };
 export function bossSpecFor(L, tag = levelTag(L).tag) {
   const l = Math.max(1, Math.floor(L));
@@ -476,9 +512,14 @@ function makeRow(lv, z, cells, ng, src = 'gate', kind = 'plain') {
 const ROW_MIX = {
   early: { stake: 0.55, jack: 0.15, plain: 0.3 },
   main: { stake: 0.05, think: 0.25, jack: 0.6, plain: 0.1 },
+  // 어려움·매우 어려움(L15+, 3단계): 잭팟(몰아 쏘면 겉보기 최악이 최선)을 줄이고 판돈·생각 줄을 늘린다 — 쏘아 올리기만 아는 사람이
+  // 어려운 판을 쉽게 넘지 않게, '늘 겉보기 최악 칸'이 잭팟 전략이 되지 않게
+  hard: { stake: 0.3, think: 0.35, jack: 0.25, plain: 0.1 },
 };
+/* 어려움·매우 어려움(L15+)의 보스 직전 줄이 생각 줄인 몫(일반은 LAST_THINK) */
+export const LAST_THINK_HARD = 0.6;
 function rowKind(g, p, canMul) {
-  const mix = p.L < THINK_FROM ? ROW_MIX.early : ROW_MIX.main;
+  const mix = p.L < THINK_FROM ? ROW_MIX.early : p.hardish && p.tagFull ? ROW_MIX.hard : ROW_MIX.main;
   let sum = 0;
   const ok = (k) => (k !== 'jack' || p.L >= JACK_FROM) && (k !== 'think' || (p.L >= THINK_FROM && (canMul || has(p.L, 'div'))));
   for (const k in mix) if (ok(k)) sum += mix[k];
@@ -523,14 +564,16 @@ function gateChoices(g, p, ng, target, ctx) {
     // 보스 직전의 큰 한 방: ×2 대 쏴서 키우는 +, 또는(L5+, LAST_THINK) ×2 대 거의 안 오르는 +a(겉보기 차이 8~15% — 계산이 곧 보스전 병력)
     ctx.mulLeft--;
     kind = 'last';
-    if (p.L >= THINK_FROM && chance(g, LAST_THINK)) out.push(['mul', 2], thinkAdd(g, ng, THINK_GAP[0], THINK_GAP[1]));
+    if (p.L >= THINK_FROM && chance(g, p.hardish && p.tagFull ? LAST_THINK_HARD : LAST_THINK)) out.push(['mul', 2], thinkAdd(g, ng, THINK_GAP[0], THINK_GAP[1]));
     else { const a = Math.max(10, nice(ng * U(g, 0.7, 0.9))); out.push(['mul', 2], ['add', a, { cap: a + Math.max(6, nice(ng * LAST_CAP)) }]); }
   } else if (ctx.force.has('div')) {
     ctx.force.delete('div');
     kind = 'stake';
     out.push(['add', Math.max(5, nice(ng * clamp(ratio - 1, 0.3, 1.2) * U(g, 0.85, 1.2)))], ['div', 2]);
   } else {
-    kind = forceMul && canMul ? 'stake' : rowKind(g, p, canMul);
+    // 어려움·매우 어려움(L15+)의 첫 게이트 줄은 늘 판돈 줄(3단계): 겉보기로 나쁜 칸이 실제로도 크게 나쁘다
+    const firstHard = p.hardish && p.tagFull && ctx.rows === 0;
+    kind = (forceMul && canMul) || firstHard ? 'stake' : rowKind(g, p, canMul);
     if (kind === 'stake') {
       const [lo, hi] = p.L <= 4 ? [0.2, 0.35] : [0.3, 0.5];
       if (canMul && (forceMul || ratio > 1.1 || chance(g, 0.6))) out.push(mulOf(), badCell(g, p, ng, lo, hi, 0.5));
@@ -641,8 +684,8 @@ function scaleFoes(foes, total) {
 export const SURGE_K = { normal: 0.6, hard: 1.3, super: 1.6 };
 /* 위기(L3·L4): ÷2 대 −a, a = 병력 × (CRISIS_LOSS ± 0.05) — 어느 쪽이 덜 나쁜지는 지금 병력에 따라 다르다 */
 export const CRISIS_LOSS = 0.5;
-/* 열쇠(어려운 레벨): 30m 구간 안 보상(열쇠 상자 + 다른 보상) 체력 합 = 그 구간에서 쏠 수 있는 양의 1.3~1.6배 — 다 가질 수 없다 */
-export const KEY_WIN = [0.72, 0.85];
+/* 열쇠(어려운 레벨): 30m 구간 안 보상(열쇠 상자 + 다른 보상) 체력 합 = 그 구간에서 쏠 수 있는 양의 1.05~1.35배 — 다 가질 수 없다 */
+export const KEY_WIN = [0.45, 0.6];   // 3단계: 0.72~0.85 → 0.45~0.6(산만하지 않은 사람도 거의 못 깨서 열쇠가 쓸모없었다)
 /* 지킨 줄의 '쏴서 키우는 +' 칸이 JACK_T초 몰아 쏘면 오르는 몫(병력 비율) */
 export const GUARD_PUMP = [0.8, 1.0];
 export const RIVAL_WIN = [0.6, 0.75];
@@ -938,6 +981,8 @@ function placeSpecials(lv, p) {
     const gold = [0, 0, 0];   // 고정 위치 무리(HOLD_X)마다 금색 칸을 지난 수 — 한 자리에 서 있기만 해서 금색을 둘 얻지 않게
     for (let i = 0; i < lv.rows.length - 1 && made < 2; i++) {
       const row = lv.rows[i];
+      // 어려움·매우 어려움(L15+)의 첫 판돈 줄은 금색으로 바꾸지 않는다(3단계 — 금색 칸이 나쁜 칸의 대가를 지워 '늘 진짜 최악 칸'이 이기던 곳)
+      if (i === 0 && p.hardish && p.tagFull) continue;
       if (row.cells.length < 2 || !GOLD_KINDS.includes(row.kind) || row.cells.every((c) => cellGood(c) < 0) || !chance(sg, 0.45)) continue;
       // 가장 나쁜 칸을 금색으로 — 단, 가만히 선 분대(x=0)가 지나는 칸이면 이 줄은 건너뛴다(서 있기만 해도 얻으면 안 된다)
       let worst = 0;
@@ -1191,7 +1236,15 @@ export function step(s, input) {
     else q.vx = Math.abs(q.vx) <= 100 * DT ? 0 : q.vx - Math.sign(q.vx) * 100 * DT;
     if (dir && Math.sign(q.vx) !== dir && q.vx !== 0) q.vx += dir * 60 * DT;   // 방향 전환은 더 빠르게
   }
+  const xPrev = q.x;
   q.x += q.vx * DT;
+  // 보스전 내려찍기 예고 중(3단계, F2): 맞는 범위(빨간 띠) 밖에 있던 분대는 그 가장자리에서 멈춘다 — 밖에서 안으로 걸어 들어가지 않는다.
+  // 꾹 누르기로 피한 뒤 보스 쪽으로 되돌아오다 넘쳐 다시 맞는 일을 막는다. 안에 있던 분대가 빠져나가는 것은 막지 않는다
+  if (s.boss && s.boss.slam && s.boss.hp > 0) {
+    const zn = slamZone(s.boss.slam, R);
+    if (xPrev < zn.x0 && q.x >= zn.x0) { q.x = zn.x0 - SLAM_STOP; q.vx = Math.min(0, q.vx); }
+    else if (xPrev > zn.x1 && q.x <= zn.x1) { q.x = zn.x1 + SLAM_STOP; q.vx = Math.max(0, q.vx); }
+  }
   if (q.x < -EDGE) { q.x = -EDGE; if (q.vx < 0) q.vx = 0; }
   if (q.x > EDGE) { q.x = EDGE; if (q.vx > 0) q.vx = 0; }
 
@@ -1357,7 +1410,9 @@ function foesUpdate(s, R) {
     if (f.kind === 'spit') {
       if (s.phase === 'run' && dz < 32 && dz > 6) {
         f.cd -= DT;
-        if (f.cd <= 0) {
+        // 공정성(P14, 3단계): 피할 쪽(가장자리·반대로 가던 속도·그 길을 막은 적·벽·톱날)이 없으면 쏘지 않고 잠깐 기다린다
+        if (f.cd <= 0 && !spitEscape(s, R)) f.cd = SPIT_WAIT;
+        else if (f.cd <= 0) {
           f.cd = 2.4;
           const T = SPIT_T;
           s.spits.push({ id: s.nextId++, x: q.x, z: q.z + q.vz * T, sx: f.x, sz: f.z, t: T, T });
@@ -1387,6 +1442,68 @@ function foesUpdate(s, R) {
 /* 독침: 분대가 지금 선 자리(그 틱의 전진을 앞질러)에 SPIT_T초 뒤 떨어진다. 폭 ±SPIT_R m — 비켜서려면 R + SPIT_R m(옆 칸 회피) */
 export const SPIT_T = 1.0;
 export const SPIT_R = 1.2;
+export const SPIT_WAIT = 0.25;   // 피할 쪽이 없으면 이만큼 기다렸다 다시 본다
+export const SPIT_LANE_Z = 14;   // 피하는 길에 이만큼 앞까지의 적·벽·톱날을 본다(독침이 떨어지는 곳 + 여유)
+export const SPIT_OVER = 0.3;    // 피하는 사람은 조금 넘쳐 간다 — 비켜선 자리 옆으로 이만큼 더 본다
+/* 독침을 피할 쪽이 있나: 왼쪽·오른쪽마다 R + SPIT_R m 비켜설 자리가 길 안이고, REACT_FAR초 동안 지금 속도로 밀려 간 뒤 출발해도
+   SPIT_T 안에 닿고(반대로 가던 속도는 멈추고 돌아선다), 이미 날아가는 다른 독침이 떨어질 자리가 아니고,
+   비켜선 자리(SPIT_OVER m 넘쳐 가도)에 SPIT_LANE_Z m 앞까지 부딪힐 벽·상자·톱날이 없고, 곧 닿는 적(독침 좀비 포함)의 못 잡는 몫의 합이
+   max(2명, 병력 5%)의 60% 아래, 무리 전체로도 그 자리에서 쏴서 못 잡는 몫이 지금 자리보다 max(2명, 병력 5%) 넘게 크지 않아야 한다 */
+function spitEscape(s, R) {
+  const q = s.squad;
+  const d = R + SPIT_R + 0.05;
+  const D = dps(q.n, q.tier, s.fireLv);
+  const vz = Math.max(1, q.vz);
+  const span = R + 0.3;
+  const here = foeLeftover(s.foes, q.x, R, span, D, vz, q.z);
+  const slack = Math.max(2, 0.05 * q.n) * SOLDIER_HP;
+  // 반응하는 동안(REACT_FAR초)은 지금 속도 그대로 밀려 간다(길 끝에서 멈춘다)
+  let xr = q.x + q.vx * REACT_FAR;
+  let vr = q.vx;
+  if (xr < -EDGE) { xr = -EDGE; vr = 0; } else if (xr > EDGE) { xr = EDGE; vr = 0; }
+  for (const dir of [-1, 1]) {
+    const xt = q.x + dir * d;
+    if (xt < -EDGE || xt > EDGE) continue;
+    const tGo = REACT_FAR + (dir * (xr - xt) >= 0 ? 0 : moveTimeFrom(xt - xr, vr));
+    if (tGo > SPIT_T) continue;
+    let blocked = false;
+    for (const p of s.props) {
+      if (!p.alive || p.passed || p.z < q.z || p.z - q.z > SPIT_LANE_Z) continue;
+      const cost = p.kind === 'wall' ? p.hp : p.hp * crateHitOf(s.params);
+      if (cost > slack && overlap(xt - R - SPIT_OVER, xt + R + SPIT_OVER, p.x0, p.x1) > 0) { blocked = true; break; }
+    }
+    if (!blocked) {
+      for (const w of s.saws) {
+        const dz = w.z - q.z;
+        if (dz < -0.5 || dz > SPIT_LANE_Z) continue;
+        if (Math.abs(sawAt(w, Math.max(0, dz / vz)) - xt) < R + w.w / 2 + 0.25 + SPIT_OVER) { blocked = true; break; }
+      }
+    }
+    if (blocked) continue;
+    // 이미 날아가는 다른 독침이 떨어질 자리면 그쪽으로는 못 피한다
+    for (const sp of s.spits) {
+      if (sp.t > 0 && Math.abs(sp.x - xt) < R + SPIT_R + 0.1) { blocked = true; break; }
+    }
+    if (blocked) continue;
+    // 피하는 동안(반응 + 이동) 쏘지 못하고 곧 닿는 적: 도착한 뒤에야 쏜다고 본다(독침 좀비도 — 쏘는 자신을 포함해 — 부딪히면 잃는다)
+    // 비켜선 자리(넘쳐 가는 SPIT_OVER m 포함)에서 닿을 적들의 못 잡는 몫을 더해 slack의 60%를 넘으면 막힌 길
+    let leftSum = 0;
+    for (const f of s.foes) {
+      if (!f.alive) continue;
+      const dz = f.z - q.z;
+      if (dz < -0.5 || dz > SPIT_LANE_Z) continue;
+      const tc = Math.max(0, dz) / (vz + f.spd);
+      const reach = f.home * Math.max(0, tc - Math.max(0, (dz - f.homeDist) / (vz + f.spd)));
+      if (Math.abs(xt - f.x) - reach >= R + f.r * 0.8 + SPIT_OVER) continue;
+      leftSum += Math.max(0, f.hp - D * 0.85 * Math.max(0, tc - tGo));
+      if (leftSum > 0.6 * slack) { blocked = true; break; }
+    }
+    if (blocked) continue;
+    if (foeLeftover(s.foes, xt, R, span, D, vz, q.z) - here > slack) continue;
+    return true;
+  }
+  return false;
+}
 function spitsUpdate(s, R) {
   const q = s.squad;
   for (const sp of s.spits) {
@@ -1546,7 +1663,7 @@ export const SUMMON_FIRST = 2.5;
 export const SUMMON_FLANK_Z = 14;    // 가장자리 질주 좀비가 생기는 거리(분대 앞)
 export const SUMMON_FLANK_HP = 1.2;  // 가장자리 질주 좀비 체력 = 졸개 × 이 배수   // 첫 소환까지 초(2단계: 4.5 → 2.5 — 보스전에서도 병력이 줄 수 있게)
 /* 내려찍기가 분대를 맞히나: 중심이 빨간 구역을 SLAM_EDGE·R만큼 넓힌 안에 있으면(분대 몸의 바깥쪽 일부가 구역에 걸친 것) */
-export function slamHits(x, R, slam) { return x >= slam.x0 - SLAM_EDGE * R && x <= slam.x1 + SLAM_EDGE * R; }
+export function slamHits(x, R, slam) { const z = slamZone(slam, R); return x >= z.x0 && x <= z.x1; }
 function bossUpdate(s, R) {
   const q = s.squad;
   const b = s.boss;
@@ -1603,8 +1720,9 @@ function bossUpdate(s, R) {
       let idx = 0;
       for (let i = 0; i < parts; i++) if (q.x >= ln[i].x0) idx = i;
       if (rand(s) < SLAM_OTHER) idx = (idx + 1 + Math.floor(rand(s) * (parts - 1))) % parts;
-      // 공정성(P14): 피하는 데 드는 이동이 길면 예고를 늘린다(옆 칸 회피는 WARN_MIN, 한 칸 넘게면 이동 시간 + REACT_FAR)
-      const need = fairWarn(slamDodgeDist(q.x, R, ln[idx].x0, ln[idx].x1), (2 * ROAD) / parts);
+      // 공정성(P14): 피하는 데 드는 이동이 길면 예고를 늘린다(옆 칸 회피는 WARN_MIN, 한 칸 넘게면 이동 시간 + REACT_FAR).
+      // 반대쪽으로 움직이던 분대는 멈추고 돌아서는 시간도 더한다(3단계)
+      const need = slamFairWarn(q.x, q.vx, R, ln[idx].x0, ln[idx].x1, (2 * ROAD) / parts);
       const warn = Math.max(p.slamWarn, need);
       b.slam = { x0: ln[idx].x0, x1: ln[idx].x1, t: warn, T: warn };
       emit(s, { t: 'slamWarn', x0: ln[idx].x0, x1: ln[idx].x1, warn });
@@ -2049,18 +2167,23 @@ export function prepareLevel(L) {
     cache.set(key, lv);
     return lv;
   }
-  const lv = calibrateLevel(key);
+  // 표 밖 레벨(게임이 처음 열 때): 배치를 RUNTIME_TRIES번까지만 다시 만든다(휴대폰에서 레벨 시작이 늦지 않게)
+  const lv = calibrateLevel(key, RUNTIME_TRIES);
   cache.set(key, lv);
   return lv;
 }
 
-/* 보정 표를 쓰지 않고 실제로 보정한다(표 만들기·검증·L121+용) */
-export function calibrateLevel(key) {
+/* 보정 표를 쓰지 않고 실제로 보정한다(표 만들기·검증·표 밖 레벨용). tries = 배치를 몇 번까지 다시 만드나(표는 8, 그 자리에서는 RUNTIME_TRIES).
+   배치 검사를 끝까지 못 넘으면 처음 보정된 배치(lv.qa = false) */
+export const CAL_TRIES = 8;
+export const RUNTIME_TRIES = 4;
+export function calibrateLevel(key, tries = CAL_TRIES) {
   let lv = null;
   let firstOk = null;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  const lastTry = tries - 1;
+  for (let attempt = 0; attempt < tries; attempt++) {
     lv = buildLevel(key, attempt);
-    const cal = calibrate(lv, { last: attempt === 7 });
+    const cal = calibrate(lv, { last: attempt === lastTry });
     if (cal.ok) {
       Object.assign(lv, cal.lv);
       // 배치 검사: 한 자리에 서 있기만 해서는 이기지 못해야 한다. 못 넘으면 보스를 조금 세게(qaBoost), 그래도 안 되면 다른 배치로.
@@ -2068,11 +2191,11 @@ export function calibrateLevel(key) {
       if (!firstOk) firstOk = lv;
       if (standStillLoses(lv) || (key <= POP_MAX && qaBoost(lv))) { lv.qa = true; break; }
       lv.qa = false;
-      if (attempt === 7) lv = firstOk;
+      if (attempt === lastTry) lv = firstOk;
       continue;
     }
     lv.failed = true;
-    if (attempt === 7 && firstOk) lv = firstOk;
+    if (attempt === lastTry && firstOk) lv = firstOk;
   }
   if (lv.failed) {
     // 끝까지 실패하면 추정치로 보스를 약하게 둔다
@@ -2100,12 +2223,13 @@ export function capLoadout(L) {
 const QA_MULS = [1.1, 1.2, 1.32, 1.45, 1.6];
 /* 보스를 올릴 때 산만한 사람 무리의 '이길 수 있는 체력'에 두는 여유 — 보정 표본에 맞춰 너무 올리지 않게(새 표본에서는 승률이 내려간다) */
 const QA_MARGIN = 1.1;
+const QA_POP_K = 24;   // 배치 검사에서 보스를 올릴 때 보는 산만한 사람 판 수
 function qaBoost(lv) {
   const spec = lv.params.boss;
   if (spec.mode !== 'ref' || !spec.qaKeep) return false;
   const keep = {};
   for (const f of CAL_FIELDS) keep[f] = lv[f];
-  const sl3 = popCaps(lv, expectLoadout(lv.L), maxTicksOf(lv), ['sl3']).sl3;
+  const sl3 = popCaps(lv, expectLoadout(lv.L), maxTicksOf(lv), ['sl3'], QA_POP_K).sl3;
   for (const mul of QA_MULS) {
     const cal = calibrate(lv, { hpMul: mul });
     if (!cal.ok || sl3.filter((c) => c >= cal.lv.bossHp * QA_MARGIN).length < spec.qaKeep * sl3.length) break;
@@ -2147,7 +2271,7 @@ function fightFrom(a, pol, hp, maxTicks, mod) {
 
 /* 3패 지원: 시작 병력에 더하면 '약한 기준'의 도착 병력이 HELP_GAIN만큼 늘어나는 수(×게이트를 거치며 불어나는 몫을 뺀다).
    지원 판은 별 1개까지(main.js) */
-export const HELP_GAIN = { '': 0.85, rest: 0.4, hard: 1.9, super: 1.0 };   // 2단계: 판 중 실패가 늘어 1단계(0.6·0.25·1.5·0.7)보다 크게
+export const HELP_GAIN = { '': 0.85, rest: 0.4, hard: 1.9, super: 3.0 };   // 2단계: 판 중 실패가 늘어 1단계(0.6·0.25·1.5·0.7)보다 크게. 3단계: 매우 어려움 1.0 → 3.0(지원 받은 산만한 사람 72~75% → 85~95%)
 function helpFor(lv, co, w, maxTicks) {
   const gain = HELP_GAIN[lv.tag || ''] ?? 0.25;
   const arr0 = w.squad.n;
@@ -2182,7 +2306,8 @@ function nextRnd(st) {
 export function humanBot(seed, err = 0.1, skill = false, opt = {}) {
   const st = { a: seed >>> 0, hist: [], wrongUntil: -1, wrongX: 0 };
   const lag = opt.lag || 18;
-  const bo = opt.full ? undefined : { pump: false, crates: false };
+  // opt.pump: 덧셈 칸을 쏘면 오르는 것을 아는 사람(L1 안내 '쏘면 숫자가 올라가요'를 따르는 사람) — 상자는 여전히 모른다
+  const bo = opt.full ? undefined : { pump: !!opt.pump, crates: false };
   const f = (s) => {
     st.hist.push(botTarget(s, bo));
     if (st.hist.length > 40) st.hist.splice(0, st.hist.length - 20);
@@ -2197,21 +2322,26 @@ export function humanBot(seed, err = 0.1, skill = false, opt = {}) {
   f.clone = () => { const g = humanBot(seed, err, skill, opt); Object.assign(g.st, structuredClone(st)); return g; };
   return f;
 }
-/* 무리: on 집중한 사람(스킬 씀), off 집중했지만 스킬을 안 누르는 사람, sl3 산만한 사람. 종류마다 POP_K판.
+/* 무리: on 집중한 사람(스킬 씀), off 집중했지만 스킬을 안 누르는 사람, sl3 산만한 사람, pump 집중했고 덧셈 칸을 쏘아 올리는 사람
+   (3단계 — 게임이 L1부터 가르치는 것을 쓰는 사람도 구간에 들게). 종류마다 POP_K판.
    (숙련자 expert를 넣어 보았지만 체력이 H*를 넘을 수 없어 — 기준 봇은 늘 이긴다 — 숙련자 승률은 거의 그대로였다) */
-export const POP = [{ id: 'on', err: 0.1, skill: true, w: 1.5 }, { id: 'off', err: 0.1, skill: false, w: 0.6 }, { id: 'sl3', err: 0.3, skill: true, w: 0.5 }];
+export const POP = [
+  { id: 'on', err: 0.1, skill: true, w: 1.5 },
+  { id: 'off', err: 0.1, skill: false, w: 0.6 },
+  { id: 'sl3', err: 0.3, skill: true, w: 0.5 },
+  { id: 'pump', err: 0.1, skill: true, pump: true, w: 1 },
+];
 /* 무리가 원하는 체력이 H*의 POP_OVER배를 넘으면(기준 봇이 사람 흉내보다 크게 못한 배치) 다른 배치로 다시 만든다 */
 export const POP_OVER = 1.08;
-export const POP_K = 24;
+/* 3단계: 24 → 48(표본이 작으면 보정 표본에 맞춘 체력이 새 표본에서 10~20%p 쉽게 나왔다) */
+export const POP_K = 48;
 export const POP_MAX = 120;   // 여기까지는 무리로 맞춘다(caltable.js). 그 뒤는 H* × popRatio
 /* 무리 한 판씩: 경기장까지 돈 뒤, 이 사람이 이길 수 있는 가장 큰 보스 체력(이분 탐색 7번, 기하 평균) */
-export function popCaps(lv, co, maxTicks = maxTicksOf(lv), ids = null) {
+export function popCaps(lv, co, maxTicks = maxTicksOf(lv), ids = null, K = POP_K) {
   const out = {};
   for (const t of POP) {
     if (ids && !ids.includes(t.id)) continue;
     out[t.id] = [];
-    // L5·L10(한 레벨이 한 묶음인 소개 레벨)은 표본을 두 배로
-    const K = lv.L < TAG_FULL_FROM ? 2 * POP_K : POP_K;
     for (let j = 0; j < K; j++) {
       const pol = humanBot(hash(VERSION, 'cal', lv.L, lv.attempt, t.id, j), t.err, t.skill, t);
       const a = runTo(newGame(lv, co), pol, maxTicks, true);
@@ -2267,7 +2397,7 @@ export function popRatio(tag) {
   if (ratioCache[tag] != null) return ratioCache[tag];
   const T = CALT && CALT.sim === SIM && CALT.levels;
   const r = [];
-  if (T) for (const k in T) if (+k > 60 && levelTag(+k).tag === tag && T[k].Hstar > 0) r.push(T[k].bossHp / T[k].Hstar);
+  if (T) for (const k in T) if (+k > 60 && +k <= POP_MAX && levelTag(+k).tag === tag && T[k].Hstar > 0) r.push(T[k].bossHp / T[k].Hstar);
   r.sort((a, b) => a - b);
   ratioCache[tag] = r.length >= 3 ? r[Math.floor(r.length / 2)] : POP_RATIO0[tag] ?? 0.9;
   return ratioCache[tag];
@@ -2407,10 +2537,18 @@ export function coinsFor(lv, s, won, stars, bonusPct = 0) {
 }
 
 /* 3패 지원 병력(시작 병력에 더한다): 보정 표의 helpStart(산만한 사람도 대부분 이기지만 늘 이기지는 않게 태그별 HELP_GAIN으로 맞춘 수).
+   own = 그 플레이어가 실제로 들고 가는 { start(시작 병력), fire(화력 단계) }를 주면, 기대 강화(EXPECT)보다 모자란 만큼을 병사로 채워 준다(3단계):
+   모자란 시작 병력 + 화력 차이를 병력으로 바꾼 몫(화력 ∝ 병력^0.8 × (1 + 5%·화력)). 기대 강화 이상이면 helpStart 그대로.
    지원 판은 별 1개까지(main.js) */
-export function supportFor(lv) {
-  if (lv && lv.helpStart > 0) return lv.helpStart;
-  return Math.max(5, nice(0.2 * ((lv && lv.arrive) || 30)));
+export function supportFor(lv, own) {
+  const base = lv && lv.helpStart > 0 ? lv.helpStart : Math.max(5, nice(0.2 * ((lv && lv.arrive) || 30)));
+  if (!lv || !own) return base;
+  const E = expectLoadout(lv.L);
+  const have = Number.isFinite(own.start) ? own.start : START_N;
+  const fire = Number.isFinite(own.fire) ? own.fire : 0;
+  const k = Math.max(1, Math.pow((1 + 0.05 * E.fire) / (1 + 0.05 * fire), 1.25));
+  const want = (E.start + base) * k - have;
+  return Math.max(base, nice(want));
 }
 
 /* 보스가 분대에 닿기까지 남은 초(지금 걸음으로). 보스가 없거나 이미 닿았거나 쓰러졌으면 null */
@@ -2442,5 +2580,15 @@ export function stateHash(s) {
   if (s.boss) h = hash(h, s.boss.bonus.toFixed(4));
   for (const rk of s.rockets) h = hash(h, rk.x.toFixed(4), rk.z.toFixed(4), rk.t.toFixed(4));
   if (s.hero) h = hash(h, s.hero.charge.toFixed(4), s.hero.act.toFixed(4), s.hero.cd.toFixed(4), s.hero.shot.toFixed(4));
+  // 3단계: 2단계 상태도(상자·열쇠·벽, 몰이 알림, 톱날, 무기 단계·속도, 독침, 총알, 줄 고른 칸, 난수, 코인)
+  h = hash(h, s.rs >>> 0, q.tier, q.vx.toFixed(4), s.stats.coins, s.stats.lost, s.nextId);
+  for (const p of s.props) h = hash(h, p.id, p.alive ? 1 : 0, p.passed ? 1 : 0, p.hp.toFixed(3));
+  for (const m of s.marks) h = hash(h, m.z, m.done ? 1 : 0);
+  for (const w of s.saws) h = hash(h, w.id, w.x.toFixed(4), w.dir);
+  for (const r of s.rows) h = hash(h, r.id, r.done ? 1 : 0, r.chosen);
+  for (const sp of s.spits) h = hash(h, sp.id, sp.x.toFixed(4), sp.t.toFixed(4));
+  h = hash(h, s.bullets.length);
+  for (const b of s.bullets) h = hash(h, b.x.toFixed(3), b.z.toFixed(3));
+  if (s.boss) h = hash(h, s.boss.x.toFixed(4), s.boss.slam ? s.boss.slam.t.toFixed(4) : -1, s.boss.slamCd.toFixed(4), s.boss.summonCd.toFixed(4));
   return h;
 }

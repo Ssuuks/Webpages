@@ -2,7 +2,7 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT } from './core.js';
+import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone } from './core.js';
 import { HEROES, biomeOf } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL } from './pix/art.js';
@@ -175,6 +175,7 @@ export function createRenderer(cvs) {
   let shownN = 0, countPop = 0, countTint = 0, lastN = -1, pillA = 1;
   let lastS = null, lastT = -1, stillFor = 0;
   let hurtAt = -9, bossImpactT = -9, roarT = -9, bossIntroT = -9, bossDeath = null, enrageT = -9;
+  let surgeT = -9;   // 몰이 알림(core 'surge' 이벤트): 화면 양옆에서 안쪽을 가리키는 붉은 화살표가 잠깐 깜박인다
   let castT = -9, castId = '', castRun = false, castArena = false, healT = -9, rocketT = -9, snipeT = -9, readyT = -9;
   let healSum = 0, healShown = -9, groundMs = 0, putMs = 0, drawMs = 0, hurtSeed = 0;
   let cut = null;        // 컷인 { t, id }
@@ -303,7 +304,7 @@ export function createRenderer(cvs) {
     for (const r of rings) r.on = false;
     trauma = 0; flashA = 0; camX = 0; vis.n = 0; lastN = -1; countTint = 0; countPop = 0; shownN = 0; pillA = 1;
     dolly = 0; layout();   // 보스전 렌즈를 되돌린다(R1)
-    hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9;
+    hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9; surgeT = -9;
     castT = -9; castRun = false; castArena = false; healT = -9; rocketT = -9; snipeT = -9; readyT = -9; healSum = 0; healShown = -9;
     cut = null; clearOverlay();
     lodScen.clear(); lodFoe.clear(); lodSaw.clear(); lodCage.clear(); lodBoss = undefined;
@@ -354,6 +355,28 @@ export function createRenderer(cvs) {
     for (const t of tracers) if (!t.on) { Object.assign(t, { on: true, x0, y0, z0, x1, y1, z1, c, t: 0, dur }); return; }
   }
   function shake(a) { if (shakeOn && !reduce) trauma = Math.min(1, trauma + a); }
+  /* 몰이 알림: 화면 양옆 가장자리에 붉은 띠 + 안쪽을 가리키는 화살표 셋(4번 깜박, 줄이기 설정이면 덜 밝게). 글자는 DOM 알림(main.js)이 띄운다 */
+  const SURGE_CUE = 1.8;
+  function drawSurgeCue(t) {
+    const W = Math.floor(VW), Hh = Math.floor(VH);
+    const on = ((t * 5) | 0) % 2 === 0;
+    const fade = Math.min(1, (SURGE_CUE - t) / 0.4);
+    ctx.fillStyle = '#E8384F';
+    ctx.globalAlpha = (on ? 0.34 : 0.16) * fade * (reduce ? 0.5 : 1);
+    ctx.fillRect(0, 0, 4, Hh); ctx.fillRect(W - 4, 0, 4, Hh);
+    ctx.globalAlpha = (on ? 0.95 : 0.55) * fade;
+    const a = 7, cy = Math.round(Hh * 0.38);
+    for (let i = 0; i < 3; i++) {
+      const y = cy + (i - 1) * 14;
+      for (const [x0, d] of [[6 + ((t * 18) % 6), 1], [W - 7 - ((t * 18) % 6), -1]]) {
+        ctx.fillStyle = '#A92644';
+        pline(x0, y - a + 1, x0 + d * a, y + 1); pline(x0 + d * a, y + 1, x0, y + a + 1);
+        ctx.fillStyle = '#FFD0C4';
+        pline(x0, y - a, x0 + d * a, y); pline(x0 + d * a, y, x0, y + a);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
   function screenFlash(a, rgb) { if (reduce) a *= 0.25; if (a > flashA) { flashA = a; if (rgb !== flashRGB) { flashRGB = rgb; flashCss = 'rgb(' + rgb + ')'; } } }
 
   /* 유령 숫자: 게이트를 지난 뒤 0.6초 동안, 고르지 않은 칸으로 갔으면 몇 명이었는지 흐리게(다른 칸 하나가 20% 이상 나았을 때만).
@@ -428,7 +451,9 @@ export function createRenderer(cvs) {
           countTint = -1;
           // 붉은 기는 눈에 띄는 손실에만, 0.4초에 한 번(작은 손실이 이어져도 부대가 계속 빨갛지 않게)
           if (e.n >= Math.max(2, q.n * 0.02) && time - hurtAt > 0.4) { hurtAt = time; hurtSeed = (hurtSeed + 3) % 11; }
-          if (e.cause !== 'gate' && e.n >= 2) float(q.x + (Math.random() < 0.5 ? -1 : 1) * (R + 0.4), 1.6, q.z, '-' + e.n, '#FFC2B3', { out: PANEL.bad.out, life: 0.8, vz: q.vz });
+          // 못 부순 상자·철창에 부딪혀 잃은 병사: 상자 자리에 병사 아이콘과 '-n'(F4 — 무엇 때문에 잃었는지 보이게)
+          if (e.cause === 'crate') float(e.x, 2.3, e.z, '-' + e.n, '#FFC2B3', { icon: 'men', out: PANEL.bad.out, life: 1.2 });
+          else if (e.cause !== 'gate' && e.n >= 2) float(q.x + (Math.random() < 0.5 ? -1 : 1) * (R + 0.4), 1.6, q.z, '-' + e.n, '#FFC2B3', { out: PANEL.bad.out, life: 0.8, vz: q.vz });
           if (e.n >= Math.max(5, q.n * 0.08)) shake(0.18);
           // 쓰러진 병사: 연기 + 철모가 튀어 오른다
           const m = Math.min(5, e.n);
@@ -471,7 +496,9 @@ export function createRenderer(cvs) {
           else { float(e.x, 2.6, e.z, '+' + e.v, '#FFE38A', { icon: 'coin', life: 1.2 }); coinFly(e.x, 1.2, e.z, Math.ceil(e.v / 5)); }
           break;
         }
-        case 'crateMiss': burst(e.x, 0.8, e.z, 12, FX_COL.wood, 3, 3); break;
+        case 'crateMiss':
+          burst(e.x, 0.8, e.z, 12, FX_COL.wood, 3, 3);
+          break;
         case 'cageOpen':
           burst(e.x, 1, e.z, 18, FX_COL.iron, 4.5, 4, 0.7);
           fx('puff', e.x, 0.8, e.z, 0.3);
@@ -492,6 +519,7 @@ export function createRenderer(cvs) {
           shake(0.6);
           if (e.hit) screenFlash(0.3, '232,56,79');
           break;
+        case 'surge': surgeT = time; break;
         case 'clash': shake(0.3); break;
         case 'stomp':
           shake(0.3);
@@ -1483,12 +1511,23 @@ export function createRenderer(cvs) {
     if (b && b.slam && b.hp > 0) {   // 보스가 쓰러지면 예고를 그리지 않는다
       const k = clamp(1 - b.slam.t / b.slam.T, 0, 1);
       const pulse = (((time * 4) | 0) & 1) ? 0.06 : 0;
+      // 빨갛게 그리는 범위 = 실제로 맞는 범위(core.slamZone: 칸 ± SLAM_EDGE·분대 반지름 — 분대 중심이 그 안이면 맞는다).
+      // 칸 자체는 조금 더 진하게: 칸 밖으로 번진 띠는 '분대 몸이 걸리는 만큼'이다
+      const zn = slamZone(b.slam, radius(q.n));
       ctx.fillStyle = '#E8384F';
-      ctx.globalAlpha = 0.24 + pulse;
-      groundQuad(b.slam.x0 + 0.1, b.slam.x1 - 0.1, q.z - 3.5, b.z - 0.5, 0.02);
+      ctx.globalAlpha = 0.2 + pulse;
+      groundQuad(zn.x0, zn.x1, q.z - 3.5, b.z - 0.5, 0.02);
+      ctx.globalAlpha = 0.1;
+      groundQuad(Math.max(zn.x0, b.slam.x0 + 0.1), Math.min(zn.x1, b.slam.x1 - 0.1), q.z - 3.5, b.z - 0.5, 0.021);
       ctx.globalAlpha = 0.5;
-      groundQuad(b.slam.x0 + 0.1, b.slam.x1 - 0.1, q.z - 3.5, q.z - 3.5 + (b.z - q.z + 3) * k, 0.03);
+      groundQuad(zn.x0, zn.x1, q.z - 3.5, q.z - 3.5 + (b.z - q.z + 3) * k, 0.03);
       ctx.globalAlpha = 1;
+      // 맞는 범위의 가장자리: 밝은 선(분대 중심이 이 선 밖이면 안전)
+      ctx.fillStyle = '#FFB3BC';
+      for (const xe of [zn.x0, zn.x1]) {
+        if (Math.abs(xe) >= ROAD - 0.05) continue;
+        groundQuad(xe - 0.06, xe + 0.06, q.z - 3.5, b.z - 0.5, 0.035);
+      }
       // 분대 쪽으로 행진하는 아래 화살표: 2px 두께의 V(팔 ~1.3u, 깊이 1.1u — 화면에서 납작해지지 않게) + 짙은 그림자 줄(V14)
       const xm = (b.slam.x0 + b.slam.x1) / 2;
       for (let i = 0; i < 6; i++) {
@@ -1668,9 +1707,11 @@ export function createRenderer(cvs) {
   const titles = new Map();    // 영웅 id → { c, ox, oy } (미리 그린 제목)
   let titleKey = '';
   const idle = (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 400 }) : setTimeout(fn, 30));
+  /* 컷인 띠: 25~60m 앞(열쇠 상자·몰이 줄·먼 게이트)을 가리지 않게 HUD 바로 아래(CSS 58px)에 얇게(화면 높이 11%, 최대 44px) —
+     하늘과 아주 먼 길만 가린다(F5: 예전 13%부터 16% 높이는 360x640에서 오른쪽 25~60m를 1초 가렸다) */
   function band() {
-    const hh = Math.min(66, Math.round(VH * 0.16));
-    return { hh, y0: Math.round(VH * 0.13) };
+    const hh = Math.min(44, Math.round(VH * 0.11));
+    return { hh, y0: Math.min(Math.round(VH * 0.13), Math.ceil(58 / (cssPer || 1))) };
   }
   function sizeOverlay() {
     if (!ov) return;
@@ -1755,7 +1796,7 @@ export function createRenderer(cvs) {
       ctx.fillRect(Math.round(xx) + slide, yy, 14 + (i % 3) * 8, 1);
     }
     const fr = atlas.get(art.portrait, 0);
-    const sc = BW >= 170 ? 3 : 2;
+    const sc = Math.max(1, Math.min(BW >= 170 ? 3 : 2, Math.floor((hh - 4) / fr.h)));
     const px = slide + 6, py = y0 + Math.round((hh - fr.h * sc) / 2);
     ctx.drawImage(fr.img, fr.sx, fr.sy, fr.w, fr.h, px, py, fr.w * sc, fr.h * sc);
     // 한글 스킬 이름은 띠 크기 덧캔버스에(Jua). 띠 위쪽이 덧캔버스 0
@@ -1891,6 +1932,7 @@ export function createRenderer(cvs) {
       ctx.globalAlpha = 1;
       flashA = Math.max(0, flashA - rdt * 1.8);
     }
+    if (time - surgeT < SURGE_CUE) drawSurgeCue(time - surgeT);
     if (q.n > 0 && q.n < 8 && s.phase !== 'won') {
       // 병력이 아주 적으면 보이는 화면 가장자리를 천천히 붉게(번쩍이지 않게)
       const W = Math.floor(VW), Hh = Math.floor(VH);
