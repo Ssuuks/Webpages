@@ -7,7 +7,7 @@ import { CAL } from '../assets/caltable.js';
 import { load, save, wipe, upgCost, UPGRADES } from '../assets/store.js';
 import { HERO_IDS, heroCap } from '../assets/roster.js';
 import { sloppy, random, makeBot } from './bots.mjs';
-import { makePool, checkTargets, tagClass, loadoutCap, summarize, seedOf } from '../tools/benchlib.mjs';
+import { makePool, checkTargets, tagClass, loadoutCap, summarize, seedOf, refWork } from '../tools/benchlib.mjs';
 import { checkStakes } from '../tools/stakes.mjs';
 import { fairStats } from '../tools/fairprobe.mjs';
 
@@ -567,7 +567,7 @@ test('패배 원인이 기록된다', () => {
   if (s.phase === 'lost') assert.ok(['gate', 'foe', 'brute', 'wall', 'saw', 'spit', 'boss'].includes(s.cause), s.cause);
 });
 
-test(`표 밖 레벨은 그 자리에서 빨리 보정된다(휴대폰에서도 레벨 시작이 늦지 않게) — L121~${TABLE_MAX}은 표, 그 뒤는 배치 ${C.RUNTIME_TRIES}번까지(L121~200으로 잰다)`, async () => {
+test(`표 밖 레벨은 그 자리에서 빨리 보정된다(휴대폰에서도 레벨 시작이 늦지 않게) — L121~${TABLE_MAX}은 표, 그 뒤는 배치 ${C.RUNTIME_TRIES}번까지(L121~200으로 잰다)`, async (t) => {
   assert.ok(TABLE_MAX >= 300, `표는 L1~${TABLE_MAX} — 그 뒤만 그 자리에서 보정한다`);
   // L121~TABLE_MAX: 표에서 바로(레벨당 몇 ms)
   for (const L of range(121, TABLE_MAX)) {
@@ -576,18 +576,38 @@ test(`표 밖 레벨은 그 자리에서 빨리 보정된다(휴대폰에서도 
     assert.ok(performance.now() - t0 < 50 && !lv.failed, `L${L} 표에서 읽기`);
   }
   // 그 자리 보정(게임이 L${TABLE_MAX + 1}+에서 하는 것)을 L121~200 전부에 대해 재서 가장 긴 것 — 워커마다 한 레벨씩
-  const out = await Promise.all(range(121, 200).map((L) => POOL.run({ kind: 'call', module: new URL('../tools/benchlib.mjs', import.meta.url).href, fn: 'timeCal', args: [L] })));
-  const avg = out.reduce((a, r) => a + r.ms, 0) / out.length;
-  const worst = out.reduce((a, r) => (r.ms > a.ms ? r : a));
+  const timeCal = (L) => POOL.run({ kind: 'call', module: new URL('../tools/benchlib.mjs', import.meta.url).href, fn: 'timeCal', args: [L] });
+  const out = await Promise.all(range(121, 200).map(timeCal));
+  // 시간은 기계마다 두 배씩 달라서(CI 러너는 개발 PC의 약 2배 느리다) 같은 워커에서 같은 때 잰 기준 일감(refWork: 기준 봇 3000틱)의 몇 배인지로 본다.
+  // 상한은 예전 절대 기준(개발 PC 4코어에서 평균 0.5초·가장 긴 1.5초, 그때 기준 일감 약 45ms)을 배수로 옮긴 값 — 기계가 느리면 함께 늘어난다.
+  // 한 번 잰 값은 ±15%쯤 흔들려서, 가장 긴 세 레벨은 한 번 더 재어 짧은 쪽을 쓴다(80개 중 최댓값이 흔들림에 끌려 올라가지 않게)
   for (const r of out) {
     assert.ok(!r.failed, `L${r.L} 보정 실패`);
     assert.ok(r.attempt < C.RUNTIME_TRIES, `L${r.L} 배치 ${r.attempt}`);
   }
-  assert.ok(avg < 500 && worst.ms < 1500, `L121~200 그 자리 보정: 레벨당 평균 ${avg.toFixed(0)}ms, 가장 긴 ${worst.ms.toFixed(0)}ms (L${worst.L})`);
-  // 표 바로 뒤 레벨도 실제로 그 자리에서 보정된다
+  const top = [...out].sort((a, b) => b.x - a.x).slice(0, 3);
+  for (const r2 of await Promise.all(top.map((r) => timeCal(r.L)))) {
+    const r = out.find((o) => o.L === r2.L);
+    if (r2.x < r.x) Object.assign(r, r2);
+  }
+  const avgX = out.reduce((a, r) => a + r.x, 0) / out.length;
+  const worst = out.reduce((a, r) => (r.x > a.x ? r : a));
+  const avgMs = out.reduce((a, r) => a + r.ms, 0) / out.length;
+  const msg = `L121~200 그 자리 보정: 기준 일감의 평균 ${avgX.toFixed(1)}배, 가장 긴 ${worst.x.toFixed(1)}배 (L${worst.L}) — 이 기계로는 평균 ${avgMs.toFixed(0)}ms, 가장 긴 ${worst.ms.toFixed(0)}ms`;
+  t.diagnostic(msg);
+  assert.ok(avgX < 12 && worst.x < 32, msg);
+  // 표 바로 뒤 레벨도 실제로 그 자리에서 보정된다(이 스레드에서 — 기준 일감의 45배, 예전 기준 2초 안).
+  // 다른 테스트가 먼저 열었으면 prepareLevel은 캐시에서 바로 나오니, 시간은 같은 보정(calibrateLevel(…, RUNTIME_TRIES))을 다시 돌려 잰다
+  const after = C.prepareLevel(TABLE_MAX + 3);
+  assert.ok(!after.failed);
+  refWork();
+  const r0 = refWork();
   const t0 = performance.now();
-  assert.ok(!C.prepareLevel(TABLE_MAX + 3).failed);
-  assert.ok(performance.now() - t0 < 2000);
+  const again = C.calibrateLevel(TABLE_MAX + 3, C.RUNTIME_TRIES);
+  const x = (performance.now() - t0) / r0;
+  assert.deepEqual(C.CAL_FIELDS.map((f) => again[f]), C.CAL_FIELDS.map((f) => after[f]), 'prepareLevel = 그 자리 보정');
+  t.diagnostic(`L${TABLE_MAX + 3} 그 자리 보정: 기준 일감의 ${x.toFixed(1)}배`);
+  assert.ok(x < 45, `L${TABLE_MAX + 3} 그 자리 보정: 기준 일감의 ${x.toFixed(1)}배`);
 });
 
 /* ---------- 난이도 구간(plan.difficulty_targets 1·2단계) ----------

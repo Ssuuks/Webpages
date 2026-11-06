@@ -345,11 +345,27 @@ export function calJob(job) {
 }
 /* 표 밖 레벨을 게임처럼 그 자리에서 보정하는 데 걸린 ms(배치는 tries번까지 — 게임은 C.RUNTIME_TRIES). 표가 있는 레벨도 표를 쓰지 않고 잰다 */
 let calWarm = false;
+/* 기준 일감: 표의 L130을 기준 봇으로 REF_TICKS틱(기대 강화). 같은 워커·같은 때에 재서 보정 시간을 '이 기계 속도의 몇 배'로 본다 —
+   CI 러너·휴대폰처럼 느린 기계에서도 같은 잣대가 되게(절대 ms는 기계마다 두 배씩 다르다) */
+const REF_TICKS = 3000;
+export function refWork() {
+  const lv = C.prepareLevel(130);
+  const t0 = performance.now();
+  let n = 0;
+  while (n < REF_TICKS) {
+    const s = C.newGame(lv, C.expectLoadout(130));
+    while ((s.phase === 'run' || s.phase === 'arena') && n < REF_TICKS) { C.step(s, C.botInput(s)); n++; }
+  }
+  return performance.now() - t0;
+}
 export function timeCal(L, tries = C.RUNTIME_TRIES) {
-  if (!calWarm) { C.calibrateLevel(L + 1000, tries, null); calWarm = true; }   // 워커의 첫 호출(JIT 데우기)은 빼고 잰다
+  if (!calWarm) { C.calibrateLevel(L + 1000, tries, null); refWork(); calWarm = true; }   // 워커의 첫 호출(JIT 데우기)은 빼고 잰다
+  const r0 = refWork();
   const t0 = performance.now();
   const lv = C.calibrateLevel(L, tries, null);   // 표 밖 레벨처럼 — 표에 적힌 배치(keep)를 먼저 보지 않는다
-  return { L, ms: performance.now() - t0, attempt: lv.attempt, failed: !!lv.failed, qa: !!lv.qa };
+  const ms = performance.now() - t0;
+  const ref = (r0 + refWork()) / 2;   // 앞뒤로 재서 그 사이 기계 부하를 고르게
+  return { L, ms, ref, x: ms / ref, attempt: lv.attempt, failed: !!lv.failed, qa: !!lv.qa };
 }
 export function runJob(job) {
   if (job.cal) C.useCal(job.cal);

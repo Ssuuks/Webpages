@@ -73,7 +73,7 @@ lv.marks / s.marks = [{ t:'surge', z }]   // 몰이 청크 시작 — MARK_AHEAD
 - 독침은 `spitEscape`가 피할 쪽을 찾을 때만 쏜다(없으면 `SPIT_WAIT` 0.25초 뒤 다시 본다).
 - `POP`에 `pump`(덧셈 칸을 쏘아 올리는 집중한 사람) — `humanBot(seed, err, skill, { pump })`. `POP_K` 48. `BOSS_SPEC.*.band.pump`, `band.w`.
 - `ROW_MIX.hard`·`LAST_THINK_HARD`: L15+ 어려운 레벨의 줄 구성. 그 첫 게이트 줄은 늘 판돈 줄(금색 제외).
-- `calibrateLevel(key, tries)`, `CAL_TRIES` 8(표), `RUNTIME_TRIES` 4(표 밖 L301+를 게임이 처음 열 때). 표(`caltable.js`)는 L1~300.
+- `calibrateLevel(key, tries)`, `CAL_TRIES` 8(표), `RUNTIME_TRIES` 4(표 밖 L301+를 게임이 처음 열 때). 표(`caltable.js`)는 L1~300. 3패 지원 병력(`helpFor`)은 경기장 앞까지만 돌아 보스 체력과 상관없어서, `calibrate()`는 함수(`cal.help`)로만 넘기고 `calibrateLevel`이 끝에 고른 배치에서 한 번 잰다(결과는 그대로 — L1~60 표 보정·L121~200 그 자리 보정이 바꾸기 전과 같다).
 - `stateHash`는 2단계 상태(상자·열쇠·몰이 알림·톱날·줄·독침·총알·난수·무기 단계·속도·코인·보스 타이머)까지 본다.
 - 화면: `surge` → 알림 글자·경보음(`sfx.surge`)·진동 + 렌더러 양옆 붉은 화살표. 상자·철창 접촉 손실(`loss` cause 'crate')은 상자 자리에 '−n', 결과 화면 원인 `CAUSE.crate`. 보스전에서 끌기를 한 번도 안 쓴 사람(L5+)에게 끌기 안내. 규칙이 바뀐 뒤 처음 연 기존 플레이어에게 SIM마다 바뀐 것만 알린다(`BALANCE_NOTES`).
 

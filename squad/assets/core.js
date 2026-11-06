@@ -2221,6 +2221,8 @@ export function keepAttempt(key) {
 export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key)) {
   let lv = null;
   let firstOk = null;
+  // 3패 지원 병력은 끝에 고른 배치에서만 잰다(보스 체력과 상관없어 결과는 같고, 배치 검사에서 떨어진 배치에 판 한 번씩을 덜 돈다)
+  const help = new Map();
   const order = keep != null && keep < tries ? [keep] : [];
   for (let a = 0; a < tries; a++) if (a !== keep) order.push(a);
   const lastTry = order[order.length - 1];
@@ -2229,6 +2231,7 @@ export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key)) 
     const cal = calibrate(lv, { last: attempt === lastTry });
     if (cal.ok) {
       Object.assign(lv, cal.lv);
+      help.set(lv, cal.help);
       // 배치 검사: 한 자리에 서 있기만 해서는 이기지 못해야 한다. 못 넘으면 보스를 조금 세게(qaBoost), 그래도 안 되면 다른 배치로.
       // 끝까지 못 넘으면 처음 보정된 배치를 쓴다(lv.qa = false — 테스트가 어느 레벨인지 본다)
       if (!firstOk) firstOk = lv;
@@ -2249,7 +2252,7 @@ export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key)) 
     lv.calTier = 0;
     lv.Hstar = 0;
     lv.helpStart = Math.max(5, nice(0.2 * lv.arrive));
-  }
+  } else lv.helpStart = help.get(lv)();
   return lv;
 }
 
@@ -2521,8 +2524,8 @@ export function calibrate(lv, opt = {}) {
     if (t.phase !== 'won') return { ok: false };
     par = t.squad.n;
   }
-  const helpStart = helpFor(lv, co, w, maxTicks);
-  return { ok: true, lv: { bossHp: hp, arrive: ref, arriveStrong: arrive, arriveWeak: w.squad.n, par, calTier: s.squad.tier, Hstar, helpStart } };
+  // 3패 지원 병력(helpStart)은 경기장 앞까지만 돌아 보스 체력과 상관없다 — 고른 배치에서만 재게 함수로 넘긴다(calibrateLevel)
+  return { ok: true, lv: { bossHp: hp, arrive: ref, arriveStrong: arrive, arriveWeak: w.squad.n, par, calTier: s.squad.tier, Hstar }, help: () => helpFor(lv, co, w, maxTicks) };
 }
 
 /* 별 기준 병력: 기준 봇이 '그 플레이어의 강화와 출격 영웅'을 달고 돌았을 때 남기는 병력.
