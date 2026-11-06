@@ -1,5 +1,5 @@
 /* 더보기: 예약 · 패스 · 경비 · 지도 · 메모 · 데이터 */
-import { h, clear, rich, byId, clone, fmtDate, fmtDT, fmtLeg, distKm, hasXY, toEpoch, fromEpoch, download, copyText, toast, uid,
+import { h, clear, rich, byId, clone, fmtDate, fmtDT, fmtLeg, distKm, hasXY, toEpoch, fromEpoch, download, copyText, toast, uid, pickUrl,
   nowIn, utf8ToB64, b64ToUtf8, plain } from './util.js';
 import { activePlan, findPlace, allPlaces, stayForDay, TRANSPORT_LABEL, TRANSPORT_KINDS, CAT_LABEL, flightLinks, passRoi, familyCategories } from './model.js';
 import { validateTrip } from './validate.js';
@@ -8,13 +8,13 @@ import { drawMap } from './map.js';
 import { setSecret, setSecrets, secretsFor, clearSecrets, getHistory, getProfile } from './store.js';
 import { listCommits, getFileAt, hasToken } from './github.js';
 import { openSheet, ask, badges, pill, btn, linkBtn, telLink, field, input, textarea, select, section, empty } from './ui.js';
-import { openPlace, passState, selectedDate } from './v-trip.js';
+import { openPlace, passState, passLinkBtns, selectedDate } from './v-trip.js';
 import { addDoc, removeDoc, loadDoc, cachedPaths, cacheAll, pendingCount, fmtSize, isImage } from './docs.js';
 import { openAiEdit } from './v-import.js';
 
 const SUBS = [
   { id: 'book', label: '예약', icon: '🎫', desc: '항공·숙소·렌터카·주차' },
-  { id: 'pass', label: '패스', icon: '⏱', desc: '첫 입장 기록, 만료까지 남은 시간' },
+  { id: 'pass', label: '패스', icon: '⏱', desc: '패스 링크, 첫 입장 기록, 남은 시간' },
   { id: 'budget', label: '경비', icon: '💳', desc: '계획 대비 실제, CSV' },
   { id: 'map', label: '지도', icon: '🗺', desc: '전체 장소와 하루 동선' },
   { id: 'notes', label: '메모', icon: '✎', desc: '결정·열린 질문·회고' },
@@ -188,8 +188,7 @@ function passCard(ctx, p) {
       const pl = u.placeId && findPlace(ctx.trip, ctx.datasets, u.placeId);
       return h('li', fmtDT(u.at), pl ? ' · ' + pl.name : '');
     }))) : null,
-    docChips(ctx, { type: 'pass', id: p.id }),
-    h('div.btnrow', btn('＋ 패스 QR·바코드', () => openAddDoc(ctx, { type: 'pass', id: p.id }), 'small ghost')),
+    passLinksBlock(ctx, p),
     roiSection(ctx, p),
     (p.rules || []).length ? h('details', h('summary', '규칙'), h('ul', p.rules.map((r) => h('li', r)))) : null,
     passPlaces.length ? h('div', h('h4', `가까운 패스 장소${ref ? ' · ' + (ctx.here() ? '현재 위치' : ref.l) + ' 기준' : ''}`),
@@ -200,6 +199,57 @@ function passCard(ctx, p) {
           h('div.badges', badges(ctx.badges, (x.badges || []).filter((b) => b !== 'pass')))))))),
       passPlaces.length > 12 ? h('p.hint', `외 ${passPlaces.length - 12}곳은 장소 탭의 '패스' 칩에서`) : null) : null);
   return card;
+}
+/* 패스 링크: 여행 앱·문자로 받은 패스 페이지(QR·지도·이용 현황)를 그대로 연다.
+   캡처 이미지는 링크가 안 열릴 때(통신 불안·링크 없음) 쓰는 오프라인 대비로 남긴다. */
+function passLinksBlock(ctx, p) {
+  const links = passLinkBtns(p, 'primary');
+  const docs = docChips(ctx, { type: 'pass', id: p.id });
+  return h('div.passlinks',
+    links.length ? h('div.btnrow.wrap', links)
+      : h('p.hint', '여행 앱·문자로 받은 패스 링크를 넣어 두면 여기서 바로 QR·지도·이용 현황을 열어요.'),
+    h('div.btnrow.wrap',
+      btn(links.length ? '링크 관리' : '＋ 패스 링크', () => openPassLinks(ctx, p.id), links.length ? 'small ghost' : 'small'),
+      btn('＋ 오프라인용 캡처', () => openAddDoc(ctx, { type: 'pass', id: p.id }), 'small ghost')),
+    docs ? h('div', h('p.hint', '캡처 (인터넷이 안 될 때)'), docs) : null,
+    links.length && !docs ? h('p.hint', '링크 페이지는 인터넷이 있어야 열려요. 통신이 불안한 곳이면 QR 화면을 캡처해 [＋ 오프라인용 캡처]로 넣어 두세요.') : null);
+}
+function openPassLinks(ctx, passId) {
+  const cur = () => byId(ctx.trip.passes, passId);
+  const label = input('', { placeholder: '예: 어른1, 가족 4명 (비우면 “패스 열기”)' });
+  const url = input('', { type: 'url', inputmode: 'url', placeholder: 'https://… (안내 문자를 통째로 붙여넣어도 돼요)', autocapitalize: 'off' });
+  const list = h('ul.plist');
+  const draw = () => {
+    const ls = (cur() && cur().links) || [];
+    clear(list);
+    if (!ls.length) { list.appendChild(h('li.hint', '아직 링크가 없어요.')); return; }
+    ls.forEach((l) => {
+      let host = ''; try { host = new URL(l.url).host; } catch { /* 검사기가 알려 준다 */ }
+      list.appendChild(h('li', h('div.prow.static',
+        h('div.prow-main', h('div.prow-name', l.label || '패스 열기'), h('div.prow-sub', h('span', host))),
+        h('div.prow-btns', linkBtn('열기', l.url, 'small'),
+          btn('복사', async () => toast((await copyText(l.url)) ? '주소를 복사했어요.' : '복사하지 못했어요.'), 'small ghost'),
+          btn('삭제', async () => {
+            if (!(await ask(`'${l.label || '패스 열기'}' 링크를 지울까요?`, [{ label: '취소', value: false }, { label: '삭제', value: true, danger: true }]))) return;
+            await ctx.save((t) => { const q = byId(t.passes, passId); q.links = (q.links || []).filter((x) => x.id !== l.id); }, '지웠어요.', { undo: true });
+            draw();
+          }, 'small ghost danger')))));
+    });
+  };
+  draw();
+  openSheet('패스 링크 · ' + (cur() ? cur().name : ''), h('div',
+    list,
+    field('이름', label), field('주소', url, '여행 앱의 [공유]·[링크 복사]로 받은 주소. 사람마다 링크가 따로면 하나씩 넣으세요.'),
+    h('div.btnrow', btn('추가', async () => {
+      const u = pickUrl(url.value);
+      if (!u) { toast('https://로 시작하는 주소를 찾지 못했어요.'); return; }
+      const name = label.value.trim() || null;
+      await ctx.save((t) => { const q = byId(t.passes, passId); q.links = [...(q.links || []), { id: uid('pl'), label: name, url: u }]; },
+        hasToken() ? '추가했어요. 동기화하면 가족 폰에도 보여요.' : '이 기기에 추가했어요.');
+      label.value = ''; url.value = '';
+      draw();
+    }, 'primary')),
+    h('p.hint', '링크만 있으면 누구나 패스를 쓸 수 있어요. 여행 데이터(비공개 저장소)에만 두고, 공유·인쇄 일정표에는 넣지 않아요.')));
 }
 /* 패스 손익: 계획한 패스 일정의 우리 가족 정가 − 추가금 − 패스값 */
 function roiSection(ctx, p) {

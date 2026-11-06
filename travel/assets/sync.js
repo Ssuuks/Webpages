@@ -12,10 +12,10 @@ const FIELD = {
   done: '완료', skipped: '건너뜀', activatedAt: '개시 시각', text: '내용', due: '마감일', amount: '금액', checkIn: '체크인',
   checkOut: '체크아웃', start: '출발', name: '이름', label: '이름', activePlan: '선택한 안', journal: '한 줄 기록', leg: '이동',
   kind: '종류', passUse: '패스', fav: '찜', lat: '위도', lng: '경도', hours: '운영시간', phone: '전화', desc: '설명',
-  summary: '요약', accent: '강조색', cat: '분류', group: '지역', price: '요금', retro: '회고', stayId: '숙소',
+  summary: '요약', accent: '강조색', url: '주소', cat: '분류', group: '지역', price: '요금', retro: '회고', stayId: '숙소',
 };
 const PART = { days: '', plans: '안', items: '', places: '장소', stays: '숙소', transports: '교통', checklists: '체크리스트',
-  passes: '패스', meta: '여행 정보', budget: '경비', expenses: '지출', notes: '메모', emergency: '비상', documents: '서류' };
+  passes: '패스', meta: '여행 정보', budget: '경비', expenses: '지출', notes: '메모', emergency: '비상', documents: '서류', links: '링크' };
 
 /* 배열 원소의 짝 맞추기 기준 */
 function keyField(path, arrays) {

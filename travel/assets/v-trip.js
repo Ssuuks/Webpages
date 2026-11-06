@@ -865,10 +865,16 @@ function nextCard(ctx, items, i, ms, day, plan) {
 }
 function passMini(ctx, p) {
   const st = passState(ctx, p);
+  const links = passLinkBtns(p, 'small primary');
   return h('section.card.passmini',
     h('div.stamp', '패스'),
     h('div', h('b', p.name), h('div', st.text)),
-    btn('패스 화면', () => ctx.go(`#/t/${encodeURIComponent(ctx.trip.id)}/more/pass`), 'small'));
+    h('div.btnrow.wrap', links, btn('패스 화면', () => ctx.go(`#/t/${encodeURIComponent(ctx.trip.id)}/more/pass`), 'small' + (links.length ? ' ghost' : ''))));
+}
+/* 구매처가 준 패스 링크(QR·지도·이용 현황 웹 페이지) 열기 버튼 */
+export function passLinkBtns(p, cls = 'primary') {
+  const links = (p.links || []).filter((l) => l && l.url);
+  return links.map((l, i) => linkBtn('🎟 ' + (l.label || (links.length > 1 ? `패스 ${i + 1}` : '패스 열기')), l.url, cls)).filter(Boolean);
 }
 export function passState(ctx, p) {
   if (!p.activatedAt) return { active: false, text: '아직 개시 전이에요. 첫 입장 때 [첫 입장 기록]을 누르세요.' };

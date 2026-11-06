@@ -379,3 +379,17 @@ test('연결 코드 암호화', async () => {
   assert.equal(await openText(sealed, '제주2026'), '{"token":"github_pat_x"}');
   await assert.rejects(() => openText(sealed, '틀림'));
 });
+
+test('패스 링크: 검사, 붙여넣은 글에서 주소 뽑기, 복제 때 비우기', async () => {
+  const { pickUrl } = await import('../assets/util.js');
+  const t = jeju();
+  t.passes[0].links = [{ id: 'pl-1', label: '어른1', url: 'https://front-code.example.com/8432ae0c' }];
+  assert.equal(validateTrip(t).errors.length, 0);
+  t.passes[0].links.push({ id: 'pl-2', label: null, url: 'javascript:alert(1)' });
+  assert.ok(validateTrip(t).errors.some((e) => e.path === 'passes[0].links[1]'));
+  assert.equal(pickUrl('[여행앱] 제주패스가 발급됐어요. https://front-code.example.com/8432ae0c 에서 확인하세요.'), 'https://front-code.example.com/8432ae0c');
+  assert.equal(pickUrl('바로가기(https://a.example.com/x?y=1).'), 'https://a.example.com/x?y=1');
+  assert.equal(pickUrl('주소 없음'), null);
+  t.passes[0].links.pop();
+  assert.deepEqual(shiftTrip(t, 'new', '2027-11-21').passes[0].links, []);
+});
