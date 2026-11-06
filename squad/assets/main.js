@@ -1323,6 +1323,14 @@ function finish() {
     $('resCause').appendChild(tip);
   }
   $('resPrimary').textContent = won ? '다음 레벨' : '다시 도전';
+  // 별을 다 못 받은 승리: 바로 다시 해서 별을 채울 수 있게(다음 별까지 몇 명 더 — 지원 판은 지원 없이 다시)
+  const replay = won && stars < 3;
+  $('resReplay').hidden = !replay;
+  if (replay) {
+    const goal = stars >= 2 ? g.three : g.two;
+    $('resReplay').textContent = support ? '다시 하기 · 지원 없이 별 3개 도전'
+      : `다시 하기 · ${'★'.repeat(stars + 1)}까지 ${Math.max(1, goal - n)}명 더`;
+  }
   const helpN = supportSize(lv, ownLoadout());
   const offerHelp = !won && (data.fails[L] | 0) >= 3;
   $('resHelp').hidden = !offerHelp;
@@ -1626,6 +1634,13 @@ on('resPrimary', () => {
   const id = newlyEarned()[0];
   if (id) { sfx.click(); joinAfter = () => tryStart(next, opts); openJoin(id); return; }
   tryStart(next, opts);
+});
+on('resReplay', () => {
+  // 별 채우기: 같은 레벨을 카드 없이 바로(새 영웅이 합류했으면 소개부터)
+  const L = lv.L;
+  const id = newlyEarned()[0];
+  if (id) { sfx.click(); joinAfter = () => tryStart(L, { quick: true }); openJoin(id); return; }
+  tryStart(L, { quick: true });
 });
 on('resHelp', () => tryStart(lv.L, { support: Number($('resHelp').dataset.n) || 0, quick: true }));
 on('resUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); $('upgBack').dataset.back = 'result'; });
