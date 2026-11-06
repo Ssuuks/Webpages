@@ -68,6 +68,11 @@ export function plain(text, secrets) {
     .replace(/\*\*([^*]+)\*\*|\*([^*\n]+)\*/g, (_, a, b) => a || b);
 }
 
+/* 붙여넣은 글(“패스가 발급됐어요 https://…”)에서 주소만 뽑는다 */
+export function pickUrl(text) {
+  const m = String(text || '').match(/https?:\/\/[^\s<>"'）)\]]+/i);
+  return m ? m[0].replace(/[.,!?。、]+$/, '') : null;
+}
 /* 링크 스킴 허용 목록 */
 const SAFE_SCHEMES = ['http:', 'https:', 'tel:', 'nmap:', 'kakaomap:'];
 export function safeUrl(u) {

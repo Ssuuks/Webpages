@@ -163,6 +163,10 @@ export function validateTrip(trip, opts = {}) {
     if (!isObj(p)) return;
     if (p.validHours != null && typeof p.validHours !== 'number') err(`passes[${i}].validHours`, `패스 "${p.name || p.id}"의 validHours는 숫자(시간)여야 해요.`);
     if (p.activatedAt != null && !RE_DT.test(p.activatedAt)) err(`passes[${i}].activatedAt`, `패스 "${p.name || p.id}"의 activatedAt은 YYYY-MM-DDTHH:MM 또는 null이어야 해요.`);
+    if (p.links != null && !isArr(p.links)) err(`passes[${i}].links`, `패스 "${p.name || p.id}"의 links는 [{"label","url"}] 배열이어야 해요.`);
+    else (p.links || []).forEach((l, j) => {
+      if (!isObj(l) || !/^https?:\/\/\S+$/.test(String(l.url || '').trim())) err(`passes[${i}].links[${j}]`, `패스 "${p.name || p.id}"의 링크 ${j + 1}번은 https://로 시작하는 주소여야 해요.`);
+    });
   });
   (trip.checklists || []).forEach((c, i) => {
     if (!isObj(c)) return;

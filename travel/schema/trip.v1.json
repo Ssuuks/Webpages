@@ -564,6 +564,31 @@
        "null"
       ]
      },
+     "links": {
+      "type": "array",
+      "description": "구매처가 준 패스 링크(QR·지도·이용 현황이 있는 웹 페이지). 사람마다 링크가 따로면 여러 개",
+      "items": {
+       "type": "object",
+       "required": [
+        "url"
+       ],
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "label": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "url": {
+         "type": "string",
+         "pattern": "^https?://"
+        }
+       }
+      }
+     },
      "rules": {
       "type": "array",
       "items": {

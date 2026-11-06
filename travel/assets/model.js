@@ -185,7 +185,7 @@ export function shiftTrip(src, newId, newStart) {
   t.stays = (t.stays || []).map((s) => ({ ...s, checkIn: sdt(s.checkIn), checkOut: sdt(s.checkOut), status: 'tentative', secretKeys: [] }));
   t.transports = [];
   (t.checklists || []).forEach((c) => (c.items || []).forEach((i) => { i.done = false; i.due = sd(i.due); }));
-  (t.passes || []).forEach((p) => { p.activatedAt = null; p.uses = []; });
+  (t.passes || []).forEach((p) => { p.activatedAt = null; p.uses = []; p.links = []; });   // 패스 링크는 그 여행 구매분
   t.budget = { planned: (t.budget && t.budget.planned) || [], expenses: [] };
   t.secrets = [];
   t.notes = { decisions: [], openQuestions: [], retro: null };
