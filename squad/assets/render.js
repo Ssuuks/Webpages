@@ -2,8 +2,9 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT } from './core.js';
+import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, SQUAD_DEPTH, hitShapes } from './core.js';
 import { HEROES, biomeOf } from './roster.js';
+import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL } from './pix/art.js';
 import { createAtlas, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
 import { createFont, opText, compactTexts } from './pix/font.js';
@@ -123,6 +124,111 @@ function hashInt(n) {
 }
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
+/* 분대 대형(SIM 8 충돌 크기): 그린 병사들이 시뮬레이션의 분대 몸을 채운다 — 옆 끝 병사 그림의 가장자리가 반지름 R, 앞뒤 끝 병사의 발이
+   ±(SQUAD_DEPTH·R − FORM_IN). 모서리가 조금 둥근 네모(초타원 지수 FORM_P): 해바라기 배치(넓이를 지키는 각 변환으로 고르게)의
+   바깥 m명은 테두리 위에, 나머지는 한 칸 안쪽에 — 테두리가 비지 않아 그린 무리의 끝이 맞는 몸의 끝과 같다.
+   예전 타원(앞뒤 0.8R, 아주 큰 부대는 앞으로 1.2R)은 시뮬레이션 상자보다 깊고 모서리가 비어, 그림에 닿지 않은 좀비가 무는 일이 있었다.
+   각은 번호마다 정해져 있어 병력이 바뀌어도 병사들이 크게 뒤섞이지 않는다.
+   hw = 병사 그림 반폭(m — 그 화면의 분대 자리 배율로, SOLDIER_HALF_PX / P.s). 결과는 분대 가운데 기준 [x, z] */
+export const FORM_P = 8;
+export const FORM_IN = 0.08;
+export const SOLDIER_HALF_PX = 7;   // 병사 그림(외곽선 포함 14px)의 반폭 — 닻(가운데)에서 왼쪽 7px, 오른쪽 7px
+const FORM_N = 512;
+const FORM_TH = new Float32Array(FORM_N + 1);   // 넓이 몫 u(0~1) → 각
+const FORM_K = new Float32Array(FORM_N + 1);    // 그 각에서 단위 초타원까지의 거리
+const kOfForm = (t) => Math.pow(Math.abs(Math.cos(t)) ** FORM_P + Math.abs(Math.sin(t)) ** FORM_P, -1 / FORM_P);
+{
+  const M = 4096;
+  const cum = new Float64Array(M + 1);
+  for (let i = 0; i < M; i++) { const t = ((i + 0.5) / M) * 2 * Math.PI; const k = kOfForm(t); cum[i + 1] = cum[i] + k * k; }
+  let j = 0;
+  for (let n = 0; n <= FORM_N; n++) {
+    const want = (n / FORM_N) * cum[M];
+    while (j < M && cum[j + 1] < want) j++;
+    const f = cum[j + 1] > cum[j] ? (want - cum[j]) / (cum[j + 1] - cum[j]) : 0;
+    const t = ((j + f) / M) * 2 * Math.PI;
+    FORM_TH[n] = t;
+    FORM_K[n] = kOfForm(t);
+  }
+}
+const FORM_AREA = 3.913;   // 단위 초타원(p = 8)의 넓이
+/* 단위 배치(x ∈ [−1, 1], z ∈ [−1, 1]) — T명, 깊이/폭 비 A(= az/ax)마다 한 번 만든다(병력·화면이 바뀔 때만, 그리기와 상관없는 작은 배열) */
+const formUnit = new Map();
+function unitLayout(T, A) {
+  const key = T * 64 + Math.max(1, Math.min(63, Math.round(A * 32)));
+  let u = formUnit.get(key);
+  if (u) return u;
+  A = Math.max(1, Math.min(63, Math.round(A * 32))) / 32;
+  const x = new Float32Array(T), z = new Float32Array(T);
+  if (T > 1) {
+    // 테두리 길이(폭 1, 깊이 A인 초타원)와 병사 간격 d — 테두리에 m명
+    let L = 0, px = 1, pz = 0;
+    for (let i = 1; i <= 256; i++) {
+      const t = (i / 256) * 2 * Math.PI, k = kOfForm(t);
+      const nx = k * Math.cos(t), nz = A * k * Math.sin(t);
+      L += Math.hypot(nx - px, nz - pz); px = nx; pz = nz;
+    }
+    const d = Math.sqrt((FORM_AREA * A) / T);
+    const m = Math.min(T, Math.max(2, Math.round(L / d)));
+    const inner = T - m;
+    const sx = Math.max(0, 1 - d), sz = Math.max(0, A - d) / A;
+    for (let i = 0; i < T; i++) {
+      const n = Math.min(FORM_N, Math.round(((i * 0.38196601125) % 1) * FORM_N));   // 황금각(2π × 0.382)
+      const t = FORM_TH[n], k = FORM_K[n];
+      if (i >= inner) { x[i] = k * Math.cos(t); z[i] = k * Math.sin(t); continue; }
+      const rho = Math.sqrt((i + 0.5) / inner);
+      x[i] = sx * rho * k * Math.cos(t); z[i] = sz * rho * k * Math.sin(t);
+    }
+    // 쪽마다 맨 끝 병사가 정확히 끝(±1)에 오게 늘인다(작은 분대는 테두리 위 몇 명뿐이라)
+    let x0 = 0, x1 = 0, z0 = 0, z1 = 0;
+    for (let i = 0; i < T; i++) { x0 = Math.min(x0, x[i]); x1 = Math.max(x1, x[i]); z0 = Math.min(z0, z[i]); z1 = Math.max(z1, z[i]); }
+    for (let i = 0; i < T; i++) {
+      x[i] = x[i] < 0 ? (x0 < -1e-6 ? -x[i] / x0 : 0) : x1 > 1e-6 ? x[i] / x1 : 0;
+      z[i] = z[i] < 0 ? (z0 < -1e-6 ? -z[i] / z0 : 0) : z1 > 1e-6 ? z[i] / z1 : 0;
+    }
+    // 네 모서리에 가장 가까운 테두리 병사를 모서리로 — 맞는 범위(모서리가 각진 상자)의 모서리까지 그림이 닿게
+    if (T >= 8) {
+      for (const [cx, cz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+        let best = -1, bd = 1e9;
+        for (let i = inner; i < T; i++) {
+          if (Math.abs(x[i]) >= 1 && Math.abs(z[i]) >= 1) continue;   // 이미 다른 모서리에 간 병사
+          const d = (x[i] - cx) ** 2 + (z[i] - cz) ** 2;
+          if (d < bd) { bd = d; best = i; }
+        }
+        if (best >= 0) { x[best] = cx; z[best] = cz; }
+      }
+    }
+  }
+  u = { x, z };
+  if (formUnit.size > 600) formUnit.clear();
+  formUnit.set(key, u);
+  return u;
+}
+export function formationSpot(i, T, R, hw, out = [0, 0]) {
+  if (T <= 1) { out[0] = 0; out[1] = 0; return out; }
+  const ax = Math.max(0, R - hw), az = Math.max(0, SQUAD_DEPTH * R - FORM_IN);
+  const u = unitLayout(T, ax > 0 ? az / ax : 1);
+  out[0] = ax * u.x[i];
+  out[1] = az * u.z[i];
+  return out;
+}
+/* 그리는 병사 수: 앞(먼 쪽) 64명(저사양 40)은 온전히, 그 뒤로는 철모만 — 병력이 많을수록 늘어 최대 96(48)개 */
+export function formationCount(n, low = false) {
+  if (n <= 0) return 0;
+  const full = low ? 40 : 64, helmCap = low ? 48 : 96;
+  const D = Math.min(n, full);
+  return D + (n > D ? Math.round(helmCap * Math.min(1, Math.sqrt((n - D) / 936))) : 0);
+}
+/* 특수병 자리: 무리 맨 뒤 바로 뒤 양쪽(분대 폭 안), 셋째는 왼쪽 자리 한 줄 뒤(영웅과 안 겹치게). 영웅은 그 뒤 가운데 */
+export function slotPos(q, i, R, qx) {
+  const back = q.z - SQUAD_DEPTH * R - 0.35;
+  const side = 0.55 * R + 0.4;
+  if (i === 0) return { x: qx - side, z: back };
+  if (i === 1) return { x: qx + side, z: back };
+  return { x: qx - side, z: back - 0.75 };
+}
+export const heroZ = (q, R) => q.z - R - 0.7;
+
 export function createRenderer(cvs) {
   const ctx = cvs.getContext('2d', { alpha: false });
   const view = makeView();
@@ -174,6 +280,9 @@ export function createRenderer(cvs) {
   let shownN = 0, countPop = 0, countTint = 0, lastN = -1, pillA = 1;
   let lastS = null, lastT = -1, stillFor = 0;
   let hurtAt = -9, bossImpactT = -9, roarT = -9, bossIntroT = -9, bossDeath = null, enrageT = -9;
+  let surgeT = -9;   // 몰이 알림(core 'surge' 이벤트): 화면 양옆에서 안쪽을 가리키는 붉은 화살표가 잠깐 깜박인다
+  let stompT = -9;     // 보스 짓밟기(길 전체 땅 흔들림 표시)
+  let hitboxOn = false; // 충돌 크기 보기(?hitbox=1, __squad.hitbox)
   let castT = -9, castId = '', castRun = false, castArena = false, healT = -9, rocketT = -9, snipeT = -9, readyT = -9;
   let healSum = 0, healShown = -9, groundMs = 0, putMs = 0, drawMs = 0, hurtSeed = 0;
   let cut = null;        // 컷인 { t, id }
@@ -219,6 +328,7 @@ export function createRenderer(cvs) {
   const VIS = 64 + 96;
   const vis = { n: 0, x: new Float32Array(VIS), z: new Float32Array(VIS), born: new Float32Array(VIS), helm: new Uint8Array(VIS) };
   let orderT = -1;
+  const spot = [0, 0];
 
   /* 그리기 목록(재사용). 깊이 정렬은 정수 키(깊이 1/64u 단위 + 넣은 순서)를 Int32Array에서 정렬한다 —
      비교 함수 없이, 프레임마다 쓰레기 없이(T6). 같은 깊이는 넣은 순서대로 그린다. */
@@ -302,7 +412,7 @@ export function createRenderer(cvs) {
     for (const r of rings) r.on = false;
     trauma = 0; flashA = 0; camX = 0; vis.n = 0; lastN = -1; countTint = 0; countPop = 0; shownN = 0; pillA = 1;
     dolly = 0; layout();   // 보스전 렌즈를 되돌린다(R1)
-    hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9;
+    hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9; surgeT = -9; stompT = -9;
     castT = -9; castRun = false; castArena = false; healT = -9; rocketT = -9; snipeT = -9; readyT = -9; healSum = 0; healShown = -9;
     cut = null; clearOverlay();
     lodScen.clear(); lodFoe.clear(); lodSaw.clear(); lodCage.clear(); lodBoss = undefined;
@@ -344,7 +454,7 @@ export function createRenderer(cvs) {
     for (const f of floats) { if (!f.on) { slot = f; break; } if (f.life < slot.life) slot = f; }
     slot.on = true; slot.x = x; slot.y = y; slot.z = z; slot.text = text; slot.fill = fill; slot.out = o.out || OUT;
     slot.scale = o.scale || 1; slot.life = o.life || 1; slot.max = slot.life; slot.vz = o.vz || 0; slot.icon = o.icon || null; slot.rise = o.rise ?? 1.4;
-    slot.pill = !!o.pill;
+    slot.pill = !!o.pill; slot.alpha = o.alpha ?? 1;
   }
   function ring(x, z, r0, r1, dur, c, o = {}) {
     for (const r of rings) if (!r.on) { Object.assign(r, { on: true, x, z, r0, r1, t: 0, dur, c, follow: o.follow || false, thick: o.thick || 1 }); return; }
@@ -353,7 +463,40 @@ export function createRenderer(cvs) {
     for (const t of tracers) if (!t.on) { Object.assign(t, { on: true, x0, y0, z0, x1, y1, z1, c, t: 0, dur }); return; }
   }
   function shake(a) { if (shakeOn && !reduce) trauma = Math.min(1, trauma + a); }
+  /* 몰이 알림: 화면 양옆 가장자리에 붉은 띠 + 안쪽을 가리키는 화살표 셋(4번 깜박, 줄이기 설정이면 덜 밝게). 글자는 DOM 알림(main.js)이 띄운다 */
+  const SURGE_CUE = 1.8;
+  function drawSurgeCue(t) {
+    const W = Math.floor(VW), Hh = Math.floor(VH);
+    const on = ((t * 5) | 0) % 2 === 0;
+    const fade = Math.min(1, (SURGE_CUE - t) / 0.4);
+    ctx.fillStyle = '#E8384F';
+    ctx.globalAlpha = (on ? 0.34 : 0.16) * fade * (reduce ? 0.5 : 1);
+    ctx.fillRect(0, 0, 4, Hh); ctx.fillRect(W - 4, 0, 4, Hh);
+    ctx.globalAlpha = (on ? 0.95 : 0.55) * fade;
+    const a = 7, cy = Math.round(Hh * 0.38);
+    for (let i = 0; i < 3; i++) {
+      const y = cy + (i - 1) * 14;
+      for (const [x0, d] of [[6 + ((t * 18) % 6), 1], [W - 7 - ((t * 18) % 6), -1]]) {
+        ctx.fillStyle = '#A92644';
+        pline(x0, y - a + 1, x0 + d * a, y + 1); pline(x0 + d * a, y + 1, x0, y + a + 1);
+        ctx.fillStyle = '#FFD0C4';
+        pline(x0, y - a, x0 + d * a, y); pline(x0 + d * a, y, x0, y + a);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
   function screenFlash(a, rgb) { if (reduce) a *= 0.25; if (a > flashA) { flashA = a; if (rgb !== flashRGB) { flashRGB = rgb; flashCss = 'rgb(' + rgb + ')'; } } }
+
+  /* 유령 숫자: 게이트를 지난 뒤 0.6초 동안, 고르지 않은 칸으로 갔으면 몇 명이었는지 흐리게(다른 칸 하나가 20% 이상 나았을 때만).
+     분대와 같은 깊이에서 그 칸 자리에 뜨고 분대를 따라간다. 가장 좋았던 칸은 파랑, 나머지는 더 흐린 흰색 */
+  function ghosts(s, e, q) {
+    const row = s.rows && s.rows.find((r) => r.id === e.row);
+    const g = gateAlts(row, e);
+    if (!g || !g.worth) return;
+    for (const a of g.alts) {
+      float(a.x, 2.1, q.z, '=' + a.n, a.best ? '#DDF3FF' : '#FFFFFF', { out: a.best ? PANEL.good.out : OUT, life: 0.6, vz: q.vz, rise: 0.4, alpha: a.best ? 0.72 : 0.5 });
+    }
+  }
 
   /* 코인이 HUD로 날아갈 자리(버퍼 픽셀) */
   function hudTarget() {
@@ -378,15 +521,6 @@ export function createRenderer(cvs) {
     }
   }
 
-  /* 특수병 자리: 맨 뒷줄 바로 뒤 양쪽, 셋째는 왼쪽 옆(병사들에 가려지지 않게, 영웅과도 안 겹치게) */
-  function slotPos(q, i, R, qx) {
-    const back = q.z - 0.8 * (R - 0.22) - 0.3;
-    if (i === 0) return { x: qx - 0.55 * R - 0.4, z: back };
-    if (i === 1) return { x: qx + 0.55 * R + 0.4, z: back };
-    return { x: qx - R - 0.3, z: q.z + 0.1 };
-  }
-  const heroZ = (q, R) => q.z - R - 0.7;
-
   /* ---------- 시뮬레이션 이벤트 → 효과 ---------- */
   function events(s, ev) {
     const q = s.squad;
@@ -404,6 +538,7 @@ export function createRenderer(cvs) {
           for (let i = 0; i < 20; i++) part(e.x + (Math.random() - 0.5) * 3, 0.4 + Math.random() * 2.2, e.z, (Math.random() - 0.5) * 6, 1 + Math.random() * 4, -1 - Math.random() * 3, 0.5 + Math.random() * 0.3, cols[i % 3], Math.random() < 0.4 ? 2 : 1);
           countPop = 1;
           if (!good) { screenFlash(0.22, '232,56,79'); shake(0.25); }
+          ghosts(s, e, q);
           break;
         }
         case 'tick': tickAt.set(e.row, time); if (Math.random() < 0.5) fx('spark', e.x, 1.2 + Math.random(), e.z, 0.07); break;
@@ -415,7 +550,9 @@ export function createRenderer(cvs) {
           countTint = -1;
           // 붉은 기는 눈에 띄는 손실에만, 0.4초에 한 번(작은 손실이 이어져도 부대가 계속 빨갛지 않게)
           if (e.n >= Math.max(2, q.n * 0.02) && time - hurtAt > 0.4) { hurtAt = time; hurtSeed = (hurtSeed + 3) % 11; }
-          if (e.cause !== 'gate' && e.n >= 2) float(q.x + (Math.random() < 0.5 ? -1 : 1) * (R + 0.4), 1.6, q.z, '-' + e.n, '#FFC2B3', { out: PANEL.bad.out, life: 0.8, vz: q.vz });
+          // 못 부순 상자·철창에 부딪혀 잃은 병사: 상자 자리에 병사 아이콘과 '-n'(F4 — 무엇 때문에 잃었는지 보이게)
+          if (e.cause === 'crate') float(e.x, 2.3, e.z, '-' + e.n, '#FFC2B3', { icon: 'men', out: PANEL.bad.out, life: 1.2 });
+          else if (e.cause !== 'gate' && e.n >= 2) float(q.x + (Math.random() < 0.5 ? -1 : 1) * (R + 0.4), 1.6, q.z, '-' + e.n, '#FFC2B3', { out: PANEL.bad.out, life: 0.8, vz: q.vz });
           if (e.n >= Math.max(5, q.n * 0.08)) shake(0.18);
           // 쓰러진 병사: 연기 + 철모가 튀어 오른다
           const m = Math.min(5, e.n);
@@ -458,7 +595,9 @@ export function createRenderer(cvs) {
           else { float(e.x, 2.6, e.z, '+' + e.v, '#FFE38A', { icon: 'coin', life: 1.2 }); coinFly(e.x, 1.2, e.z, Math.ceil(e.v / 5)); }
           break;
         }
-        case 'crateMiss': burst(e.x, 0.8, e.z, 12, FX_COL.wood, 3, 3); break;
+        case 'crateMiss':
+          burst(e.x, 0.8, e.z, 12, FX_COL.wood, 3, 3);
+          break;
         case 'cageOpen':
           burst(e.x, 1, e.z, 18, FX_COL.iron, 4.5, 4, 0.7);
           fx('puff', e.x, 0.8, e.z, 0.3);
@@ -479,8 +618,10 @@ export function createRenderer(cvs) {
           shake(0.6);
           if (e.hit) screenFlash(0.3, '232,56,79');
           break;
+        case 'surge': surgeT = time; break;
         case 'clash': shake(0.3); break;
         case 'stomp':
+          stompT = time;   // 짓밟기는 길 전체를 흔든다(SIM: 옆 위치와 상관없이 맞는다) — 보스 발에서 분대까지 땅이 번쩍인다
           shake(0.3);
           burst(q.x, 0.4, q.z + R * 0.6, 10, FX_COL.blood, 4, 3);
           if (s.boss) burst(s.boss.x, 0.2, s.boss.z, 10, FX_COL.dust, 4, 2);
@@ -951,6 +1092,7 @@ export function createRenderer(cvs) {
     const t = String(Math.max(1, Math.ceil(p.hp)));
     const big = h > 14 && font.measure(t, 'big') <= w - 2;
     if (big || font.measure(t, 'small') <= w) font.draw(ctx, t, mx, face.ay - h * 0.22 - 1, { size: big ? 'big' : 'small' });
+    if (p.key === true) keyMark(mx, top.ty, w);
     ctx.globalAlpha = 1;
   }
   function crateIcon(type) { return type === 'coin' ? 'coin' : type === 'men' ? 'men' : 'gun'; }
@@ -983,7 +1125,22 @@ export function createRenderer(cvs) {
     const t = String(Math.max(1, Math.ceil(p.hp)));
     const big = h > 16;
     font.draw(ctx, t, mx, top.ty - (big ? 6 : 4), { size: big ? 'big' : 'small', fill: '#FFE08A' });
+    if (p.key === true) keyMark(mx, top.ty - (big ? 6 : 4) - font.height(big ? 'big' : 'small') / 2, w);
     ctx.globalAlpha = 1;
+  }
+  /* 열쇠 상자 표시(prop.key): 체력 숫자 위에 금테 두른 열쇠가 살짝 통통 — 멀리서도 '이건 꼭 깨야 한다'가 보이게 */
+  function keyMark(cx, yTop, w) {
+    if (w < 5) return;
+    const ic = atlas.icon('key');
+    const bob = ((time * 3) | 0) & 1;
+    const x = Math.round(cx - ic.w / 2), y = Math.round(yTop - ic.h - 4 - bob);
+    ctx.fillStyle = OUT; ctx.fillRect(x - 2, y - 2, ic.w + 4, ic.h + 4);
+    ctx.fillStyle = '#FFD84A'; ctx.fillRect(x - 1, y - 1, ic.w + 2, ic.h + 2);
+    ctx.fillStyle = '#5A3B2E'; ctx.fillRect(x, y, ic.w, ic.h);
+    atlas.blit(ctx, ic, x, y);
+    // 아래로 뾰족한 꼬리(어느 상자인지)
+    ctx.fillStyle = OUT; ctx.fillRect(Math.round(cx) - 2, y + ic.h + 2, 5, 1); ctx.fillRect(Math.round(cx) - 1, y + ic.h + 3, 3, 1);
+    ctx.fillStyle = '#FFD84A'; ctx.fillRect(Math.round(cx) - 1, y + ic.h + 2, 3, 1); ctx.fillRect(Math.round(cx), y + ic.h + 3, 1, 1);
   }
   function drawCage(s, p) {
     const k = (p.reward && p.reward.k) || 'medic';
@@ -1024,6 +1181,7 @@ export function createRenderer(cvs) {
     ctx.fillRect(Math.round(face.ax), Math.round(face.ay) - 1, Math.round(w), 1);
     const t = String(Math.max(1, Math.ceil(p.hp)));
     if (!p.passed) font.draw(ctx, t, (face.ax + face.bx) / 2, top.ty - (h > 16 ? 6 : 4), { size: h > 16 ? 'big' : 'small', fill: '#FFF09A' });
+    if (p.key === true && !p.passed) keyMark((face.ax + face.bx) / 2, top.ty - (h > 16 ? 6 : 4) - font.height(h > 16 ? 'big' : 'small') / 2, w);
     ctx.globalAlpha = 1;
   }
 
@@ -1168,33 +1326,31 @@ export function createRenderer(cvs) {
   function updateFormation(s, dt, qx) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
     const R = radius(Math.max(1, q.n));
-    const full = quality === 'low' ? 40 : 64;
-    const helmCap = quality === 'low' ? 48 : 96;
-    const D = Math.min(q.n, full);
-    const Hn = q.n > D ? Math.round(helmCap * Math.min(1, Math.sqrt((q.n - D) / 936))) : 0;
-    const T = q.n > 0 ? D + Hn : 0;
+    const T = formationCount(q.n, quality === 'low');
+    const Hn = T - Math.min(q.n, quality === 'low' ? 40 : 64);
     if (T !== orderT) {
       // 먼(앞쪽) 칸부터 철모 — 순서는 T가 바뀔 때만 다시 정한다(깜빡임 없음)
+      // 옆 끝 열(|x| > 0.9)은 철모로 바꾸지 않는다 — 철모 그림은 폭이 병사의 반이라 옆 가장자리가 맞는 범위 안쪽으로 들어간다
       const idx = [];
-      for (let i = 0; i < T; i++) idx.push(i);
-      idx.sort((a, b) => Math.sin(b * 2.39996323) * Math.sqrt(b + 0.5) - Math.sin(a * 2.39996323) * Math.sqrt(a + 0.5));
+      const fz = new Float32Array(T), edge = new Uint8Array(T);
+      for (let i = 0; i < T; i++) { idx.push(i); formationSpot(i, T, 1, 0, spot); fz[i] = spot[1]; edge[i] = Math.abs(spot[0]) > 0.9 ? 1 : 0; }
+      idx.sort((a, b) => edge[a] - edge[b] || fz[b] - fz[a]);
       for (let j = 0; j < T; j++) vis.helm[idx[j]] = j < Hn ? 1 : 0;
       orderT = T;
     }
-    const c = (R - 0.22) / Math.sqrt(Math.max(1, T));
-    // 아주 큰 부대는 앞으로 길게(철모 줄이 더 보인다)
-    const deep = 0.8 + 0.4 * clamp((q.n - 300) / 700, 0, 1);
+    // 병사 그림 반폭(m): 이 화면의 분대 자리 배율로 — 옆 끝 병사 그림의 가장자리가 R에 오게(어느 화면에서나)
+    const hw = project(view, qx, 0, q.z) ? SOLDIER_HALF_PX / P.s : 0.4;
     for (let i = vis.n; i < T; i++) {
-      const r = c * Math.sqrt(i + 0.5), th = i * 2.39996323;
-      vis.x[i] = qx + r * Math.cos(th);
-      vis.z[i] = q.z + r * Math.sin(th) * (Math.sin(th) > 0 ? deep : 0.8);
+      formationSpot(i, T, R, hw, spot);
+      vis.x[i] = qx + spot[0];
+      vis.z[i] = q.z + spot[1];
       vis.born[i] = vis.n ? time : -9;
     }
     vis.n = T;
     const k = Math.min(1, dt * 12);
     for (let i = 0; i < T; i++) {
-      const r = c * Math.sqrt(i + 0.5), th = i * 2.39996323;
-      const tx = qx + r * Math.cos(th), tz = q.z + r * Math.sin(th) * (Math.sin(th) > 0 ? deep : 0.8);
+      formationSpot(i, T, R, hw, spot);
+      const tx = qx + spot[0], tz = q.z + spot[1];
       vis.x[i] += (tx - vis.x[i]) * k;
       vis.z[i] = tz + (vis.z[i] - tz) * (1 - k);
     }
@@ -1369,12 +1525,16 @@ export function createRenderer(cvs) {
   }
 
   /* ---------- 총알·독침·로켓·조준선 ---------- */
-  function drawBullets(s, alpha) {
+  /* behind: 보스 총알 판(보스 − 1m)을 지난 총알만(보스 뒤로 지나가니 보스 그림 앞에 그리지 않는다 — 팔을 뚫고 가는 것처럼 보이지 않게),
+     아니면 그 앞의 총알만 */
+  function drawBullets(s, alpha, behind = false) {
     const ext = BULLET_SPEED * DT * (alpha - 1);   // 카메라와 같은 시간축(R4)
     const gold = s.hero && s.hero.id === 'mungchi' && s.hero.act > 0;
     const col = gold ? GOLD_BULLET : TIER[s.squad.tier] || TIER[0];
     const wide = gold || s.squad.tier >= 2 ? 2 : 1;
+    const plane = s.boss && s.boss.hp > 0 ? s.boss.z - 1 : Infinity;
     for (const b of s.bullets) {
+      if ((b.z + ext > plane) !== behind) continue;
       if (!project(view, b.x, 0.75, b.z + ext)) continue;
       const hx = Math.round(P.x), hy = Math.round(P.y);
       if (!project(view, b.x, 0.75, b.z + ext - 1.4)) continue;
@@ -1428,6 +1588,26 @@ export function createRenderer(cvs) {
     }
   }
 
+  /* 분대 그림자: 땅 위 둥근 네모(대형과 같은 초타원) — 줄마다 폭을 구해 채운다 */
+  function squadShadow(cx, cz, hx, hz) {
+    if (!project(view, cx, 0, cz - hz)) return;
+    const yN = P.y;
+    if (!project(view, cx, 0, cz + hz)) return;
+    const yF = P.y;
+    const y0 = Math.round(yF), y1 = Math.round(yN);
+    for (let y = y0; y <= y1; y++) {
+      const v = y1 === y0 ? 0 : ((y + 0.5 - yF) / (yN - yF)) * 2 - 1;   // −1 먼 끝 … +1 가까운 끝
+      const av = Math.min(1, Math.abs(v));
+      const w = Math.pow(Math.max(0, 1 - av ** FORM_P), 1 / FORM_P);
+      // 그 줄의 깊이에서의 배율(가까울수록 크다)
+      const zz = cz + hz - ((v + 1) / 2) * 2 * hz;
+      if (!project(view, cx, 0, zz)) continue;
+      const half = hx * w * P.s;
+      const l = Math.round(P.x - half), r = Math.round(P.x + half);
+      if (r > l) ctx.fillRect(l, y, r - l, 1);
+    }
+  }
+
   /* ---------- 바닥 표시(조준 띠·그림자·독침 예고·내려찍기 구역·고리) ---------- */
   function drawDecals(s, bio, qx, lag) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
@@ -1435,30 +1615,44 @@ export function createRenderer(cvs) {
       const R = radius(q.n);
       ctx.fillStyle = bio.aim;
       groundQuad(qx - R - 0.3, qx + R + 0.3, q.z + R * 0.5, q.z + 30, 0.01);
-      if (project(view, qx, 0, q.z)) { ctx.fillStyle = bio.shadow; ellipse(P.x, P.y, (R + 0.35) * P.s, (R + 0.35) * P.s * 0.36); }
+      // 그림자 = 분대 몸(옆 ±R, 앞뒤 ±SQUAD_DEPTH·R)보다 조금 넓게, 대형과 같은 둥근 네모(SIM 8)
+      ctx.fillStyle = bio.shadow;
+      squadShadow(qx, q.z, R + 0.12, SQUAD_DEPTH * R + 0.12);
     }
     for (const sp of s.spits) {
       if (!project(view, sp.x, 0.02, sp.z)) continue;
       const k = clamp(1 - (sp.t + lag) / (sp.T || 1), 0, 1);
       ctx.fillStyle = '#B9F25B';
       ctx.globalAlpha = 0.22 + 0.3 * k;
-      ellipse(P.x, P.y, 1.2 * P.s, 1.2 * P.s * 0.38);
+      // 그리는 고리 = 맞는 폭(±SPIT_R)
+      ellipse(P.x, P.y, SPIT_R * P.s, SPIT_R * P.s * 0.38);
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#E8FFB0';
-      ellRing(P.x, P.y, Math.max(2, 1.2 * P.s * (1 - k)), Math.max(1, 1.2 * P.s * 0.38 * (1 - k)), 1);
+      ellRing(P.x, P.y, Math.max(2, SPIT_R * P.s * (1 - k)), Math.max(1, SPIT_R * P.s * 0.38 * (1 - k)), 1);
       ctx.fillStyle = '#B9F25B';
-      ellRing(P.x, P.y, 1.2 * P.s, 1.2 * P.s * 0.38, 1);
+      ellRing(P.x, P.y, SPIT_R * P.s, SPIT_R * P.s * 0.38, 1);
     }
     const b = s.boss;
     if (b && b.slam && b.hp > 0) {   // 보스가 쓰러지면 예고를 그리지 않는다
       const k = clamp(1 - b.slam.t / b.slam.T, 0, 1);
       const pulse = (((time * 4) | 0) & 1) ? 0.06 : 0;
+      // 빨갛게 그리는 범위 = 실제로 맞는 범위(core.slamZone: 칸 ± SLAM_EDGE·분대 반지름 — 분대 중심이 그 안이면 맞는다).
+      // 칸 자체는 조금 더 진하게: 칸 밖으로 번진 띠는 '분대 몸이 걸리는 만큼'이다
+      const zn = slamZone(b.slam, radius(q.n));
       ctx.fillStyle = '#E8384F';
-      ctx.globalAlpha = 0.24 + pulse;
-      groundQuad(b.slam.x0 + 0.1, b.slam.x1 - 0.1, q.z - 3.5, b.z - 0.5, 0.02);
+      ctx.globalAlpha = 0.2 + pulse;
+      groundQuad(zn.x0, zn.x1, q.z - 3.5, b.z - 0.5, 0.02);
+      ctx.globalAlpha = 0.1;
+      groundQuad(Math.max(zn.x0, b.slam.x0 + 0.1), Math.min(zn.x1, b.slam.x1 - 0.1), q.z - 3.5, b.z - 0.5, 0.021);
       ctx.globalAlpha = 0.5;
-      groundQuad(b.slam.x0 + 0.1, b.slam.x1 - 0.1, q.z - 3.5, q.z - 3.5 + (b.z - q.z + 3) * k, 0.03);
+      groundQuad(zn.x0, zn.x1, q.z - 3.5, q.z - 3.5 + (b.z - q.z + 3) * k, 0.03);
       ctx.globalAlpha = 1;
+      // 맞는 범위의 가장자리: 밝은 선(분대 중심이 이 선 밖이면 안전)
+      ctx.fillStyle = '#FFB3BC';
+      for (const xe of [zn.x0, zn.x1]) {
+        if (Math.abs(xe) >= ROAD - 0.05) continue;
+        groundQuad(xe - 0.06, xe + 0.06, q.z - 3.5, b.z - 0.5, 0.035);
+      }
       // 분대 쪽으로 행진하는 아래 화살표: 2px 두께의 V(팔 ~1.3u, 깊이 1.1u — 화면에서 납작해지지 않게) + 짙은 그림자 줄(V14)
       const xm = (b.slam.x0 + b.slam.x1) / 2;
       for (let i = 0; i < 6; i++) {
@@ -1476,6 +1670,13 @@ export function createRenderer(cvs) {
         pline(lx, ly + 1, tx, ty + 1); pline(tx, ty + 1, rx, ry + 1);
       }
     }
+    if (b && b.clash && time - stompT < 0.22) {
+      // 짓밟기: 길 전체(분대 뒤 끝 ~ 보스 발)가 잠깐 밝아진다 — 옆으로 비켜 서 있어도 맞는 까닭이 보이게
+      ctx.fillStyle = '#FFF1DE';
+      ctx.globalAlpha = 0.22 * (1 - (time - stompT) / 0.22);
+      groundQuad(-ROAD, ROAD, q.z - SQUAD_DEPTH * radius(q.n) - 0.4, b.z + 0.3, 0.025);
+      ctx.globalAlpha = 1;
+    }
     for (const r of rings) {
       if (!r.on) continue;
       if (!project(view, r.follow ? qx : r.x, 0.03, r.follow ? heroZ(q, radius(Math.max(1, q.n))) : r.z)) continue;
@@ -1487,6 +1688,57 @@ export function createRenderer(cvs) {
       ctx.globalAlpha = 1;
     }
   }
+
+  /* ---------- 충돌 크기 보기(?hitbox=1 또는 __squad.hitbox = true) ----------
+     core.hitShapes(s)가 돌려주는, 시뮬레이션이 실제로 재는 모양을 땅 위에 1px 선으로 그린다(그림과 같은 시간축으로 보간).
+     분대 몸(하늘색)과 겹치면 맞는다: 적·톱날(분홍 타원), 벽·상자·철창(주황 선 — 분대 앞 끝이 닿는 순간 옆으로 겹치면), 독침(연두 선 —
+     떨어지는 순간), 보스 몸통(노랑 — 이 띠를 지나는 총알만 피해)·맞붙는 선(빨강). 분대 가운데 세로선 = 게이트 칸을 고르는 점 */
+  const HB_COL = { squad: '#4FF3FF', foe: '#FF4FD8', saw: '#FF4FD8', wall: '#FFB347', crate: '#FFB347', cage: '#FFB347', spit: '#C8FF5A', bossHit: '#FFE34F', bossReach: '#FF5D5D' };
+  function hbLine(x0, z0, x1, z1) {
+    if (!project(view, x0, 0.03, z0)) return;
+    const ax = P.x, ay = P.y;
+    if (!project(view, x1, 0.03, z1)) return;
+    pline(ax, ay, P.x, P.y);
+  }
+  function drawHitbox(s, qx, lag) {
+    const q = s.squad;
+    const sh = hitShapes(s);
+    const dxq = qx - q.x, dzq = sq.z - q.z;
+    for (const h of sh) {
+      let ox = 0, oz = 0;
+      if (h.k === 'squad') { ox = dxq; oz = dzq; }
+      ctx.fillStyle = HB_COL[h.k] || '#FFFFFF';
+      const x0 = h.x0 + ox, x1 = h.x1 + ox, z0 = Math.max(h.z0 + oz, view.camZ + 1.6), z1 = h.z1 + oz;
+      if (z1 < view.camZ + 1.6) continue;
+      if (h.ell) {
+        // 땅 위 타원(좀비·톱날): 16각형으로
+        const cx = (h.x0 + h.x1) / 2, cz = (h.z0 + h.z1) / 2, a = (h.x1 - h.x0) / 2, bz = (h.z1 - h.z0) / 2;
+        for (let i = 0; i < 16; i++) {
+          const t0 = (i / 16) * 2 * Math.PI, t1 = ((i + 1) / 16) * 2 * Math.PI;
+          hbLine(cx + a * Math.cos(t0), cz + bz * Math.sin(t0), cx + a * Math.cos(t1), cz + bz * Math.sin(t1));
+        }
+      } else if (h.z1 > h.z0) {
+        hbLine(x0, z0, x1, z0); hbLine(x1, z0, x1, z1); hbLine(x1, z1, x0, z1); hbLine(x0, z1, x0, z0);
+      } else {
+        hbLine(x0, z0, x1, z0);
+        hbLine(x0, z0 - 0.25, x0, z0 + 0.25); hbLine(x1, z0 - 0.25, x1, z0 + 0.25);
+      }
+    }
+    // 적·톱날은 그림처럼 보간한 자리에도 한 번 더(움직이는 쪽으로 1틱 안)
+    ctx.fillStyle = HB_COL.foe;
+    for (const f of s.foes) {
+      if (!f.alive || f.kind === 'spit' || !f.awake || f.z < view.camZ + 2) continue;
+      const z = f.z + f.spd * lag;
+      if (project(view, f.x, 0.03, z)) ctx.fillRect(Math.round(P.x), Math.round(P.y), 1, 1);
+    }
+    if (q.n > 0) {
+      ctx.fillStyle = HB_COL.squad;
+      const R = radius(q.n);
+      hbLine(qx, sq.z - SQUAD_DEPTH * R, qx, sq.z + SQUAD_DEPTH * R);
+    }
+    for (const b of s.bullets) if (project(view, b.x, 0.75, b.z)) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(Math.round(P.x), Math.round(P.y), 1, 1); }
+  }
+  function setHitbox(on) { hitboxOn = !!on; dirty = true; }
 
   /* ---------- 떠다니는 효과 ---------- */
   function drawFx(s, dt, qx) {
@@ -1599,7 +1851,7 @@ export function createRenderer(cvs) {
       let y = P.y;
       // 게이트 결과 숫자는 말풍선(무기 단계 칸 포함) 위 6px 이상에서(V4). 다 큰 크기 기준이라 커질 때 튀지 않는다
       if (f.pill && pill.on) { const lim = pill.y0 - 6 - font.height('big', f.scale) / 2; if (y > lim) y = lim; }
-      ctx.globalAlpha = f.life < 0.2 ? 0.5 : 1;
+      ctx.globalAlpha = (f.life < 0.2 ? 0.5 : 1) * f.alpha;
       if (f.icon) drawIconText(f.icon, f.text, P.x, y, f.fill, f.out, 1);
       else { fOpt.size = 'big'; fOpt.scale = scale; fOpt.fill = f.fill; fOpt.out = f.out; font.draw(ctx, f.text, P.x, y, fOpt); }
       ctx.globalAlpha = 1;
@@ -1638,9 +1890,11 @@ export function createRenderer(cvs) {
   const titles = new Map();    // 영웅 id → { c, ox, oy } (미리 그린 제목)
   let titleKey = '';
   const idle = (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 400 }) : setTimeout(fn, 30));
+  /* 컷인 띠: 25~60m 앞(열쇠 상자·몰이 줄·먼 게이트)을 가리지 않게 HUD 바로 아래(CSS 58px)에 얇게(화면 높이 11%, 최대 44px) —
+     하늘과 아주 먼 길만 가린다(F5: 예전 13%부터 16% 높이는 360x640에서 오른쪽 25~60m를 1초 가렸다) */
   function band() {
-    const hh = Math.min(66, Math.round(VH * 0.16));
-    return { hh, y0: Math.round(VH * 0.13) };
+    const hh = Math.min(44, Math.round(VH * 0.11));
+    return { hh, y0: Math.min(Math.round(VH * 0.13), Math.ceil(58 / (cssPer || 1))) };
   }
   function sizeOverlay() {
     if (!ov) return;
@@ -1725,7 +1979,7 @@ export function createRenderer(cvs) {
       ctx.fillRect(Math.round(xx) + slide, yy, 14 + (i % 3) * 8, 1);
     }
     const fr = atlas.get(art.portrait, 0);
-    const sc = BW >= 170 ? 3 : 2;
+    const sc = Math.max(1, Math.min(BW >= 170 ? 3 : 2, Math.floor((hh - 4) / fr.h)));
     const px = slide + 6, py = y0 + Math.round((hh - fr.h * sc) / 2);
     ctx.drawImage(fr.img, fr.sx, fr.sy, fr.w, fr.h, px, py, fr.w * sc, fr.h * sc);
     // 한글 스킬 이름은 띠 크기 덧캔버스에(Jua). 띠 위쪽이 덧캔버스 0
@@ -1806,7 +2060,7 @@ export function createRenderer(cvs) {
     for (const p of s.props) if (p.alive && p.z < zMax && p.z > view.camZ + 1.5) push(p.z - 0.35, 2, p);
     for (const w of s.saws) if (w.z < zMax && w.z > view.camZ + 2) push(w.z, 3, w);
     for (const f of s.foes) if (f.alive && f.z < zMax && f.z > view.camZ + 2) push(f.z, 4, f);
-    if (s.boss && (s.boss.hp > 0 || bossDeath)) push(s.boss.z, 5, s.boss);
+    if (s.boss && (s.boss.hp > 0 || bossDeath)) { push(s.boss.z, 5, s.boss); push(s.boss.z + 0.05, 11, null); }
     const R = updateFormation(s, rdt, qx);
     if (q.n > 0) for (let i = 0; i < vis.n; i++) push(vis.z[i], 6, null, i);
     const flagsN = q.n >= 1000 ? 3 : q.n >= 500 ? 2 : q.n >= 200 ? 1 : 0;
@@ -1829,6 +2083,7 @@ export function createRenderer(cvs) {
         case 7: drawSpecial(s, it.o, it.i, qx, R); break;
         case 8: drawHero(s, it.o, qx, R); break;
         case 9: drawFlag(s, it.i, qx, R, it.z); break;
+        case 11: if (s.phase !== 'won' && s.phase !== 'lost') drawBullets(s, alpha, true); break;
         default:
       }
     }
@@ -1849,6 +2104,7 @@ export function createRenderer(cvs) {
     for (const r of rings) if (r.on) { r.t += rdt; if (r.t >= r.dur) r.on = false; }
     drawFx(s, rdt, qx);
     drawParts(rdt);
+    if (hitboxOn) drawHitbox(s, qx, lag);
     drawCount(s, rdt, qx);
     drawFloats(rdt, !cardOn && s.t > 0);   // 게이트 숫자는 말풍선 위에(R3·V4), 출발 전에는 안 그린다(V6)
     if (bio === BIOME.snow) drawSnow(rdt);
@@ -1861,6 +2117,7 @@ export function createRenderer(cvs) {
       ctx.globalAlpha = 1;
       flashA = Math.max(0, flashA - rdt * 1.8);
     }
+    if (time - surgeT < SURGE_CUE) drawSurgeCue(time - surgeT);
     if (q.n > 0 && q.n < 8 && s.phase !== 'won') {
       // 병력이 아주 적으면 보이는 화면 가장자리를 천천히 붉게(번쩍이지 않게)
       const W = Math.floor(VW), Hh = Math.floor(VH);
@@ -1893,13 +2150,14 @@ export function createRenderer(cvs) {
   function floatCompat(x, y, z, text, color) { float(x, y, z, String(text).replace('−', '-').replace('×', 'x').replace('÷', '/'), color || '#FFFFFF'); }
 
   const api = {
-    view, screen, resize, draw, events, reset, setQuality, setShake, setPreview, setFrozen, setCard, setHudTarget,
+    view, screen, resize, draw, events, reset, setQuality, setShake, setPreview, setFrozen, setCard, setHudTarget, setHitbox,
+    get hitbox() { return hitboxOn; },
     portrait, icon, ready, burst: burstCompat, float: floatCompat,
     get info() {
       return {
         BW, BH, K, dpr, cssPer, quality, frozen: frozenSet || stillFor > 0.25, reduce, pages: atlas.pages.length,
         groundMs: +groundMs.toFixed(2), putMs: +putMs.toFixed(2), drawMs: +drawMs.toFixed(2),
-        lateBakes: atlas.lateBakes, sealed: atlas.sealed, parts: nLive,
+        lateBakes: atlas.lateBakes, sealed: atlas.sealed, parts: nLive, hitbox: hitboxOn,
       };
     },
   };

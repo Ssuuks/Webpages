@@ -16,7 +16,7 @@ export function defaults() {
     best: {},         // 레벨 → 최고 남은 병력
     coins: 0,
     upg: { start: 0, fire: 0, coin: 0 },
-    set: { sound: true, music: true, vibe: true, shake: true, low: false, preview: false, autoSkill: false },
+    set: { sound: true, music: true, vibe: true, shake: true, low: false, preview: false, autoSkill: false, hitbox: false },
     tips: {},         // 한 번 본 안내
     fails: {},        // 레벨 → 연속 실패 수
     plays: 0,

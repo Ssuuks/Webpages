@@ -323,3 +323,197 @@ test('게이트 글자: 짧은 꼴 후보와 미리 굽는 글자(그리는 중�
   assert.ok(area < 256 * 256 * 0.7, `글자 면적 ${area}`);
   void opText;
 });
+
+/* F1(3단계): 내려찍기 빨간 띠는 실제로 맞는 범위 — 렌더러는 core.slamZone(칸 ± SLAM_EDGE·분대 반지름)으로 그리고, core.slamHits도 같은 범위를 쓴다 */
+test('내려찍기 빨간 띠 = 맞는 범위: 렌더러는 slamZone으로 그리고 slamHits와 같은 가장자리를 쓴다(F1)', async () => {
+  const fs = await import('node:fs');
+  const C = await import('../assets/core.js');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  assert.match(src, /const zn = slamZone\(b\.slam, radius\(q\.n\)\)/, '렌더러가 slamZone으로 범위를 구한다');
+  assert.match(src, /groundQuad\(zn\.x0, zn\.x1,/, '빨간 띠를 그 범위로 그린다');
+  assert.doesNotMatch(src, /groundQuad\(b\.slam\.x0 \+ 0\.1, b\.slam\.x1 - 0\.1/, '예전처럼 칸보다 좁게 그리지 않는다');
+  for (const n of [3, 40, 400]) {
+    const R = C.radius(n);
+    const sl = { x0: 0, x1: 5 };
+    const z = C.slamZone(sl, R);
+    assert.ok(C.slamHits(z.x0, R, sl) && !C.slamHits(z.x0 - 0.01, R, sl), `n${n}: 띠 왼쪽 끝이 맞는 범위의 끝`);
+  }
+});
+
+/* ---------------- 충돌 크기(SIM 8): 그린 크기 = 맞는 크기 ----------------
+   원칙: 위협이 맞히는 범위는 그린 것과 같거나 조금 작다(그린 크기의 80~100%, 더 크지 않게) — 화면에서 아슬아슬하게 비켜 갔으면 안 맞은 것.
+   폰 두 화면(360×640@2, 390×844@3)과 데스크톱(1280×720@1), 달리기·보스전 렌즈 모두에서 그림 자료(SHEETS)와 카메라로 잰다. */
+import { formationSpot, formationCount, slotPos, heroZ, SOLDIER_HALF_PX, FORM_IN } from '../assets/render.js';
+import * as Core from '../assets/core.js';
+const HB_VIEWS = [['360x640', 360, 640, 2], ['390x844', 390, 844, 3], ['1280x720', 1280, 720, 1]];
+function hbView(w, h, dpr, dolly) {
+  const b = pickBuffer(w, h, dpr);
+  const v = makeView();
+  fitView(v, b.VW, b.VH, ROAD, dolly, lensOpt(b.VW, b.VH, dolly));
+  v.camZ = -v.back; v.camX = 0;
+  return v;
+}
+/* 그림(외곽선 포함)의 닻(가운데·발) 기준 왼쪽·오른쪽 끝(px)과 높이 */
+const sprBox = new Map();
+function spriteBox(name, frame = 0) {
+  const key = name + ':' + frame;
+  if (sprBox.has(key)) return sprBox.get(key);
+  const sh = SHEETS[name];
+  const R = outline(frameRaster(sh.frames[frame], palOf(sh.pal)), OUT);
+  const ax = R.w >> 1;
+  let l = 1e9, r = -1e9;
+  for (let y = 0; y < R.h; y++) for (let x = 0; x < R.w; x++) if (R.get(x, y)) { l = Math.min(l, x); r = Math.max(r, x); }
+  const o = { L: ax - l, R: r + 1 - ax, H: R.h };
+  sprBox.set(key, o);
+  return o;
+}
+const HB_NS = [1, 2, 3, 5, 12, 30, 60, 100, 130, 300, 1000, 9999];
+
+test('충돌 크기: 그린 무리의 끝 = 분대 반지름 R(옆)·SQUAD_DEPTH·R(앞뒤), 맞는 몸(hitHalf)은 그린 폭의 80~100%', () => {
+  assert.equal(spriteBox('soldier').L, SOLDIER_HALF_PX);
+  assert.equal(spriteBox('soldier').R, SOLDIER_HALF_PX);
+  for (const [tag, w, h, dpr] of HB_VIEWS) {
+    for (const dolly of [0, 1]) {
+      const v = hbView(w, h, dpr, dolly);
+      assert.ok(project(v, 0, 0, 0));
+      const hw = SOLDIER_HALF_PX / P.s;
+      for (const n of HB_NS) {
+        const R = Core.radius(n), H = Core.hitHalf(R), T = formationCount(n);
+        let l = 0, r = 0, f = -9, bk = 9;
+        for (let i = 0; i < T; i++) { const [x, z] = formationSpot(i, T, R, hw); l = Math.min(l, x - hw); r = Math.max(r, x + hw); f = Math.max(f, z); bk = Math.min(bk, z); }
+        const id = `${tag} ${dolly ? '보스전' : '달리기'} n=${n}`;
+        const drawn = Math.min(r, -l);
+        assert.ok(H <= drawn + 1e-9, `${id}: 맞는 몸 ±${H.toFixed(2)} > 그린 무리 ±${drawn.toFixed(2)}`);
+        if (n >= 3) {
+          assert.ok(Math.abs(r - R) < 0.02 && Math.abs(-l - R) < 0.02, `${id}: 그린 무리 [${l.toFixed(2)}, ${r.toFixed(2)}] ≠ ±R ${R.toFixed(2)}`);
+          assert.ok(H >= 0.8 * drawn, `${id}: 맞는 몸 ${H.toFixed(2)} < 그린 폭 ${drawn.toFixed(2)}의 80%`);
+          const D = Core.SQUAD_DEPTH * R;
+          assert.ok(f <= D && f >= D - FORM_IN - 0.01 && bk >= -D && bk <= -D + FORM_IN + 0.01, `${id}: 앞뒤 발 [${bk.toFixed(2)}, ${f.toFixed(2)}] ≠ ±${D.toFixed(2)}(− ${FORM_IN})`);
+        }
+      }
+    }
+  }
+  // 특수병·영웅은 무리 뒤(맞는 몸 밖, 옆으로는 분대 폭 안 — 옆에서 오는 좀비가 먼저 닿지 않게)
+  for (const n of [12, 60, 300]) {
+    const R = Core.radius(n), q = { z: 0 };
+    for (let i = 0; i < 3; i++) {
+      const sl = slotPos(q, i, R, 0);
+      assert.ok(sl.z < -Core.SQUAD_DEPTH * R && Math.abs(sl.x) <= R, `n=${n} 특수병 ${i} 자리 ${JSON.stringify(sl)}`);
+    }
+    assert.ok(heroZ(q, R) < slotPos(q, 0, R, 0).z);
+  }
+});
+
+/* 좀비·톱날이 무는 경계(core.touches가 막 참이 되는 자리)에서, 화면의 좀비 그림과 가장 가까운 병사 그림 사이 픽셀 틈 —
+   양수면 '안 닿았는데 물렸다'. 폰 ≤ 0px, 데스크톱 ≤ 2px. 옆에서 닿을 때 그림이 겹치는 깊이는 5px·좀비 그림 폭의 35% 이하(그만큼은 봐준다 —
+   가장 너그러운 것은 360×640 보스전의 질주 좀비 5px) */
+test('충돌 크기: 무는 순간 그림도 닿는다 — 좀비·톱날(옆·앞·뒤·모서리)', () => {
+  const kinds = [['grunt', 'grunt'], ['runner', 'runner'], ['spit', 'spit'], ['brute', 'brute'], ['saw', 'saw']];
+  for (const [tag, w, h, dpr] of HB_VIEWS) {
+    const lim = tag === '1280x720' ? 2 : 0;
+    for (const dolly of [0, 1]) {
+      const v = hbView(w, h, dpr, dolly);
+      project(v, 0, 0, 0);
+      const hw = SOLDIER_HALF_PX / P.s;
+      for (const n of [1, 3, 12, 30, 60, 130, 300, 1000]) {
+        const R = Core.radius(n), H = Core.hitHalf(R), hz = Core.SQUAD_DEPTH * R, T = formationCount(n);
+        const boxes = [];
+        for (let i = 0; i < T; i++) { const [x, z] = formationSpot(i, T, R, hw); project(v, x, 0, z); const px = Math.round(P.x), py = Math.round(P.y); boxes.push([px - 7, px + 7, py - 14, py]); }
+        for (const [k, sheet] of kinds) {
+          const fr = k === 'saw' ? 0.35 : Core.FOE_BASE[k].r;
+          const a = k === 'saw' ? 0.55 : Core.FOE_HX * fr;
+          const sb = spriteBox(sheet);
+          let worst = -99, at = null, side0 = -99;
+          for (const side of [-1, 1]) for (let j = -60; j <= 60; j++) {
+            const dz = (j / 60) * (hz + fr) * 0.999;
+            const ez = Math.max(0, Math.abs(dz) - hz) / fr;
+            if (ez >= 1) continue;
+            const dx = side * (H + a * Math.sqrt(1 - ez * ez) - 0.005);
+            assert.ok(Core.touches(dx, dz, H, hz, a, fr));
+            project(v, dx, 0, dz);
+            const px = Math.round(P.x), py = Math.round(P.y) - (k === 'saw' ? Math.round(P.s * 0.15) : 0);
+            const fb = [px - sb.L, px + sb.R, py - sb.H, py];
+            let best = 99;
+            for (const s of boxes) {
+              const gx = Math.max(s[0] - fb[1], fb[0] - s[1]), gy = Math.max(s[2] - fb[3], fb[2] - s[3]);
+              const g = gx > 0 || gy > 0 ? Math.max(gx, gy) : Math.max(gx, gy);
+              best = Math.min(best, g);
+            }
+            if (best > worst) { worst = best; at = [+dx.toFixed(2), +dz.toFixed(2)]; }
+            if (j === 0 && side === 1) side0 = -best;   // 바로 옆: 겹친 깊이(px)
+          }
+          const id = `${tag} ${dolly ? '보스전' : '달리기'} n=${n} ${k}`;
+          assert.ok(worst <= lim, `${id}: 물린 순간 그림 사이 ${worst}px (자리 ${at})`);
+          if (n >= 3) assert.ok(side0 <= Math.max(5, 0.35 * (sb.L + sb.R)), `${id}: 옆에서 ${side0}px 겹쳐야 문다(너무 늦다)`);
+        }
+      }
+    }
+  }
+});
+
+test('충돌 크기: 물체마다 맞는 폭 ≤ 그린 폭(좀비 접촉·톱날·총알 받는 폭·보스 몸통·독침 고리·벽)', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  const STEPS3 = [1, 0.75, 0.5];
+  for (const [tag, w, h, dpr] of HB_VIEWS) {
+    const v = hbView(w, h, dpr, 0);
+    // 닿는 거리(분대 가까이, 원래 크기)에서: 접촉 폭(FOE_HX·r)은 그린 반폭의 65~115%(그림은 픽셀 크기가 고정이라 화면마다 1.3배까지 다르다 —
+    // 질주 좀비는 졸개와 같은 그림에 몸이 작아 가장 너그럽다), 분대 몸과 더한 접촉 거리는 그린 것보다 크지 않고 그 80% 이상(병력 12명부터)
+    for (const k of ['grunt', 'runner', 'spit', 'brute']) {
+      const r = Core.FOE_BASE[k].r, sb = spriteBox(k);
+      for (const n of [3, 12, 60, 300]) for (const u of [0, 0.5, 1]) {
+        const R = Core.radius(n);
+        const dz = u * (Core.SQUAD_DEPTH * R + r);   // 무는 깊이(옆 ~ 앞)
+        project(v, 0, 0, dz);
+        const fw = (sb.L + sb.R) / 2 / P.s;
+        const hx = Core.FOE_HX * r;
+        assert.ok(hx >= 0.65 * fw && hx <= 1.15 * fw, `${tag} ${k} dz=${dz.toFixed(2)}: 접촉 반폭 ${hx.toFixed(2)} vs 그림 ${fw.toFixed(2)}`);
+        {
+          const c = Core.hitHalf(R) + hx;
+          assert.ok(c <= R + fw + 0.005, `${tag} ${k} n=${n}: 접촉 거리 ${c.toFixed(2)}가 그린 것 ${(R + fw).toFixed(2)}보다 크다`);
+          if (n >= 12) assert.ok(c >= 0.8 * (R + fw), `${tag} ${k} n=${n}: 접촉 거리 ${c.toFixed(2)} < 그린 것의 80%`);
+        }
+      }
+      // 총알 받는 폭(r + 0.12)은 쏘는 거리(6~25m, 축소 단계 포함)에서 그린 반폭의 범위 안(조금 넓은 쪽 — 화면에서 1~2px)
+      let st, lo = 9, hi = 0;
+      for (let dz = 25; dz >= 6; dz -= 0.25) {
+        project(v, 0, 0, dz);
+        st = pickStep((P.s * (WORLD_H[k] || 1.05)) / (sb.H - 2), st, STEPS3);
+        const half = ((sb.L + sb.R) / 2) * STEPS3[st] / P.s;
+        lo = Math.min(lo, half); hi = Math.max(hi, half);
+      }
+      const bh = r + 0.12;
+      assert.ok(bh >= lo && bh <= hi * 1.05, `${tag} ${k}: 총알 받는 폭 ±${bh.toFixed(2)}가 그린 반폭 ${lo.toFixed(2)}~${hi.toFixed(2)} 밖`);
+    }
+    // 톱날: 날 폭(w.w = 1.1, 생성기)의 반 ≤ 그린 날 반폭 + 은혜 — 분대 몸과 더한 접촉 거리가 그린 것보다 크지 않다
+    const sw = spriteBox('saw');
+    for (const dz of [0, 1, 2]) {
+      project(v, 0, 0, dz);
+      const half = Math.min(sw.L, sw.R) / P.s;
+      for (const n of [3, 12, 60, 300]) { const R = Core.radius(n); assert.ok(Core.hitHalf(R) + 0.55 <= R + half + 0.005, `${tag} 톱날 n=${n}: 접촉 ${(Core.hitHalf(R) + 0.55).toFixed(2)} > 그림 ${(R + half).toFixed(2)}`); }
+    }
+  }
+  // 생성기가 만드는 톱날 폭은 1.1
+  const lv = Core.prepareLevel(6);
+  assert.ok(lv.saws.length > 0 && lv.saws.every((s) => s.w === 1.1), '톱날 폭');
+  // 보스 몸통(BOSS_HIT): 원래 크기 그림에서 팔 안쪽 끝(몸통·허리띠·다리) 안 — 총알 받는 띠가 팔까지 넓지 않다
+  {
+    const sh = SHEETS.boss;
+    const R = outline(frameRaster(sh.frames[0], palOf(sh.pal)), OUT);
+    const pxPerM = (R.h - 2) / WORLD_H.boss;
+    // 허리띠 줄(발에서 26~30px 위): 몸통 폭
+    const ax = R.w >> 1;
+    let belt = 0;
+    for (let y = R.h - 31; y <= R.h - 27; y++) for (let x = 0; x < R.w; x++) if (R.get(x, y) === OUT && Math.abs(x - ax) < 30) belt = Math.max(belt, Math.abs(x - ax));
+    assert.ok(Core.BOSS_HIT * pxPerM <= 34 && Core.BOSS_HIT * pxPerM >= 24, `보스 몸통 ±${Core.BOSS_HIT}m = ${(Core.BOSS_HIT * pxPerM).toFixed(1)}px (조끼 ±34px, 허리띠 ±26px)`);
+    void belt;
+  }
+  // 빗나간 총알은 보스 뒤로 그린다(팔을 뚫고 가는 것처럼 보이지 않게), 독침 고리 = SPIT_R, 벽·상자·철창은 x0~x1 그대로
+  assert.match(src, /push\(s\.boss\.z \+ 0\.05, 11, null\)/, '보스 뒤 총알 그리기 항목');
+  assert.match(src, /\(b\.z \+ ext > plane\) !== behind/, '총알 판을 지난 총알만 보스 뒤로');
+  assert.match(src, /ellRing\(P\.x, P\.y, SPIT_R \* P\.s, SPIT_R \* P\.s \* 0\.38, 1\)/, '독침 고리 = SPIT_R');
+  assert.doesNotMatch(src, /1\.2 \* P\.s \* 0\.38/, '독침 고리를 숫자로 그리지 않는다');
+  assert.match(src, /function boxFaces\(p, H, depth = 0\.35\) \{\s*const z0 = p\.z - depth, z1 = p\.z \+ depth;\s*if \(!project\(view, p\.x0, H, z1\)\)/, '벽·상자는 x0~x1로 그린다');
+  // 충돌 크기 보기는 시뮬레이션의 hitShapes만 그린다
+  assert.match(src, /const sh = hitShapes\(s\);/);
+});

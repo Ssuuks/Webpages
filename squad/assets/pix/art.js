@@ -937,6 +937,10 @@ export const ICONS = {
   skull: ['..zzzzz..', '.zzzzzzz.', 'zzzzzzzzz', 'zKKzzzKKz', 'zKKzzzKKz', 'zzzzKzzzz', '.zzzzzzz.', '..zKzKz..', '..zzzzz..'],
   heart: ['.PP.PP.', 'PQPPPPr', 'PPPPPPr', '.PPPPr.', '..PPr..', '...r...'],
   shield: ['.jjjjjjj.', 'jJJjjjjju', 'jJjjjjjju', 'jjjjjjjju', '.jjjjjju.', '..jjjju..', '...juu...'],
+  /* 어려움 배지(DOM) — 글꼴마다 🔥 모양이 달라 도트로 */
+  fire: ['....e....', '...ee..e.', '..eoe..e.', '..eoee.ee', '.eoooeeoe', '.eofooooe', 'eoffFfooe', 'eofFFFfoe', '.eofFfoe.'],
+  /* 열쇠 상자 표시(어려운 레벨의 꼭 필요한 보급, prop.key) */
+  key: ['.yyy......', 'yYYYy.....', 'yY.Yyyyyyy', 'yY.YYYYYYy', 'yYYYdddydy', '.ddd...d.d'],
 };
 export const ICON_PAL_EXPORT = ICON_PAL;
 

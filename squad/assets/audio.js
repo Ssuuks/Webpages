@@ -208,6 +208,13 @@ export const sfx = {
     tone(1047, 0.08, { type: 'square', vol: 0.06 });
     tone(1568, 0.16, { type: 'square', vol: 0.06, delay: 0.07 });
   },
+  /* 몰이 알림(보스 앞 좀비 떼): 낮게 두 번 울리는 경보 */
+  surge() {
+    if (!ready('surge', 800)) return;
+    tone(196, 0.16, { type: 'square', vol: 0.09, slide: 0.8 });
+    tone(196, 0.16, { type: 'square', vol: 0.09, slide: 0.8, delay: 0.22 });
+    noise(0.3, { vol: 0.08, freq: 260, q: 0.8, slide: 0.6, delay: 0.05 });
+  },
   cast() {
     if (!ready('cast', 300)) return;
     [392, 523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.1, { type: 'sawtooth', vol: 0.06, delay: i * 0.035 }));
