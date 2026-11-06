@@ -58,10 +58,15 @@ const MEDIC = { ...TEAM, H: '#FFFFFF', h: '#F2F0F7', b: '#D3CFE3', B: '#A8A1C4',
 const SNIPER = { ...TEAM, H: '#E2E0A8', h: '#B5B276', b: '#8C8A52', B: '#6B6A3C', r: '#6B4A3A', o: '#8C8A52', O: '#5E5D34', t: '#7FA040' };
 const ROCKET = { ...TEAM, H: '#FFE6C2', h: '#FFA54A', b: '#EE7A26', B: '#B95514', T: '#7FA040', E: '#3E5126', Y: '#FFD84A', F: '#FFF4B0', f: '#FFB347' };
 
+/* 합친 병사(분대장·중장갑병·전차): 같은 파랑 + 금 장식, 바이저·환기구 빛, 궤도, 배기 연기, 미등 */
+const TIER_EXTRA = { y: '#FFD84A', Y: '#FFF09A', d: '#D08A12', v: '#8CF6FF', V: '#E8FFFF', q: '#3B3F55', a: '#E8ECF2', A: '#C9CED6', e: '#FF9F43' };
+const TIER = { ...TEAM, ...TIER_EXTRA };
+const TIER_HURT = { ...TEAM_HURT, ...TIER_EXTRA, y: '#FFC2A8', Y: '#FFE4DC', d: '#C06A5A', v: '#FFC8C0' };
+
 /* 다친 순간의 붉은 기(병과 고유 색은 그대로 두고 철모·군복만 물들인다) */
 const HURT_CLOTH = { c: '#C24A66', n: '#6A2D4A', o: '#FFB4A0', O: '#C06A5A' };
 export const PAL = {
-  team: TEAM, teamHurt: TEAM_HURT, medic: MEDIC, sniper: SNIPER, rocket: ROCKET,
+  team: TEAM, teamHurt: TEAM_HURT, medic: MEDIC, sniper: SNIPER, rocket: ROCKET, tier: TIER, tierHurt: TIER_HURT,
   medicHurt: { ...MEDIC, ...HURT_CLOTH, H: '#FFE4DC', h: '#FFC8C0', b: '#F0A0A0', B: '#C06A7A' },
   sniperHurt: { ...SNIPER, ...HURT_CLOTH, H: '#FFD8C8', h: '#E8A08A', b: '#C0706A', B: '#8E4A50', o: '#C0706A', O: '#8E4A50' },
   rocketHurt: { ...ROCKET, ...HURT_CLOTH, H: '#FFE0D0', h: '#FF9C7C', b: '#E86A5A', B: '#B8405A' },
@@ -158,8 +163,142 @@ const RKT_BODY = [
 const RKT_CROUCH = pad([B12, B12, ...RKT_HEAD.slice(0, 6), 'sBBBBBBBBsTT', '.cOooooOcYTT', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
 const RKT_FIRE = pad(['.........fFf', '..........F.', ...RKT_HEAD.slice(1, 6), 'sBBBBBBBBsTT', '.cOooooOcYTT', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
 
-/* 뒷줄 철모(병력 규모 표시용 5×4) */
-const HELMET = ['.hhh.', 'hHhhb', 'hhhbb', 'BBBBB'];
+/* ---------------- 합친 병사(대형 단계): 10명 = 분대장, 100명 = 중장갑병, 1000명 = 전차 ----------------
+   외곽선 포함 18×18 · 22×22 · 30×22(렌더러 TIER 표와 같다). 뒷모습, 발·궤도는 맨 아래 줄,
+   어느 프레임이나 격자 폭 끝까지 채운다(닻 기준 왼쪽·오른쪽 반폭이 같게). 프레임: 걷기 0~3, 서기 4~5.
+   muzzles = 프레임마다 총구 끝 칸(격자 좌표, 외곽선 빼고 — 병사 시트와 같은 약속), muzzle = 걷기 1 프레임의 것. */
+const blank = (w, h) => Array.from({ length: h }, () => '.'.repeat(w));
+const stack = (w, ...parts) => pad([].concat(...parts), w);
+
+/* 분대장(16×16): 금띠 + 금별 철모, 안테나 달린 무전기 배낭, 나무 손잡이 긴 소총 */
+const SQ10_TOP = [
+  '.Y..............',
+  '.g..hhhhh.......',
+  '.ghhHHhhhhh....G',
+  '.hHHhhyhhhhb...g',
+  'hHHhyyYyyhhbb..g',
+  'hHhhhyyyhhhbb..g',
+  'hhhhhyhyhhbbb.oO',
+  'hhhhhhhhhhbbb.oO',
+  'yyyyyyyyyyydd.gg',
+  'sBBBBBBBBBBBs.gg',
+  '.cOoooooooOc..gg',
+  'ccOooGoGooOccsoO',
+  'scOOOOOOOOOcc.OO',
+  '.nnnnnnnnnnn....',
+];
+const SQ10_LEGS = [
+  [true, null, '..kkk...kkk.....'],
+  [false, '..kkk...nnn.....', '........kkk.....'],
+  [true, null, '..kkk...kkk.....'],
+  [false, '..nnn...kkk.....', '..kkk...........'],
+];
+function sq10Walk(f) {
+  const [low, a, b] = SQ10_LEGS[f];
+  return stack(16, low ? blank(16, 1) : [], SQ10_TOP, a ? [a] : [], [b]);
+}
+function sq10Frames() {
+  // 숨쉬기: 배낭 윗줄을 눌러 머리가 1px 내려온다(병사와 같은 방식)
+  const idle2 = stack(16, blank(16, 2), SQ10_TOP.slice(0, 10), SQ10_TOP.slice(11), ['..kkk...kkk.....']);
+  return [0, 1, 2, 3].map(sq10Walk).concat([sq10Walk(0), idle2]);
+}
+
+/* 중장갑병(20×20): 금 테두리 큰 어깨 갑옷 + 팔뚝, 금 볏 철모(옆으로 새는 바이저 빛), 등의 동력 상자(빛나는 전지), 오른 어깨 위 개틀링(금 고리) */
+const HV_HELM = [
+  '..hhyhh..',
+  '.hHHyhhh.',
+  'hHHhyhhhb',
+  'hHhhyhhbb',
+  'vhhhyhhbv',
+  'vBBBBBBBv',
+];
+const HV_PAD_L = ['..yyy.', '.yhhhy', 'yhHhhb', 'yhhhbb', 'ybbbbB', '.BBBB.'];
+const HV_PAD_R = ['.yyy..', 'yhhhy.', 'hHhhby', 'hhhbby', 'bbbbBy', '.BBBB.'];
+const HV_ARM = ['bbB', 'bBB', 'gGg'];
+const HV_BACK = [
+  '..nnnnn..',
+  '..nvVvn..',
+  '..nvvvn..',
+  '.bnnnnnb.',
+  'bbbbbbbbB',
+  'yyyyyyyyd',
+  '.nnnnnnn.',
+];
+const HV_GUN = ['.GGG.', 'GgKgG', 'gGgGg', 'gGgGg', 'yyyyd', 'GgggG', 'gGggg', '.ggg.'];
+function hvTop() {
+  let r = blank(20, 15);
+  r = over(r, 4, 8, HV_BACK);
+  r = over(r, 1, 12, HV_ARM);
+  r = over(r, 13, 12, HV_ARM);
+  r = over(r, 0, 6, HV_PAD_L);
+  r = over(r, 11, 6, HV_PAD_R);
+  r = over(r, 4, 2, HV_HELM);
+  r = over(r, 15, 0, HV_GUN);
+  return r;
+}
+const HV_LEGS = [
+  [true, ['....bbb...bbb.......', '....hBb...hBb.......', '...nnnn..nnnn.......', '...gggg..gggg.......']],
+  [false, ['....bbb...bbb.......', '....hBb...hBb.......', '...nnnn...bBb.......', '...gggg..nnnn.......', '.........gggg.......']],
+  [true, ['....bbb...bbb.......', '....hBb...hBb.......', '...nnnn..nnnn.......', '...gggg..gggg.......']],
+  [false, ['....bbb...bbb.......', '....hBb...hBb.......', '....bBb..nnnn.......', '...nnnn..gggg.......', '...gggg............']],
+];
+function hvWalk(f, top = hvTop()) {
+  const [low, legs] = HV_LEGS[f];
+  return stack(20, low ? blank(20, 1) : [], top, legs);
+}
+function hvFrames() {
+  const top = hvTop();
+  const idle2 = stack(20, blank(20, 2), top.slice(0, 11), top.slice(12), HV_LEGS[0][1]);
+  return [0, 1, 2, 3].map((f) => hvWalk(f, top)).concat([hvWalk(0, top), idle2]);
+}
+
+/* 전차(28×20): 뒤에서 본 꼬마 전차 — 파란 차체, 납작한 포탑(뒤에 흰 별 — 분대장 철모의 금별과 다르게, 위에 해치), 앞(화면 위)으로 뻗은 포신, 포탑 높이까지 솟은 궤도 덮개(앞줄 뒤에 가려도 전차로 보이게), 움직이는 궤도, 배기관 연기, 주황 미등 */
+const TK_BARREL = ['gGGg', 'gggg', '.Gg.', '.Gg.', '.Gg.'];
+const TK_TURRET = [
+  '........gGg.',
+  '..hhhhhhBBBh',
+  '.hHHhhhhhhhb',
+  'hHhhhWhhhhbb',
+  'hhhWWWWWhhbb',
+  'hhhhWWWhhbbb',
+  'bbbbabaabbbB',
+  'BBBBBBBBBBBB',
+];
+const TK_HULL = [
+  '.hhhhhhhhhhhhhhhh.',
+  'hHhhhhhhhhhhhhhhhb',
+  'bbbbbbbbbbbbbbbbbB',
+  'beebbbbbbbbbbbbeeB',
+  'bbbbbbBBBBBBbbbbbB',
+  'BBBBBBBBBBBBBBBBBB',
+  '.BBBBBBBBBBBBBBBB.',
+];
+const TK_PIPE = ['Gg', 'gg', 'gg'];
+/* 궤도 발판: 4줄 주기, 걷기 프레임마다 1줄씩 위로 흐른다(뒤에서 보면 바닥에서 위로 감겨 올라간다) */
+const TK_CLEAT = ['qGGGGq', 'qggggq', 'qqqqqq', 'qqqqqq'];
+function tkTread(ph) {
+  const rows = ['.hhhh.', 'hHhhhb', 'BBBBBB'];
+  for (let j = 0; j < 9; j++) rows.push(TK_CLEAT[(j + ph) & 3]);
+  rows.push('.qqqq.');
+  return rows;
+}
+const TK_PUFF = [[20, 6, ['aa', 'Aa']], [21, 4, ['aa.', 'aaA', '.A.']]];
+function tkFrame(ph, dy, puff) {
+  let r = blank(28, 20);
+  // 포신 → 포탑 → 배기관 → 차체 → 궤도(앞에서 덮는다) → 연기
+  r = over(r, 12, dy, TK_BARREL);
+  r = over(r, 8, 3 + dy, TK_TURRET);
+  r = over(r, 20, 9 + dy, TK_PIPE);
+  r = over(r, 5, 11 + dy, TK_HULL);
+  r = over(r, 0, 7, tkTread(ph));
+  r = over(r, 22, 7, tkTread(ph));
+  if (puff) r = over(r, puff[0], puff[1] + dy, puff[2]);
+  return r;
+}
+function tankFrames() {
+  const [p0, p1] = TK_PUFF;
+  return [tkFrame(0, 1, p0), tkFrame(1, 0, p1), tkFrame(2, 1, p0), tkFrame(3, 0, p1), tkFrame(0, 1, null), tkFrame(0, 0, p0)];
+}
 
 /* 앞모습 병사(철창 속 포로·승리용): 손 흔들기 2프레임 + 우는 얼굴(감은 눈 아래 ㅠㅠ 눈물 줄기, 벌린 입).
    모자 5줄 + 얼굴 3줄 + 몸 5줄 = 13줄. 눈은 격자 x 2~3·8~9, y 5줄째(0부터) — 눈물 효과를 붙일 자리 */
@@ -859,7 +998,7 @@ const FX_PAL = {
    flash: 흰 실루엣도 굽는다.   alts: 팔레트를 바꾼 변형(이름 → 팔레트 또는 { pal, out }).
    out: 외곽선 색(null이면 없음).   detail: 줄일 때 우선할 색. */
 export const SHEETS = {
-  soldier: { pal: 'team', frames: crowdFrames(SOL_HEAD, SOL_BODY, 12), alts: { hurt: 'teamHurt' }, muzzle: [11, 3] },
+  soldier: { pal: 'team', frames: crowdFrames(SOL_HEAD, SOL_BODY, 12), alts: { hurt: 'teamHurt' }, muzzle: [11, 3], muzzles: [[11, 4], [11, 3], [11, 4], [11, 3], [11, 4], [11, 5]] },
   medic: { pal: 'medic', frames: crowdFrames(MED_HEAD, MED_BODY, 12), alts: { glow: { pal: 'medic', out: '#FF6FA0' }, hurt: 'medicHurt' } },
   sniper: { pal: 'sniper', frames: crowdFrames(SNP_HEAD, SNP_BODY, 12), alts: { hurt: 'sniperHurt' }, muzzle: [11, 0] },
   rocket: {
@@ -867,7 +1006,9 @@ export const SHEETS = {
     frames: crowdFrames(RKT_HEAD, RKT_BODY, 12).concat([RKT_CROUCH, RKT_FIRE]),
     alts: { hurt: 'rocketHurt' }, muzzle: [10, 0],
   },
-  helmet: { pal: 'team', frames: [HELMET] },
+  sq10: { pal: 'tier', frames: sq10Frames(), alts: { hurt: 'tierHurt' }, muzzle: [15, 2], muzzles: [[15, 3], [15, 2], [15, 3], [15, 2], [15, 3], [15, 4]] },
+  sq100: { pal: 'tier', frames: hvFrames(), alts: { hurt: 'tierHurt' }, muzzle: [17, 0], muzzles: [[17, 1], [17, 0], [17, 1], [17, 0], [17, 1], [17, 2]] },
+  sq1000: { pal: 'tier', frames: tankFrames(), alts: { hurt: 'tierHurt' }, muzzle: [14, 0], muzzles: [[14, 1], [14, 0], [14, 1], [14, 0], [14, 1], [14, 0]] },
   captive_medic: { pal: PAL_FRONT(MEDIC), frames: captive('medic'), lod: [1, 0.75, 0.5] },
   captive_sniper: { pal: PAL_FRONT(SNIPER), frames: captive('sniper'), lod: [1, 0.75, 0.5] },
   captive_rocket: { pal: PAL_FRONT(ROCKET), frames: captive('rocket'), lod: [1, 0.75, 0.5] },
@@ -956,6 +1097,9 @@ export const HERO_ART = {
 /* 애니메이션 표(프레임 번호, 초당 프레임) */
 export const ANIM = {
   soldier: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
+  sq10: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
+  sq100: { walk: { f: [0, 1, 2, 3], fps: 8 }, idle: { f: [4, 5], fps: 2 } },
+  sq1000: { walk: { f: [0, 1, 2, 3], fps: 8 }, idle: { f: [4, 5], fps: 3 } },
   medic: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
   sniper: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
   rocket: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 }, fire: { f: [6, 7, 0], fps: 9 } },

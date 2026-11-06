@@ -15,7 +15,7 @@ import { frameRaster, outline } from './pix/raster.js';
 const FIT = { at: 0.625, up: 12, back: 16, minHz: 0.075 };
 const STEPS3 = [1, 0.75, 0.5];
 const STEPS4 = [1, 0.75, 0.5, 0.33];
-const TIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9'];
+const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9'];   // 무기 단계 색
 const GOLD_BULLET = '#FFD84A';
 const PANEL = {
   good: { hex: '#3E8BEA', line: '#BFE2FF', out: '#1D3F8A', arrow: '#DDF3FF' },
@@ -90,7 +90,7 @@ export const sceneryZ = (h, z) => z + ((h >>> 8) % 50) / 10;
 
 /* 렌더러가 쓰는 프레임 번호(시트 길이와 맞는지 tests/art.mjs가 검사한다) */
 export const FRAMES = {
-  soldier: { sheets: ['soldier'], walk: [0, 1, 2, 3], idle: [4, 5] },
+  tier: { sheets: ['soldier', 'sq10', 'sq100', 'sq1000'], walk: [0, 1, 2, 3], idle: [4, 5] },
   special: { sheets: 'unit', walk: [0, 1, 2, 3], idle: [4, 5], hit: [4] },
   rocket: { sheets: ['rocket'], fire: [6, 7] },
   hero: { sheets: 'hero', walk: [0, 1, 2, 3, 4, 5, 6, 7], idle: [8, 9], ko: [10], cast: [11, 12], look: [13], blink: [14] },
@@ -101,7 +101,7 @@ export const FRAMES = {
   boss: { sheets: ['boss'], walk: [0, 1, 2, 3], windup: [4], slam: [5], roar: [6, 7], stomp: [8, 9], dead: [10] },
   fx2: { sheets: ['flash', 'spark', 'glint', 'boomfx', 'flag', 'rocketShot', 'smoke'], f: [0, 1] },
   fx4: { sheets: ['saw', 'puff', 'coin'], f: [0, 1, 2, 3] },
-  one: { sheets: ['helmet', 'bubble', 'tear', 'helmetBit', 'plus', 'heart', 'dust'], f: [0] },
+  one: { sheets: ['bubble', 'tear', 'helmetBit', 'plus', 'heart', 'dust'], f: [0] },
   star: { sheets: ['star'], f: [1] },
 };
 const FR = FRAMES;
@@ -124,100 +124,378 @@ function hashInt(n) {
 }
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-/* 분대 대형(SIM 8 충돌 크기): 그린 병사들이 시뮬레이션의 분대 몸을 채운다 — 옆 끝 병사 그림의 가장자리가 반지름 R, 앞뒤 끝 병사의 발이
-   ±(SQUAD_DEPTH·R − FORM_IN). 모서리가 조금 둥근 네모(초타원 지수 FORM_P): 해바라기 배치(넓이를 지키는 각 변환으로 고르게)의
-   바깥 m명은 테두리 위에, 나머지는 한 칸 안쪽에 — 테두리가 비지 않아 그린 무리의 끝이 맞는 몸의 끝과 같다.
-   예전 타원(앞뒤 0.8R, 아주 큰 부대는 앞으로 1.2R)은 시뮬레이션 상자보다 깊고 모서리가 비어, 그림에 닿지 않은 좀비가 무는 일이 있었다.
-   각은 번호마다 정해져 있어 병력이 바뀌어도 병사들이 크게 뒤섞이지 않는다.
-   hw = 병사 그림 반폭(m — 그 화면의 분대 자리 배율로, SOLDIER_HALF_PX / P.s). 결과는 분대 가운데 기준 [x, z] */
-export const FORM_P = 8;
+/* 분대 대형(SIM 8 충돌 크기 + 합친 병사): 그린 무리 = 시뮬레이션의 분대 몸 — 줄마다 왼쪽 끝 그림의 왼쪽 가장자리가 −R, 오른쪽 끝이 +R,
+   맨 앞줄 발이 +(SQUAD_DEPTH·R − FORM_IN), 맨 뒷줄 발이 −(SQUAD_DEPTH·R − FORM_IN). 옆 끝 그림들은 위아래로 이어져(틈 없이) 몸 옆을 덮는다.
+   병력이 많으면 10·100·1000명을 한 장으로 합쳐 그린다(TIER) — 205명 = 100 한 장 + 10 열 장 + 병사 다섯(셀 수 있게).
+   큰 단계가 앞줄(먼 쪽, 화면 위)에, 작은 단계가 뒷줄(영웅 쪽)에 — 단체 사진처럼 큰 그림이 작은 그림 뒤에 가리지 않는다.
+   모두 순수 함수(병력·화면 배율만으로 정해진다 — tests/art.mjs가 검사한다). 그리기 상태(합치기·나누기 움직임)는 렌더러 안에 있다. */
+export const FORM_P = 8;            // 그림자(둥근 네모) 지수
 export const FORM_IN = 0.08;
-export const SOLDIER_HALF_PX = 7;   // 병사 그림(외곽선 포함 14px)의 반폭 — 닻(가운데)에서 왼쪽 7px, 오른쪽 7px
-const FORM_N = 512;
-const FORM_TH = new Float32Array(FORM_N + 1);   // 넓이 몫 u(0~1) → 각
-const FORM_K = new Float32Array(FORM_N + 1);    // 그 각에서 단위 초타원까지의 거리
-const kOfForm = (t) => Math.pow(Math.abs(Math.cos(t)) ** FORM_P + Math.abs(Math.sin(t)) ** FORM_P, -1 / FORM_P);
-{
-  const M = 4096;
-  const cum = new Float64Array(M + 1);
-  for (let i = 0; i < M; i++) { const t = ((i + 0.5) / M) * 2 * Math.PI; const k = kOfForm(t); cum[i + 1] = cum[i] + k * k; }
-  let j = 0;
-  for (let n = 0; n <= FORM_N; n++) {
-    const want = (n / FORM_N) * cum[M];
-    while (j < M && cum[j + 1] < want) j++;
-    const f = cum[j + 1] > cum[j] ? (want - cum[j]) / (cum[j + 1] - cum[j]) : 0;
-    const t = ((j + f) / M) * 2 * Math.PI;
-    FORM_TH[n] = t;
-    FORM_K[n] = kOfForm(t);
-  }
+/* 합친 병사 단계 — 그림 크기(외곽선 포함 px)는 art.js 시트와의 약속(tests/art.mjs가 spriteBox로 검사한다). 닻은 아래 가운데 */
+export const TIER = [
+  { worth: 1, sheet: 'soldier', w: 14, h: 14, halfL: 7, halfR: 7, fps: 10, idleFps: 2 },
+  { worth: 10, sheet: 'sq10', w: 18, h: 18, halfL: 9, halfR: 9, fps: 10, idleFps: 2 },
+  { worth: 100, sheet: 'sq100', w: 22, h: 22, halfL: 11, halfR: 11, fps: 8, idleFps: 2 },
+  { worth: 1000, sheet: 'sq1000', w: 30, h: 22, halfL: 15, halfR: 15, fps: 8, idleFps: 3 },
+];
+/* 채우기 기준(그림 폭 합 ÷ (줄 수 m0 × 몸 폭 W)): 모자라면(min 미만이거나 줄마다 두 장이 안 되면) 큰 단계부터 열 장으로 쪼개되 max를 넘지 않게.
+   자릿수 그대로가 hard를 넘으면 낮은 단계부터 over까지 덜 그린다(어림 — 숫자 말풍선이 정확한 수). 이어 갈 때(nextComp)는 low~keep까지 봐준다(머뭇거림).
+   rowH = 줄 간격 상한(px, 병사 키 14px보다 조금 작게 — 옆 끝 그림이 위아래로 틈 없이 이어진다). slack = 병사가 10 + slack명이 되어야 합친다(오가도 깜빡이지 않게) */
+export const FORM_LIM = { min: 0.8, low: 0.7, max: 1.35, hard: 1.45, over: 1.2, keep: 1.65, rowH: 13.5, slack: 3 };
+export const compSum = (c) => c[0] + 10 * c[1] + 100 * c[2] + 1000 * c[3];
+export const compCount = (c) => c[0] + c[1] + c[2] + c[3];
+export const compWidth = (c) => c[0] * TIER[0].w + c[1] * TIER[1].w + c[2] * TIER[2].w + c[3] * TIER[3].w;
+/* 자릿수 그대로 나누기: 205 → [5, 0, 2, 0] (병사, 10, 100, 1000) */
+export function greedyComp(n) {
+  n = Math.max(0, Math.floor(n));
+  return [n % 10, Math.floor(n / 10) % 10, Math.floor(n / 100) % 10, Math.floor(n / 1000)];
 }
-const FORM_AREA = 3.913;   // 단위 초타원(p = 8)의 넓이
-/* 단위 배치(x ∈ [−1, 1], z ∈ [−1, 1]) — T명, 깊이/폭 비 A(= az/ax)마다 한 번 만든다(병력·화면이 바뀔 때만, 그리기와 상관없는 작은 배열) */
-const formUnit = new Map();
-function unitLayout(T, A) {
-  const key = T * 64 + Math.max(1, Math.min(63, Math.round(A * 32)));
-  let u = formUnit.get(key);
-  if (u) return u;
-  A = Math.max(1, Math.min(63, Math.round(A * 32))) / 32;
-  const x = new Float32Array(T), z = new Float32Array(T);
-  if (T > 1) {
-    // 테두리 길이(폭 1, 깊이 A인 초타원)와 병사 간격 d — 테두리에 m명
-    let L = 0, px = 1, pz = 0;
-    for (let i = 1; i <= 256; i++) {
-      const t = (i / 256) * 2 * Math.PI, k = kOfForm(t);
-      const nx = k * Math.cos(t), nz = A * k * Math.sin(t);
-      L += Math.hypot(nx - px, nz - pz); px = nx; pz = nz;
+/* 대형 자리 크기(px): W = 옆 폭(2R), S = 맨 앞줄 발 ~ 맨 뒷줄 발의 화면 높이 = D·(vf + vb).
+   ppm = 분대 자리의 m당 px(옆), vf·vb = 분대 가운데에서 앞(먼 쪽)·뒤(가까운 쪽)로 깊이 1m의 화면 높이(원근 — 뒤가 조금 크다),
+   pb = 맨 뒷줄 깊이(−D)의 m당 px(없으면 ppm). m0 = 줄 간격이 rowH 이하가 되는 가장 적은 줄 수(2 이상) — 채우기 기준의 줄 수 */
+export function formGeom(R, ppm, vf, vb, pb) {
+  const D = Math.max(0, SQUAD_DEPTH * R - FORM_IN);
+  const f = vf > 0 ? vf : ppm * 0.6, b = vb > 0 ? vb : f;
+  const S = D * (f + b);
+  const m0 = Math.max(2, 1 + Math.ceil(S / FORM_LIM.rowH - 1e-9));
+  return { R, ppm, vf: f, vb: b, pb: pb > 0 ? pb : ppm, D, W: 2 * R * ppm, S, m0 };
+}
+/* 그림 수 하한: 줄마다 두 장 이상(한 장으로는 양옆 끝, 특히 앞 모서리에 닿지 못한다 — 큰 좀비는 모서리에서 문다). 셋뿐이면(3명) V자: 앞 가운데 하나, 뒤 둘
+   (10명 넘는 V자는 몸이 넓어 앞 모서리가 빈다 — 12명 = 10 하나 + 병사 둘은 모서리에서 무는 좀비와 1px 떨어진다) */
+export const needFor = (m) => 2 * m;
+const capOf = (g) => g.m0 * g.W;
+/* 성기면(lo 미만·줄마다 두 장이 안 되면) 쪼갠다: max를 넘지 않는 가장 큰 단계 하나를 열 장으로. 없는데 장 수가 모자라면 가장 작은 단계를 그래도 쪼갠다.
+   strict(이어 가기)면 곧 다시 합쳐야 할 쪼개기(brittle)는 하지 않고 조금 성긴 채로 둔다 */
+function fillUp(c, g, lo = FORM_LIM.min, strict = false) {
+  const cap = capOf(g), L = FORM_LIM;
+  for (let guard = 0; guard < 40; guard++) {
+    const w = compWidth(c), N = compCount(c), need = needFor(g.m0);
+    if (N >= need && w >= lo * cap) return c;
+    // max 안에 드는 가장 큰 단계 — 다만 병사를 다 잃은 뒤 다음 나누기가 넘치는 것(1200 = 100×12: 한 명만 잃어도 100이 10으로, 10이 병사로)은 다음 단계를 먼저 본다
+    // 아주 성기면(low 미만) hard까지 넘쳐도 쪼갠다(빈 줄보다 낫다). 병사가 10 + slack명 넘게 되는 쪼개기는(장 수가 모자랄 때 말고) 하지 않는다 — 곧 다시 합칠 것
+    const hi = (w < L.low * cap ? L.hard : L.max) * cap;
+    let t = 0, first = 0;
+    // (이어 가기는 가장 작은 단계부터 — 덜 바뀌게)
+    for (let i = 1; i < TIER.length && !t; i++) {
+      const k = strict ? i : TIER.length - i;
+      if (!c[k] || w + 10 * TIER[k - 1].w - TIER[k].w > hi || (!strict && k === 1 && c[0] + 10 >= 10 + L.slack && N >= need)) continue;
+      if (!first) first = k;
+      c[k]--; c[k - 1] += 10;
+      if (!brittle(c, g)) t = k;
+      c[k]++; c[k - 1] -= 10;
     }
-    const d = Math.sqrt((FORM_AREA * A) / T);
-    const m = Math.min(T, Math.max(2, Math.round(L / d)));
-    const inner = T - m;
-    const sx = Math.max(0, 1 - d), sz = Math.max(0, A - d) / A;
-    for (let i = 0; i < T; i++) {
-      const n = Math.min(FORM_N, Math.round(((i * 0.38196601125) % 1) * FORM_N));   // 황금각(2π × 0.382)
-      const t = FORM_TH[n], k = FORM_K[n];
-      if (i >= inner) { x[i] = k * Math.cos(t); z[i] = k * Math.sin(t); continue; }
-      const rho = Math.sqrt((i + 0.5) / inner);
-      x[i] = sx * rho * k * Math.cos(t); z[i] = sz * rho * k * Math.sin(t);
+    if (!t && !(strict && N >= need)) t = first;
+    if (t < 1) {
+      if (N >= need) return c;   // 더 쪼개면 너무 빽빽 — 조금 성긴 채로
+      t = 1;
+      while (t < TIER.length && !c[t]) t++;
+      if (t >= TIER.length) return c;
     }
-    // 쪽마다 맨 끝 병사가 정확히 끝(±1)에 오게 늘인다(작은 분대는 테두리 위 몇 명뿐이라)
-    let x0 = 0, x1 = 0, z0 = 0, z1 = 0;
-    for (let i = 0; i < T; i++) { x0 = Math.min(x0, x[i]); x1 = Math.max(x1, x[i]); z0 = Math.min(z0, z[i]); z1 = Math.max(z1, z[i]); }
-    for (let i = 0; i < T; i++) {
-      x[i] = x[i] < 0 ? (x0 < -1e-6 ? -x[i] / x0 : 0) : x1 > 1e-6 ? x[i] / x1 : 0;
-      z[i] = z[i] < 0 ? (z0 < -1e-6 ? -z[i] / z0 : 0) : z1 > 1e-6 ? z[i] / z1 : 0;
+    c[t]--; c[t - 1] += 10;
+    if (strict && N >= need) return c;
+  }
+  return c;
+}
+/* 병사를 다 잃고 한 명 더 잃으면(가장 작은 합친 병사를 줄줄이 나눠) keep을 넘는가 — 그때 나누기 하나가 합치기까지 부르지 않게 */
+function brittle(c, g) {
+  const d = c.slice();
+  d[0] = -1;
+  while (d[0] < 0) {
+    let t = 1;
+    while (t < TIER.length && !d[t]) t++;
+    if (t >= TIER.length) return false;
+    d[t]--; d[t - 1] += 10;
+  }
+  return compWidth(d) > FORM_LIM.keep * capOf(g);
+}
+/* 구성(순수 함수): 10명 미만은 병사 그대로. 자릿수 그대로(205 → 100 둘 + 병사 다섯)에서 채우기(FILL: 100 하나를 10 열로 → 100 + 10×10 + 5),
+   자릿수 그대로가 hard를 넘으면 낮은 단계부터 덜 그린다(OVERFLOW, 0장은 없다). 결과 [병사, 10, 100, 1000] */
+export function composeSquad(n, g) {
+  n = Math.max(0, Math.floor(n));
+  if (n < 10) return [n, 0, 0, 0];
+  const c = greedyComp(n), cap = capOf(g), L = FORM_LIM;
+  if (n >= 100 && compWidth(c) > L.hard * cap) {
+    // 낮은 단계부터 한 장씩 빼 나가며 over 안에 든 것들 가운데 줄이 가장 깔끔한 것(그림 한 장당 비용 + 어림한 몫) — min 아래로 내려가면 그만
+    let best = null, bs = Infinity;
+    for (let t = 0; t < TIER.length;) {
+      if (!c[t] || compCount(c) <= 1) { t++; continue; }
+      c[t]--;
+      const w = compWidth(c), N = compCount(c);
+      if (w > L.over * cap || N < needFor(g.m0)) continue;
+      const sc = formArrange(c, g).cost / N + 6 * (1 - compSum(c) / n);
+      if (sc < bs) { bs = sc; best = c.slice(); }
+      if (w < L.min * cap) break;
     }
-    // 네 모서리에 가장 가까운 테두리 병사를 모서리로 — 맞는 범위(모서리가 각진 상자)의 모서리까지 그림이 닿게
-    if (T >= 8) {
-      for (const [cx, cz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-        let best = -1, bd = 1e9;
-        for (let i = inner; i < T; i++) {
-          if (Math.abs(x[i]) >= 1 && Math.abs(z[i]) >= 1) continue;   // 이미 다른 모서리에 간 병사
-          const d = (x[i] - cx) ** 2 + (z[i] - cz) ** 2;
-          if (d < bd) { bd = d; best = i; }
-        }
-        if (best >= 0) { x[best] = cx; z[best] = cz; }
+    if (best) return best;
+    return c;
+  }
+  return fillUp(c, g);
+}
+/* 이어 가기(머뭇거림 — 한 명씩 늘고 줄 때 합치기·나누기는 많아야 한 번, 늘 n이 움직인 쪽으로): 이전 구성에서 병사만 더하고 뺀다.
+   잃을 때(n이 줄면)는 나누기만 — 병사가 모자라면 가장 작은 합친 병사 하나를 나누고(줄줄이 — 큰 그림 하나가 풀린다), 아주 성기면(low 미만) 하나 쪼갠다.
+   얻을 때는 합치기만 — 10 + slack명이 되면(빽빽하면 11명, 넘치면 10명부터) 열 명을 하나로(합친 뒤가 min 이상이고 slack명 잃어도 되돌지 않을 때만, steady).
+   더 못 합치는데 넘치면 새 병사를 그리지 않는다(어림 — 그린 합이 n을 거슬러 줄지 않게).
+   어림 구성은: 얻을 때 처음부터 짠 것이 더 많고(정확하면 병사를 다 잃고 다음 나누기까지 버틸 때만 — brittle 아님: 잃는 흐름에 한 명 아물었다고
+   정확하게 따라잡았다가 곧 다시 어림으로 떨어지지 않게) 또는 어림이 n의 0.9 아래면 바꾸고,
+   잃을 때 어림 합이 n 이하면 그대로, 넘으면 그만큼 빼서 정확하게. 큰 변화(게이트 — 10명 넘게)는 처음부터. prevN = 이전 병력 */
+export function nextComp(prev, prevN, n, g) {
+  n = Math.max(0, Math.floor(n));
+  if (n < 10) return [n, 0, 0, 0];
+  if (!prev || prevN < 10 || Math.abs(n - prevN) > 9) return composeSquad(n, g);
+  const L = FORM_LIM, cap = capOf(g), NT = TIER.length, need = needFor(g.m0), s = compSum(prev);
+  const fits = (c) => compCount(c) >= need && compWidth(c) <= L.keep * cap;
+  if (s !== prevN) {
+    // 어림 구성
+    if (n > prevN) {
+      const f = composeSquad(n, g), fs = compSum(f);
+      if (fs > s && (s < 0.9 * n || (fs === n && !brittle(f, g) && towards(prev, f, 1)))) return f;
+      return fits(prev) ? prev.slice() : f;
+    }
+    if (n === prevN) {
+      // 배율만 바뀜(보스전 카메라): 아직 쓸 만하면 그대로
+      const f = composeSquad(n, g);
+      return fits(prev) && compWidth(prev) >= L.low * cap && s >= 0.9 * compSum(f) ? prev.slice() : f;
+    }
+    if (s <= n) return fits(prev) ? prev.slice() : composeSquad(n, g);
+    // 어림 합보다 적어졌다: 그만큼 빼서 정확하게(아래 잃을 때와 같이)
+    prevN = s;
+  }
+  const c = prev.slice();
+  if (n === prevN) {
+    // 배율만 바뀜: 아직 쓸 만하면 그대로, 넘치면 합치고 성기면 쪼갠다
+    if (fits(c) && compWidth(c) >= L.low * cap) return c;
+    for (let t = 0; t < NT - 1 && compWidth(c) > L.keep * cap; t++) if (c[t] >= 10 && compCount(c) - 9 >= need) { c[t] -= 10; c[t + 1]++; }
+    fillUp(c, g, L.low, true);
+    return fits(c) ? c : composeSquad(n, g);
+  }
+  c[0] += n - prevN;
+  if (n < prevN) {
+    let ops = 0;
+    while (c[0] < 0) {
+      let t = 1;
+      while (t < NT && !c[t]) t++;
+      if (t >= NT) return composeSquad(n, g);
+      c[t]--; c[t - 1] += 10;
+      ops = 1;   // (줄줄이 나누기도 큰 그림 하나가 풀리는 한 번)
+    }
+    if (!ops) fillUp(c, g, L.low, true);
+    if (compCount(c) < need) fillUp(c, g);
+    if (fits(c)) return c;
+    // 넘친다(병사 몇 명이 큰 그림 하나를 풀었다): 처음부터 짠 것이 합치기 없이 되면 그것, 아니면 낮은 단계부터 빼서(어림) — 그림이 빠지거나 나뉠 뿐
+    const f = composeSquad(n, g);
+    if (n < 100 || towards(prev, f, -1)) return f;
+    for (let t = 0; t < NT && compWidth(c) > L.max * cap; t++) while (c[t] && compWidth(c) > L.max * cap && compCount(c) > need) c[t]--;
+    return fits(c) && compSum(c) >= 0.9 * compSum(f) ? c : f;
+  }
+  // 얻을 때: 합치기 하나(가장 작은 단계부터 — 10 + slack명, 빽빽하면 11명), 그래도 넘치면 더(10명부터 — 큰 무리는 한 명 잃어도 되돌지 않는 것만)
+  const merge = (t, force) => {
+    if (c[t] < 10 || compCount(c) - 9 < need) return false;
+    if (!force && !(c[t] >= 10 + L.slack || (c[t] >= 11 && compWidth(c) > L.max * cap))) return false;
+    c[t] -= 10; c[t + 1]++;
+    if ((force && n < 100) || ((force || compWidth(c) >= L.min * cap) && steady(c, g, force ? 1 : L.slack))) return true;
+    c[t] += 10; c[t + 1]--;
+    return false;
+  };
+  for (let t = 0; t < NT - 1; t++) if (merge(t, false)) break;
+  for (let t = 0; t < NT - 1 && compWidth(c) > L.keep * cap; t++) if (merge(t, true)) t = -1;
+  if (compCount(c) < need) fillUp(c, g);
+  if (fits(c)) return c;
+  // 넘친다: 새 병사는 그리지 않는다(어림 — 그린 합이 그대로, 한 명 잃으면 다시 정확)
+  return n >= 100 && fits(prev) ? prev.slice() : composeSquad(n, g);
+}
+/* 구성 a → b가 한쪽으로만 바뀌는가: dir < 0이면 나누기·빼기만(큰 단계에서 작은 단계로), dir > 0이면 합치기·더하기만 */
+function towards(a, b, dir) {
+  const s3 = a[3] - b[3], s2 = a[2] - b[2] + 10 * s3, s1 = a[1] - b[1] + 10 * s2;
+  return dir < 0 ? s1 >= 0 && s2 >= 0 && s3 >= 0 : s1 <= 0 && s2 <= 0 && s3 <= 0;
+}
+/* k명 잃어도 나누기가 일어나지 않는가(병사가 k명 넘게 있고, 장 수·채우기가 버틴다) — 합친 직후 몇 명 잃었다고 바로 되돌지 않게
+   (잃는 흐름에 한 명 아물었다고 합쳤다가 곧 다시 나누지 않게: 보통 합치기는 slack명, 넘쳐서 하는 합치기는 한 명) */
+function steady(c, g, k) {
+  return c[0] >= k && compCount(c) - k >= needFor(g.m0) && compWidth(c) - k * TIER[0].w >= FORM_LIM.low * capOf(g);
+}
+
+/* 줄 나누기: 큰 단계부터 늘어놓은 것(ts)을 앞줄부터 m줄로 자른다(DP — 줄 비용 합이 가장 작게). 줄마다 두 장 이상(셋뿐이면 V자 — 앞줄 한 장).
+   줄 비용: 그림마다 가린 몫(옆 이웃 + 뒷줄), 빈틈(큰 그림 사이 구멍으로 작은 그림이 보이면 크게), 단계가 섞일수록, 좌우가 어긋나면 크다.
+   m은 m0 ~ m0+2 가운데(빽빽한 작은 무리는 줄을 늘린다) */
+function seqOf(comp) {
+  const ts = [];
+  for (let t = TIER.length - 1; t >= 0; t--) for (let i = 0; i < comp[t]; i++) ts.push(t);
+  return ts;
+}
+/* 줄 안 자리: 큰 단계가 가운데(대장 자리), 나머지는 가운데에서 바깥으로 번갈아. 짝수 줄의 가운데 두 자리는 줄마다 왼쪽·오른쪽을 번갈아 먼저(한쪽으로 쏠려 보이지 않게) */
+function rowOrder(grp, r) {
+  const k = grp.length, c = (k - 1) / 2, idx = [];
+  for (let j = 0; j < k; j++) idx.push(j);
+  idx.sort((a, b) => Math.abs(a - c) - Math.abs(b - c) || (r & 1 ? b - a : a - b));
+  const row = new Array(k);
+  for (let j = 0; j < k; j++) row[idx[j]] = grp[j];
+  return row;
+}
+/* 줄 비용 표 준비(O(1)로 재게): 폭 누적합, 단계가 바뀌는 자리 */
+function costPrep(ts, W) {
+  const N = ts.length, pre = new Float64Array(N + 1), chg = [];
+  for (let i = 0; i < N; i++) { pre[i + 1] = pre[i] + TIER[ts[i]].w; if (i && ts[i] !== ts[i - 1]) chg.push(i); }
+  return { ts, W, pre, chg };
+}
+function rowCost(cp, a, b, v, last) {
+  const ts = cp.ts, k = b - a, sum = cp.pre[b] - cp.pre[a], wa = sum / k;
+  // 그림마다 가린 몫: 옆(안쪽 이웃이 위에 그려진다 — 가운데 하나만 빼고) + 아래(뒷줄 그림이 솟아 덮는다, 줄 간격 v)
+  const o = k > 1 ? (sum - cp.W) / (k - 1) : 0;
+  const hh = Math.max(0, o) / wa;
+  const hv = last ? 0 : Math.max(0, TIER[ts[b]].h - v) / TIER[ts[a]].h;
+  const hid = 1 - (1 - hh) * (1 - hv);
+  let cost = (k - 1) * (hid / 0.35) ** 2 + (hv / 0.35) ** 2;
+  // 빈틈(줄이 성기다): 이웃 사이 틈이 그림 폭의 반을 넘으면 크게. 틈으로 뒷줄의 작은 그림이 보이면 더(양옆만 크고 안은 작아 보인다)
+  if (o < 0) {
+    const gp = -o / wa;
+    cost += (k - 1) * ((gp / 0.7) ** 2 + 20 * Math.max(0, gp - 0.5) ** 2) * (last ? 1 : 1 + 2 * Math.max(0, ts[a] - ts[b]));
+    if (!last && ts[a] > ts[b] && gp > 0.35) cost += 50;   // 큰 그림 사이 구멍으로 작은 그림 — 거의 하지 않는다
+  }
+  if (k === 1) cost += 2;
+  if (ts[a] !== ts[b - 1]) {
+    cost += 1.0 * (ts[a] - ts[b - 1]);
+    // 가운데부터 둘씩 양옆에 놓으니, 단계가 짝 한가운데서 바뀌면 좌우가 어긋난다(홀수 줄은 짝수 자리, 짝수 줄은 홀수 자리)
+    for (const q of cp.chg) if (q > a && q < b && ((q - a) & 1) === (k & 1 ? 0 : 1)) { cost += 8; break; }
+  }
+  return cost;
+}
+function splitBest(cp, m, S) {
+  const N = cp.ts.length, v = m > 1 ? S / (m - 1) : 0;
+  // best[r·(N+1) + i] = 앞에서 r줄로 ts[0..i)를 나눈 가장 작은 비용
+  const best = new Float64Array((m + 1) * (N + 1)).fill(Infinity), from = new Int16Array((m + 1) * (N + 1)).fill(-1);
+  best[0] = 0;
+  for (let r = 1; r <= m; r++) {
+    const minK = r === 1 && N === 3 ? 1 : 2, base = (r - 1) * (N + 1), cur = r * (N + 1);
+    for (let i = 0; i < N; i++) {
+      const b0 = best[base + i];
+      if (b0 === Infinity) continue;
+      for (let j = r === m ? N : i + minK; j <= N; j++) {
+        if (N - j < 2 * (m - r)) break;
+        const c = b0 + rowCost(cp, i, j, v, r === m);
+        if (c < best[cur + j] - 1e-12) { best[cur + j] = c; from[cur + j] = i; }
       }
     }
   }
-  u = { x, z };
-  if (formUnit.size > 600) formUnit.clear();
-  formUnit.set(key, u);
-  return u;
+  const tot = best[m * (N + 1) + N];
+  if (tot === Infinity) return null;
+  const sizes = [];
+  for (let r = m, j = N; r > 0; r--) { const i = from[r * (N + 1) + j]; sizes.unshift(j - i); j = i; }
+  return { sizes, cost: tot };
 }
-export function formationSpot(i, T, R, hw, out = [0, 0]) {
-  if (T <= 1) { out[0] = 0; out[1] = 0; return out; }
-  const ax = Math.max(0, R - hw), az = Math.max(0, SQUAD_DEPTH * R - FORM_IN);
-  const u = unitLayout(T, ax > 0 ? az / ax : 1);
-  out[0] = ax * u.x[i];
-  out[1] = az * u.z[i];
+function sizesCost(cp, sizes, S) {
+  const m = sizes.length, v = m > 1 ? S / (m - 1) : 0;
+  let c = 0, i = 0;
+  for (let r = 0; r < m; r++) {
+    if (sizes[r] < (r || cp.ts.length !== 3 ? 2 : 1)) return Infinity;
+    c += rowCost(cp, i, i + sizes[r], v, r === m - 1); i += sizes[r];
+  }
+  return i === cp.ts.length ? c : Infinity;
+}
+/* 구성 → 줄 배치 { rows: [[단계, …] 앞줄부터], sizes, key, cost }. prev(이전 배치)가 같은 구성이고 아직 쓸 만하면(비용 차이 0.3 안) 그대로 —
+   화면 배율이 조금씩 바뀌어도(보스전 카메라) 줄이 들썩이지 않게 */
+export function formArrange(comp, g, prev) {
+  const ts = seqOf(comp), N = ts.length, ck = comp.join(',');
+  if (N === 0) return { rows: [], sizes: [], key: ck + '|', cost: 0, comp: ck };
+  if (N <= 2) return { rows: [ts.slice()], sizes: [N], key: ck + '|' + N, cost: 0, comp: ck };
+  const cp = costPrep(ts, g.W);
+  let best = null;
+  for (let m = g.m0; m <= g.m0 + 2; m++) {
+    if (N < (N === 3 ? 3 : needFor(m))) break;
+    const sp = splitBest(cp, m, g.S);
+    if (!sp) continue;
+    const cost = sp.cost + 0.15 * (m - g.m0);
+    if (!best || cost < best.cost - 1e-9) best = { sizes: sp.sizes, cost };
+  }
+  if (!best) best = { sizes: [N], cost: 99 };   // (없는 경우 — 안전하게 한 줄)
+  if (prev && prev.comp === ck && prev.sizes && prev.sizes.length >= g.m0 && prev.sizes.length <= g.m0 + 2) {
+    const pc = sizesCost(cp, prev.sizes, g.S) + 0.15 * (prev.sizes.length - g.m0);
+    if (pc <= best.cost + 0.3) best = { sizes: prev.sizes, cost: pc };
+  }
+  const rows = [];
+  for (let r = 0, i = 0; r < best.sizes.length; i += best.sizes[r++]) rows.push(rowOrder(ts.slice(i, i + best.sizes[r]), r));
+  return { rows, sizes: best.sizes, key: ck + '|' + best.sizes.join('.'), cost: best.cost, comp: ck };
+}
+/* 줄 안 가운데 자리(px, 분대 가운데 기준): 양 끝 그림이 ±W/2에 닿고 겹침(또는 틈)은 고르게. 결과 = 이웃 겹침(px) */
+function rowXs(row, W, out) {
+  const k = row.length;
+  if (k === 1) { out[0] = 0; return 0; }
+  let sum = 0;
+  for (const t of row) sum += TIER[t].w;
+  const o = (sum - W) / (k - 1);
+  let x = -W / 2 + TIER[row[0]].halfL;
+  out[0] = x;
+  for (let j = 1; j < k; j++) { x += TIER[row[j - 1]].halfR + TIER[row[j]].halfL - o; out[j] = x; }
+  return o;
+}
+const FORM_XS = [], FORM_YS = new Float64Array(64), FORM_GAP = new Float64Array(64);
+/* 줄 높이(px, 맨 앞줄 발 0 ~ 맨 뒷줄 발 S): 고르게. 다만 전차 줄 바로 뒤(가까운 쪽)가 전차 없는 줄이면 그 사이를 TANK_GAP까지 더 띄운다 —
+   줄 간격 13px이면 뒷줄 그림이 전차 키(22px)의 40%를 덮어 몸통·궤도가 숨고 별 단 돔만 남는다(분대장 철모처럼 보인다). 1/3쯤만 가리게.
+   뒷줄 옆 끝 그림 키보다는 작게(옆이 위아래로 이어지게), 다른 줄 간격은 고른 것의 0.75배까지만 줄인다 */
+export const TANK_GAP = 16;
+const hasTank = (row) => row.indexOf(3) >= 0;
+function rowYs(rows, S) {
+  const m = rows.length, ys = FORM_YS, gap = FORM_GAP, v = m > 1 ? S / (m - 1) : 0;
+  ys[0] = 0;
+  if (m < 2) return ys;
+  let nT = 0, sumT = 0;
+  for (let r = 0; r + 1 < m; r++) {
+    gap[r] = 0;
+    if (!hasTank(rows[r]) || hasTank(rows[r + 1])) continue;
+    const nx = rows[r + 1], edge = Math.min(TIER[nx[0]].h, TIER[nx[nx.length - 1]].h) - 1;
+    gap[r] = Math.max(v, Math.min(TANK_GAP, edge));
+    nT++;
+  }
+  if (nT && nT < m - 1) {
+    const lim = (S - (m - 1 - nT) * 0.75 * v) / nT;
+    for (let r = 0; r + 1 < m; r++) if (gap[r]) { gap[r] = Math.max(v, Math.min(gap[r], lim)); sumT += gap[r]; }
+  } else nT = 0;
+  const gO = nT ? (S - sumT) / (m - 1 - nT) : v;
+  for (let r = 1; r < m; r++) ys[r] = ys[r - 1] + (nT && gap[r - 1] ? gap[r - 1] : gO);
+  ys[m - 1] = S;
+  return ys;
+}
+/* 깊이 z(분대 기준, z ≤ 0)의 m당 px — 1/px는 깊이에 대해 곧은 줄(바늘구멍 사진기) */
+const ppmAt = (g, z) => (g.D > 0 && z < 0 ? 1 / (1 / g.ppm + (z / -g.D) * (1 / g.pb - 1 / g.ppm)) : g.ppm);
+/* 뒷줄 옆 끝을 맞출 몸 끝(px): 단계 t 그림 키 1/4 높이의 깊이에서 잰 R */
+const edgeAt = (g, z, t) => g.R * ppmAt(g, Math.min(0, z + TIER[t].h / (4 * g.vb)));
+/* 자리(m, 분대 가운데 기준) — 정확한 배율로 매 프레임 다시 잰다. 줄은 화면에서 고르게(원근: 앞쪽 vf, 뒤쪽 vb). out[i] = { t, x, z, r, j }.
+   가운데보다 뒤(가까운 쪽) 줄은 원근으로 화면에서 넓어지는데, 키 큰 그림(중장갑·전차)은 머리가 가운데 깊이까지 솟는다 — 그 줄의 옆 끝은 그림 키 1/4 높이의
+   깊이에서 잰 몸 끝(R·그 깊이의 배율)에 맞춘다: 옆 한가운데서 무는 좀비가 그림 머리에 너무 깊이 파묻히지 않고(5px 안), 뒤 모서리도 비지 않게(tests/art.mjs) */
+export function formPositions(arr, g, out = []) {
+  const rows = arr.rows, m = rows.length, xs = FORM_XS, ys = rowYs(rows, g.S);
+  let n = 0;
+  for (let r = 0; r < m; r++) {
+    const row = rows[r];
+    rowXs(row, g.W, xs);
+    let z = 0;
+    if (m > 1) {
+      const y = ys[r] - g.D * g.vf;   // 분대 가운데 기준 화면 아래쪽(+)
+      z = y <= 0 ? -y / g.vf : -y / g.vb;
+      if (r === 0) z = g.D;
+      if (r === m - 1) z = -g.D;
+    }
+    let kL = 1 / g.ppm, kR = kL;
+    if (z < 0 && row.length > 1) {
+      const pr = ppmAt(g, z), half = g.W / 2;
+      const hl = TIER[row[0]].halfL, hr = TIER[row[row.length - 1]].halfR;
+      kL = (edgeAt(g, z, row[0]) - hl) / (half - hl) / pr;
+      kR = (edgeAt(g, z, row[row.length - 1]) - hr) / (half - hr) / pr;
+    }
+    for (let j = 0; j < row.length; j++) {
+      const o = out[n] || (out[n] = { t: 0, x: 0, z: 0, r: 0, j: 0 });
+      o.t = row[j]; o.x = xs[j] * (xs[j] < 0 ? kL : kR); o.z = z; o.r = r; o.j = j;
+      n++;
+    }
+  }
+  out.length = n;
   return out;
 }
-/* 그리는 병사 수: 앞(먼 쪽) 64명(저사양 40)은 온전히, 그 뒤로는 철모만 — 병력이 많을수록 늘어 최대 96(48)개 */
-export function formationCount(n, low = false) {
-  if (n <= 0) return 0;
-  const full = low ? 40 : 64, helmCap = low ? 48 : 96;
-  const D = Math.min(n, full);
-  return D + (n > D ? Math.round(helmCap * Math.min(1, Math.sqrt((n - D) / 936))) : 0);
+/* 한 번에: 병력 n, 분대 반지름 R, 배율 → { comp, arr, g, units: [{ t, x, z, r, j }] } (테스트·처음 그릴 때) */
+export function formationPlan(n, R, ppm, vf, vb, pb) {
+  const g = formGeom(R, ppm, vf, vb, pb);
+  const comp = composeSquad(n, g);
+  const arr = formArrange(comp, g);
+  return { comp, arr, g, units: formPositions(arr, g) };
 }
 /* 특수병 자리: 무리 맨 뒤 바로 뒤 양쪽(분대 폭 안), 셋째는 왼쪽 자리 한 줄 뒤(영웅과 안 겹치게). 영웅은 그 뒤 가운데 */
 export function slotPos(q, i, R, qx) {
@@ -228,6 +506,12 @@ export function slotPos(q, i, R, qx) {
   return { x: qx - side, z: back - 0.75 };
 }
 export const heroZ = (q, R) => q.z - R - 0.7;
+/* 총구 불꽃 차례(순수 함수): 차례 ph(0, 1, 2…)인 그림이 60Hz 프레임 f60에 쏘는가 — 주기 period마다 한 번, 차례가 이어진 그림들은
+   서로 다른 프레임에 쏜다(한 프레임에 많아야 ⌈쏘는 수/주기⌉). 낮은 품질(low)은 짝수 프레임만, 그림마다 주기 두 배로 한 번(모두 쏜다) */
+export function muzzleOn(f60, ph, period, low) {
+  if (low) return (f60 & 1) === 0 && (((f60 >> 1) + ph) % period) === 0;
+  return ((f60 + ph) % period) === 0;
+}
 
 export function createRenderer(cvs) {
   const ctx = cvs.getContext('2d', { alpha: false });
@@ -263,7 +547,7 @@ export function createRenderer(cvs) {
   let readyResolve;
   const ready = new Promise((r) => { readyResolve = r; });
   {
-    const first = ['soldier', 'helmet', 'grunt', 'flash', 'spark', 'puff', 'coin', 'runner', 'flag'];
+    const first = ['soldier', 'sq10', 'sq100', 'sq1000', 'grunt', 'flash', 'spark', 'puff', 'coin', 'runner', 'flag'];
     const tasks = [
       ...font.prebakeTasks(GLYPH_PAIRS),
       () => { for (const k of Object.keys(ICONS)) atlas.icon(k); },
@@ -324,11 +608,14 @@ export function createRenderer(cvs) {
   const flakes = [];
   for (let i = 0; i < 40; i++) flakes.push({ x: Math.random(), y: Math.random(), v: 0.5 + Math.random(), p: Math.random() * 6 });
 
-  /* 분대 대형(그릴 위치): 앞 64명은 온전히, 그 앞쪽(먼 쪽) 줄은 철모만 */
-  const VIS = 64 + 96;
-  const vis = { n: 0, x: new Float32Array(VIS), z: new Float32Array(VIS), born: new Float32Array(VIS), helm: new Uint8Array(VIS) };
-  let orderT = -1;
-  const spot = [0, 0];
+  /* 분대 그림 단위(합친 병사 포함): { id, t 단계, slot 자리 번호, x·z 분대 기준 m, born 떨어져 내림, pop 합쳐져 나타남, hop 나뉘어 튀어나옴 } */
+  const units = [];
+  const fading = [];     // 사라지는 중인 그림(합쳐지며 빨려 감 'merge' / 나뉘기 직전 'split')
+  const fPos = [];       // 이번 프레임 자리(formPositions, 재사용)
+  let fComp = null, fArr = null, fGeo = null, fN = -1, formS = null, unitId = 0, pendingLoss = 0, formPlans = 0;
+  let firePeriod = 5, hurtMod = 11;
+  const EMPTY_COMP = [0, 0, 0, 0];
+  const MERGE_T = 0.3, SPLIT_T = 0.16;
 
   /* 그리기 목록(재사용). 깊이 정렬은 정수 키(깊이 1/64u 단위 + 넣은 순서)를 Int32Array에서 정렬한다 —
      비교 함수 없이, 프레임마다 쓰레기 없이(T6). 같은 깊이는 넣은 순서대로 그린다. */
@@ -410,7 +697,7 @@ export function createRenderer(cvs) {
     for (const f of flies) f.on = false;
     for (const t of tracers) t.on = false;
     for (const r of rings) r.on = false;
-    trauma = 0; flashA = 0; camX = 0; vis.n = 0; lastN = -1; countTint = 0; countPop = 0; shownN = 0; pillA = 1;
+    trauma = 0; flashA = 0; camX = 0; units.length = 0; fading.length = 0; fComp = null; fArr = null; fGeo = null; fN = -1; formS = null; pendingLoss = 0; lastN = -1; countTint = 0; countPop = 0; shownN = 0; pillA = 1;
     dolly = 0; layout();   // 보스전 렌즈를 되돌린다(R1)
     hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9; surgeT = -9; stompT = -9;
     castT = -9; castRun = false; castArena = false; healT = -9; rocketT = -9; snipeT = -9; readyT = -9; healSum = 0; healShown = -9;
@@ -554,13 +841,8 @@ export function createRenderer(cvs) {
           if (e.cause === 'crate') float(e.x, 2.3, e.z, '-' + e.n, '#FFC2B3', { icon: 'men', out: PANEL.bad.out, life: 1.2 });
           else if (e.cause !== 'gate' && e.n >= 2) float(q.x + (Math.random() < 0.5 ? -1 : 1) * (R + 0.4), 1.6, q.z, '-' + e.n, '#FFC2B3', { out: PANEL.bad.out, life: 0.8, vz: q.vz });
           if (e.n >= Math.max(5, q.n * 0.08)) shake(0.18);
-          // 쓰러진 병사: 연기 + 철모가 튀어 오른다
-          const m = Math.min(5, e.n);
-          for (let i = 0; i < m && vis.n; i++) {
-            const j = (Math.random() * Math.min(vis.n, 64)) | 0;
-            fx('puff', vis.x[j], 0.4, vis.z[j], 0.3, { step: 1 });
-            part(vis.x[j], 0.9, vis.z[j], (Math.random() - 0.5) * 2, 4 + Math.random() * 2, (Math.random() - 0.5), 0.8, '#6CC0FF', 1, 12, 'helmetBit');
-          }
+          // 쓰러진 병사: 연기 + 철모가 튀어 오른다 — 다음 그리기에서 빠진 그림 자리에(빠진 그림이 없으면 몇 군데)
+          pendingLoss += e.n;
           break;
         }
         case 'kill': {
@@ -1323,78 +1605,255 @@ export function createRenderer(cvs) {
   }
 
   /* ---------- 분대 ---------- */
+  /* 그림 단위마다 이름표(id)가 있어 병력이 조금 바뀌어도 제자리에 남고, 목표 자리로 미끄러진다(분대 기준 좌표라 달려도 뒤처지지 않는다).
+     구성이 바뀌면(remap) 단계마다 가까운 것끼리 짝짓고, 남는 것으로 합치기(작은 것들이 새 자리로 모여 펑 → 큰 것이 톡 나타난다)·
+     나누기(큰 것이 펑 → 작은 것들이 그 자리에서 튀어나와 흩어진다)·더하기(떨어져 내림)·빼기(연기 + 철모)를 고른다 */
   function updateFormation(s, dt, qx) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
     const R = radius(Math.max(1, q.n));
-    const T = formationCount(q.n, quality === 'low');
-    const Hn = T - Math.min(q.n, quality === 'low' ? 40 : 64);
-    if (T !== orderT) {
-      // 먼(앞쪽) 칸부터 철모 — 순서는 T가 바뀔 때만 다시 정한다(깜빡임 없음)
-      // 옆 끝 열(|x| > 0.9)은 철모로 바꾸지 않는다 — 철모 그림은 폭이 병사의 반이라 옆 가장자리가 맞는 범위 안쪽으로 들어간다
-      const idx = [];
-      const fz = new Float32Array(T), edge = new Uint8Array(T);
-      for (let i = 0; i < T; i++) { idx.push(i); formationSpot(i, T, 1, 0, spot); fz[i] = spot[1]; edge[i] = Math.abs(spot[0]) > 0.9 ? 1 : 0; }
-      idx.sort((a, b) => edge[a] - edge[b] || fz[b] - fz[a]);
-      for (let j = 0; j < T; j++) vis.helm[idx[j]] = j < Hn ? 1 : 0;
-      orderT = T;
+    if (s !== formS) { units.length = 0; fading.length = 0; fComp = null; fArr = null; fGeo = null; fN = -1; formS = s; }
+    // 배율: 분대 자리의 m당 px(옆)와, 앞뒤 끝까지의 화면 높이(원근 — 앞·뒤 따로)
+    let ppm = 17, vf = 10, vb = 10, pb = 0;
+    const D = Math.max(0.05, SQUAD_DEPTH * R - FORM_IN);
+    if (project(view, qx, 0, q.z)) {
+      ppm = P.s;
+      const y0 = P.y;
+      if (project(view, qx, 0, q.z + D)) vf = Math.max(1, (y0 - P.y) / D);
+      if (project(view, qx, 0, q.z - D)) { vb = Math.max(1, (P.y - y0) / D); pb = P.s; }
     }
-    // 병사 그림 반폭(m): 이 화면의 분대 자리 배율로 — 옆 끝 병사 그림의 가장자리가 R에 오게(어느 화면에서나)
-    const hw = project(view, qx, 0, q.z) ? SOLDIER_HALF_PX / P.s : 0.4;
-    for (let i = vis.n; i < T; i++) {
-      formationSpot(i, T, R, hw, spot);
-      vis.x[i] = qx + spot[0];
-      vis.z[i] = q.z + spot[1];
-      vis.born[i] = vis.n ? time : -9;
+    const n = Math.max(0, q.n);
+    // 병력·배율이 바뀔 때만 다시 짠다(프레임마다 쓰레기 없이)
+    if (n !== fN || !fGeo || Math.abs(ppm - fGeo.ppm) > 0.01 || Math.abs(vf - fGeo.vf) > 0.01 || Math.abs(vb - fGeo.vb) > 0.01 || R !== fGeo.R) {
+      const g = formGeom(R, ppm, vf, vb, pb);
+      formPlans++;
+      const comp = n <= 0 ? EMPTY_COMP : fComp ? nextComp(fComp, fN, n, g) : composeSquad(n, g);
+      const same = fComp && fArr && comp.join(',') === fArr.comp;
+      const arr = formArrange(comp, g, same ? fArr : null);
+      if (!fArr || arr.key !== fArr.key) remap(arr, g, !fComp || !units.length, n > fN ? 1 : n < fN ? -1 : 0);
+      fArr = arr; fComp = comp; fN = n; fGeo = g;
     }
-    vis.n = T;
+    const g = fGeo, arr = fArr;
+    if (pendingLoss > 0) {
+      // 그림이 줄지 않은 손실(어림 구성·합친 병사 안에서 줄었을 때)도 몇 군데 연기로 보여 준다
+      if (units.length) for (let i = 0, m = Math.min(3, pendingLoss); i < m; i++) { const u = units[(Math.random() * units.length) | 0]; lossFx(qx + u.x, q.z + u.z, u.t); }
+      pendingLoss = 0;
+    }
+    formPositions(arr, g, fPos);
     const k = Math.min(1, dt * 12);
-    for (let i = 0; i < T; i++) {
-      formationSpot(i, T, R, hw, spot);
-      const tx = qx + spot[0], tz = q.z + spot[1];
-      vis.x[i] += (tx - vis.x[i]) * k;
-      vis.z[i] = tz + (vis.z[i] - tz) * (1 - k);
+    for (const u of units) {
+      const p = fPos[u.slot];
+      if (!p) continue;
+      u.x += (p.x - u.x) * k;
+      u.z += (p.z - u.z) * k;
+    }
+    // 합쳐지는 것: 새 그림 자리로 빨려 들어가고, 다 가면 사라진다 / 나뉘는 것: 잠깐 부풀었다 펑
+    for (let i = fading.length - 1; i >= 0; i--) {
+      const gh = fading[i];
+      const u = (time - gh.t0) / gh.dur;
+      if (u >= 1) {
+        // 나뉨은 잃은 것(연기 + 철모 조각 — 금빛 없이). 배율만 바뀌어 나뉜 것은 연기만
+        if (gh.kind === 'split') { if (gh.loss) lossFx(qx + gh.x, q.z + gh.z, gh.t); else fx('puff', qx + gh.x, 0.5 + 0.15 * gh.t, q.z + gh.z, 0.28, { step: gh.t >= 2 ? 0 : 1, vz: sq.vz }); }
+        fading.splice(i, 1);
+        continue;
+      }
+      if (gh.kind === 'merge' && gh.to) {
+        const e = u * u;
+        gh.x = gh.x0 + (gh.to.x - gh.x0) * e;
+        gh.z = gh.z0 + (gh.to.z - gh.z0) * e;
+      }
     }
     return R;
   }
-  function drawMember(s, i, qx) {
-    const q = sq;   // 카메라와 같은 시간축의 분대(R4)
-    if (!project(view, vis.x[i], 0, vis.z[i])) return;
-    const won = s.phase === 'won';
-    // 정수 좌표로 먼저 반올림(가장 많이 그리는 곳이라 실수 인자가 상자에 담기지 않게)
-    const px = Math.round(P.x);
-    let y = Math.round(P.y);
-    const age = time - vis.born[i];
-    if (age < 0.22) y -= Math.round((1 - age / 0.22) * 6);
-    else if (age < 0.27 && vis.born[i] > 0) { part(vis.x[i], 0.05, vis.z[i], 0, 0.5, 0, 0.25, '#E6D2B0', 1, 0, 'dust'); vis.born[i] = -9; }
-    if (won) y -= Math.round(Math.abs(Math.sin(time * 9 + i * 0.7)) * 2);
-    if (vis.helm[i]) {
-      atlas.draw(ctx, 'helmet', 0, px, y - 9);
-      if (!won && q.vz >= 0 && s.t > 0 && muzzle(i)) atlas.draw(ctx, 'flash', (f60 + i) & 1, px + 2, y - 13);
+  /* 새 배치로 짝짓기 — first면(레벨 시작·이어하기) 움직임 없이 바로. dir = 병력이 움직인 쪽(+ 얻음, − 잃음, 0 배율만) */
+  function remap(arr, g, first, dir) {
+    const pos = formPositions(arr, g, []);
+    if (first) {
+      units.length = 0; fading.length = 0;
+      for (let i = 0; i < pos.length; i++) units.push(newUnit(pos[i].t, i, pos[i].x, pos[i].z, -9));
+      rankUnits(pos);
       return;
     }
+    const NT = TIER.length;
+    const oldBy = [], slotBy = [];
+    for (let t = 0; t < NT; t++) { oldBy.push([]); slotBy.push([]); }
+    for (const u of units) oldBy[u.t].push(u);
+    for (let i = 0; i < pos.length; i++) slotBy[pos[i].t].push(i);
+    const next = [];
+    const U = [], V = [];
+    for (let t = 0; t < NT; t++) {
+      // 같은 단계끼리 가까운 것부터 짝(남는 것은 합치기·나누기·더하기·빼기)
+      const O = oldBy[t], S = slotBy[t];
+      const pairs = [];
+      for (let a = 0; a < O.length; a++) for (let b = 0; b < S.length; b++) {
+        const p = pos[S[b]];
+        pairs.push([(O[a].x - p.x) ** 2 + (O[a].z - p.z) ** 2, a, b]);
+      }
+      pairs.sort((p1, p2) => p1[0] - p2[0]);
+      const usedO = new Uint8Array(O.length), usedS = new Uint8Array(S.length);
+      let left = Math.min(O.length, S.length);
+      for (const [, a, b] of pairs) {
+        if (!left) break;
+        if (usedO[a] || usedS[b]) continue;
+        usedO[a] = 1; usedS[b] = 1; left--;
+        O[a].slot = S[b];
+        next.push(O[a]);
+      }
+      U.push(O.filter((_, a) => !usedO[a]));
+      V.push(S.filter((_, b) => !usedS[b]));
+    }
+    const calm = reduce;
+    const near = (list, x, z, k) => {
+      list.sort((a, b) => ((a.x ?? pos[a].x) - x) ** 2 + ((a.z ?? pos[a].z) - z) ** 2 - (((b.x ?? pos[b].x) - x) ** 2 + ((b.z ?? pos[b].z) - z) ** 2));
+      return list.splice(0, k);
+    };
+    let removed = 0;
+    const srcs = [];   // 이번에 나뉜 큰 그림 자리(줄줄이 나뉠 때 더 작은 것도 거기서 튀어나온다)
+    const made = [];   // 이번에 합쳐 생긴 그림(얻을 때 남는 작은 것도 거기로 빨려 든다)
+    for (let t = NT - 1; t >= 1; t--) {
+      // 합치기: 아래 단계 남는 것(최대 열) → 이 단계 새 자리
+      while (V[t].length && U[t - 1].length) {
+        const si = V[t].shift(), p = pos[si];
+        const nu = newUnit(t, si, p.x, p.z, -9);
+        nu.pop = calm ? -9 : time + MERGE_T;
+        next.push(nu);
+        made.push(nu);
+        for (const o of near(U[t - 1], p.x, p.z, 10)) {
+          if (calm) continue;
+          fading.push({ kind: 'merge', t: o.t, id: o.id, x: o.x, z: o.z, x0: o.x, z0: o.z, to: nu, t0: time, dur: MERGE_T * (0.75 + 0.25 * Math.random()) });
+        }
+      }
+      // 나누기: 이 단계 남는 것 → 아래 단계 새 자리(최대 열)가 그 자리에서 튀어나온다
+      while (U[t].length && V[t - 1].length) {
+        const o = U[t].shift();
+        const kids = near(V[t - 1], o.x, o.z, 10);
+        for (const si of kids) {
+          const nu = newUnit(t - 1, si, o.x, o.z, -9);
+          nu.hop = calm ? -9 : time + SPLIT_T * Math.random() * 0.6;
+          next.push(nu);
+        }
+        srcs.push(o);
+        if (calm) continue;
+        fading.push({ kind: 'split', t: o.t, id: o.id, x: o.x, z: o.z, t0: time, dur: SPLIT_T, loss: dir < 0 });
+      }
+    }
+    // 그냥 빠진 것: 연기 + 철모(한 번에 몇 개만) — 얻을 때는 죽지 않는다: 가장 가까운 더 큰 그림(이번에 합쳐 생긴 것 먼저)으로 빨려 든다
+    // 그냥 늘어난 것: 위에서 떨어져 내린다(큰 그림이 줄줄이 나뉜 것이면 그 자리에서 튀어나온다)
+    for (let t = 0; t < NT; t++) {
+      for (const o of U[t]) {
+        if (dir > 0) {
+          let to = null, bd = Infinity;
+          for (const list of [made, next]) {
+            for (const u of list) { const d = (u.x - o.x) ** 2 + (u.z - o.z) ** 2; if (u.t > o.t && d < bd) { bd = d; to = u; } }
+            if (to) break;
+          }
+          if (to) {
+            if (!calm) fading.push({ kind: 'merge', t: o.t, id: o.id, x: o.x, z: o.z, x0: o.x, z0: o.z, to, t0: time, dur: MERGE_T * (0.75 + 0.25 * Math.random()) });
+            continue;
+          }
+        }
+        if (removed++ < 6) lossFx(sq.x + o.x, sq.z + o.z, o.t);
+      }
+      for (const si of V[t]) {
+        const p = pos[si];
+        let src = null, bd = Infinity;
+        for (const o of srcs) { const d = (o.x - p.x) ** 2 + (o.z - p.z) ** 2; if (o.t > t + 1 && d < bd) { bd = d; src = o; } }
+        if (src) {
+          const nu = newUnit(t, si, src.x, src.z, -9);
+          nu.hop = calm ? -9 : time + SPLIT_T * (0.3 + Math.random() * 0.6);
+          next.push(nu);
+        } else next.push(newUnit(t, si, p.x, p.z, calm ? -9 : time));
+      }
+    }
+    if (removed) pendingLoss = 0;
+    units.length = 0;
+    for (const u of next) units.push(u);
+    rankUnits(pos);
+  }
+  /* 쏘는 차례(ph — 앞쪽 절반만 쏜다, 적으면 모두)와 다치는 차례(hr): 자리 번호를 섞은 순서로 0, 1, 2… —
+     주기마다 고르게 번갈아 쏘고(한 프레임에 몰리지 않게), 맞을 때마다 몇 장씩 돌아가며 붉어진다 */
+  function rankUnits(pos) {
+    const ord = units.slice().sort((a, b) => hashInt(a.slot * 7 + 3) - hashInt(b.slot * 7 + 3));
+    let k = 0;
+    for (let i = 0; i < ord.length; i++) {
+      const u = ord[i];
+      u.hr = i;
+      u.fire = ord.length < 6 || pos[u.slot].z > -0.1;
+      u.ph = u.fire ? k++ : 0;
+    }
+  }
+  function newUnit(t, slot, x, z, born) {
+    return { id: ++unitId, t, slot, x, z, born, pop: -9, hop: -9, fx: 0, ph: 0, hr: 0, fire: false };
+  }
+  /* 사라짐: 연기(분대와 같이 움직인다) + 철모 조각(큰 단계는 몇 개 더) */
+  function lossFx(x, z, t) {
+    fx('puff', x, 0.4 + 0.15 * t, z, 0.3, { step: t >= 2 ? 0 : 1, vz: sq.vz });
+    for (let i = 0; i <= Math.min(2, t); i++) part(x, 0.9, z, (Math.random() - 0.5) * 2, 4 + Math.random() * 2, sq.vz * 0.6 + (Math.random() - 0.5), 0.8, '#6CC0FF', 1, 12, 'helmetBit');
+  }
+  /* 합치기의 펑: 연기 + 금빛 반짝이(분대와 같이 움직인다) */
+  function popFx(x, z, t) {
+    fx('puff', x, 0.5 + 0.15 * t, z, 0.28, { step: t >= 2 ? 0 : 1, vz: sq.vz });
+    if (lowFx()) return;
+    for (let i = 0; i < 4 + 2 * t; i++) {
+      const a = Math.random() * 6.283;
+      part(x + Math.cos(a) * 0.2, 0.7 + 0.2 * t, z, Math.cos(a) * 2.2, 2.5 + Math.random() * 2, sq.vz + Math.sin(a) * 1.2, 0.45, FX_COL.gold[i % 3], 1, 7);
+    }
+  }
+  /* 그림 단위 하나(u: 살아 있는 것 또는 사라지는 중인 것 — gh가 참) */
+  function drawMember(s, u, qx, gh) {
+    const q = sq;   // 카메라와 같은 시간축의 분대(R4)
+    if (!gh && time < u.pop) return;   // 합쳐지는 중: 모두 모이면 나타난다
+    const wx = qx + u.x, wz = q.z + u.z;
+    if (!project(view, wx, 0, wz)) return;
+    const won = s.phase === 'won';
+    // 정수 좌표로 먼저 반올림(실수 인자가 상자에 담기지 않게)
+    const px = Math.round(P.x);
+    let y = Math.round(P.y);
+    const ph = u.id * 0.37;
+    if (!gh) {
+      const age = time - u.born;
+      if (u.born > 0 && age < 0.22) y -= Math.round((1 - age / 0.22) * 6);
+      else if (u.born > 0 && age < 0.27) { part(wx, 0.05, wz, 0, 0.5, q.vz, 0.25, '#E6D2B0', 1, 0, 'dust'); u.born = -9; }
+      if (u.pop > 0) {
+        // 합친 것이 톡: 펑 하고 한 번 뛴다
+        const a = time - u.pop;
+        if (!u.fx) { u.fx = 1; popFx(wx, wz, u.t); }
+        if (a < 0.3) y -= Math.round(Math.sin((a / 0.3) * Math.PI) * 4);
+        else u.pop = -9;
+      }
+      if (u.hop > 0) {
+        // 나뉜 것: 큰 그림 자리에서 튀어나와 제자리로
+        const a = time - u.hop;
+        if (a < 0) return;
+        if (a < 0.32) y -= Math.round(Math.sin((a / 0.32) * Math.PI) * 5);
+        else u.hop = -9;
+      }
+    } else if (u.kind === 'split') {
+      // 나뉘기 직전: 살짝 들썩
+      y -= ((time - u.t0) / u.dur) > 0.4 ? 1 : 0;
+    }
+    if (won) y -= Math.round(Math.abs(Math.sin(time * 9 + u.id * 0.7)) * 2);
+    const T = TIER[u.t], sheet = T.sheet;
     const moving = q.vz > 0.5 && !won;
-    const fr = moving ? FR.soldier.walk[((time * 10 + i * 0.37) | 0) & 3] : FR.soldier.idle[((time * 2 + i * 0.31) | 0) & 1];
-    const hurt = time - hurtAt < 0.15 && (i * 7 + hurtSeed) % 11 === 0;
-    const fire = !won && q.n > 0 && s.t > 0 && vis.z[i] > q.z - 0.1 && muzzle(i);
-    const r = atlas.draw(ctx, 'soldier', fr, px, y + (fire ? 1 : 0), 0, hurt ? 'hurt' : '');
+    const fr = moving ? FR.tier.walk[((time * T.fps + ph) | 0) & 3] : FR.tier.idle[((time * T.idleFps + u.id * 0.31) | 0) & 1];
+    const hurt = !gh && time - hurtAt < 0.15 && (u.hr + hurtSeed) % hurtMod === 0;
+    // 총구 불꽃은 60Hz 시계로(120Hz 화면에서 두 배로 번쩍이지 않게, T8)
+    const fire = !gh && !won && q.n > 0 && s.t > 0 && u.fire && muzzleOn(f60, u.ph, firePeriod, quality === 'low');
+    const r = atlas.draw(ctx, sheet, fr, px, y + (fire ? 1 : 0), 0, hurt ? 'hurt' : '');
     if (fire) {
-      const ox = px - r.ax, oy = y + 1 - r.ay;
-      const my = fr === 1 || fr === 3 ? 3 : 4;
-      atlas.draw(ctx, 'flash', (f60 + i) & 1, ox + 12, oy + my - 1);
+      // 총구 끝 칸(프레임마다 — 걸음에 따라 솟는다, art.js muzzles) 위 외곽선 한 칸 위에 불꽃. ox·oy = 반동으로 1px 내린 그림의 왼쪽 위
+      const m = SHEETS[sheet].muzzles[fr], ox = px - r.ax, oy = y + 1 - r.ay;
+      atlas.draw(ctx, 'flash', (f60 + u.id) & 1, ox + m[0] + 1, oy + m[1] - 1);
     }
   }
   function drawFlag(s, i, qx, R, z) {
     const x = qx + FLAG_X[i] * R;
     if (!project(view, x, 0, z)) return;
-    let y = P.y - 12;
+    // 맨 앞줄에서 가장 키 큰 그림 위로 천이 보이게
+    let hf = 14;
+    if (fArr && fArr.rows.length) for (const t of fArr.rows[0]) hf = Math.max(hf, TIER[t].h);
+    let y = P.y - Math.max(12, hf - 4);
     if (s.phase === 'won') y -= Math.round(Math.abs(Math.sin(time * 9 + i)) * 2);
     atlas.draw(ctx, 'flag', ((time * 3 + i * 0.5) | 0) & 1, P.x + 3, y);
-  }
-  function muzzle(i) {
-    // 총구 불꽃은 60Hz 시계로(120Hz 화면에서 두 배로 번쩍이지 않게, T8)
-    if (quality === 'low' && (f60 & 1)) return false;
-    const D = vis.n;
-    return ((f60 * 3 + i * 7) % Math.max(5, (D / 5) | 0)) === 0;
   }
   function drawSpecial(s, m, i, qx, R) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
@@ -1517,7 +1976,7 @@ export function createRenderer(cvs) {
       const x0 = Math.round(P.x) - ((tierN * 6 - 1) >> 1);
       for (let i = 0; i < tierN; i++) {
         ctx.fillStyle = OUT; ctx.fillRect(x0 + i * 6, y - 5, 5, 4);
-        ctx.fillStyle = TIER[Math.min(3, i + 1)];
+        ctx.fillStyle = WTIER[Math.min(3, i + 1)];
         ctx.fillRect(x0 + 1 + i * 6, y - 4, 3, 2);
       }
     }
@@ -1530,7 +1989,7 @@ export function createRenderer(cvs) {
   function drawBullets(s, alpha, behind = false) {
     const ext = BULLET_SPEED * DT * (alpha - 1);   // 카메라와 같은 시간축(R4)
     const gold = s.hero && s.hero.id === 'mungchi' && s.hero.act > 0;
-    const col = gold ? GOLD_BULLET : TIER[s.squad.tier] || TIER[0];
+    const col = gold ? GOLD_BULLET : WTIER[s.squad.tier] || WTIER[0];
     const wide = gold || s.squad.tier >= 2 ? 2 : 1;
     const plane = s.boss && s.boss.hp > 0 ? s.boss.z - 1 : Infinity;
     for (const b of s.bullets) {
@@ -1750,6 +2209,7 @@ export function createRenderer(cvs) {
       const u = f.t / f.dur;
       switch (f.kind) {
         case 'puff': {
+          if (f.vz) f.z += f.vz * dt;   // 분대에서 난 연기는 분대와 같이 간다
           if (!project(view, f.x, f.y, f.z)) break;
           const step = f.step || (P.s > 12 ? 0 : 1);
           const fr = Math.min(3, (u * 4) | 0);
@@ -2062,9 +2522,18 @@ export function createRenderer(cvs) {
     for (const f of s.foes) if (f.alive && f.z < zMax && f.z > view.camZ + 2) push(f.z, 4, f);
     if (s.boss && (s.boss.hp > 0 || bossDeath)) { push(s.boss.z, 5, s.boss); push(s.boss.z + 0.05, 11, null); }
     const R = updateFormation(s, rdt, qx);
-    if (q.n > 0) for (let i = 0; i < vis.n; i++) push(vis.z[i], 6, null, i);
+    {
+      // 그림이 적으면 하나하나가 더 자주 쏜다. 맞으면 세 장 중 하나쯤 붉어진다. 줄 안에서는 가운데를 나중에(위에)
+      const NU = units.length;
+      firePeriod = Math.max(6, Math.round(NU / 2.2));
+      hurtMod = clamp(Math.ceil(NU / 3), 1, 11);
+      const bias = 0.03 / Math.max(0.5, R);
+      if (q.n > 0) for (const u of units) push(sq.z + u.z + Math.abs(u.x) * bias, 6, u);
+      for (const gh of fading) push(sq.z + gh.z + Math.abs(gh.x) * bias, 12, gh);
+    }
     const flagsN = q.n >= 1000 ? 3 : q.n >= 500 ? 2 : q.n >= 200 ? 1 : 0;
-    for (let i = 0; i < flagsN; i++) push(sq.z + R * (0.25 + 0.2 * (i & 1)), 9, null, i);
+    // 깃발은 맨 앞줄 바로 뒤(먼 쪽)에 꽂아 앞줄 그림이 깃대 아래를 덮는다(가운데 대장 그림을 가리지 않게)
+    for (let i = 0; i < flagsN; i++) push(sq.z + Math.max(0, SQUAD_DEPTH * R - FORM_IN) + 0.06 + 0.01 * i, 9, null, i);
     const sp = sq.sp;
     if (q.n > 0) for (let i = 0; i < sp.length; i++) push(slotPos(sq, i, R, qx).z, 7, sp[i], i);
     if (s.hero && (q.n > 0 || s.phase === 'lost')) push(heroZ(sq, R), 8, s.hero);
@@ -2079,7 +2548,8 @@ export function createRenderer(cvs) {
         case 3: drawSaw(s, it.o, lag); break;
         case 4: drawFoe(s, it.o, lag, bio); break;
         case 5: drawBoss(s, it.o, lag, bio); break;
-        case 6: drawMember(s, it.i, qx); break;
+        case 6: drawMember(s, it.o, qx, false); break;
+        case 12: drawMember(s, it.o, qx, true); break;
         case 7: drawSpecial(s, it.o, it.i, qx, R); break;
         case 8: drawHero(s, it.o, qx, R); break;
         case 9: drawFlag(s, it.i, qx, R, it.z); break;
@@ -2158,6 +2628,7 @@ export function createRenderer(cvs) {
         BW, BH, K, dpr, cssPer, quality, frozen: frozenSet || stillFor > 0.25, reduce, pages: atlas.pages.length,
         groundMs: +groundMs.toFixed(2), putMs: +putMs.toFixed(2), drawMs: +drawMs.toFixed(2),
         lateBakes: atlas.lateBakes, sealed: atlas.sealed, parts: nLive, hitbox: hitboxOn,
+        squad: { units: units.length, fading: fading.length, comp: fComp ? fComp.join(',') : '', rows: fArr ? fArr.sizes.join('.') : '', plans: formPlans },
       };
     },
   };

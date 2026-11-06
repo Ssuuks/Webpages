@@ -638,7 +638,7 @@ const SETTINGS = [
   { id: 'autoSkill', name: '영웅 스킬 자동 발동', note: '게이지가 차면 알맞은 때에 알아서 써요' },
   { id: 'shake', name: '화면 흔들림' },
   { id: 'preview', name: '게이트 결과 미리보기', note: '게이트 아래에 지나가면 몇 명이 되는지 보여줘요' },
-  { id: 'low', name: '저사양 모드', note: '병사를 덜 그리고 효과를 줄여요' },
+  { id: 'low', name: '저사양 모드', note: '총구 불꽃과 효과를 줄여요' },
   { id: 'hitbox', name: '충돌 범위 보기', note: '맞는 범위를 그림 위에 선으로 보여줘요(확인용)' },
 ];
 function applySettings() {
