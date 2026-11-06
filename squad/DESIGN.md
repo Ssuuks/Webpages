@@ -77,6 +77,24 @@ lv.marks / s.marks = [{ t:'surge', z }]   // 몰이 청크 시작 — MARK_AHEAD
 - `stateHash`는 2단계 상태(상자·열쇠·몰이 알림·톱날·줄·독침·총알·난수·무기 단계·속도·코인·보스 타이머)까지 본다.
 - 화면: `surge` → 알림 글자·경보음(`sfx.surge`)·진동 + 렌더러 양옆 붉은 화살표. 상자·철창 접촉 손실(`loss` cause 'crate')은 상자 자리에 '−n', 결과 화면 원인 `CAUSE.crate`. 보스전에서 끌기를 한 번도 안 쓴 사람(L5+)에게 끌기 안내. 규칙이 바뀐 뒤 처음 연 기존 플레이어에게 SIM마다 바뀐 것만 알린다(`BALANCE_NOTES`).
 
+충돌 크기 약속(SIM 8 — 그린 것 = 맞는 것, 맞는 범위는 그린 것의 80~100%로 조금 너그럽게):
+
+```js
+SQUAD_DEPTH = 0.55                 // 분대 몸 앞뒤 ±SQUAD_DEPTH·R (그린 대형의 앞뒤 끝 발도 여기 — FORM_IN 0.08 안쪽)
+CONTACT_GRACE = 0.12, SOLO_HALF = 0.34
+hitHalf(R) = min(R − CONTACT_GRACE, SOLO_HALF + 1.5(R − 0.53))   // 분대가 맞는 몸의 옆 반폭(그린 무리 끝 = R)
+touches(dx, dz, hx, hz, a, b)      // 분대 네모(±hx, ±hz)와 땅 위 타원(반지름 a, b)이 겹치나 — 좀비(a = FOE_HX·r = 0.8r, b = r)·톱날(a = w/2, b = SAW_HD 0.35)
+hitShapes(s) → [{ k, x0, x1, z0, z1, ell? }]   // 시뮬레이션이 실제로 재는 모양(squad·foe·saw·wall·crate·cage·spit·bossHit·bossReach)
+```
+
+- 벽·상자·철창·독침은 분대 몸 ±hitHalf와 x로 겹친 몫(`ov` = 겹친 폭 / 2·hitHalf). 벽·상자·철창 손실은 `min(ceil(체력/10 × min(1, 2ov)), ceil(n × ov))` — 걸친 폭의 병사까지만.
+- 봇·레벨 생성(`foeLeftover`·`waveLeak`)·독침 공정성(`spitEscape`)은 그린 크기(R, R + 0.8r)로 판단한다 — 사람이 보고 피하는 크기, 은혜는 덤.
+- 보스 총알 판정(±`BOSS_HIT` 1.8)·짓밟기(옆 판정 없음)·내려찍기(`slamZone`)는 그대로.
+- 렌더러: `formationSpot(i, T, R, hw)`(대형 — 초타원 p = `FORM_P` 8 네모, 바깥 병사는 테두리 위, 옆 끝 그림 = R: hw = `SOLDIER_HALF_PX`(7) / 분대 자리 배율), `formationCount(n, low)`, `slotPos`·`heroZ`(특수병·영웅은 무리 뒤, 분대 폭 안)를 내보낸다(테스트가 읽는다). 그림자도 같은 네모. 보스 총알 판(보스 − 1m)을 지난 총알은 보스 그림 뒤에(정렬 항목 k 11) 그린다. 짓밟기(`stomp`)마다 분대 뒤 끝 ~ 보스 발의 길 전체를 0.22초 밝힌다. 독침 고리는 `SPIT_R`.
+- 충돌 크기 보기: `renderer.setHitbox(on)`·`renderer.hitbox`·`info.hitbox`, 화면은 `?hitbox=1`·`__squad.hitbox`. `hitShapes`만 그린다(그림과 같은 시간축으로 분대를 보간).
+- 배치 유지: `calibrateLevel(key, tries, keep = keepAttempt(key))` — 보정 표에 이미 적힌 배치(`CALT.keep[L]`, 없으면 `CALT.levels[L].attempt`, 어느 SIM이든)를 먼저 보고, 새 규칙의 보정·배치 검사를 넘으면 그대로 쓴다. `tools/caltable.mjs --keep <표>`(기본: 지금 표). SIM 8 표는 SIM 7 표를 keep으로 만들었다(L1~60 배치는 모두 그대로). 표 밖 레벨(그 자리 보정)과 `benchlib.timeCal`은 keep 없이.
+- 난이도 유지(SIM 8 — 스치기가 안 무는 만큼): 거구 상한 `BRUTE_CAP` 0.4 → 0.55, 일반 L11+ 보스 `BOSS_SPEC.normal.m` 0.55 → 0.565, 어려움(L15+) 판 중 위협 `TAG_THREAT.hard` 1.2 → 1.25, 일반 L11+ 보스 도착 `BOSS_SPEC.normal.c` 1.0 → 1.04(맞붙는 승리가 상한 50%에 붙지 않게). 지킨 줄 판돈 칸은 그대로(20~35%) — 알던 레벨의 게이트 숫자가 바뀌지 않게. 졸개 체력(`GRUNT_HP`)은 SIM 7 그대로.
+
 새 이벤트(`s.ev`): `spGet {k, via:'gate'|'cage', x, z}`, `spFull {k, n, x, z}`, `spLose {k, cause:'hit'|'escort', x, z}`, `snipe {x0, z0, x1, z1, src:'sniper'|'hero', kill}`, `rocket {id, x0, z0, x, z}`, `boom {x, z, r}`, `heal {n, x, z}`, `cageMiss {k, x, z}`, `heroReady {id}`, `heroCast {id}`, `heroEnd {id}`. `kill`에는 `by: 'gun'|'sniper'|'rocket'|'hero'`.
 
 렌더러 API (`createRenderer(canvas)`):
@@ -95,7 +113,7 @@ lv.marks / s.marks = [{ t:'surge', z }]   // 몰이 청크 시작 — MARK_AHEAD
 
 - 낮은 해상도 버퍼(가로 약 190px)에 그리고 CSS `image-rendering: pixelated`로 확대. 원근 축소는 정해진 단계(1, 0.75, 0.5)만 써서 반짝임이 없게.
 - 지역: 모래 고개(L1–10), 눈보라 기지(L11–20), 반복. 땅·연석 색은 파랑(좋음)·빨강(나쁨)을 쓰지 않는다.
-- 분대는 앞 64명을 온전히 그리고 뒤로는 철모 줄을 더해 병력 규모가 보이게.
+- 분대는 앞 64명을 온전히 그리고 뒤로는 철모 줄을 더해 병력 규모가 보이게. 대형은 시뮬레이션의 분대 몸을 채우는 모서리 둥근 네모(SIM 8 — 옆 끝 그림 = R, 앞뒤 발 = ±0.55R).
 
 ## 7. 미룬 것
 

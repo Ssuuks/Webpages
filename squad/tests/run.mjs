@@ -337,6 +337,93 @@ test('못 부순 상자·철창에 부딪히면 남은 체력 × crateHit(일반
   assert.ok(lv.props.some((q) => q.key && q.kind === 'crate'));
 });
 
+/* 충돌 크기(SIM 8): 시뮬레이션이 실제로 재는 모양 = core.hitShapes가 돌려주는 모양(화면의 충돌 크기 보기 ?hitbox=1이 그리는 것).
+   분대 몸(옆 ±hitHalf(R) = 그린 무리 끝 R − CONTACT_GRACE, 앞뒤 ±SQUAD_DEPTH·R 네모)과 좀비·톱날(땅 위 타원)·벽·상자·철창(줄)·독침(±SPIT_R)이
+   겹치면 맞고, 안 겹치면 안 맞는다 — 무작위 자리 수백 곳에서 한 틱씩 돌려 확인한다 */
+function hbState(n) {
+  const s = C.newGame(C.prepareLevel(9), { start: n });
+  s.foes = []; s.props = []; s.saws = []; s.rows = []; s.spits = []; s.bullets.length = 0; s.marks = [];
+  s.speed = 0; s.fireLv = -20;   // 제자리, 총알 피해 0
+  s.squad.n = n; s.squad.x = 0.3; s.squad.vx = 0;
+  return s;
+}
+const rectEll = (r, e) => {   // 땅 위 네모 r와 타원 e(사각형 안에 든 타원)가 겹치나
+  const cx = (e.x0 + e.x1) / 2, cz = (e.z0 + e.z1) / 2, a = (e.x1 - e.x0) / 2, b = (e.z1 - e.z0) / 2;
+  const px = Math.max(r.x0, Math.min(cx, r.x1)), pz = Math.max(r.z0, Math.min(cz, r.z1));
+  return ((px - cx) / a) ** 2 + ((pz - cz) / b) ** 2 < 1;
+};
+test('충돌 크기(SIM 8): 맞는 판정 = hitShapes의 모양(좀비·톱날·벽·상자·독침), 스치기만 하면(CONTACT_GRACE 안) 안 맞는다', () => {
+  let seed = 12345;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  const tally = { foe: [0, 0], saw: [0, 0], wall: [0, 0], spit: [0, 0] };
+  for (const n of [1, 3, 12, 60, 300]) {
+    const R = C.radius(n);
+    for (let it = 0; it < 120; it++) {
+      // 좀비(종류마다 무작위): 움직이지 않게
+      const kind = ['grunt', 'runner', 'spit', 'brute'][it & 3];
+      let s = hbState(n);
+      const q = s.squad;
+      const fx = q.x + (rnd() * 2 - 1) * (R + 1.4), fz = q.z + (rnd() * 2 - 1) * (C.SQUAD_DEPTH * R + 1.4);
+      s.foes.push({ id: 9000 + it, kind, x: fx, z: fz, hp: 1, max: 1, alive: true, awake: true, hitT: -9, cd: 9, seed: 0, ...C.FOE_BASE[kind], spd: 0, home: 0 });
+      let sh = C.hitShapes(s);
+      const want = rectEll(sh.find((h) => h.k === 'squad'), sh.find((h) => h.k === 'foe'));
+      C.step(s, { dir: 0, tx: null });
+      const bit = s.ev.some((e) => e.t === 'bite');
+      assert.equal(bit, want, `n=${n} ${kind} (${(fx - q.x).toFixed(2)}, ${(fz - q.z).toFixed(2)}): 물림 ${bit}, 모양 ${want}`);
+      tally.foe[want ? 1 : 0]++;
+      // 톱날(제자리)
+      s = hbState(n);
+      const wx = s.squad.x + (rnd() * 2 - 1) * (R + 1.2), wz = s.squad.z + (rnd() * 2 - 1) * (C.SQUAD_DEPTH * R + 1);
+      s.saws.push({ id: 9500 + it, x: wx, z: wz, xa: wx, xb: wx, dir: 1, spd: 0, w: 1.1 });
+      sh = C.hitShapes(s);
+      const wantSaw = rectEll(sh.find((h) => h.k === 'squad'), sh.find((h) => h.k === 'saw'));
+      C.step(s, { dir: 0, tx: null });
+      assert.equal(s.squad.lossAcc > 0 || s.squad.n < n, wantSaw, `n=${n} 톱날 (${(wx - s.squad.x).toFixed(2)}, ${(wz - s.squad.z).toFixed(2)})`);
+      tally.saw[wantSaw ? 1 : 0]++;
+      // 벽: 분대 앞 끝이 막 닿는 줄 — 옆으로 겹치면 부딪힌다
+      s = hbState(n);
+      const cx = s.squad.x + (rnd() * 2 - 1) * (R + 1.5), half = 0.4 + rnd() * 2;
+      s.props.push({ id: 9700 + it, kind: 'wall', x0: cx - half, x1: cx + half, z: s.squad.z + C.SQUAD_DEPTH * R - 0.001, hp: 5000, max: 5000, alive: true, hitT: -9 });
+      sh = C.hitShapes(s);
+      const sq = sh.find((h) => h.k === 'squad'), wl = sh.find((h) => h.k === 'wall');
+      const ovw = Math.max(0, Math.min(sq.x1, wl.x1) - Math.max(sq.x0, wl.x0));
+      C.step(s, { dir: 0, tx: null });
+      const crash = s.ev.find((e) => e.t === 'wallCrash');
+      assert.equal(!!crash, ovw > 0, `n=${n} 벽 겹침 ${ovw.toFixed(3)}`);
+      if (crash) {
+        // 걸친 폭의 병사(n × 겹친 몫)보다 많이는 잃지 않는다(체력 5000짜리 벽이라 늘 이 상한)
+        const ov = ovw / (sq.x1 - sq.x0);
+        assert.equal(crash.n, Math.min(Math.ceil(500 * Math.min(1, ov * 2)), Math.ceil(n * ov)), `n=${n} 벽 손실 (겹친 몫 ${ov.toFixed(3)})`);
+      }
+      tally.wall[ovw > 0 ? 1 : 0]++;
+      // 독침: 이 틱에 떨어진다
+      s = hbState(n);
+      const sx = s.squad.x + (rnd() * 2 - 1) * (R + 1.6);
+      s.spits.push({ id: 9800 + it, x: sx, z: s.squad.z, sx: sx, sz: s.squad.z + 10, t: C.DT / 2, T: 1 });
+      sh = C.hitShapes(s);
+      const sp = sh.find((h) => h.k === 'spit'), sq2 = sh.find((h) => h.k === 'squad');
+      const wantSpit = Math.min(sq2.x1, sp.x1) - Math.max(sq2.x0, sp.x0) > 0;
+      C.step(s, { dir: 0, tx: null });
+      const hit = s.ev.find((e) => e.t === 'spitHit');
+      assert.ok(hit && hit.hit === wantSpit, `n=${n} 독침 ${(sx - s.squad.x).toFixed(2)}`);
+      tally.spit[wantSpit ? 1 : 0]++;
+    }
+  }
+  for (const [k, [no, yes]] of Object.entries(tally)) assert.ok(no > 50 && yes > 50, `${k}: 맞음 ${yes}·안 맞음 ${no} — 양쪽을 다 봐야 한다`);
+  // 스치기: 그린 무리 끝(R)과 그린 좀비가 0.1m 겹쳐도(예전 판정이면 물렸다) 안 문다 — 맞는 몸은 R − CONTACT_GRACE
+  for (const n of [12, 60, 300]) {
+    const s = hbState(n);
+    const R = C.radius(n);
+    s.foes.push({ id: 1, kind: 'grunt', x: s.squad.x + R + C.FOE_HX * 0.42 - 0.1, z: s.squad.z, hp: 1, max: 1, alive: true, awake: true, hitT: -9, cd: 9, seed: 0, ...C.FOE_BASE.grunt, spd: 0, home: 0 });
+    C.step(s, { dir: 0, tx: null });
+    assert.ok(!s.ev.some((e) => e.t === 'bite'), `n=${n}: 0.1m 스친 졸개가 물었다`);
+    assert.ok(C.CONTACT_GRACE > 0.1 && C.CONTACT_GRACE <= 0.15);
+  }
+  // 병사 하나: 맞는 몸 = 그 한 명 그림 반폭(SOLO_HALF), 셋 이하에서만 그 쪽이 작다
+  assert.equal(C.hitHalf(C.radius(1)), C.SOLO_HALF);
+  for (const n of [4, 12, 100, 1000]) assert.equal(C.hitHalf(C.radius(n)), C.radius(n) - C.CONTACT_GRACE);
+});
+
 /* 공정성(P14): 한 손 조작(좌우 누르기, 가속 ACCEL·최고 VMAX)으로 피할 수 있는 예고만 — 옆 칸 회피는 WARN_MIN(0.7초) 이상,
    한 칸 넘게 움직여야 하면 이동 시간 + REACT_FAR(0.45초) 이상 */
 test('공정성: 내려찍기·독침 예고는 피하는 데 드는 이동 + 반응 시간보다 길다', () => {
@@ -527,6 +614,7 @@ const KNOWN = {
   'win hard L5-10 sloppy0.1-pump': 'L5(첫 어려움, L15 전이라 잭팟 줄이 많다 — 4줄 중 3줄)는 덧셈 칸을 쏘아 올리면 거의 늘 이긴다 — 쏘아 올리지 않는 집중한 사람을 구간(70~80)에 두면 쏘아 올리는 사람은 95% 안팎',
   'slam hit sloppy0.3': '내려찍기 예고 중 빨간 띠 밖의 분대는 가장자리에서 멈춘다(3단계 — 꾹 누르기로 피한 뒤 되돌아오다 다시 맞는 일을 막는다). 산만한 사람도 덜 맞는다(15% → 13%)',
   'face-value best = true best (hard': 'N2: L15+ 어려운 레벨의 첫 줄을 늘 판돈 줄로(늘 진짜 최악 칸 0%), 잭팟 줄을 줄였다(ROW_MIX.hard) — 판돈·함정·지킨 줄은 겉보기 1등이 곧 실제 1등이라 57% → 77~81%. 계산이 갈리는 줄(잭팟·쏴서 키우는 +)과 정말 나쁜 선택의 대가 사이에서 대가 쪽을 골랐다',
+  'stakes rows: face-worst cell cost (normal': '판돈 줄 최악 칸의 손해는 도착 병력의 23% 안팎(시드 8개로 SIM 7·8 모두 0.23) — 덧셈 칸 값이 골든 패스 크기라 뒤에서 일부를 메운다. 시드 둘일 때 0.25를 겨우 넘던 것은 표본 운이었다',
   'losses before arena': '매우 어려움은 경기장 전 실패를 늘리면(몰이 ×1.75 이상) 기준 봇이 판 중에 죽어 보정이 안 된다(L40) — 어려움은 맞고 매우 어려움이 모자란다',
 };
 const QA_EXCEPT_MAX = 4;   // L5+에서 배치 검사를 못 넘어도 되는 레벨 수(쉼 레벨처럼 산만한 사람이 이기게 두면 서 있기도 이기는 곳)
@@ -599,9 +687,10 @@ test('판 중 긴장(2단계): 오판 봇·도착 병력/기준·보스 접촉·
   await checkBand(t, res, (r) => r.id.startsWith('onboard sloppy0.3'));
 });
 
-/* 판돈 줄(P07): tools/stakes.mjs — 칸이 둘 이상인 줄마다 칸별로 갈라 돌린다(sloppy0.1, 기대 강화, 시드 둘, L5~60) */
+/* 판돈 줄(P07): tools/stakes.mjs — 칸이 둘 이상인 줄마다 칸별로 갈라 돌린다(sloppy0.1, 기대 강화, 시드 넷, L5~60).
+   시드 둘이면 문턱(손해 0.25·뒤집힘 20)에서 표본 운으로 붙었다 떨어졌다 해서 넷으로 늘렸다 */
 test('판돈 줄: 판돈 줄 최악 칸의 손해, 승→패로 뒤집히는 줄, 겉보기 1등 = 실제 1등', async (t) => {
-  const recs = (await Promise.all(range(5, 60).map((L) => POOL.run({ kind: 'call', module: new URL('../tools/stakes.mjs', import.meta.url).href, fn: 'levelStakes', args: [L, { seeds: 2, bot: 'sloppy0.1' }] })))).flat();
+  const recs = (await Promise.all(range(5, 60).map((L) => POOL.run({ kind: 'call', module: new URL('../tools/stakes.mjs', import.meta.url).href, fn: 'levelStakes', args: [L, { seeds: 4, bot: 'sloppy0.1' }] })))).flat();
   assert.ok(recs.length > 500, `줄 ${recs.length}개`);
   const res = checkStakes(recs);
   await checkBand(t, res, () => true);

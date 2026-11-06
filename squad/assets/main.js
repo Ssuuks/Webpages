@@ -500,6 +500,7 @@ const BALANCE_NOTES = [
   [5, '5레벨마다 불꽃 표시가 붙은 어려운 판이 있어요(코인을 더 줘요). 그 바로 다음 판은 쉬어 가요.'],
   [6, '판 중간이 조여졌어요: 판돈 걸린 게이트 줄, 보스 앞 몰이(양옆에서도 와요), 어려운 판의 열쇠 상자. 못 부순 상자·철창에 부딪히면 병사를 잃어요.'],
   [7, '보스 내려찍기의 빨간 구역이 실제로 맞는 범위만큼 넓게 보여요. 몰이가 오면 알림이 뜨고, 3번 지면 받는 지원은 강화가 적을수록 커져요.'],
+  [8, '보이는 대로 부딪혀요: 부대 모양이 실제로 맞는 크기와 같아졌고, 살짝 스치기만 한 좀비·톱날·독침·벽은 안 맞아요. 벽·상자에 걸치면 걸친 쪽 병사만 잃어요. 대신 제대로 부딪힌 거구는 더 아파요.'],
 ];
 function balanceNoteText(seen) {
   const lines = BALANCE_NOTES.filter(([v]) => v > seen && v <= SIM).map(([, t]) => t);
@@ -1726,7 +1727,10 @@ fontsReady.then(() => {
 window.__squad = {
   auto: false, get state() { return s; }, set state(v) { s = v; }, get mode() { return mode; }, get data() { return data; },
   startLevel, radius, UNLOCK, skill() { skillPressed = true; },
+  // 충돌 크기 보기: 시뮬레이션이 재는 모양을 그림 위에 그린다(주소에 ?hitbox=1 을 붙여도 켜진다)
+  get hitbox() { return renderer.hitbox; }, set hitbox(v) { renderer.setHitbox(v); },
 };
+try { if (new URLSearchParams(location.search).get('hitbox') === '1') renderer.setHitbox(true); } catch { /* 주소 없음 */ }
 
 /* 오프라인 캐시(GitHub Pages에서만 — 미리보기 창 등에서는 조용히 넘어간다) */
 if ('serviceWorker' in navigator && location.protocol === 'https:' && /\/squad\/?(index\.html)?$/.test(location.pathname)) {

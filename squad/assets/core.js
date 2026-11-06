@@ -22,10 +22,25 @@ export const WEAPON = [1, 1.35, 1.7, 2.1];
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
 export const VERSION = 'squad-v1';   // 레벨 배치의 소금 — 바꾸지 않는다(바꾸면 모든 레벨이 달라진다)
-export const SIM = 7;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
+export const SIM = 8;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
 /* 보스: 피하기에 대가가 있게 — 좌우로 천천히 따라오고(초당 m), 총알은 가운데 ±BOSS_HIT m 안만 맞고, 첫 내려찍기는 빨리 온다 */
 export const BOSS_TRACK = 0.6;
-export const BOSS_HIT = 1.8;
+export const BOSS_HIT = 1.8;      // 몸통(팔 안쪽 — 보라 옷·허리띠·다리 폭). 그 밖의 총알은 보스 옆(팔 아래)으로 지나간다 — 화면은 보스 뒤로 그린다
+/* 충돌 크기(SIM 8): 분대가 실제로 맞는 몸은 그린 무리(가장자리 병사 그림 끝 = 반지름 R, 앞뒤 ±SQUAD_DEPTH·R)보다
+   옆으로 CONTACT_GRACE m 안쪽(hitHalf) — 화면에서 스치기만 한 것(2px 안팎)은 안 맞는다. 적·톱날·독침·벽·상자·철창이 모두 이 몸으로 잰다.
+   봇·레벨 생성·독침 공정성(spitEscape)은 그린 크기(R)로 판단한다(사람이 보고 피하는 크기 — 은혜는 덤) */
+export const CONTACT_GRACE = 0.12;
+export const SQUAD_DEPTH = 0.55;
+/* 병사 한 명(R = radius(1) = 0.53)은 그림 한 장이 전부라 그 그림의 반폭(가장 작게 그리는 화면에서 0.35m)까지만 — 셋 이하일 때만 걸린다 */
+export const SOLO_HALF = 0.34;
+export const hitHalf = (R) => Math.min(R - CONTACT_GRACE, SOLO_HALF + 1.5 * (R - 0.53));
+/* 분대 몸(옆 ±hx, 앞뒤 ±hz 네모)과 땅 위 타원(가운데에서 dx·dz 떨어진, 반지름 a·b — 좀비·톱날의 발밑, 그림자 크기)이 겹치나.
+   네모와 타원이 겹치는 것과 똑같다(모서리는 둥글다 — 좀비가 분대 모서리를 비스듬히 지나갈 때 그림이 닿아야 문다) */
+export function touches(dx, dz, hx, hz, a, b) {
+  const ex = Math.max(0, Math.abs(dx) - hx) / a;
+  const ez = Math.max(0, Math.abs(dz) - hz) / b;
+  return ex * ex + ez * ez < 1;
+}
 export const BOSS_FIRST_SLAM = 1.2;
 export const SLAM_HIT = 0.25;   // 내려찍기에 맞으면 병력의 이만큼(예고를 보고 피하면 0)
 export const SLAM_OTHER = 0.1;  // 내려찍기가 분대가 없는 칸을 노리는 확률(나머지는 분대가 선 칸 — 가만히 서 있으면 맞는다)
@@ -196,15 +211,20 @@ export function levelTag(L) {
 /* 태그 전체 효과(청크 ×0.5, 모든 청크의 위협 배수, 열쇠 상자, 상자 접촉 50%)는 L15부터. L5·L10은 소개 레벨이라 보스만 어렵다(2단계 — 1단계는 마지막 두 청크도) */
 export const TAG_FULL_FROM = 15;
 export const HARD_CHUNKS = 0.5;   // 어려움·매우 어려움(L15+)의 청크 수 배수
-/* 판 중 위협 배수(적·벽·상자·철창 체력) */
-const TAG_THREAT = { '': 1, hard: 1.2, super: 1.5, rest: 0.55 };
+/* 판 중 위협 배수(적·벽·상자·철창 체력).
+   SIM 8: 어려움 1.2 → 1.25 — 스치기가 안 물어 집중한 사람이 어려운 판(L15+)의 달리기에서 덜 죽었다(경기장 전 실패 35 → 29%, 스킬 안 누르는 사람 승률 +9%p).
+   SIM 7의 승률·경기장 전 실패에 맞춘다(매우 어려움은 그대로 맞았다) */
+const TAG_THREAT = { '': 1, hard: 1.25, super: 1.5, rest: 0.55 };
 /* 2단계(P08): 무리 수 배수(태그), 졸개 체력(D의 몫 — 어려운 태그는 더 단단하다), 무리 압력 상한 */
 const TAG_WAVE = { '': 1, hard: 1.2, super: 1.5, rest: 0.55 };
 export const GRUNT_HP = { onboard: 0.15, early: 0.18, normal: 0.19, hard: 0.27 };
 const gruntHpOf = (l, hardish) => (hardish ? GRUNT_HP.hard : l <= 4 ? GRUNT_HP.onboard : l <= 10 ? GRUNT_HP.early : GRUNT_HP.normal);
 export const PRESSURE_MAX = 1.8;
 export const BRUTE_X = 5;   // 거구 체력 = 졸개 × BRUTE_X
-export const BRUTE_CAP = 0.4;   // 단, 그대로 부딪혀도 골든 패스 병력의 이만큼까지만 잃게(작은 분대가 거구 하나에 몰살되지 않게)
+/* 단, 그대로 부딪혀도 골든 패스 병력의 이만큼까지만 잃게(작은 분대가 거구 하나에 몰살되지 않게).
+   SIM 8: 0.4 → 0.55 — SIM 7 거구 접촉 손실의 반 넘게(53%)가 그림 끝에서 0.12m 안쪽 스치기였다(CONTACT_GRACE로 이제 안 문다).
+   스친 것 대신 제대로 맞은 거구가 더 아프게 해 판 중 긴장(낙폭)을 SIM 7과 같게 둔다 */
+export const BRUTE_CAP = 0.55;
 /* P10: 못 부순 상자·철창에 부딪히면 남은 체력의 이만큼(10마다 1명)을 잃는다 */
 export const CRATE_HIT = { normal: 0.25, hard: 0.5 };
 /* 화면에 한꺼번에 보이는 좀비 수 상한(360×640에서 읽히게): 40m 구간 안 FOE_CAP마리. 넘치면 수를 줄이고 체력을 몰아 준다 */
@@ -221,7 +241,9 @@ export const FOE_WIN = 40;
 export const BOSS_SPEC = {
   onboard: { mode: 'ref', m: 0.65, c: 1.6, qaKeep: 0.92 },
   early: { mode: 'ref', m: 0.95, c: 1.2, qaKeep: 0.75 },    // L5-10 일반
-  normal: { mode: 'ref', m: 0.55, c: 1.0, qaKeep: 0.45 },   // L11+ 일반 — 2단계: 판 중 위협이 세져 m을 낮추고, 보스가 늦게 닿게(c↑ — 이긴 판의 20~50%만 맞붙게)
+  // L11+ 일반 — 2단계: 판 중 위협이 세져 m을 낮추고, 보스가 늦게 닿게(c↑ — 이긴 판의 20~50%만 맞붙게).
+  // SIM 8: 0.55 → 0.565 — 스치기가 안 물어 사람 흉내 봇이 기준 봇보다 조금 더 남겨 온다(산만한 사람 +4%p). SIM 7의 승률·보스 접촉에 맞춘다
+  normal: { mode: 'ref', m: 0.565, c: 1.04, qaKeep: 0.45 },
   rest: { mode: 'ref', m: 0.42, c: 1.4, qaKeep: 0.88 },
   // band: 사람 흉내 무리(POP)의 첫 시도 승률 목표 [하한, 상한] — on 집중(스킬 씀), off 집중(스킬 안 씀), sl3 산만
   // band.w를 주면 POP의 w 대신 그 가중치로 벌점을 매긴다
@@ -416,6 +438,10 @@ function goldenValue(n, c) {
   return applyOp(n, c.op, v);
 }
 
+/* 좀비가 맞는 몸: 땅 위 타원 — 옆으로 ±FOE_HX·r(그 거리에서 그린 그림 폭 — 졸개 0.34m, 거구 0.76m), 앞뒤 ±r(그림자). 총알은 ±(r + 0.12)(멀리서 그린 크기) */
+export const FOE_HX = 0.8;
+/* 톱날이 맞는 몸: 땅 위 타원 — 옆으로 ±w.w/2(그린 날 폭), 앞뒤 ±SAW_HD */
+export const SAW_HD = 0.35;
 export const FOE_BASE = {
   grunt: { r: 0.42, spd: 3.2, home: 0.9, homeDist: 24 },
   runner: { r: 0.36, spd: 6.2, home: 2.8, homeDist: 26 },
@@ -726,7 +752,7 @@ const CHUNK = {
   },
 
   /* 지켜진 칸(P07): 좋은 칸(×2·×3, 없으면 큰 +) 앞을 벽이나 무리가 막는다. 체력은 다가오는 동안 녹일 수 있는 양의 0.9~1.1배.
-     옆 칸은 60% 판돈(−a), 40% 작은 + */
+     옆 칸은 70% 판돈(−a), 30% 몰아 쏘면 오르는 작은 + */
   guard(lv, g, p, z, ng, target, ctx) {
     const rowZ = z + 34;
     const ratio = target / ng;
@@ -736,6 +762,8 @@ const CHUNK = {
     const stake = has(p.L, 'shoot') && chance(g, 0.7);
     // 판돈이 아니면 '쏴서 키우는 +'(L4+): 작게 보이지만 몰아 쏘면 ×2와 비슷해진다 — 벽을 뚫고 ×2냐, 열린 칸을 키우냐
     let poor;
+    // 판돈 칸 −a는 판돈 줄의 나쁜 칸과 같은 크기(병력의 30~50% — SIM 8: 20~35%에서 올렸다. 스치기가 안 물어 잘못 고른 뒤 무너지는 판이 줄어,
+    // 판돈 줄 최악 칸의 손해·승→패 뒤집힘이 SIM 7보다 낮아졌다 — 갈라 보기 시드 8로 0.22·22% → 0.23·23%, SIM 7과 같다)
     if (stake) poor = ['add', -Math.max(3, nice(ng * U(g, 0.2, 0.35)))];
     else if (p.L >= JACK_FROM) {
       const c = Math.max(2, nice(ng * U(g, 0.08, 0.2)));
@@ -1356,26 +1384,31 @@ function marksUpdate(s) {
   }
 }
 
-/* 못 부순 상자·철창에 부딪히면 남은 체력 × crateHit(일반 25%, 어려움 50%)만큼 10마다 1명을 잃는다(P10) */
+/* 못 부순 상자·철창에 부딪히면 남은 체력 × crateHit(일반 25%, 어려움 50%)만큼 10마다 1명을 잃는다(P10).
+   벽·상자·철창 모두: 걸친 폭이 분대 몸의 반(ov 0.5) 아래면 그 몫만큼만, 그리고 걸친 폭의 병사 수(n × ov)보다 많이는 잃지 않는다(SIM 8 —
+   대형이 고른 네모라 걸친 폭의 몫 = 부딪힌 병사의 몫. 옆으로 스친 분대가 벽 체력 전부를 치르지 않게) */
 export const crateHitOf = (params) => (params && params.crateHit != null ? params.crateHit : CRATE_HIT.normal);
 function propsUpdate(s, R) {
   const q = s.squad;
   for (const p of s.props) {
     if (!p.alive || p.passed) continue;
-    if (q.z + 0.55 * R < p.z) continue;
-    const ov = overlap(q.x - R, q.x + R, p.x0, p.x1) / (2 * R);
+    if (q.z + SQUAD_DEPTH * R < p.z) continue;
+    // 맞는 몸(±hitHalf)이 벽·상자에 걸친 몫. 화면에서 스치기만 했으면(CONTACT_GRACE 안) 비켜 간 것
+    const H = hitHalf(R);
+    const ov = overlap(q.x - H, q.x + H, p.x0, p.x1) / (2 * H);
     // 비켜 간 벽·상자는 그대로 남아 뒤로 지나간다(그리기만 한다)
     if (ov <= 0) { p.passed = true; continue; }
     p.alive = false;
     const x = (p.x0 + p.x1) / 2;
     if (p.kind === 'crate' || p.kind === 'cage') {
-      const k = Math.ceil(((p.hp * crateHitOf(s.params)) / SOLDIER_HP) * Math.min(1, ov * 2));
+      // 부딪힌 병사만 잃는다: 걸친 폭의 병사(n × ov)보다 많이는 아니다(SIM 8)
+      const k = Math.min(Math.ceil(((p.hp * crateHitOf(s.params)) / SOLDIER_HP) * Math.min(1, ov * 2)), Math.ceil(q.n * ov));
       if (p.kind === 'crate') emit(s, { t: 'crateMiss', x, z: p.z, n: k, key: !!p.key });
       else emit(s, { t: 'cageMiss', k: p.reward.k, x, z: p.z, n: k });
       if (k > 0) lose(s, k, 'crate', x, p.z);
       continue;
     }
-    const k = Math.ceil((p.hp / SOLDIER_HP) * Math.min(1, ov * 2));
+    const k = Math.min(Math.ceil((p.hp / SOLDIER_HP) * Math.min(1, ov * 2)), Math.ceil(q.n * ov));
     emit(s, { t: 'wallCrash', x, z: p.z, n: k });
     lose(s, Math.max(1, k), 'wall');
   }
@@ -1387,7 +1420,7 @@ function sawsUpdate(s, R) {
     w.x += w.dir * w.spd * DT;
     if (w.x > w.xb) { w.x = w.xb; w.dir = -1; }
     if (w.x < w.xa) { w.x = w.xa; w.dir = 1; }
-    if (Math.abs(w.z - q.z) < 0.55 * R + 0.35 && Math.abs(w.x - q.x) < R + w.w / 2) {
+    if (touches(w.x - q.x, w.z - q.z, hitHalf(R), SQUAD_DEPTH * R, w.w / 2, SAW_HD)) {
       q.lossAcc += (4 + 0.35 * q.n) * DT;
       if (q.lossAcc >= 1) {
         const k = Math.floor(q.lossAcc);
@@ -1427,7 +1460,7 @@ function foesUpdate(s, R) {
         f.x += d > m ? m : d < -m ? -m : d;
       }
     }
-    if (Math.abs(f.z - q.z) < 0.55 * R + f.r && Math.abs(f.x - q.x) < R + f.r * 0.8) {
+    if (touches(f.x - q.x, f.z - q.z, hitHalf(R), SQUAD_DEPTH * R, f.r * FOE_HX, f.r)) {
       f.alive = false;
       emit(s, { t: 'bite', kind: f.kind, x: f.x, z: f.z });
       lose(s, contactCost(f.hp), s.phase === 'arena' ? 'summon' : f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
@@ -1509,7 +1542,8 @@ function spitsUpdate(s, R) {
   for (const sp of s.spits) {
     sp.t -= DT;
     if (sp.t > 0) continue;
-    const ov = overlap(q.x - R, q.x + R, sp.x - SPIT_R, sp.x + SPIT_R) / (2 * R);
+    const H = hitHalf(R);
+    const ov = overlap(q.x - H, q.x + H, sp.x - SPIT_R, sp.x + SPIT_R) / (2 * H);
     const hit = ov > 0 && Math.abs(sp.z - q.z) < R + 1.5;
     emit(s, { t: 'spitHit', x: sp.x, z: sp.z, hit });
     if (hit) lose(s, Math.max(1, Math.ceil(0.3 * ov * q.n)), 'spit', sp.x, sp.z);
@@ -2174,14 +2208,23 @@ export function prepareLevel(L) {
 }
 
 /* 보정 표를 쓰지 않고 실제로 보정한다(표 만들기·검증·표 밖 레벨용). tries = 배치를 몇 번까지 다시 만드나(표는 8, 그 자리에서는 RUNTIME_TRIES).
-   배치 검사를 끝까지 못 넘으면 처음 보정된 배치(lv.qa = false) */
+   배치 검사를 끝까지 못 넘으면 처음 보정된 배치(lv.qa = false).
+   keep(SIM 8): 먼저 볼 배치 — 보정 표에 이미 적힌 배치(keepAttempt). 규칙(SIM)을 바꿔도 그 배치가 새 규칙의 보정·배치 검사를 넘으면 그대로 써서,
+   판정만 고쳤는데 플레이어가 알던 레벨이 통째로 다른 배치로 바뀌지 않게 한다. 못 넘으면 0번 배치부터 다시 고른다. 표 밖 레벨(그 자리 보정)은 없음 */
 export const CAL_TRIES = 8;
 export const RUNTIME_TRIES = 4;
-export function calibrateLevel(key, tries = CAL_TRIES) {
+/* 표에 적힌 배치(어느 SIM의 표든 — 도구는 CALT.keep으로 이전 표의 배치를 넘긴다) */
+export function keepAttempt(key) {
+  const k = CALT && CALT.keep ? CALT.keep[key] : CALT && CALT.levels && CALT.levels[key] ? CALT.levels[key].attempt : null;
+  return Number.isInteger(k) && k >= 0 ? k : null;
+}
+export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key)) {
   let lv = null;
   let firstOk = null;
-  const lastTry = tries - 1;
-  for (let attempt = 0; attempt < tries; attempt++) {
+  const order = keep != null && keep < tries ? [keep] : [];
+  for (let a = 0; a < tries; a++) if (a !== keep) order.push(a);
+  const lastTry = order[order.length - 1];
+  for (const attempt of order) {
     lv = buildLevel(key, attempt);
     const cal = calibrate(lv, { last: attempt === lastTry });
     if (cal.ok) {
@@ -2566,6 +2609,28 @@ export function bossEta(s) {
 export function progress(s) {
   if (s.boss) return 1;
   return clamp(s.squad.z / s.arenaZ, 0, 1);
+}
+
+/* 충돌 크기 보기(?hitbox=1 또는 __squad.hitbox = true, SIM 8): 시뮬레이션이 실제로 재는 모양을 그대로 돌려준다 — 렌더러는 이것만 그린다.
+   땅 위 사각형 { k, x0, x1, z0, z1 }(ell이면 그 안에 든 타원). 분대 몸(squad)과 겹치면 맞는다: 적·톱날(타원)은 옆·앞뒤 모두, 벽·상자·철창은 분대 앞(z1)이 그 줄(z)에
+   닿는 틱에 옆으로 걸쳤는지, 독침은 떨어지는 순간 옆으로 걸쳤는지. 보스: 총알 판(보스 − 1m)의 몸통 띠(bossHit — 이 띠를 지나는 총알만
+   피해), 맞붙는 선(bossReach — 분대 앞에 닿으면 길 전체를 짓밟는다). 내려찍기 띠는 늘 맞는 범위(slamZone)로 그린다 */
+export function hitShapes(s) {
+  const q = s.squad;
+  const R = radius(q.n);
+  const H = hitHalf(R);
+  const out = [];
+  if (q.n > 0) out.push({ k: 'squad', x0: q.x - H, x1: q.x + H, z0: q.z - SQUAD_DEPTH * R, z1: q.z + SQUAD_DEPTH * R });
+  for (const f of s.foes) if (f.alive) out.push({ k: 'foe', x0: f.x - FOE_HX * f.r, x1: f.x + FOE_HX * f.r, z0: f.z - f.r, z1: f.z + f.r, ell: true });
+  for (const w of s.saws) out.push({ k: 'saw', x0: w.x - w.w / 2, x1: w.x + w.w / 2, z0: w.z - SAW_HD, z1: w.z + SAW_HD, ell: true });
+  for (const p of s.props) if (p.alive && !p.passed) out.push({ k: p.kind, x0: p.x0, x1: p.x1, z0: p.z, z1: p.z });
+  for (const sp of s.spits) out.push({ k: 'spit', x0: sp.x - SPIT_R, x1: sp.x + SPIT_R, z0: sp.z, z1: sp.z });
+  const b = s.boss;
+  if (b && b.hp > 0) {
+    out.push({ k: 'bossHit', x0: b.x - BOSS_HIT, x1: b.x + BOSS_HIT, z0: b.z - 1, z1: b.z - 1 });
+    out.push({ k: 'bossReach', x0: -ROAD, x1: ROAD, z0: b.z - b.r * 0.6, z1: b.z - b.r * 0.6 });
+  }
+  return out;
 }
 
 /* 상태 해시 — 결정성 테스트용 */

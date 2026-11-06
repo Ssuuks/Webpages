@@ -346,9 +346,9 @@ export function calJob(job) {
 /* 표 밖 레벨을 게임처럼 그 자리에서 보정하는 데 걸린 ms(배치는 tries번까지 — 게임은 C.RUNTIME_TRIES). 표가 있는 레벨도 표를 쓰지 않고 잰다 */
 let calWarm = false;
 export function timeCal(L, tries = C.RUNTIME_TRIES) {
-  if (!calWarm) { C.calibrateLevel(L + 1000, tries); calWarm = true; }   // 워커의 첫 호출(JIT 데우기)은 빼고 잰다
+  if (!calWarm) { C.calibrateLevel(L + 1000, tries, null); calWarm = true; }   // 워커의 첫 호출(JIT 데우기)은 빼고 잰다
   const t0 = performance.now();
-  const lv = C.calibrateLevel(L, tries);
+  const lv = C.calibrateLevel(L, tries, null);   // 표 밖 레벨처럼 — 표에 적힌 배치(keep)를 먼저 보지 않는다
   return { L, ms: performance.now() - t0, attempt: lv.attempt, failed: !!lv.failed, qa: !!lv.qa };
 }
 export function runJob(job) {

@@ -1,11 +1,13 @@
-/* 보정 표 만들기: node squad/tools/caltable.mjs [--max 120] [--table 300] [--iters 2] [--seeds 8] [--workers 4] [--expect f.json] [--json log.json]
+/* 보정 표 만들기: node squad/tools/caltable.mjs [--max 120] [--table 300] [--iters 2] [--seeds 8] [--workers 4] [--expect f.json] [--keep caltable.js] [--json log.json]
    1) EXPECT(L)을 정한다: 지금 EXPECT로 L1~max를 보정 → 그 표로 sloppy0.1 캠페인(스킬 켬, 지원 받음, 코인 → 가장 싼 강화·영웅 레벨,
       강화 상한 EXPECT+1)을 seeds개 돌려 레벨별 첫 시도 중앙 강화를 새 EXPECT로. 보정과 EXPECT가 서로 물리므로 iters번(기본 2) 되풀이한다.
       처음 EXPECT: --expect 파일(bench JSON의 expect) → 지금 caltable.js(같은 SIM이면) → tools/bench-baseline.json → 초안 공식.
       --iters 0이면 지금 EXPECT 그대로 보정만 다시 한다(규칙은 그대로이고 상수만 바꿨을 때).
    2) 마지막 EXPECT로 L1~max를 보정하고, 이어서 L(max+1)~table을 그 표를 깔고(어려운 레벨은 H* × 표의 '체력/H*' 중앙값 — 게임이 그 자리에서
       보정하는 것과 같다) 보정해 assets/caltable.js에 적는다(EXPECT 표도 함께). L(table+1) 이후는 게임이 처음 열 때 계산한다.
-   tests/run.mjs가 표와 실제 보정이 같은지 표본으로 확인한다. 규칙(SIM)이 바뀌면 다시 돌린다. */
+   tests/run.mjs가 표와 실제 보정이 같은지 표본으로 확인한다. 규칙(SIM)이 바뀌면 다시 돌린다.
+   배치(attempt)는 지금 표(--keep 파일을 주면 그 표 — 어느 SIM이든)에 적힌 것을 먼저 본다(core.calibrateLevel의 keep): 새 규칙에서도 보정·배치 검사를
+   넘으면 레벨이 그대로다. SIM 8(충돌 크기)은 SIM 7 표(git의 dbe8bed)를 --keep으로 주어 L13·27·30·34·56 따위가 다른 배치로 바뀌지 않게 했다. */
 import fs from 'node:fs';
 import os from 'node:os';
 import { C, makePool, expectFromCampaigns, cliArgs } from './benchlib.mjs';
@@ -35,8 +37,15 @@ function fillExpect(E) {
   return out;
 }
 const pool = makePool(o.workers);
+/* 먼저 볼 배치: --keep 표(파일) 또는 지금 caltable.js의 levels[L].attempt */
+const KEEP = await (async () => {
+  const t = o.keep ? (await import(new URL(o.keep, `file://${process.cwd()}/`).href)).CAL : C.calTable();
+  const out = {};
+  if (t && t.levels) for (const L in t.levels) if (Number.isInteger(t.levels[L].attempt)) out[L] = t.levels[L].attempt;
+  return out;
+})();
 async function calAll(E, from = 1, to = MAX, under = {}) {
-  const cal = { sim: C.SIM, expect: E, levels: strip(under) };
+  const cal = { sim: C.SIM, expect: E, levels: strip(under), keep: KEEP };
   const order = Array.from({ length: to - from + 1 }, (_, i) => to - i);
   const levels = {};
   await Promise.all(order.map((L) => pool.run({ kind: 'cal', L, cal }).then((r) => { levels[L] = r; })));
@@ -44,7 +53,7 @@ async function calAll(E, from = 1, to = MAX, under = {}) {
   return { levels, failed };
 }
 async function campaigns(E, levels) {
-  const cal = { sim: C.SIM, expect: E, levels: strip(levels) };
+  const cal = { sim: C.SIM, expect: E, levels: strip(levels), keep: KEEP };
   return Promise.all(Array.from({ length: o.seeds }, (_, i) => pool.run({ kind: 'campaign', bot: 'sloppy0.1', seed: i + 1, maxL: MAX, support: true, cal })));
 }
 const strip = (levels) => Object.fromEntries(Object.entries(levels).map(([L, r]) => [L, Object.fromEntries(C.CAL_FIELDS.map((f) => [f, r[f]]))]));
@@ -59,7 +68,7 @@ const hist = [];
 try {
   let { E, src } = startExpect();
   E = fillExpect(E);
-  log(`보정 표 — SIM ${C.SIM}, L1-${MAX}, EXPECT 되풀이 ${ITERS}번, 캠페인 ${o.seeds}개, 워커 ${o.workers}. 처음 EXPECT: ${src}`);
+  log(`보정 표 — SIM ${C.SIM}, L1-${MAX}, EXPECT 되풀이 ${ITERS}번, 캠페인 ${o.seeds}개, 워커 ${o.workers}. 처음 EXPECT: ${src}. 먼저 볼 배치: ${o.keep ? `파일 ${o.keep}` : '지금 caltable.js'}(${Object.keys(KEEP).length}개)`);
   log(`  E0  ${show(E)}`);
   for (let it = 1; it <= ITERS; it++) {
     const t = performance.now();
