@@ -629,6 +629,8 @@ function renderUpg() {
 }
 
 /* ---------- 설정 ---------- */
+/* 충돌 범위 보기: 설정 스위치 또는 주소의 ?hitbox=1 */
+const hitboxParam = (() => { try { return new URLSearchParams(location.search).get('hitbox') === '1'; } catch { return false; } })();
 const SETTINGS = [
   { id: 'sound', name: '효과음' },
   { id: 'music', name: '배경 음악' },
@@ -637,6 +639,7 @@ const SETTINGS = [
   { id: 'shake', name: '화면 흔들림' },
   { id: 'preview', name: '게이트 결과 미리보기', note: '게이트 아래에 지나가면 몇 명이 되는지 보여줘요' },
   { id: 'low', name: '저사양 모드', note: '병사를 덜 그리고 효과를 줄여요' },
+  { id: 'hitbox', name: '충돌 범위 보기', note: '맞는 범위를 그림 위에 선으로 보여줘요(확인용)' },
 ];
 function applySettings() {
   setSoundOn(data.set.sound);
@@ -645,6 +648,7 @@ function applySettings() {
   renderer.setShake(data.set.shake && !reduce);
   renderer.setPreview(data.set.preview);
   renderer.setQuality(data.set.low || autoLow ? 'low' : 'high');
+  if (renderer.setHitbox) renderer.setHitbox(!!data.set.hitbox || hitboxParam);
   resize();
 }
 function renderSet() {
@@ -1730,7 +1734,7 @@ window.__squad = {
   // 충돌 크기 보기: 시뮬레이션이 재는 모양을 그림 위에 그린다(주소에 ?hitbox=1 을 붙여도 켜진다)
   get hitbox() { return renderer.hitbox; }, set hitbox(v) { renderer.setHitbox(v); },
 };
-try { if (new URLSearchParams(location.search).get('hitbox') === '1') renderer.setHitbox(true); } catch { /* 주소 없음 */ }
+if (hitboxParam) renderer.setHitbox(true);
 
 /* 오프라인 캐시(GitHub Pages에서만 — 미리보기 창 등에서는 조용히 넘어간다) */
 if ('serviceWorker' in navigator && location.protocol === 'https:' && /\/squad\/?(index\.html)?$/.test(location.pathname)) {
