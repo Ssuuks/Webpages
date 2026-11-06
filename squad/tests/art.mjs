@@ -222,7 +222,7 @@ test('버퍼 크기 규칙: 기둥 160~220px, 화면을 덮고, CSS 크기는 �
   assert.deepEqual([pickBuffer(412, 915, 2.625).BW, pickBuffer(412, 915, 2.625).BH, pickBuffer(412, 915, 2.625).cssW], [182, 406, 416]);
 });
 
-test('보스전 렌즈: 분대 ≤ 65.5%, 영웅 발 ≤ 72%(360x640·390x844), 달리기 때는 62.5% 그대로(T4)', () => {
+test('렌즈: 달리기 분대 70%(앞을 멀리 보게), 보스전 분대 ≤ 70.5%·영웅 발 ≤ 78%(아래 버튼에 가리지 않게, T4)', () => {
   for (const [w, h] of [[180, 320], [195, 422], [182, 400]]) {
     for (const dolly of [0, 1]) {
       const v = makeView();
@@ -234,10 +234,12 @@ test('보스전 렌즈: 분대 ≤ 65.5%, 영웅 발 ≤ 72%(360x640·390x844), 
         const sqY = P.y / h;
         project(v, 0, 0, -R - 0.7);
         const heroY = P.y / h;
-        if (dolly === 0) assert.ok(Math.abs(sqY - 0.625) < 0.005, `${w}x${h} 달리기 분대 ${sqY}`);
-        else {
-          assert.ok(sqY <= 0.655, `${w}x${h} 보스전 분대 ${(sqY * 100).toFixed(1)}%`);
-          assert.ok(heroY <= 0.72, `${w}x${h} 보스전 영웅 발 ${(heroY * 100).toFixed(1)}% (N=${n})`);
+        if (dolly === 0) {
+          assert.ok(Math.abs(sqY - 0.70) < 0.005, `${w}x${h} 달리기 분대 ${sqY}`);
+          assert.ok(heroY <= 0.78, `${w}x${h} 달리기 영웅 발 ${(heroY * 100).toFixed(1)}% (N=${n})`);
+        } else {
+          assert.ok(sqY <= 0.705, `${w}x${h} 보스전 분대 ${(sqY * 100).toFixed(1)}%`);
+          assert.ok(heroY <= 0.78, `${w}x${h} 보스전 영웅 발 ${(heroY * 100).toFixed(1)}% (N=${n})`);
         }
       }
       // 보스(높이 6.6u)의 머리는 화면 안(위쪽 HUD 아래)
@@ -486,11 +488,12 @@ test('합친 병사 구성: 자릿수 그대로 → 채우기(큰 단계부터 �
     }
   }
   // 205명(폰 390×844): 100 한 장 + 10 열 장 + 병사 다섯 — 셀 수 있게, 그림이 적고 많이 가리지 않는다
+  // (가장 많이 가린 몫 0.35까지: 망원 카메라라 무리 깊이가 화면에서 18% 납작해져 줄 간격이 13.5px → 11px — 가운데 줄 10명 묶음이 0.34쯤 가린다)
   const v = hbView(390, 844, 3, 0);
   const p = planOf(v, 205);
   assert.deepEqual(p.comp, [5, 10, 1, 0]);
   const cov = coverOf(v, p);
-  assert.ok(p.units.length <= 20 && Math.max(...cov) <= 1 / 3, `205명: ${p.units.length}장, 가장 많이 가린 몫 ${Math.max(...cov).toFixed(2)}`);
+  assert.ok(p.units.length <= 20 && Math.max(...cov) <= 0.35, `205명: ${p.units.length}장, 가장 많이 가린 몫 ${Math.max(...cov).toFixed(2)}`);
 });
 
 test('합친 병사 배치: 큰 단계가 앞줄·가운데, 줄마다 양옆 끝이 ±R(맨 앞줄만 가운데 한 장), 옆 끝 그림이 위아래로 이어진다, 덜 가린다', () => {

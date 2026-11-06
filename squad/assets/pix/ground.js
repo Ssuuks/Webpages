@@ -65,6 +65,8 @@ function seg(U, row, BW, a, b, ci, mask) {
   if (b > a) fillPat(U, row, a, b, ci, mask);
 }
 const R = Math.round;
+/* 안개가 시작하는 깊이(안개 끝 far에 대한 비율) */
+const FOG0 = 0.61;
 
 export function createGround() {
   const pals = new Map();
@@ -154,6 +156,8 @@ export function createGround() {
     const cx = view.cx + sx, vx = view.camX;
     const cols = p.cols, fogT = p.fogT, fogC = p.fogI;
     const hiQ = quality !== 'low';
+    // 안개: 카메라 깊이 fog0부터 짙어져 far에서 다 덮는다(물건이 나타나는 깊이 — render.js fadeIn과 같은 far)
+    const far = view.far || 115, fog0 = far * FOG0, fogSpan = far - fog0;
     // 자갈은 폰 기둥(가운데 col 폭의 ±75%) 안에만 — 넓은 화면의 바깥은 맨 모래(T9)
     const colHalf = (view.col || BW) * 0.75;
     const pxL = Math.max(0, cx - colHalf), pxR = Math.min(BW, cx + colHalf);
@@ -172,9 +176,9 @@ export function createGround() {
       const wz = camZ + dz;
       const row = y * BW;
       // 완전히 안개 속인 줄(지평선 근처)은 바로 채운다
-      if (d >= 115) { u32.fill(fogC, row, row + BW); continue; }
+      if (d >= far) { u32.fill(fogC, row, row + BW); continue; }
       // 이 줄의 안개: 이웃한 두 단계(s0·s1)를 가로 4칸 베이어 무늬(mask)로 섞는다
-      const fogK = (d - 70) / 45;
+      const fogK = (d - fog0) / fogSpan;
       let mask = 0;
       if (fogK > 0) {
         const lv = Math.min(4, fogK * 4), i0 = Math.floor(lv), fr = lv - i0;

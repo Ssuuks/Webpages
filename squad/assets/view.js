@@ -14,6 +14,8 @@ export function makeView() {
     camX: 0, camZ: 0, camH: 13,
     squadD: 20,           // 분대 깊이(끌기 조작 환산용)
     horizon: 0,           // 지평선 y
+    far: 115,             // 안개가 다 덮는 카메라 깊이(m) — 이보다 먼 땅은 안개 색, 물건은 그리지 않는다
+    zFar: 118,            // 그 깊이에 닿는 카메라 앞 거리(m, 땅 위 물건이 안개 끝에서 보이지 않게 조금 더)
     shakeX: 0, shakeY: 0,
   };
 }
@@ -21,7 +23,7 @@ export function makeView() {
 /* 카메라 배치와 화면 크기로 렌즈를 정한다. extra(0~1)는 보스전에서 뒤로 빠지는 정도.
    opt(생략 가능): at = 분대가 올 화면 높이 비율(기본 0.74), up·back = 카메라 높이·거리,
    minHz = 지평선이 이보다 위로 올라가지 않게(화면 높이 비율) — 낮은 화면에서는 분대가 그만큼 내려온다,
-   extraBack·extraUp = 보스전에 더 빠지는 거리·높이(기본 6·3). */
+   extraBack·extraUp = 보스전에 더 빠지는 거리·높이(기본 6·3), far = 그리는 끝 깊이(기본 115). */
 export function fitView(v, w, h, roadHalf, extra = 0, opt = null) {
   const at = opt && opt.at != null ? opt.at : 0.74;
   v.w = w;
@@ -47,6 +49,9 @@ export function fitView(v, w, h, roadHalf, extra = 0, opt = null) {
     v.cy += dy;
     v.horizon += dy;
   }
+  // 그리는 끝: 땅 깊이 far + 3m까지 — 키 3m까지의 물건은 안개 끝(far)보다 먼 데서 목록에 들어와, 갑자기 나타나지 않고 안개 속에서 짙어진다
+  v.far = opt && opt.far != null ? opt.far : 115;
+  v.zFar = (v.far + 3 - v.camH * v.sin) / v.cos;
 }
 
 /* 투영 결과를 담는 재사용 객체 — 프레임마다 객체를 만들지 않는다 */

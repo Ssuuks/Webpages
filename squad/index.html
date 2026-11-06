@@ -271,7 +271,11 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 }
 #tip.pop { animation: tipIn 0.25s ease-out; }
 #tip.low { top: auto; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 104px); }
-@media (max-height: 600px) { #tip { font-size: 13px; padding: 6px 10px; } }
+/* 낮은 화면(360×640·375×667·1280×720): 조금 작게, 영웅 발(화면 78%까지) 아래·스킬 버튼 바로 위로 — 영웅을 가리지 않게 */
+@media (max-height: 760px) {
+  #tip { font-size: 13px; padding: 6px 10px; }
+  #tip.low { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 84px); }
+}
 /* 낮은 가로 화면: 안내는 길 옆 빈 곳(왼쪽 위)에 — 분대를 가리지 않게 */
 @media (orientation: landscape) and (max-height: 500px) {
   #tip.low { bottom: auto; top: calc(max(10px, env(safe-area-inset-top)) + 64px); left: max(12px, env(safe-area-inset-left)); transform: none; max-width: calc(50vw - 31vh - 24px); }

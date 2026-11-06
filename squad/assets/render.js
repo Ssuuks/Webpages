@@ -11,8 +11,11 @@ import { createFont, opText, compactTexts } from './pix/font.js';
 import { createGround } from './pix/ground.js';
 import { frameRaster, outline } from './pix/raster.js';
 
-/* 화면 배치: 분대는 화면 높이 63% 근처, 영웅은 그 바로 뒤(엄지가 쉬는 아래쪽을 비운다) */
-const FIT = { at: 0.625, up: 12, back: 16, minHz: 0.075 };
+/* 화면 배치: 분대는 화면 높이 70%, 영웅은 그 바로 뒤(78% 안 — 엄지가 쉬는 아래쪽 버튼·안내는 비운다).
+   카메라는 분대 24m 뒤(망원) — 분대를 아래에 두고 앞을 멀리·크게 본다(390×844에서 40m 앞 게이트 폭 25px), 분대 자리의 도트 크기는 그대로.
+   far = 그리는 끝(카메라 깊이 m): 분대 앞 160m쯤까지 — 도로가 화면 17~18% 높이(지평선 바로 아래)까지 이어지고, 그 끝의 배율(px/m)은 예전 카메라의 끝(115)과 비슷하다.
+   낮은 품질은 farLow(분대 앞 130m쯤 — 그릴 물건이 조금 적게) */
+const FIT = { at: 0.70, up: 20, back: 24, minHz: 0.075, far: 180, farLow: 150 };
 const STEPS3 = [1, 0.75, 0.5];
 const STEPS4 = [1, 0.75, 0.5, 0.33];
 const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9'];   // 무기 단계 색
@@ -53,15 +56,16 @@ export function pickBuffer(w, h, ratio) {
   return { K, BW, BH, cssPer: per, cssW: Math.round(BW * per), cssH: Math.round(BH * per), VW: devW / K, VH: devH / K, col };
 }
 
-/* 카메라 맞춤(순수 함수). 보스전(dolly→1)에는 뒤로 빠지되, 분대는 ~65% 이하·영웅 발은 72% 이하에 남게(T4) */
+/* 카메라 맞춤(순수 함수). 보스전(dolly→1)에는 조금 뒤·위로 빠지되, 분대는 70% 안팎·영웅 발은 78% 이하에 남게(T4).
+   달리기 카메라가 이미 24m 뒤라(망원) 보스전에 더 빠지는 거리는 3m — 많이 빠지면 무리가 더 납작해져 줄이 겹친다 */
 export function lensOpt(w, h, dolly = 0) {
   const col = Math.min(w, h * 0.62);
   const up = clamp(((FIT.at - FIT.minHz) * h * 0.93) / (0.09 * col), 9.5, FIT.up);
   // 짧은 버퍼(360x640·가로 화면)일수록 덜 빠지고, 지평선 하한을 풀어 분대가 아래로 밀려나지 않게
   const short = clamp((400 - h) / 100, 0, 1);
   return {
-    at: FIT.at - (0.05 + 0.04 * short) * dolly, up, back: FIT.back, minHz: FIT.minHz * (1 - 0.7 * dolly),
-    extraBack: 6 - 2 * short, extraUp: 3 - short,
+    at: FIT.at - (0.05 + 0.04 * short) * dolly, up, back: FIT.back, minHz: FIT.minHz * (1 - 0.85 * dolly),
+    extraBack: 3 - short, extraUp: 3 - short, far: FIT.far,
   };
 }
 
@@ -142,6 +146,10 @@ export const TIER = [
    자릿수 그대로가 hard를 넘으면 낮은 단계부터 over까지 덜 그린다(어림 — 숫자 말풍선이 정확한 수). 이어 갈 때(nextComp)는 low~keep까지 봐준다(머뭇거림).
    rowH = 줄 간격 상한(px, 병사 키 14px보다 조금 작게 — 옆 끝 그림이 위아래로 틈 없이 이어진다). slack = 병사가 10 + slack명이 되어야 합친다(오가도 깜빡이지 않게) */
 export const FORM_LIM = { min: 0.8, low: 0.7, max: 1.35, hard: 1.45, over: 1.2, keep: 1.65, rowH: 13.5, slack: 3 };
+/* 60명 넘는 무리(몸 반지름 R3 이상)는 화면에서 납작해도 3줄 이상 — 2줄 자리(2W)에는 병사 아홉 + 10명 묶음 여섯(69명 = 15장)이 keep 안에 들지 않는다.
+   100명 미만은 정확히 그려야 해서 69명은 그 15장뿐이라, 70명이 되면 열 명을 억지로 합치고 69명이면 다시 나눠 한 명 오갈 때마다 깜빡였다
+   (망원 카메라·작은 화면 — 360×640에서 무리 깊이가 rowH 바로 아래). 예전 카메라에서는 60명부터 늘 3줄이었다 */
+const R3 = radius(60) - 1e-9;
 export const compSum = (c) => c[0] + 10 * c[1] + 100 * c[2] + 1000 * c[3];
 export const compCount = (c) => c[0] + c[1] + c[2] + c[3];
 export const compWidth = (c) => c[0] * TIER[0].w + c[1] * TIER[1].w + c[2] * TIER[2].w + c[3] * TIER[3].w;
@@ -152,12 +160,12 @@ export function greedyComp(n) {
 }
 /* 대형 자리 크기(px): W = 옆 폭(2R), S = 맨 앞줄 발 ~ 맨 뒷줄 발의 화면 높이 = D·(vf + vb).
    ppm = 분대 자리의 m당 px(옆), vf·vb = 분대 가운데에서 앞(먼 쪽)·뒤(가까운 쪽)로 깊이 1m의 화면 높이(원근 — 뒤가 조금 크다),
-   pb = 맨 뒷줄 깊이(−D)의 m당 px(없으면 ppm). m0 = 줄 간격이 rowH 이하가 되는 가장 적은 줄 수(2 이상) — 채우기 기준의 줄 수 */
+   pb = 맨 뒷줄 깊이(−D)의 m당 px(없으면 ppm). m0 = 줄 간격이 rowH 이하가 되는 가장 적은 줄 수(2 이상, 60명부터 3 이상) — 채우기 기준의 줄 수 */
 export function formGeom(R, ppm, vf, vb, pb) {
   const D = Math.max(0, SQUAD_DEPTH * R - FORM_IN);
   const f = vf > 0 ? vf : ppm * 0.6, b = vb > 0 ? vb : f;
   const S = D * (f + b);
-  const m0 = Math.max(2, 1 + Math.ceil(S / FORM_LIM.rowH - 1e-9));
+  const m0 = Math.max(R >= R3 ? 3 : 2, 1 + Math.ceil(S / FORM_LIM.rowH - 1e-9));
   return { R, ppm, vf: f, vb: b, pb: pb > 0 ? pb : ppm, D, W: 2 * R * ppm, S, m0 };
 }
 /* 그림 수 하한: 줄마다 두 장 이상(한 장으로는 양옆 끝, 특히 앞 모서리에 닿지 못한다 — 큰 좀비는 모서리에서 문다). 셋뿐이면(3명) V자: 앞 가운데 하나, 뒤 둘
@@ -676,11 +684,12 @@ export function createRenderer(cvs) {
     if (!BW) return;
     // 보이는 영역(VW×VH) 기준으로 맞춘다 — 버퍼가 정수 CSS 크기 때문에 조금 넓어져도 도로는 화면 가운데
     const o = lensOpt(VW, VH, dolly);
+    if (quality === 'low') o.far = FIT.farLow;
     fitView(view, VW, VH, ROAD, dolly, o);
     fitted = dolly;
   }
 
-  function setQuality(q) { quality = q === 'low' ? 'low' : 'high'; dirty = true; }
+  function setQuality(q) { quality = q === 'low' ? 'low' : 'high'; fitted = -1; dirty = true; }
   function setShake(on) { shakeOn = !!on; if (!on) trauma = 0; }
   function setPreview(on) { preview = !!on; dirty = true; }
   function setFrozen(on) { frozenSet = !!on; dirty = true; }
@@ -1081,8 +1090,8 @@ export function createRenderer(cvs) {
     trap(aL, aR, ay, bL, P.x, by);
     return true;
   }
-  /* 먼 곳에서 나타날 때는 단계적으로(안개와 맞춘다). 기둥·판·숫자에 같은 값(R6) */
-  function fadeIn(d) { return d > 113 ? 0 : d > 106 ? 0.34 : d > 99 ? 0.67 : 1; }
+  /* 먼 곳에서 나타날 때는 단계적으로(안개 끝 far에 맞춘다 — far의 86·92·98%). 기둥·판·숫자에 같은 값(R6) */
+  function fadeIn(d) { const f = view.far; return d > f * 0.98 ? 0 : d > f * 0.92 ? 0.34 : d > f * 0.86 ? 0.67 : 1; }
   function lodStep(map, key, want, steps) {
     const prev = map.get(key);
     const st = pickStep(Math.min(1, want), prev, steps);
@@ -1109,7 +1118,7 @@ export function createRenderer(cvs) {
   function scenery(bio) {
     const step = SCENERY_STEP;
     const props = bio.props;
-    for (let z = Math.floor((view.camZ + 4) / step) * step; z < view.camZ + 104; z += step) {
+    for (let z = Math.floor((view.camZ + 4) / step) * step; z < view.camZ + view.zFar; z += step) {
       for (let side = -1; side <= 1; side += 2) {
         const h = sceneryHash(z, side);
         push(sceneryZ(h, z), 10, props[h % props.length], z * 2 + (side > 0 ? 1 : 0), sceneryX(h, side));
@@ -2515,7 +2524,7 @@ export function createRenderer(cvs) {
     // 정렬할 것 모으기
     nItems = 0;
     scenery(bio);
-    const zMax = view.camZ + 118;
+    const zMax = view.camZ + view.zFar;
     for (const row of s.rows) if (!row.done && row.z < zMax) push(row.z, 1, row);
     for (const p of s.props) if (p.alive && p.z < zMax && p.z > view.camZ + 1.5) push(p.z - 0.35, 2, p);
     for (const w of s.saws) if (w.z < zMax && w.z > view.camZ + 2) push(w.z, 3, w);
