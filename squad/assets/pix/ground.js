@@ -65,6 +65,8 @@ function seg(U, row, BW, a, b, ci, mask) {
   if (b > a) fillPat(U, row, a, b, ci, mask);
 }
 const R = Math.round;
+/* 안개가 시작하는 깊이(안개 끝 far에 대한 비율) */
+const FOG0 = 0.61;
 
 export function createGround() {
   const pals = new Map();
@@ -79,10 +81,11 @@ export function createGround() {
       sky: b.sky.map(u), sun: u(b.sun), hillF: u(b.hillF), hillN: u(b.hillN),
       g1: u(b.ground), g2: u(b.ground2), fog: u(b.fog), road: u(b.road), road2: u(b.road2),
       curbA: u(b.curbA), curbB: u(b.curbB), line: u(b.line),
+      hills: b.hills || 'dunes', moon: !!b.moon, stars: !!b.stars,
     };
     p.roadMix = lerpU32(p.road, p.road2, 0.5);
     p.curbMix = lerpU32(p.curbA, p.curbB, 0.5);
-    p.crack = lerpU32(p.road, hexU32('#2B1D2E'), 0.28);
+    p.crack = b.crack ? u(b.crack) : lerpU32(p.road, hexU32('#2B1D2E'), 0.28);   // 용암: 빛나는 금
     p.lineDim = lerpU32(p.line, p.road, 0.45);
     p.edge = lerpU32(p.g1, p.g2, 0.6);
     // 색 번호 → 색, 색 번호 × 안개 단계(0~4) → 안개 낀 색
@@ -98,34 +101,152 @@ export function createGround() {
 
   function buildBase(BW, rows, hz, p, quality) {
     base = new Uint32Array(BW * rows);
-    const sunX = BW * 0.72, sunY = hz - Math.max(18, Math.min(34, hz * 0.55)), sunR = 11;
+    const sunX = BW * 0.72, sunY = hz - Math.max(18, Math.min(34, hz * 0.55)), sunR = p.moon ? 8 : 11;
     const n = p.sky.length - 1;
+    const starC = lerpU32(p.sun, p.sky[0], 0.25);
     for (let y = 0; y < rows; y++) {
       const f = Math.max(0, Math.min(0.999, y / Math.max(1, hz))) * n;
       const i0 = Math.floor(f), fr = f - i0;
       const row = y * BW;
       for (let x = 0; x < BW; x++) {
         let c = quality === 'low' ? (fr > 0.5 ? p.sky[i0 + 1] : p.sky[i0]) : fr > bay(x, y) ? p.sky[i0 + 1] : p.sky[i0];
+        // 별: 하늘 위쪽 60%에 드문드문(칸에 고정), 가끔 십자 모양 큰 별
+        if (p.stars && y < hz * 0.6) {
+          const hs = hash2(x, y) & 1023;
+          if (hs < 5) c = hs < 2 ? p.sun : starC;
+        }
         const dx = x + 0.5 - sunX, dy = y + 0.5 - sunY;
         const dd = Math.sqrt(dx * dx + dy * dy);
-        if (dd < sunR) c = p.sun;
+        if (p.moon) {
+          // 초승달: 원에서 오른쪽 위로 비킨 원을 뺀다, 둘레에 옅은 빛
+          const ex = dx - 4, ey = dy + 3;
+          const inner = Math.sqrt(ex * ex + ey * ey) < sunR - 0.5;
+          if (dd < sunR && !inner) c = p.sun;
+          else if (!inner && dd < sunR + 4 && bay(x, y) < 0.32 - (dd - sunR) * 0.08) c = starC;
+        } else if (dd < sunR) c = p.sun;
         else if (dd < sunR + 3 && bay(x, y) < 0.5 - (dd - sunR) * 0.15) c = p.sun;
         base[row + x] = c;
       }
     }
   }
+  /* 언덕 높이(열마다): 먼 줄(fh)·가까운 줄(nh). 모양은 지역마다(hills). 카메라가 옆으로 움직였을 때만 다시 만든다 */
+  function hillH(style, x, off) {
+    const uF = x + off, uN = x + Math.round(off * 1.6);
+    let fh, nh, glow = 0;
+    switch (style) {
+      case 'blocks': {
+        // 건물: 12칸마다 하나(폭 7~11), 납작한 지붕·부서진 꼭대기·안테나
+        const c = Math.floor(uF / 12), pos = uF - c * 12, h = hash2(c, 71);
+        const w = 7 + (h % 5);
+        if (pos < w) {
+          fh = 14 + ((h >>> 4) % 17);
+          if ((h >>> 9) & 1 && pos > w / 2) fh -= ((pos * 3) % 5) + 2;   // 부서진 꼭대기
+          if ((h >>> 10) & 1 && pos === 2) fh += 5;                     // 안테나
+          glow = h;
+        } else fh = 6 + ((h >>> 12) % 4);
+        // 가까운 잔해 더미
+        const t2 = uN * 0.11;
+        nh = 3 + Math.abs(Math.sin(t2) * 3 + Math.sin(t2 * 2.3) * 1.5) + (hash2(uN, 5) & 1);
+        break;
+      }
+      case 'domes': {
+        // 둥근 나무 꼭대기: 10칸마다 반지름 5~9의 반원, 이웃끼리 겹친다
+        fh = 6;
+        for (let k = -1; k <= 1; k++) {
+          const c = Math.floor(uF / 11) + k, r = 5 + (hash2(c, 33) % 5), dx = uF - (c * 11 + 5);
+          if (Math.abs(dx) < r) fh = Math.max(fh, 6 + (hash2(c, 34) % 9) + Math.sqrt(r * r - dx * dx) * 1.1);
+        }
+        glow = 1;
+        nh = 3;
+        for (let k = -1; k <= 1; k++) {
+          const c = Math.floor(uN / 7) + k, r = 3 + (hash2(c, 35) % 3), dx = uN - (c * 7 + 3);
+          if (Math.abs(dx) < r) nh = Math.max(nh, 3 + Math.sqrt(r * r - dx * dx));
+        }
+        break;
+      }
+      case 'peaks': {
+        // 뾰족한 화산: 22칸마다 봉우리, 가끔 꼭대기가 패인 분화구(용암 빛)
+        fh = 7;
+        for (let k = -1; k <= 1; k++) {
+          const c = Math.floor(uF / 22) + k, h = hash2(c, 41), dx = Math.abs(uF - (c * 22 + 11));
+          let ph = 15 + (h % 14) - dx * (1.2 + ((h >>> 5) & 3) * 0.2);
+          const crater = (h >>> 8) & 1;
+          if (crater && dx < 2) { ph -= 2; glow = 1; }
+          if (ph > fh) { fh = ph; if (!(crater && dx < 3)) glow = 0; else glow = 1; }
+        }
+        nh = 4 + Math.abs(((uN * 0.7) % 6) - 3) + (hash2(uN >> 2, 9) % 3);
+        break;
+      }
+      case 'fair': {
+        // 천막: 24칸마다 둥근 삼각 지붕(세로 줄무늬, 꼭대기 깃발) + 낮은 담
+        const c = Math.floor(uF / 24), dx = Math.abs(uF - (c * 24 + 12)), h = hash2(c, 51), hw = 8 + (h % 3);
+        if (dx <= hw) {
+          fh = 9 + (h % 6) + (hw - dx) * 0.9;
+          glow = dx === 0 ? 3 : 1 + ((Math.floor((uF - c * 24 + 1) / 3)) & 1);
+          if (dx === 0) fh += 3;
+        } else fh = 5;
+        // 가까운 울타리: 낮은 띠 + 6칸마다 기둥
+        nh = 3 + ((uN % 6) === 0 ? 2 : 0);
+        break;
+      }
+      default: {
+        const t = uF * 0.045;
+        fh = 13 + Math.abs(Math.sin(t) * 11 + Math.sin(t * 2.7) * 5);
+        const t2 = (x + off * 1.6) * 0.08 + 4;
+        nh = 5 + Math.abs(Math.sin(t2) * 7 + Math.sin(t2 * 3.1) * 3);
+      }
+    }
+    HH[0] = fh; HH[1] = nh; HH[2] = glow;
+  }
+  const HH = new Float64Array(3);
   function buildSky(BW, rows, hz, off, p) {
     if (!sky || sky.length !== base.length) sky = new Uint32Array(base.length);
     sky.set(base);
     skyRows = rows; skyW = BW;
+    const style = p.hills;
+    const lit = p.sun, glowC = p.curbA, stripe = p.curbB;
+    const rimC = lerpU32(p.hillF, p.sun, 0.22), tentC = lerpU32(p.hillF, p.curbB, 0.32);
     // 언덕: 열마다 높이만 계산해 위에서 아래로 칠한다(먼 언덕은 느리게, 가까운 언덕은 빠르게 밀린다)
     for (let x = 0; x < BW; x++) {
-      const t = (x + off) * 0.045;
-      const fh = 13 + Math.abs(Math.sin(t) * 11 + Math.sin(t * 2.7) * 5);
-      const t2 = (x + off * 1.6) * 0.08 + 4;
-      const nh = 5 + Math.abs(Math.sin(t2) * 7 + Math.sin(t2 * 3.1) * 3);
+      hillH(style, x, off);
+      const fh = HH[0], nh = HH[1], g = HH[2];
       const yF = Math.max(0, Math.ceil(hz - fh)), yN = Math.max(0, Math.ceil(hz - nh));
-      for (let y = yF; y < rows; y++) sky[y * BW + x] = y >= yN ? p.hillN : p.hillF;
+      for (let y = yF; y < rows; y++) {
+        let c = y >= yN ? p.hillN : p.hillF;
+        if (y < yN) {
+          if (style === 'blocks' && g) {
+            // 창문: 3칸 격자, 몇 개만 노랗게
+            const wx = (x + off) % 12, wy = y - yF;
+            if (wy > 1 && (wx % 3) === 1 && (wy % 3) === 1 && (hash2(x + off, y) & 7) === 0) c = lit;
+          } else if (style === 'peaks' && g && y < yF + 2) c = glowC;
+          else if (style === 'domes' && y === yF) c = rimC;
+          else if (style === 'fair' && g === 2) c = tentC;
+          else if (style === 'fair' && g === 3 && y < yF + 3) c = glowC;
+        }
+        sky[y * BW + x] = c;
+      }
+    }
+    // 대관람차(놀이공원): 먼 언덕과 같은 빠르기로 밀린다 — 테·살 8개·다리 둘(언덕색), 테의 전구 12개(연석 두 색)
+    if (style === 'fair') {
+      const R = 14, cy = hz - 19;
+      const span = BW + 4 * R;
+      const cxw = ((((BW * 0.24 - off) % span) + span) % span) - 2 * R;
+      const x0 = Math.max(0, Math.floor(cxw - R - 2)), x1 = Math.min(BW - 1, Math.ceil(cxw + R + 2));
+      for (let y = Math.max(0, Math.floor(cy - R - 1)); y < Math.min(rows, Math.ceil(hz)); y++) {
+        for (let x = x0; x <= x1; x++) {
+          const dx = x + 0.5 - cxw, dy = y + 0.5 - cy, d = Math.sqrt(dx * dx + dy * dy);
+          const i = y * BW + x;
+          if (sky[i] === p.hillN) continue;   // 가까운 울타리가 앞
+          if (d <= R + 0.5 && d >= R - 0.8) sky[i] = p.hillF;
+          else if (d < R && (Math.abs(dx) < 0.55 || Math.abs(dy) < 0.55 || Math.abs(Math.abs(dx) - Math.abs(dy)) < 0.6)) sky[i] = p.hillF;
+          else if (dy > 0 && Math.abs(Math.abs(dx) - dy * 0.5) < 0.7) sky[i] = p.hillF;   // 다리
+        }
+      }
+      for (let k = 0; k < 12; k++) {
+        const a = (k * Math.PI) / 6 + 0.26;
+        const bx = Math.round(cxw + Math.cos(a) * R - 0.5), by = Math.round(cy + Math.sin(a) * R - 0.5);
+        if (bx >= 0 && bx < BW && by >= 0 && by < rows && sky[by * BW + bx] !== p.hillN) sky[by * BW + bx] = k & 1 ? glowC : stripe;
+      }
     }
   }
 
@@ -154,6 +275,8 @@ export function createGround() {
     const cx = view.cx + sx, vx = view.camX;
     const cols = p.cols, fogT = p.fogT, fogC = p.fogI;
     const hiQ = quality !== 'low';
+    // 안개: 카메라 깊이 fog0부터 짙어져 far에서 다 덮는다(물건이 나타나는 깊이 — render.js fadeIn과 같은 far)
+    const far = view.far || 115, fog0 = far * FOG0, fogSpan = far - fog0;
     // 자갈은 폰 기둥(가운데 col 폭의 ±75%) 안에만 — 넓은 화면의 바깥은 맨 모래(T9)
     const colHalf = (view.col || BW) * 0.75;
     const pxL = Math.max(0, cx - colHalf), pxR = Math.min(BW, cx + colHalf);
@@ -172,9 +295,9 @@ export function createGround() {
       const wz = camZ + dz;
       const row = y * BW;
       // 완전히 안개 속인 줄(지평선 근처)은 바로 채운다
-      if (d >= 115) { u32.fill(fogC, row, row + BW); continue; }
+      if (d >= far) { u32.fill(fogC, row, row + BW); continue; }
       // 이 줄의 안개: 이웃한 두 단계(s0·s1)를 가로 4칸 베이어 무늬(mask)로 섞는다
-      const fogK = (d - 70) / 45;
+      const fogK = (d - fog0) / fogSpan;
       let mask = 0;
       if (fogK > 0) {
         const lv = Math.min(4, fogK * 4), i0 = Math.floor(lv), fr = lv - i0;

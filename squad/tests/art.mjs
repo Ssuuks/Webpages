@@ -91,17 +91,22 @@ test('모든 병과·영웅에 그림이 있다', () => {
     const a = HERO_ART[id];
     assert.ok(a && SHEETS[a.back] && SHEETS[a.portrait], '영웅 ' + id);
     const face = SHEETS[a.portrait].frames[0];
-    assert.equal(face.length, 19, `${id} 얼굴 높이 19`);
-    assert.equal(face[0].length, 20, `${id} 얼굴 폭 20`);
+    assert.equal(face.length, 30, `${id} 얼굴 높이 30`);
+    assert.equal(face[0].length, 30, `${id} 얼굴 폭 30`);
+    assert.ok(SHEETS[a.portrait].frames.length >= 2, `${id} 얼굴 [미소, 외침]`);
     assert.ok(SHEETS[a.back].frames.length >= 15, `${id} 뒷모습 프레임`);
   }
   for (const b of BIOMES) assert.ok(BIOME[b.id], '지역 ' + b.id);
   assert.equal(biomeOf(1).id, 'desert');
   assert.equal(biomeOf(11).id, 'snow');
-  assert.equal(biomeOf(21).id, 'desert');
+  assert.equal(biomeOf(21).id, 'city');
+  assert.equal(biomeOf(31).id, 'forest');
+  assert.equal(biomeOf(41).id, 'lava');
+  assert.equal(biomeOf(51).id, 'park');
+  assert.equal(biomeOf(61).id, 'desert');
 });
 
-test('크기 규칙: 특수병은 병사 격자 위의 종이인형(13px 이하), 영웅 몸통 16×18 안팎, 뒷줄 철모 5×4', () => {
+test('크기 규칙: 특수병은 병사 격자 위의 종이인형(13px 이하), 영웅 몸통 16×18 안팎', () => {
   const sol = SHEETS.soldier.frames[0];
   for (const k of Object.values(UNIT_ART)) {
     for (const fr of SHEETS[k].frames) {
@@ -115,7 +120,6 @@ test('크기 규칙: 특수병은 병사 격자 위의 종이인형(13px 이하)
       assert.ok(R.w <= 17 && R.h <= 20, `${a.back} ${R.w}×${R.h}`);
     }
   }
-  assert.deepEqual([SHEETS.helmet.frames[0][0].length, SHEETS.helmet.frames[0].length], [5, 4]);
   const boss = frameRaster(SHEETS.boss.frames[0], palOf(SHEETS.boss.pal));
   assert.ok(boss.h >= 95 && boss.h <= 110, '보스는 약 100px로 직접 그린다');
   for (const k of Object.keys(WORLD_H)) assert.ok(SHEETS[k] || k === 'captive', 'WORLD_H ' + k);
@@ -223,7 +227,7 @@ test('버퍼 크기 규칙: 기둥 160~220px, 화면을 덮고, CSS 크기는 �
   assert.deepEqual([pickBuffer(412, 915, 2.625).BW, pickBuffer(412, 915, 2.625).BH, pickBuffer(412, 915, 2.625).cssW], [182, 406, 416]);
 });
 
-test('보스전 렌즈: 분대 ≤ 65.5%, 영웅 발 ≤ 72%(360x640·390x844), 달리기 때는 62.5% 그대로(T4)', () => {
+test('렌즈: 달리기 분대 70%(앞을 멀리 보게), 보스전 분대 ≤ 70.5%·영웅 발 ≤ 78%(아래 버튼에 가리지 않게, T4)', () => {
   for (const [w, h] of [[180, 320], [195, 422], [182, 400]]) {
     for (const dolly of [0, 1]) {
       const v = makeView();
@@ -235,10 +239,12 @@ test('보스전 렌즈: 분대 ≤ 65.5%, 영웅 발 ≤ 72%(360x640·390x844), 
         const sqY = P.y / h;
         project(v, 0, 0, -R - 0.7);
         const heroY = P.y / h;
-        if (dolly === 0) assert.ok(Math.abs(sqY - 0.625) < 0.005, `${w}x${h} 달리기 분대 ${sqY}`);
-        else {
-          assert.ok(sqY <= 0.655, `${w}x${h} 보스전 분대 ${(sqY * 100).toFixed(1)}%`);
-          assert.ok(heroY <= 0.72, `${w}x${h} 보스전 영웅 발 ${(heroY * 100).toFixed(1)}% (N=${n})`);
+        if (dolly === 0) {
+          assert.ok(Math.abs(sqY - 0.70) < 0.005, `${w}x${h} 달리기 분대 ${sqY}`);
+          assert.ok(heroY <= 0.78, `${w}x${h} 달리기 영웅 발 ${(heroY * 100).toFixed(1)}% (N=${n})`);
+        } else {
+          assert.ok(sqY <= 0.705, `${w}x${h} 보스전 분대 ${(sqY * 100).toFixed(1)}%`);
+          assert.ok(heroY <= 0.78, `${w}x${h} 보스전 영웅 발 ${(heroY * 100).toFixed(1)}% (N=${n})`);
         }
       }
       // 보스(높이 6.6u)의 머리는 화면 안(위쪽 HUD 아래)
@@ -343,7 +349,7 @@ test('내려찍기 빨간 띠 = 맞는 범위: 렌더러는 slamZone으로 그�
 /* ---------------- 충돌 크기(SIM 8): 그린 크기 = 맞는 크기 ----------------
    원칙: 위협이 맞히는 범위는 그린 것과 같거나 조금 작다(그린 크기의 80~100%, 더 크지 않게) — 화면에서 아슬아슬하게 비켜 갔으면 안 맞은 것.
    폰 두 화면(360×640@2, 390×844@3)과 데스크톱(1280×720@1), 달리기·보스전 렌즈 모두에서 그림 자료(SHEETS)와 카메라로 잰다. */
-import { formationSpot, formationCount, slotPos, heroZ, SOLDIER_HALF_PX, FORM_IN } from '../assets/render.js';
+import { formationPlan, formArrange, formGeom, composeSquad, greedyComp, nextComp, compSum, compCount, compWidth, needFor, muzzleOn, TIER, FORM_LIM, TANK_GAP, slotPos, heroZ, FORM_IN } from '../assets/render.js';
 import * as Core from '../assets/core.js';
 const HB_VIEWS = [['360x640', 360, 640, 2], ['390x844', 390, 844, 3], ['1280x720', 1280, 720, 1]];
 function hbView(w, h, dpr, dolly) {
@@ -367,21 +373,395 @@ function spriteBox(name, frame = 0) {
   sprBox.set(key, o);
   return o;
 }
-const HB_NS = [1, 2, 3, 5, 12, 30, 60, 100, 130, 300, 1000, 9999];
+const HB_NS = [1, 2, 3, 5, 9, 12, 30, 60, 100, 130, 205, 300, 1000, 2864, 9999];
+/* 그 화면의 분대 자리 배율 — 렌더러(updateFormation)와 같은 방법: 옆 m당 px, 분대 가운데에서 앞(먼 쪽)·뒤 끝(±D)까지 깊이 1m의 화면 높이 */
+function hbScale(v, R) {
+  const D = Math.max(0.05, Core.SQUAD_DEPTH * R - FORM_IN);
+  project(v, 0, 0, 0);
+  const ppm = P.s, y0 = P.y;
+  project(v, 0, 0, D);
+  const vf = (y0 - P.y) / D;
+  project(v, 0, 0, -D);
+  return [ppm, vf, (P.y - y0) / D, P.s];
+}
+const deepEq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+const geomOf = (v, n) => { const R = Core.radius(n); return formGeom(R, ...hbScale(v, R)); };
+const planOf = (v, n) => { const R = Core.radius(n); return formationPlan(n, R, ...hbScale(v, R)); };
+/* 계획의 그림 상자(px): 단계마다 TIER 크기(아래 TIER = spriteBox 검사로 시트와 같다) */
+function planBoxes(v, plan) {
+  return plan.units.map((u) => {
+    project(v, u.x, 0, u.z);
+    const T = TIER[u.t], px = Math.round(P.x), py = Math.round(P.y);
+    return [px - T.halfL, px + T.halfR, py - T.h, py];
+  });
+}
+/* 그림마다 다른 그림에 가린 몫(픽셀, plan.units 차례로): 렌더러처럼 먼 줄부터, 같은 줄은 바깥부터 그린다(가운데가 위) */
+const tierMask = [];
+function coverOf(v, plan) {
+  const R = plan.g.R, bias = 0.03 / Math.max(0.5, R);
+  const us = plan.units.map((u, i) => ({ u, i, key: u.z + Math.abs(u.x) * bias })).sort((a, b) => b.key - a.key);
+  project(v, 0, 0, 0);
+  const cx = Math.round(P.x), cy = Math.round(P.y), G = 240, own = new Int16Array(G * G).fill(-1), tot = [];
+  us.forEach(({ u }, k) => {
+    if (!tierMask[u.t]) { const sh = SHEETS[TIER[u.t].sheet]; tierMask[u.t] = outline(frameRaster(sh.frames[0], palOf(sh.pal)), OUT); }
+    const m = tierMask[u.t];
+    project(v, u.x, 0, u.z);
+    const x0 = Math.round(P.x) - cx - (m.w >> 1) + G / 2, y0 = Math.round(P.y) - cy - (m.h - 1) + G / 2;
+    let c = 0;
+    for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.get(x, y)) { own[(y0 + y) * G + x0 + x] = k; c++; }
+    tot.push(c);
+  });
+  const vis = new Array(us.length).fill(0), out = new Array(us.length);
+  for (const o of own) if (o >= 0) vis[o]++;
+  us.forEach(({ i }, k) => { out[i] = 1 - vis[k] / tot[k]; });
+  return out;
+}
+
+test('합친 병사 단계: TIER 크기 = 시트 그림 크기(외곽선 포함, 닻 아래 가운데·좌우 반폭 같음), 발은 맨 아래 줄, 프레임·변형·총구', () => {
+  assert.equal(TIER[0].sheet, 'soldier');
+  assert.deepEqual(TIER.map((x) => x.worth), [1, 10, 100, 1000]);
+  assert.deepEqual(TIER.map((x) => [x.sheet, x.w, x.h]), [['soldier', 14, 14], ['sq10', 18, 18], ['sq100', 22, 22], ['sq1000', 30, 22]]);
+  for (const T of TIER) {
+    assert.equal(T.halfL + T.halfR, T.w, T.sheet);
+    const sh = SHEETS[T.sheet];
+    assert.ok(sh, T.sheet);
+    assert.equal(sh.frames.length, 6, `${T.sheet}: 걷기 0~3 + 서기 4~5`);
+    assert.ok(ANIM[T.sheet] && ANIM[T.sheet].walk.fps === T.fps && ANIM[T.sheet].idle.fps === T.idleFps, `${T.sheet}: TIER 걸음 빠르기 = ANIM`);
+    assert.ok(sh.alts && sh.alts.hurt, `${T.sheet}: 'hurt' 변형`);
+    assert.ok(Array.isArray(sh.muzzle) && Array.isArray(sh.muzzles) && sh.muzzles.length === sh.frames.length, `${T.sheet}: 총구 자리(프레임마다)`);
+    for (const [vi, pal] of sheetPalettes(sh).entries()) {
+      sh.frames.forEach((fr, f) => {
+        const R = outline(frameRaster(fr, pal), OUT);
+        assert.deepEqual([R.w, R.h], [T.w, T.h], `${T.sheet}[${f}] 크기`);
+        if (vi === 0) {
+          const b = spriteBox(T.sheet, f);
+          assert.deepEqual([b.L, b.R, b.H], [T.halfL, T.halfR, T.h], `${T.sheet}[${f}] 그림 상자 ${JSON.stringify(b)} ≠ TIER`);
+          assert.ok(fr[fr.length - 1].replace(/\./g, '').length > 0, `${T.sheet}[${f}] 발이 맨 아래 줄`);
+          // 총구 = 총 끝 칸(그 위는 비었다 — 불꽃이 외곽선 위에 뜬다)
+          const [mx, my] = sh.muzzles[f];
+          assert.ok(fr[my][mx] !== '.', `${T.sheet}[${f}] 총구 ${mx},${my} 빈칸`);
+          assert.ok(my === 0 || fr[my - 1][mx] === '.', `${T.sheet}[${f}] 총구 위가 비어야`);
+        }
+      });
+    }
+    assert.deepEqual(sh.muzzles[1], sh.muzzle, `${T.sheet}: muzzle = 1번 프레임`);
+  }
+});
+
+/* 구성 검사 하나: 정수, 0장 없음, 합 ≤ n, 10 미만은 병사, 줄마다 두 장(맨 앞줄만 한 장), 어림은 자릿수 그대로가 아주 빽빽할 때만 */
+function checkComp(c, n, g, id) {
+  assert.ok(c.length === 4 && c.every((k) => Number.isInteger(k) && k >= 0), id);
+  if (n >= 1) assert.ok(compCount(c) >= 1, `${id}: 그림 0장`);
+  assert.ok(compSum(c) <= n, `${id}: 합이 n보다 크다`);
+  if (n < 10) assert.deepEqual(c, [n, 0, 0, 0], id);
+  const cap = g.m0 * g.W, gw = compWidth(greedyComp(n));
+  const over = n >= 100 && gw > FORM_LIM.hard * cap;
+  if (!over) assert.equal(compSum(c), n, `${id}: 자릿수 그대로가 들어가는데(${(gw / cap).toFixed(2)}) 합이 다르다`);
+  if (compSum(c) !== n) {
+    assert.ok(compWidth(c) <= FORM_LIM.over * cap + 1e-6, `${id}: 어림인데 빽빽하다`);
+    assert.ok(compSum(c) >= 0.5 * n, `${id}: 어림 ${compSum(c)}`);
+  }
+  if (n >= 4) assert.ok(compCount(c) >= needFor(g.m0), `${id}: ${compCount(c)}장으로는 ${g.m0}줄 양옆을 못 덮는다`);
+  return over;
+}
+
+test('합친 병사 구성: 자릿수 그대로 → 채우기(큰 단계부터 열 장으로) → 아주 빽빽하면 어림. 205명 = 100 + 10×10 + 5', () => {
+  const ns = [];
+  for (let n = 1; n <= 3000; n += n < 400 ? 1 : 7) ns.push(n);
+  ns.push(9, 10, 11, 99, 100, 101, 999, 1000, 1001, 2864, 6848, 9998, 9999);
+  for (const [tag, w, h, dpr] of HB_VIEWS) {
+    for (const dolly of [0, 1]) {
+      const v = hbView(w, h, dpr, dolly);
+      for (const n of ns) {
+        const g = geomOf(v, n), c = composeSquad(n, g);
+        const id = `${tag} ${dolly ? '보스전' : '달리기'} n=${n} [${c}]`;
+        const over = checkComp(c, n, g, id);
+        if (over || n < 10) continue;
+        const cap = g.m0 * g.W, wd = compWidth(c), g0 = greedyComp(n);
+        // 너무 빽빽하면: 자릿수 그대로가 이미 그렇거나, 장 수가 모자라 쪼갤 수밖에 없었거나, 쪼개기 전이 아주 성겼을 때(low 미만 → hard까지)뿐
+        if (wd > FORM_LIM.max * cap + 1e-6) {
+          let sparse = false;
+          for (let t = 1; t < 4; t++) if (c[t - 1] >= 10 && wd - 10 * TIER[t - 1].w + TIER[t].w < FORM_LIM.low * cap && wd <= FORM_LIM.hard * cap + 1e-6) sparse = true;
+          assert.ok(compWidth(g0) > FORM_LIM.max * cap || compCount(g0) < needFor(g.m0) || sparse, `${id}: 쪼개서 빽빽해졌다 ${(wd / cap).toFixed(2)}`);
+        }
+        // 성기면: 하나를 더 쪼개면 넘친다(채울 만큼 채웠다)
+        if (wd < FORM_LIM.min * cap - 1e-6) {
+          const hi = (wd < FORM_LIM.low * cap ? FORM_LIM.hard : FORM_LIM.max) * cap;
+          for (let t = 1; t < 4; t++) if (c[t] && !(t === 1 && c[0] >= FORM_LIM.slack)) assert.ok(wd + 10 * TIER[t - 1].w - TIER[t].w > hi, `${id}: 성긴데(${(wd / cap).toFixed(2)}) 더 쪼갤 수 있다`);
+        }
+      }
+    }
+  }
+  // 205명(폰 390×844): 100 한 장 + 10 열 장 + 병사 다섯 — 셀 수 있게, 그림이 적고 많이 가리지 않는다
+  // (가장 많이 가린 몫 0.35까지: 망원 카메라라 무리 깊이가 화면에서 18% 납작해져 줄 간격이 13.5px → 11px — 가운데 줄 10명 묶음이 0.34쯤 가린다)
+  const v = hbView(390, 844, 3, 0);
+  const p = planOf(v, 205);
+  assert.deepEqual(p.comp, [5, 10, 1, 0]);
+  const cov = coverOf(v, p);
+  assert.ok(p.units.length <= 20 && Math.max(...cov) <= 0.35, `205명: ${p.units.length}장, 가장 많이 가린 몫 ${Math.max(...cov).toFixed(2)}`);
+});
+
+test('합친 병사 배치: 큰 단계가 앞줄·가운데, 줄마다 양옆 끝이 ±R(맨 앞줄만 가운데 한 장), 옆 끝 그림이 위아래로 이어진다, 덜 가린다', () => {
+  for (const [tag, w, h, dpr] of HB_VIEWS) {
+    for (const dolly of [0, 1]) {
+      const v = hbView(w, h, dpr, dolly);
+      let covSum = 0, covN = 0;
+      for (let n = 1; n <= 9999; n += n < 400 ? 1 : n < 3000 ? 13 : 97) {
+        const R = Core.radius(n), [ppm] = hbScale(v, R);
+        const p = planOf(v, n), us = p.units, g = p.g;
+        const id = `${tag} ${dolly ? '보스전' : '달리기'} n=${n} [${p.comp}] ${p.arr.sizes}`;
+        assert.equal(us.length, compCount(p.comp), id);
+        assert.ok(us.length <= 30, `${id}: ${us.length}장`);
+        const rows = new Map();
+        for (const u of us) { const k = u.z.toFixed(6); if (!rows.has(k)) rows.set(k, []); rows.get(k).push(u); }
+        const rs = [...rows.values()].sort((a, b) => b[0].z - a[0].z);   // 앞줄(먼 쪽)부터
+        if (n >= 3) {
+          assert.ok(rs.length >= 2 && Math.abs(rs[0][0].z - g.D) < 1e-9 && Math.abs(rs[rs.length - 1][0].z + g.D) < 1e-9, `${id}: 앞뒤 줄이 ±D가 아니다`);
+        }
+        for (let r = 0; r < rs.length; r++) {
+          const row = rs[r];
+          // 큰 단계가 앞줄: 이 줄의 가장 작은 단계 ≥ 뒷줄의 가장 큰 단계
+          if (r + 1 < rs.length) assert.ok(Math.min(...row.map((u) => u.t)) >= Math.max(...rs[r + 1].map((u) => u.t)), `${id}: 작은 단계가 큰 단계 앞에`);
+          // 줄 안: 가운데에 가까울수록 큰 단계(옆 끝이 크고 안이 작은 일 없음)
+          for (const a of row) for (const b of row) if (Math.abs(a.x) < Math.abs(b.x) - 1e-6) assert.ok(a.t >= b.t, `${id}: 줄 안에서 큰 것이 바깥에`);
+          let l = 1e9, rr = -1e9;
+          for (const u of row) { l = Math.min(l, u.x - TIER[u.t].halfL / ppm); rr = Math.max(rr, u.x + TIER[u.t].halfR / ppm); }
+          if (row.length >= 2 && row[0].z >= 0) assert.ok(Math.abs(l + R) < 0.02 && Math.abs(rr - R) < 0.02, `${id}: 줄 [${l.toFixed(2)}, ${rr.toFixed(2)}] ≠ ±R ${R.toFixed(2)}`);
+          else if (row.length >= 2) {
+            // 가운데보다 뒤 줄: 화면에서 옆 끝이 몸 끝(±R)의 원근 사다리꼴 안 — 가운데 깊이의 폭 이상, 제 발 깊이의 폭 이하
+            project(v, 0, 0, row[0].z);
+            const pz = P.s, cx = P.x;
+            for (const u of [row[0], row[row.length - 1]]) {
+              project(v, u.x, 0, u.z);
+              const e = Math.abs(P.x - cx) + (u.x < 0 ? TIER[u.t].halfL : TIER[u.t].halfR);
+              assert.ok(e >= R * ppm - 0.5 && e <= R * pz + 0.5, `${id}: 뒷줄 옆 끝 ${e.toFixed(1)}px가 ${(R * ppm).toFixed(1)}~${(R * pz).toFixed(1)}px 밖`);
+            }
+          }
+          else if (us.length >= 3) assert.ok(us.length === 3 && r === 0 && Math.abs(row[0].x) < 1e-9, `${id}: 한 장짜리 줄(셋일 때 V자의 맨 앞 가운데만)`);
+        }
+        for (const a of us) for (const b of us) if (a !== b) assert.ok(Math.abs(a.x - b.x) > 1e-6 || Math.abs(a.z - b.z) > 1e-6, `${id}: 같은 자리`);
+        if (n >= 3) {
+          // 화면에서 옆 끝 그림이 맨 뒷줄 발부터 맨 앞줄 발까지 틈 없이 이어진다(한 장짜리 앞줄은 둘째 줄 옆 끝이 앞줄 발까지 덮는다)
+          const boxes = planBoxes(v, p);
+          const byRow = rs.map((row) => row.map((u) => boxes[us.indexOf(u)]));
+          const frontY = byRow[0][0][3];
+          for (const side of [0, 1]) {
+            const col = byRow.filter((bs) => bs.length >= 2).map((bs) => bs.reduce((a, b) => (side ? (b[1] > a[1] ? b : a) : (b[0] < a[0] ? b : a))));
+            col.sort((a, b) => b[3] - a[3]);   // 뒷줄(아래)부터
+            for (let i = 0; i + 1 < col.length; i++) assert.ok(col[i][2] <= col[i + 1][3], `${id}: 옆 끝 그림 사이 세로 틈 ${col[i][2] - col[i + 1][3]}px`);
+            assert.ok(col[col.length - 1][2] <= frontY, `${id}: 옆 끝 그림이 앞줄 발까지 닿지 않는다`);
+          }
+          const cov = coverOf(v, p);
+          covSum += cov.reduce((a, b) => a + b, 0) / cov.length; covN++;
+        }
+      }
+      // 평균으로 그림의 대부분이 보인다(가장 좁은 보스전 화면도)
+      assert.ok(covSum / covN <= 0.3, `${tag} ${dolly ? '보스전' : '달리기'}: 평균 가린 몫 ${(covSum / covN).toFixed(2)}`);
+    }
+  }
+});
+
+/* 이어 가기 한 걸음(c, n → c2, nn) 검사: 정수, 0장 없음, 합 ≤ n, 10 미만은 병사, 줄마다 두 장, keep 안(아니면 처음부터 짠 것).
+   어림은 큰 무리(100명 이상)에서만, 처음부터 짠 것의 0.9 이상. 처음부터 짜면 정확한데 어림이면 — 그대로 둔 것(머뭇거림: 얻었는데 넘쳐 새 병사를
+   그리지 않았거나, 잃었는데 어림 합보다 아직 많거나, 정확한 것이 한 명만 잃어도 무너지거나)이거나, 잃어서 넘쳐 낮은 단계를 뺀 것뿐 */
+function checkStep(c, n, c2, nn, g, id) {
+  assert.ok(c2.length === 4 && c2.every((k) => Number.isInteger(k) && k >= 0), id);
+  if (nn >= 1) assert.ok(compCount(c2) >= 1, `${id}: 그림 0장`);
+  assert.ok(compSum(c2) <= nn, `${id}: 합이 n보다 크다`);
+  if (nn < 10) assert.deepEqual(c2, [nn, 0, 0, 0], id);
+  if (nn >= 4) assert.ok(compCount(c2) >= needFor(g.m0), `${id}: ${compCount(c2)}장으로는 ${g.m0}줄 양옆을 못 덮는다`);
+  const cap = g.m0 * g.W, f = composeSquad(nn, g);
+  if (nn >= 10) assert.ok(compWidth(c2) <= FORM_LIM.keep * cap + 1e-6 || deepEq(c2, f), `${id}: 너무 빽빽하다`);
+  if (compSum(c2) !== nn) {
+    assert.ok(nn >= 100, `${id}: 작은 무리가 어림`);
+    assert.ok(compSum(c2) >= 0.9 * compSum(f), `${id}: 어림이 처음부터 짠 것(${compSum(f)})보다 많이 적다`);
+    if (compSum(f) === nn) assert.ok(deepEq(c2, c) || (nn < n && naiveBad(c, n, nn, g)), `${id}: 정확하게 그릴 수 있는데 어림(처음부터 짜면 [${f}])`);
+  }
+}
+/* 이전 구성에 병사만 더하고 뺀 것(잃을 때 병사가 모자라면 가장 작은 합친 병사를 줄줄이 나눈다)이 넘치거나 양옆을 못 덮는가 — 그때만 거꾸로 바뀌어도 된다
+   (작은 무리는 병력과 함께 몸 R이 줄고 늘어 들어갈 자리가 바뀐다) */
+function naiveBad(c, n, nn, g) {
+  const d = c.slice();
+  d[0] += nn - (compSum(c) !== n ? Math.min(n, compSum(c)) : n);
+  while (d[0] < 0) {
+    let t = 1;
+    while (t < 4 && !d[t]) t++;
+    if (t >= 4) return true;
+    d[t]--; d[t - 1] += 10;
+  }
+  return compWidth(d) > FORM_LIM.keep * g.m0 * g.W + 1e-6 || compCount(d) < needFor(g.m0);
+}
+/* 구성 a → b의 바꿈(위 단계부터 남는 차이를 열로 내린다): [10→병사, 100→10, 1000→100] 나뉜 수(+) / 합쳐진 수(−) */
+function flowsOf(a, b) {
+  const s3 = a[3] - b[3], s2 = a[2] - b[2] + 10 * s3, s1 = a[1] - b[1] + 10 * s2;
+  return [s1, s2, s3];
+}
+/* 이어 가기 검사: 합치기·나누기 수(10:1 바꿈) — 위 단계부터 남는 차이를 열로 내린다. 큰 그림 하나가 줄줄이 풀리는 것
+   (100 하나 → 10 아홉 + 병사 열: 단계마다 한 번씩 같은 쪽으로)은 그림 하나가 나뉘는 한 번으로 센다 */
+function mergeOps(a, b) {
+  const s3 = a[3] - b[3], s2 = a[2] - b[2] + 10 * s3, s1 = a[1] - b[1] + 10 * s2, ss = [s1, s2, s3];
+  const ops = Math.abs(s1) + Math.abs(s2) + Math.abs(s3);
+  const chain = ss.every((x) => x === 0 || x === 1) || ss.every((x) => x === 0 || x === -1);
+  return ops > 1 && chain ? 1 : ops;
+}
+test('합친 병사 이어 가기: 한 명씩 늘고 줄 때 합치기·나누기는 많아야 한 번, 합은 정확, 채우기 창·양옆 규칙은 늘 지킨다, 오가도 깜빡이지 않는다', () => {
+  const seqs = [];
+  const ramp = (a, b) => { const s = []; for (let n = a; n !== b; n += a < b ? 1 : -1) s.push(n); s.push(b); return s; };
+  seqs.push(['1→1200', ramp(1, 1200)], ['1200→1', ramp(1200, 1)], ['3100→2000', ramp(3100, 2000)], ['2000→3100', ramp(2000, 3100)]);
+  for (const b of [10, 100, 1000]) {
+    const s = [];
+    for (let k = 0; k < 5; k++) s.push(...ramp(b - 4, b + 4), ...ramp(b + 3, b - 3));
+    seqs.push([`${b} 근처 오가기`, s]);
+  }
+  {
+    const s = [];
+    for (let n = 7; n <= 9000; n *= 2) s.push(n);
+    for (let n = 7168; n >= 3; n = Math.floor(n / 2)) s.push(n);
+    seqs.push(['×2 ÷2', s]);
+  }
+  { const s = [205]; while (s[s.length - 1] > 0) s.push(Math.max(0, s[s.length - 1] - 45)); seqs.push(['205 −45씩', s]); }
+  { const s = []; for (let n = 2864; n > 0; n -= 1 + (n % 7)) s.push(n); s.push(0); seqs.push(['2864 → 0 물려 줄기', s]); }
+  for (const [tag, w, h, dpr] of HB_VIEWS) {
+    for (const dolly of [0, 1]) {
+      const v = hbView(w, h, dpr, dolly);
+      for (const [name, s] of seqs) {
+        let n = s[0], c = composeSquad(n, geomOf(v, n)), big = 0;
+        for (let i = 1; i < s.length; i++) {
+          const nn = s[i], g = geomOf(v, nn), c2 = nextComp(c, n, nn, g);
+          const id = `${tag} ${dolly ? '보스전' : '달리기'} ${name}: ${n}→${nn} [${c}]→[${c2}]`;
+          checkStep(c, n, c2, nn, g, id);
+          if (Math.abs(nn - n) === 1 && compSum(c) === n && compSum(c2) === nn) {
+            const ops = mergeOps(c, c2);
+            assert.ok(ops <= 1, `${id}: 합치기·나누기 ${ops}번`);
+            if (ops) big++;
+          }
+          c = c2; n = nn;
+        }
+        // (병사 열 명마다 한 번은 나누거나 합쳐야 한다 — 그보다 조금 더까지)
+        if (name.includes("→") && !name.includes("물려")) assert.ok(big <= s.length / 6, `${tag} ${name}: 합치기·나누기 ${big}번 / ${s.length}걸음`);
+      }
+      // 오가기: n ↔ n+1을 되풀이해도 처음 한 번 뒤로는 그대로
+      for (const n0 of [12, 19, 99, 100, 129, 130, 199, 200, 202, 203, 209, 210, 299, 999, 1000, 1500]) {
+        const g0 = geomOf(v, n0), g1 = geomOf(v, n0 + 1);
+        let c = composeSquad(n0, g0);
+        const seen = [];
+        for (let k = 0; k < 6; k++) {
+          const c1 = nextComp(c, n0, n0 + 1, g1);
+          c = nextComp(c1, n0 + 1, n0, g0);
+          seen.push(c.join(',') + '/' + c1.join(','));
+        }
+        assert.equal(new Set(seen.slice(1)).size, 1, `${tag} n=${n0}↔${n0 + 1} 깜빡임: ${seen.join(' ')}`);
+      }
+    }
+  }
+  // 배율이 조금씩 바뀌어도(보스전 카메라) 같은 구성이면 줄 배치를 지킨다
+  const v0 = hbView(390, 844, 3, 0), v1 = hbView(390, 844, 3, 1);
+  for (const n of [60, 205, 999, 2864]) {
+    const R = Core.radius(n), s0 = hbScale(v0, R), s1 = hbScale(v1, R);
+    let g = formGeom(R, ...s0), c = composeSquad(n, g), a = formArrange(c, g), flips = 0;
+    for (let k = 1; k <= 40; k++) {
+      const u = k / 40;
+      g = formGeom(R, s0[0] + (s1[0] - s0[0]) * u, s0[1] + (s1[1] - s0[1]) * u, s0[2] + (s1[2] - s0[2]) * u);
+      const c2 = nextComp(c, n, n, g);
+      const a2 = formArrange(c2, g, c2.join(',') === a.comp ? a : null);
+      if (a2.key !== a.key) flips++;
+      c = c2; a = a2;
+    }
+    assert.ok(flips <= 2, `n=${n}: 보스전 카메라로 ${flips}번 다시 짰다`);
+  }
+});
+
+test('합친 병사 이어 가기: n이 움직인 쪽으로만 — 잃을 때 합치지 않고 얻을 때 나누지 않는다, 그린 합도 n을 거스르지 않는다, 오가도 그대로', () => {
+  for (const [tag, w, h, dpr] of HB_VIEWS) {
+    for (const dolly of [0, 1]) {
+      const v = hbView(w, h, dpr, dolly);
+      const geo = new Map(), G = (n) => { let g = geo.get(n); if (!g) { g = geomOf(v, n); geo.set(n, g); } return g; };
+      for (const step of [1, 2, 3]) for (const dir of [-1, 1]) {
+        let n = dir < 0 ? 3000 : 10, c = composeSquad(n, G(n));
+        while (dir < 0 ? n - step >= 10 : n + step <= 3000) {
+          const nn = n + dir * step, g = G(nn), c2 = nextComp(c, n, nn, g);
+          const id = `${tag} ${dolly ? '보스전' : '달리기'} ${dir * step}씩: ${n}→${nn} [${c}]→[${c2}]`;
+          checkStep(c, n, c2, nn, g, id);
+          // 그린 합은 n이 움직인 쪽으로만(어림도)
+          assert.ok(dir < 0 ? compSum(c2) <= compSum(c) : compSum(c2) >= compSum(c), `${id}: 그린 합이 거꾸로`);
+          // 바뀜도 그쪽으로만: 잃을 때 나누기만, 얻을 때 합치기만(병사만 더하고 빼서는 넘치거나 양옆을 못 덮을 때 말고)
+          const fl = flowsOf(c, c2);
+          if (dir < 0 ? fl.some((x) => x < 0) : fl.some((x) => x > 0)) assert.ok(naiveBad(c, n, nn, g), `${id}: ${dir < 0 ? '잃는데 합쳤다' : '얻는데 나눴다'} ${fl}`);
+          // 합치기·나누기가 없으면 그림은 n이 바뀐 만큼만 생기거나 사라진다
+          if (fl.every((x) => x === 0)) assert.ok(Math.abs(compCount(c2) - compCount(c)) <= step, `${id}: 그림 ${compCount(c)}→${compCount(c2)}장`);
+          c = c2; n = nn;
+        }
+      }
+      // 오가기(n ↔ n+1, 아물기·물리기): 처음 몇 번 뒤로는 합치기·나누기 없이 병사 하나만 — 60명부터(더 작으면 줄마다 두 장 규칙에 걸려 어쩔 수 없을 때가 있다)
+      for (let n0 = 60; n0 <= 3000; n0 += n0 < 1200 ? 1 : 3) {
+        let c = composeSquad(n0, G(n0)), c1 = null;
+        for (let k = 0; k < 3; k++) { c1 = nextComp(c, n0, n0 + 1, G(n0 + 1)); c = nextComp(c1, n0 + 1, n0, G(n0)); }
+        c1 = nextComp(c, n0, n0 + 1, G(n0 + 1));
+        assert.ok(flowsOf(c, c1).every((x) => x === 0) && compSum(c1) - compSum(c) <= 1, `${tag} ${dolly ? '보스전' : '달리기'} ${n0}↔${n0 + 1}: [${c}]↔[${c1}] 깜빡임`);
+      }
+    }
+  }
+});
+
+test('합친 병사 불꽃·붉은 빛: 차례(ph·hr)로 고르게 — 한 프레임에 몰리지 않고 모든 쏘는 그림이 주기마다 한 번, 맞을 때마다 몇 장씩', async () => {
+  for (let k = 1; k <= 30; k++) for (let per = 5; per <= 20; per++) for (const low of [false, true]) {
+    const fired = new Array(k).fill(0), span = (low ? 2 : 1) * per;
+    for (let f = 0; f < span * 6; f++) {
+      let c = 0;
+      for (let ph = 0; ph < k; ph++) if (muzzleOn(f, ph, per, low)) { c++; fired[ph]++; }
+      assert.ok(c <= Math.ceil(k / per), `${k}장 주기 ${per}${low ? ' 낮은 품질' : ''}: 프레임 ${f}에 ${c}장이 한꺼번에`);
+      if (low && (f & 1)) assert.equal(c, 0);
+    }
+    assert.ok(fired.every((x) => x === 6), `${k}장 주기 ${per}${low ? ' 낮은 품질' : ''}: 쏘지 않거나 더 쏘는 그림 ${fired}`);
+  }
+  // 렌더러는 차례로 쏘고 붉어진다(id 곱셈은 주기와 약수를 나누면 모두 한꺼번에·아무도 안 된다)
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  assert.match(src, /u\.fire && muzzleOn\(f60, u\.ph, firePeriod, quality === 'low'\)/);
+  assert.match(src, /\(u\.hr \+ hurtSeed\) % hurtMod === 0/);
+  assert.match(src, /hurtMod = clamp\(Math\.ceil\(NU \/ 3\), 1, 11\)/);
+  // 차례 0..NU−1이면 맞을 때마다(hurtSeed 0~10) 붉어지는 그림은 ⌊NU/mod⌋~⌈NU/mod⌉장 — 모두나 아무도가 아니다
+  for (let NU = 1; NU <= 30; NU++) {
+    const mod = Math.min(11, Math.max(1, Math.ceil(NU / 3)));
+    for (let seed = 0; seed < 11; seed++) {
+      let c = 0;
+      for (let hr = 0; hr < NU; hr++) if ((hr + seed) % mod === 0) c++;
+      assert.ok(c >= Math.floor(NU / mod) && c <= Math.ceil(NU / mod), `${NU}장: 한 번 맞아 ${c}장이 붉어진다`);
+    }
+  }
+});
+
+test('합친 병사 전차: 흰 별(분대장 금별과 다르게), 뒷줄이 전차를 1/3쯤만 가린다(전차 줄 뒤를 TANK_GAP까지 더 띄운다)', () => {
+  const sh = SHEETS.sq1000;
+  for (const fr of sh.frames) {
+    const top = fr.slice(0, 11).join('');
+    assert.ok(top.includes('W') && !/[yY]/.test(top), '포탑 별은 흰색');
+  }
+  assert.ok(TANK_GAP <= TIER[2].h - 1 && TANK_GAP >= TIER[3].h * 2 / 3, `TANK_GAP ${TANK_GAP}`);
+  const v = hbView(390, 844, 3, 0);
+  for (const n of [2000, 2864]) {
+    const p = planOf(v, n), cov = coverOf(v, p);
+    const tanks = p.units.map((u, i) => [u, cov[i]]).filter(([u]) => u.t === 3).map(([, c]) => c);
+    assert.ok(tanks.length && Math.max(...tanks) <= 1 / 3 + 0.01, `n=${n} [${p.comp}] ${p.arr.sizes}: 전차가 ${tanks.map((x) => x.toFixed(2))}만큼 가렸다`);
+  }
+});
 
 test('충돌 크기: 그린 무리의 끝 = 분대 반지름 R(옆)·SQUAD_DEPTH·R(앞뒤), 맞는 몸(hitHalf)은 그린 폭의 80~100%', () => {
-  assert.equal(spriteBox('soldier').L, SOLDIER_HALF_PX);
-  assert.equal(spriteBox('soldier').R, SOLDIER_HALF_PX);
+  const sb = spriteBox('soldier');
+  assert.deepEqual([sb.L, sb.R, sb.H], [TIER[0].halfL, TIER[0].halfR, TIER[0].h]);
   for (const [tag, w, h, dpr] of HB_VIEWS) {
     for (const dolly of [0, 1]) {
       const v = hbView(w, h, dpr, dolly);
       assert.ok(project(v, 0, 0, 0));
-      const hw = SOLDIER_HALF_PX / P.s;
       for (const n of HB_NS) {
-        const R = Core.radius(n), H = Core.hitHalf(R), T = formationCount(n);
+        const R = Core.radius(n), H = Core.hitHalf(R), [ppm] = hbScale(v, R);
+        const p = planOf(v, n);
         let l = 0, r = 0, f = -9, bk = 9;
-        for (let i = 0; i < T; i++) { const [x, z] = formationSpot(i, T, R, hw); l = Math.min(l, x - hw); r = Math.max(r, x + hw); f = Math.max(f, z); bk = Math.min(bk, z); }
-        const id = `${tag} ${dolly ? '보스전' : '달리기'} n=${n}`;
+        for (const u of p.units) {
+          l = Math.min(l, u.x - TIER[u.t].halfL / ppm); r = Math.max(r, u.x + TIER[u.t].halfR / ppm);
+          f = Math.max(f, u.z); bk = Math.min(bk, u.z);
+        }
+        const id = `${tag} ${dolly ? '보스전' : '달리기'} n=${n} [${p.comp}]`;
         const drawn = Math.min(r, -l);
         assert.ok(H <= drawn + 1e-9, `${id}: 맞는 몸 ±${H.toFixed(2)} > 그린 무리 ±${drawn.toFixed(2)}`);
         if (n >= 3) {
@@ -404,7 +784,7 @@ test('충돌 크기: 그린 무리의 끝 = 분대 반지름 R(옆)·SQUAD_DEPTH
   }
 });
 
-/* 좀비·톱날이 무는 경계(core.touches가 막 참이 되는 자리)에서, 화면의 좀비 그림과 가장 가까운 병사 그림 사이 픽셀 틈 —
+/* 좀비·톱날이 무는 경계(core.touches가 막 참이 되는 자리)에서, 화면의 좀비 그림과 가장 가까운 분대 그림(단계마다 제 크기) 사이 픽셀 틈 —
    양수면 '안 닿았는데 물렸다'. 폰 ≤ 0px, 데스크톱 ≤ 2px. 옆에서 닿을 때 그림이 겹치는 깊이는 5px·좀비 그림 폭의 35% 이하(그만큼은 봐준다 —
    가장 너그러운 것은 360×640 보스전의 질주 좀비 5px) */
 test('충돌 크기: 무는 순간 그림도 닿는다 — 좀비·톱날(옆·앞·뒤·모서리)', () => {
@@ -413,12 +793,10 @@ test('충돌 크기: 무는 순간 그림도 닿는다 — 좀비·톱날(옆·�
     const lim = tag === '1280x720' ? 2 : 0;
     for (const dolly of [0, 1]) {
       const v = hbView(w, h, dpr, dolly);
-      project(v, 0, 0, 0);
-      const hw = SOLDIER_HALF_PX / P.s;
-      for (const n of [1, 3, 12, 30, 60, 130, 300, 1000]) {
-        const R = Core.radius(n), H = Core.hitHalf(R), hz = Core.SQUAD_DEPTH * R, T = formationCount(n);
-        const boxes = [];
-        for (let i = 0; i < T; i++) { const [x, z] = formationSpot(i, T, R, hw); project(v, x, 0, z); const px = Math.round(P.x), py = Math.round(P.y); boxes.push([px - 7, px + 7, py - 14, py]); }
+      for (const n of [1, 3, 5, 9, 12, 13, 20, 25, 30, 60, 90, 100, 130, 205, 290, 300, 1000, 2864, 9999]) {
+        const R = Core.radius(n), H = Core.hitHalf(R), hz = Core.SQUAD_DEPTH * R;
+        const plan = planOf(v, n);
+        const boxes = planBoxes(v, plan);
         for (const [k, sheet] of kinds) {
           const fr = k === 'saw' ? 0.35 : Core.FOE_BASE[k].r;
           const a = k === 'saw' ? 0.55 : Core.FOE_HX * fr;
@@ -436,13 +814,12 @@ test('충돌 크기: 무는 순간 그림도 닿는다 — 좀비·톱날(옆·�
             let best = 99;
             for (const s of boxes) {
               const gx = Math.max(s[0] - fb[1], fb[0] - s[1]), gy = Math.max(s[2] - fb[3], fb[2] - s[3]);
-              const g = gx > 0 || gy > 0 ? Math.max(gx, gy) : Math.max(gx, gy);
-              best = Math.min(best, g);
+              best = Math.min(best, Math.max(gx, gy));
             }
             if (best > worst) { worst = best; at = [+dx.toFixed(2), +dz.toFixed(2)]; }
             if (j === 0 && side === 1) side0 = -best;   // 바로 옆: 겹친 깊이(px)
           }
-          const id = `${tag} ${dolly ? '보스전' : '달리기'} n=${n} ${k}`;
+          const id = `${tag} ${dolly ? '보스전' : '달리기'} n=${n} [${plan.comp}] ${k}`;
           assert.ok(worst <= lim, `${id}: 물린 순간 그림 사이 ${worst}px (자리 ${at})`);
           if (n >= 3) assert.ok(side0 <= Math.max(5, 0.35 * (sb.L + sb.R)), `${id}: 옆에서 ${side0}px 겹쳐야 문다(너무 늦다)`);
         }

@@ -1,7 +1,13 @@
 /* 도트 그림 데이터 — DOM 없음(노드 테스트에서 검사한다).
    격자는 한 글자 = 한 픽셀('.' 투명), 색은 시트마다 팔레트(한 글자 → '#rrggbb').
-   큰 그림(거구·보스·톱날·연기)은 같은 픽셀 밀도의 도형 명령(raster.js runOps)으로 그린다.
+   큰 그림(거구·톱날·연기)은 같은 픽셀 밀도의 도형 명령(raster.js runOps)으로 그린다.
+   영웅(heroines.js)·지역 좀비 옷(foes.js)·지역 땅과 소품(biomes.js)·지역 보스(bosses.js)는 따로 모듈에 있고(art.js를 가져오지 않는다) 여기서 SHEETS·BIOME에 펼친다.
    외곽선(1px, 자두색)은 굽는 단계에서 자동으로 붙는다. 세계 스프라이트는 줄이기만 한다(1, 0.75, 0.5 단계). */
+
+import { HEROINE_SHEETS } from './heroines.js';
+import { buildFoeSkins, FOE_ALTS, FOE_SKIN, FOE_BURST } from './foes.js';
+import { BIOME_EXTRA, BIOME_PATCH, PROP_SHEETS, PROP_WORLD_H } from './biomes.js';
+import { BOSS_SHEETS, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TEXT, BOSS_TIER } from './bosses.js';
 
 export const OUT = '#2B1D2E';
 
@@ -58,10 +64,15 @@ const MEDIC = { ...TEAM, H: '#FFFFFF', h: '#F2F0F7', b: '#D3CFE3', B: '#A8A1C4',
 const SNIPER = { ...TEAM, H: '#E2E0A8', h: '#B5B276', b: '#8C8A52', B: '#6B6A3C', r: '#6B4A3A', o: '#8C8A52', O: '#5E5D34', t: '#7FA040' };
 const ROCKET = { ...TEAM, H: '#FFE6C2', h: '#FFA54A', b: '#EE7A26', B: '#B95514', T: '#7FA040', E: '#3E5126', Y: '#FFD84A', F: '#FFF4B0', f: '#FFB347' };
 
+/* 합친 병사(분대장·중장갑병·전차): 같은 파랑 + 금 장식, 바이저·환기구 빛, 궤도, 배기 연기, 미등 */
+const TIER_EXTRA = { y: '#FFD84A', Y: '#FFF09A', d: '#D08A12', v: '#8CF6FF', V: '#E8FFFF', q: '#3B3F55', a: '#E8ECF2', A: '#C9CED6', e: '#FF9F43' };
+const TIER = { ...TEAM, ...TIER_EXTRA };
+const TIER_HURT = { ...TEAM_HURT, ...TIER_EXTRA, y: '#FFC2A8', Y: '#FFE4DC', d: '#C06A5A', v: '#FFC8C0' };
+
 /* 다친 순간의 붉은 기(병과 고유 색은 그대로 두고 철모·군복만 물들인다) */
 const HURT_CLOTH = { c: '#C24A66', n: '#6A2D4A', o: '#FFB4A0', O: '#C06A5A' };
 export const PAL = {
-  team: TEAM, teamHurt: TEAM_HURT, medic: MEDIC, sniper: SNIPER, rocket: ROCKET,
+  team: TEAM, teamHurt: TEAM_HURT, medic: MEDIC, sniper: SNIPER, rocket: ROCKET, tier: TIER, tierHurt: TIER_HURT,
   medicHurt: { ...MEDIC, ...HURT_CLOTH, H: '#FFE4DC', h: '#FFC8C0', b: '#F0A0A0', B: '#C06A7A' },
   sniperHurt: { ...SNIPER, ...HURT_CLOTH, H: '#FFD8C8', h: '#E8A08A', b: '#C0706A', B: '#8E4A50', o: '#C0706A', O: '#8E4A50' },
   rocketHurt: { ...ROCKET, ...HURT_CLOTH, H: '#FFE0D0', h: '#FF9C7C', b: '#E86A5A', B: '#B8405A' },
@@ -158,8 +169,142 @@ const RKT_BODY = [
 const RKT_CROUCH = pad([B12, B12, ...RKT_HEAD.slice(0, 6), 'sBBBBBBBBsTT', '.cOooooOcYTT', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
 const RKT_FIRE = pad(['.........fFf', '..........F.', ...RKT_HEAD.slice(1, 6), 'sBBBBBBBBsTT', '.cOooooOcYTT', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
 
-/* 뒷줄 철모(병력 규모 표시용 5×4) */
-const HELMET = ['.hhh.', 'hHhhb', 'hhhbb', 'BBBBB'];
+/* ---------------- 합친 병사(대형 단계): 10명 = 분대장, 100명 = 중장갑병, 1000명 = 전차 ----------------
+   외곽선 포함 18×18 · 22×22 · 30×22(렌더러 TIER 표와 같다). 뒷모습, 발·궤도는 맨 아래 줄,
+   어느 프레임이나 격자 폭 끝까지 채운다(닻 기준 왼쪽·오른쪽 반폭이 같게). 프레임: 걷기 0~3, 서기 4~5.
+   muzzles = 프레임마다 총구 끝 칸(격자 좌표, 외곽선 빼고 — 병사 시트와 같은 약속), muzzle = 걷기 1 프레임의 것. */
+const blank = (w, h) => Array.from({ length: h }, () => '.'.repeat(w));
+const stack = (w, ...parts) => pad([].concat(...parts), w);
+
+/* 분대장(16×16): 금띠 + 금별 철모, 안테나 달린 무전기 배낭, 나무 손잡이 긴 소총 */
+const SQ10_TOP = [
+  '.Y..............',
+  '.g..hhhhh.......',
+  '.ghhHHhhhhh....G',
+  '.hHHhhyhhhhb...g',
+  'hHHhyyYyyhhbb..g',
+  'hHhhhyyyhhhbb..g',
+  'hhhhhyhyhhbbb.oO',
+  'hhhhhhhhhhbbb.oO',
+  'yyyyyyyyyyydd.gg',
+  'sBBBBBBBBBBBs.gg',
+  '.cOoooooooOc..gg',
+  'ccOooGoGooOccsoO',
+  'scOOOOOOOOOcc.OO',
+  '.nnnnnnnnnnn....',
+];
+const SQ10_LEGS = [
+  [true, null, '..kkk...kkk.....'],
+  [false, '..kkk...nnn.....', '........kkk.....'],
+  [true, null, '..kkk...kkk.....'],
+  [false, '..nnn...kkk.....', '..kkk...........'],
+];
+function sq10Walk(f) {
+  const [low, a, b] = SQ10_LEGS[f];
+  return stack(16, low ? blank(16, 1) : [], SQ10_TOP, a ? [a] : [], [b]);
+}
+function sq10Frames() {
+  // 숨쉬기: 배낭 윗줄을 눌러 머리가 1px 내려온다(병사와 같은 방식)
+  const idle2 = stack(16, blank(16, 2), SQ10_TOP.slice(0, 10), SQ10_TOP.slice(11), ['..kkk...kkk.....']);
+  return [0, 1, 2, 3].map(sq10Walk).concat([sq10Walk(0), idle2]);
+}
+
+/* 중장갑병(20×20): 금 테두리 큰 어깨 갑옷 + 팔뚝, 금 볏 철모(옆으로 새는 바이저 빛), 등의 동력 상자(빛나는 전지), 오른 어깨 위 개틀링(금 고리) */
+const HV_HELM = [
+  '..hhyhh..',
+  '.hHHyhhh.',
+  'hHHhyhhhb',
+  'hHhhyhhbb',
+  'vhhhyhhbv',
+  'vBBBBBBBv',
+];
+const HV_PAD_L = ['..yyy.', '.yhhhy', 'yhHhhb', 'yhhhbb', 'ybbbbB', '.BBBB.'];
+const HV_PAD_R = ['.yyy..', 'yhhhy.', 'hHhhby', 'hhhbby', 'bbbbBy', '.BBBB.'];
+const HV_ARM = ['bbB', 'bBB', 'gGg'];
+const HV_BACK = [
+  '..nnnnn..',
+  '..nvVvn..',
+  '..nvvvn..',
+  '.bnnnnnb.',
+  'bbbbbbbbB',
+  'yyyyyyyyd',
+  '.nnnnnnn.',
+];
+const HV_GUN = ['.GGG.', 'GgKgG', 'gGgGg', 'gGgGg', 'yyyyd', 'GgggG', 'gGggg', '.ggg.'];
+function hvTop() {
+  let r = blank(20, 15);
+  r = over(r, 4, 8, HV_BACK);
+  r = over(r, 1, 12, HV_ARM);
+  r = over(r, 13, 12, HV_ARM);
+  r = over(r, 0, 6, HV_PAD_L);
+  r = over(r, 11, 6, HV_PAD_R);
+  r = over(r, 4, 2, HV_HELM);
+  r = over(r, 15, 0, HV_GUN);
+  return r;
+}
+const HV_LEGS = [
+  [true, ['....bbb...bbb.......', '....hBb...hBb.......', '...nnnn..nnnn.......', '...gggg..gggg.......']],
+  [false, ['....bbb...bbb.......', '....hBb...hBb.......', '...nnnn...bBb.......', '...gggg..nnnn.......', '.........gggg.......']],
+  [true, ['....bbb...bbb.......', '....hBb...hBb.......', '...nnnn..nnnn.......', '...gggg..gggg.......']],
+  [false, ['....bbb...bbb.......', '....hBb...hBb.......', '....bBb..nnnn.......', '...nnnn..gggg.......', '...gggg............']],
+];
+function hvWalk(f, top = hvTop()) {
+  const [low, legs] = HV_LEGS[f];
+  return stack(20, low ? blank(20, 1) : [], top, legs);
+}
+function hvFrames() {
+  const top = hvTop();
+  const idle2 = stack(20, blank(20, 2), top.slice(0, 11), top.slice(12), HV_LEGS[0][1]);
+  return [0, 1, 2, 3].map((f) => hvWalk(f, top)).concat([hvWalk(0, top), idle2]);
+}
+
+/* 전차(28×20): 뒤에서 본 꼬마 전차 — 파란 차체, 납작한 포탑(뒤에 흰 별 — 분대장 철모의 금별과 다르게, 위에 해치), 앞(화면 위)으로 뻗은 포신, 포탑 높이까지 솟은 궤도 덮개(앞줄 뒤에 가려도 전차로 보이게), 움직이는 궤도, 배기관 연기, 주황 미등 */
+const TK_BARREL = ['gGGg', 'gggg', '.Gg.', '.Gg.', '.Gg.'];
+const TK_TURRET = [
+  '........gGg.',
+  '..hhhhhhBBBh',
+  '.hHHhhhhhhhb',
+  'hHhhhWhhhhbb',
+  'hhhWWWWWhhbb',
+  'hhhhWWWhhbbb',
+  'bbbbabaabbbB',
+  'BBBBBBBBBBBB',
+];
+const TK_HULL = [
+  '.hhhhhhhhhhhhhhhh.',
+  'hHhhhhhhhhhhhhhhhb',
+  'bbbbbbbbbbbbbbbbbB',
+  'beebbbbbbbbbbbbeeB',
+  'bbbbbbBBBBBBbbbbbB',
+  'BBBBBBBBBBBBBBBBBB',
+  '.BBBBBBBBBBBBBBBB.',
+];
+const TK_PIPE = ['Gg', 'gg', 'gg'];
+/* 궤도 발판: 4줄 주기, 걷기 프레임마다 1줄씩 위로 흐른다(뒤에서 보면 바닥에서 위로 감겨 올라간다) */
+const TK_CLEAT = ['qGGGGq', 'qggggq', 'qqqqqq', 'qqqqqq'];
+function tkTread(ph) {
+  const rows = ['.hhhh.', 'hHhhhb', 'BBBBBB'];
+  for (let j = 0; j < 9; j++) rows.push(TK_CLEAT[(j + ph) & 3]);
+  rows.push('.qqqq.');
+  return rows;
+}
+const TK_PUFF = [[20, 6, ['aa', 'Aa']], [21, 4, ['aa.', 'aaA', '.A.']]];
+function tkFrame(ph, dy, puff) {
+  let r = blank(28, 20);
+  // 포신 → 포탑 → 배기관 → 차체 → 궤도(앞에서 덮는다) → 연기
+  r = over(r, 12, dy, TK_BARREL);
+  r = over(r, 8, 3 + dy, TK_TURRET);
+  r = over(r, 20, 9 + dy, TK_PIPE);
+  r = over(r, 5, 11 + dy, TK_HULL);
+  r = over(r, 0, 7, tkTread(ph));
+  r = over(r, 22, 7, tkTread(ph));
+  if (puff) r = over(r, puff[0], puff[1] + dy, puff[2]);
+  return r;
+}
+function tankFrames() {
+  const [p0, p1] = TK_PUFF;
+  return [tkFrame(0, 1, p0), tkFrame(1, 0, p1), tkFrame(2, 1, p0), tkFrame(3, 0, p1), tkFrame(0, 1, null), tkFrame(0, 0, p0)];
+}
 
 /* 앞모습 병사(철창 속 포로·승리용): 손 흔들기 2프레임 + 우는 얼굴(감은 눈 아래 ㅠㅠ 눈물 줄기, 벌린 입).
    모자 5줄 + 얼굴 3줄 + 몸 5줄 = 13줄. 눈은 격자 x 2~3·8~9, y 5줄째(0부터) — 눈물 효과를 붙일 자리 */
@@ -198,20 +343,6 @@ function captive(k) {
 }
 const PAL_FRONT = (p) => ({ ...p, w: '#8FD3FF', m: '#7A2E4A' });
 
-/* ---------------- 영웅(뒷모습 16×18, 4걸음 × 펄럭임 2 + 서기 2 + 기절 + 스킬 2 + 돌아보기 2) ---------------- */
-const MUNGCHI = {
-  ...BASE, h: '#8E9E58', H: '#C3D18A', b: '#6C7A40', B: '#525D2E', y: '#FFD84A', Y: '#FFF09A',
-  e: '#FF9F43', E: '#D9731F', c: '#3567C9', C: '#2B5EB8', n: '#2D3D74', m: '#FFF1DE', M: '#E9B26B', q: '#C98A4E',
-};
-const BORI = {
-  ...BASE, w: '#FFFFFF', v: '#ECE6F2', u: '#FFC0D6', r: '#B5734A', R: '#8E5636', q: '#FF6FA0', Q: '#FFB0CC', z: '#D94A80',
-  c: '#FFFFFF', C: '#E6DCEB', n: '#C25A86',
-};
-const NABI = {
-  ...BASE, h: '#4FD1C5', H: '#A6F0E6', b: '#2F9E95', B: '#257D76', i: '#FFB0C8', r: '#7A6F9B', R: '#5C537A',
-  c: '#3B3F6B', C: '#2C2F52', n: '#2C2F52', t: '#E8DCCB', T: '#BBAF9C', x: '#FF6FA0', w: '#C98A4E',
-};
-
 /* 격자 겹치기: part의 '.' 아닌 글자를 (x, y)부터 덮어쓴다('_'는 지우기) */
 function over(rows, x, y, part) {
   const out = rows.slice();
@@ -228,325 +359,6 @@ function over(rows, x, y, part) {
   });
   return out;
 }
-
-/* 뭉치 대장(16×18): 눈썹까지 덮는 큰 철모(뒤에도 금별), 금 견장, 바람에 날리는 주황 스카프 꼬리, 몸만 한 주황 확성기 */
-const MUN_HEAD = [
-  '....hhhhhh......',
-  '..hhHHhhhhhh....',
-  '.hHHhhhyhhhhb...',
-  'hHHhhhyyyhhhbb..',
-  'hHhhyyyyyyyhbb..',
-  'hhhhhyyyyyhbbb..',
-  'hhhhhyyhyyhbbb..',
-  'BBBBBBBBBBBBBB..',
-];
-const MUN_TORSO = [
-  '..EeeeeeeeeE....',
-  '..yycccccyy.....',
-  '..cccccccccc....',
-  '..ccccccccCs....',
-  '..ccccccccCs....',
-  '..qqqqqqqqq.....',
-  '..cCCCCCCCC.....',
-  '...nnnnnnn......',
-];
-/* 확성기(옆으로 든 모습): 입대는 크림색, 나팔은 주황, 입구 테두리는 크림 */
-const MUN_HORN = [
-  '...mm',
-  '..eem',
-  'eeeEm',
-  'eeeEm',
-  '..EEm',
-  '...mm',
-];
-const MUN_TAIL = [
-  ['ee', 'eE', '.E', 'eE', 'E.'],
-  ['eE.', 'EeE', 'E..', '...', '...'],
-];
-const MUN_BODY = MUN_TAIL.map((t) => over(over(MUN_TORSO, 0, 0, t), 11, 1, MUN_HORN));
-/* 스킬: 확성기를 오른손으로 머리 옆까지 치켜든다(위를 향한 나팔 입구가 보인다). 두 장은 나팔이 1칸 흔들리고 꼬리가 날린다 */
-const MUN_HORN_UP = ['mmmmm', 'mEEEm', '.eeee', '..eeE', '...eE', '...mm', '...s.', '...cc', '..cc.', '.cc..'];
-const MUN_ACT_FULL = [0, 1].map((i) => over(['................', ...MUN_HEAD, ...over(MUN_TORSO, 0, 0, MUN_TAIL[i])], 11 - i, 0, MUN_HORN_UP));
-/* 돌아보기: 오른쪽 어깨 너머로 돌아본다 — 철모 오른쪽 끝 아래로 뺨·눈(반짝임)·볼 홍조가 나오고, 뒤통수의 별은 1칸 왼쪽으로 돈다.
-   둘째 장은 같은 자세로 눈을 감는다 */
-const MUN_LOOK_HEAD = [
-  '....hhhhhh......',
-  '..hhHHhhhhhh....',
-  '.hHHhhyhhhhhb...',
-  'hHHhhyyyhhhhbb..',
-  'hHhyyyyyyyhhbs..',
-  'hhhhyyyyyhhbKWs.',
-  'hhhhyyhyyhBsKKs.',
-  'BBBBBBBBBBBssps.',
-];
-const MUN_LOOK = [
-  [MUN_LOOK_HEAD, [], over(MUN_BODY[0], 12, 0, ['ss'])],
-  [over(MUN_LOOK_HEAD, 12, 5, ['ss']), [], over(MUN_BODY[0], 12, 0, ['ss'])],
-];
-const HERO_LEGS = [
-  ['...kk...kk......', null],
-  ['...kk...nn......', '.........kk.....'],
-  ['...kk...kk......', null],
-  ['...nn...kk......', '...kk...........'],
-];
-function heroWalk(head, nape, body, f, w = 16) {
-  const L = HERO_LEGS[f];
-  const rows = [];
-  if (!L[1]) rows.push('.'.repeat(w));
-  rows.push(...head, ...nape, ...body, L[0]);
-  if (L[1]) rows.push(L[1]);
-  return pad(rows, w);
-}
-/* 15장: 걷기 4(몸 A) · 펄럭임 걷기 4(몸 B) · 서기 2 · 기절 · 스킬 2 · 돌아보기 2(돌린 머리 / 같은 머리로 눈 감기)
-   P = { head, headB?, nape, bodies:[A,B], act:[2], actHead?, ko, look:[[머리, 목, 몸?], [머리, 목, 몸?]] } */
-function heroSheet(P, w = 16) {
-  const out = [];
-  const hb = P.headB || P.head;
-  for (let f = 0; f < 4; f++) out.push(heroWalk(P.head, P.nape, P.bodies[0], f, w));
-  for (let f = 0; f < 4; f++) out.push(heroWalk(hb, P.nape, P.bodies[1], f, w));
-  out.push(heroWalk(P.head, P.nape, P.bodies[0], 0, w), heroWalk(hb, P.nape, P.bodies[1], 2, w));   // 서기 A/B
-  out.push(pad(P.ko, w));
-  const ah = P.actHead || P.head;
-  out.push(heroWalk(ah, P.nape, P.act[0], 0, w), heroWalk(ah, P.nape, P.act[1], 0, w));
-  for (const [lh, ln, lb] of P.look) out.push(heroWalk(lh, ln, lb || P.bodies[0], 0, w));
-  return out;
-}
-const MUN_KO = [
-  '................',
-  '................',
-  '................',
-  '.....hhhhhh.....',
-  '...hhHHhhhhhh...',
-  '..hHHhhhyhhhhb..',
-  '.hHHhhhyyyhhhbb.',
-  '.hHhhyyyyyyyhbb.',
-  '.hhhhhyyyyyhbbb.',
-  '.BBBBBBBBBBBBBB.',
-  'eE.EeeeeeeeeE...',
-  '.EEyycccccyy.mm.',
-  'kkccccccccccEeem',
-  'kkqqqqqqqqq.eeEm',
-  '..nnnnnnnnn..mm.',
-];
-
-/* 보리(16×18): 토끼귀 간호모(분홍 5×4 하트), 몸보다 큰 하트 가방(흰 하트), 스킬 때 커다란 주사기 */
-const BORI_EARS = ['..wu.....wu.....', '..wuw...wuw.....', '...ww...ww......'];
-const BORI_EARS_B = ['...wu.....wu....', '..wuw...wuw.....', '...ww...ww......'];
-const BORI_HOOD = [
-  '...vwwwwwwv.....',
-  '..vwqqwqqwwv....',
-  '..vwqqqqqwwv....',
-  '..vwwqqqwwwv....',
-  '.rrvvvqvvvvrr...',
-];
-const BORI_HEAD = [...BORI_EARS, ...BORI_HOOD];
-const BORI_NAPE = ['.rrRrrrrrrRrr...'];
-const BORI_BAG = [
-  '.cqqqcqqqc......',
-  'sqQQqqqqqzs.....',
-  '.qQWWqWWqz......',
-  '.qqWWWWWqz......',
-  '..qqWWWqz.......',
-  '..cqqWqzc.......',
-  '..nnnqznnn......',
-];
-const BORI_BODY = [BORI_BAG, BORI_BAG];
-/* 돌아보기: 오른쪽 어깨 너머로 — 두건 오른쪽 아래로 뺨·눈(반짝임)·볼 홍조가 나오고 하트는 1칸 왼쪽으로 돈다 */
-const BORI_LOOK_HOOD = [
-  '...vwwwwwwv.....',
-  '..vqqwqqwwwv....',
-  '..vqqqqqwwwvs...',
-  '..vwqqqwwwvsKW..',
-  '.rrvvqvvvvsKKs..',
-];
-const BORI_LOOK = [
-  [[...BORI_EARS, ...BORI_LOOK_HOOD], ['.rrRrrrrrRrsps..']],
-  [[...BORI_EARS, ...over(BORI_LOOK_HOOD, 12, 3, ['ss'])], ['.rrRrrrrrRrsps..']],
-];
-/* 스킬: 오른손으로 커다란 주사기를 치켜들고 왼손도 번쩍(두 장은 주사기가 1칸 들썩인다) */
-const BORI_SYRINGE = ['.G.', '.G.', 'WWW', 'WqW', 'WqW', 'WQW', '.W.', 'WWW', '.s.', 'cs.'];
-const BORI_ACT_FULL = [0, 1].map((i) => over(over(['................', ...BORI_HEAD, ...BORI_NAPE, ...BORI_BAG], 12, 1 - i, BORI_SYRINGE), 0, 10, i ? ['s', 's'] : ['.', 's']));
-const BORI_KO = [
-  '................',
-  '................',
-  '.....wu.....wu..',
-  '....wuw...wuw...',
-  '.....ww...ww....',
-  '....vwwwwwwv....',
-  '...vwqqwqqwwv...',
-  '...vwqqqqqwwv...',
-  '...vwwqqqwwwv...',
-  '..rrvvvqvvvvrr..',
-  '..rrRrrrrrrRrr..',
-  '..cqqqcqqqc.....',
-  '.sqQQqqqqqzs....',
-  'kkqQWWqWWqzkk...',
-  '..qqWWWWWqz.....',
-];
-
-/* 나비: 고양이귀 비니, 키 두 배의 총(등에 비스듬히), 꼬리 끝 리본 */
-const NABI_HEAD = [
-  '..............g.',
-  '.............g..',
-  '..h.......h.g...',
-  '..hh.....hhg....',
-  '..hih...hihG....',
-  '..hhhhhhhhhg....',
-  '.hHHhhhhhgbb....',
-  '.hHhhhhhghbb....',
-  '.BBBBBBBgBBB....',
-];
-const NABI_NAPE = ['..rrrrrwrrr.....'];
-/* 돌아보기: 오른쪽 어깨 너머로 — 비니 오른쪽 아래로 뺨과 졸린 반달눈(반짝임)·볼 홍조. 둘째 장은 눈을 감는다 */
-const NABI_LOOK_HEAD = [...NABI_HEAD.slice(0, 6), '.hHHhhhhhgbbs...', '.hHhhhhhghbsKK..', '.BBBBBBBgBBsKW..'];
-const NABI_LOOK = [
-  [NABI_LOOK_HEAD, ['..rrrrrwrrrpss..']],
-  [over(NABI_LOOK_HEAD, 12, 7, ['ss', 'KK']), ['..rrrrrwrrrpss..']],
-];
-const NABI_BODY = [
-  [
-    '..ccccwcccc.....',
-    '.scCCwCCCcs.....',
-    '..cCwcccCc......',
-    '..cwcccccc......',
-    '..wnnnnnnn..tx..',
-    '.......tt.tt....',
-  ],
-  [
-    '..ccccwcccc.....',
-    '.scCCwCCCcs.....',
-    '..cCwcccCc......',
-    '..cwcccccc...x..',
-    '..wnnnnnnn..tt..',
-    '.......tttt.....',
-  ],
-];
-const NABI_ACT = [
-  [
-    '..ccccccccs.....',
-    '.scCCCCCcs......',
-    '..cCcccCc.......',
-    '..cccccccc......',
-    '..nnnnnnnn..tx..',
-    '.......tt.tt....',
-  ],
-  [
-    '..ccccccccs.....',
-    '.scCCCCCcs......',
-    '..cCcccCc.......',
-    '..cccccccc...x..',
-    '..nnnnnnnn..tt..',
-    '.......tttt.....',
-  ],
-];
-const NABI_ACT_HEAD = [
-  '..........gg....',
-  '..h.......hg....',
-  '..hh.....hhg....',
-  '..hih...hihG....',
-  '..hhhhhhhhhG....',
-  '.hHHhhhhhhgg....',
-  '.hHhhhhhhhbb....',
-  '.BBBBBBBBBBB....',
-  '................',
-];
-const NABI_KO = [
-  '..............g.',
-  '.............g..',
-  '...h.......hg...',
-  '...hh.....hg....',
-  '...hih...hihG...',
-  '...hhhhhhhhhg...',
-  '..hHHhhhhhgbb...',
-  '..hHhhhhhghbb...',
-  '..BBBBBBBgBBB...',
-  '...rrrrrwrrr....',
-  '..sccccwccccs...',
-  'kkccCwCCCccckk..',
-  '...wnnnnnnn.tx..',
-];
-
-function munchiSheet() {
-  const s = heroSheet({ head: MUN_HEAD, nape: [], bodies: MUN_BODY, act: MUN_BODY, ko: MUN_KO, look: MUN_LOOK });
-  // 스킬 자세: 치켜든 확성기가 맨 위 빈 줄까지 올라간다
-  s[11] = pad([...MUN_ACT_FULL[0], HERO_LEGS[0][0]], 16);
-  s[12] = pad([...MUN_ACT_FULL[1], HERO_LEGS[0][0]], 16);
-  return s;
-}
-function nabiSheet() {
-  return heroSheet({ head: NABI_HEAD, nape: NABI_NAPE, bodies: NABI_BODY, act: NABI_ACT, actHead: NABI_ACT_HEAD, ko: NABI_KO, look: NABI_LOOK });
-}
-function boriSheet() {
-  const s = heroSheet({ head: BORI_HEAD, headB: [...BORI_EARS_B, ...BORI_HOOD], nape: BORI_NAPE, bodies: BORI_BODY, act: BORI_BODY, ko: BORI_KO, look: BORI_LOOK });
-  s[11] = pad([...BORI_ACT_FULL[0], HERO_LEGS[0][0]], 16);
-  s[12] = pad([...BORI_ACT_FULL[1], HERO_LEGS[0][0]], 16);
-  return s;
-}
-
-/* 영웅 얼굴(앞모습 20×19) — 스킬 컷인·HUD 버튼용 */
-const FACE_MUNGCHI = [
-  '......hhhhhhhh......',
-  '...hhhHHhhhyhhhh....',
-  '..hHHhhhhhyyyhhhhb..',
-  '.hHHhhhhyyyyyyyhhbb.',
-  '.hHhhhhhhyyyyyhhhbb.',
-  'hhhhhhhhhyyhyyhhhbbb',
-  'BBBBBBBBBBBBBBBBBBBB',
-  '.BssssssssssssssssB.',
-  '.sssKKKssssssKKKsss.',
-  'ssssKWKKssssKWKKssss',
-  'ssssKKKKssssKKKKsssw',
-  'sppsKKKssssssKKKsppw',
-  'sppssssssKKssssssppw',
-  '.ssssssssKKssssssss.',
-  '..ssssssssssssssss..',
-  '..eeeeeeeeeeeeeeee..',
-  '.eeEEeeeeeeeeeeeEee.',
-  '.ccceEeccccccceEccc.',
-  'ccccccCcccccccCccccc',
-];
-const FACE_BORI = [
-  '...wu..........wu...',
-  '...wuw........wuw...',
-  '....wuw......wuw....',
-  '.....vwwqqwqqwv.....',
-  '....vwwwqqqqqwwwv...',
-  '...vwwwwwqqqwwwwwv..',
-  '..rrvvvvvvqvvvvvvrr.',
-  '.rrrrrrrrrrrrrrrrrrr',
-  '.rrssssssssssssssrr.',
-  'rrsKKKssssssssKKKsrr',
-  'rrKWKKKssssssKWKKKrr',
-  'rrKKKKKssssssKKKKKrr',
-  'rrsKKKssssssssKKKsrr',
-  'rrppssssvGGvsssspprr',
-  '.rppssssssssssssppr.',
-  '..sssssssKKssssss...',
-  '...ssssssssssssss...',
-  '...cccccqqqqccccc...',
-  '..ccccccqQQqccccccc.',
-];
-const FACE_NABI = [
-  '..h..............h..',
-  '..hh............hh..',
-  '..hih..........hih..',
-  '..hiih.hhhhhh.hiih..',
-  '..hhhhhhHHhhhhhhhh..',
-  '.hHHhhhhhhhhhhhhhbb.',
-  '.hHhhhhhhhhhhhhhhbb.',
-  '.BBBBBBBBBBBBBBBBBB.',
-  '.rrrssssssssssssrrr.',
-  'rrssKKKKKssKKKKKssrr',
-  'rrsKKKKKKssKKKKKKsrr',
-  'rrssKWKKsssKWKKsssrr',
-  'rrsssssssssssssssssr',
-  'rrppsssssKsKsssssppr',
-  '.rppssssssKssssssppr',
-  '..sssssssssssssssr..',
-  '...ssssssssssssss...',
-  '...cccccccccccccc...',
-  '..cccCccccccccCcccc.',
-];
 
 /* ---------------- 좀비(앞모습) ---------------- */
 const ZG = { ...BASE, g: '#8FD16A', G: '#5E9E4B', L: '#F2E6C8', u: '#9A73D1', U: '#6A4BA0', l: '#4A3D6E', f: '#3A3348', t: '#FF7F9E', m: '#7A2E4A' };
@@ -641,138 +453,6 @@ function bruteOps(f) {
   };
 }
 
-/* 보스: 약 100px 높이로 직접 그린다(확대 금지). 자세마다 팔·입·다리를 바꾼다. */
-const BOSS_W = 108, BOSS_H = 104;
-function bossOps(o) {
-  const cx = 54;
-  const bob = o.bob || 0;
-  const ops = [];
-  const E = (x, y, rx, ry, c) => { ops.push(['ell', x, y, rx + 1.2, ry + 1.2, 'K'], ['ell', x, y, rx, ry, c]); };
-  // 다리·신발
-  const legY = 80;
-  const lL = o.legL || 0, lR = o.legR || 0;
-  ops.push(['rect', 33, legY - lL, 16, 15, 'K'], ['rect', 34, legY + 1 - lL, 14, 14, 'l']);
-  ops.push(['rect', 59, legY - lR, 16, 15, 'K'], ['rect', 60, legY + 1 - lR, 14, 14, 'l']);
-  ops.push(['ell', 40, 97 - lL, 12, 5.5, 'K'], ['ell', 40, 97 - lL, 11, 4.5, 'f'], ['rect', 31, 94 - lL, 9, 1, 'F']);
-  ops.push(['ell', 68, 97 - lR, 12, 5.5, 'K'], ['ell', 68, 97 - lR, 11, 4.5, 'f'], ['rect', 59, 94 - lR, 9, 1, 'F']);
-  // 팔(몸 뒤쪽 부분)
-  const arm = (side) => {
-    const sx = side < 0 ? cx - 38 : cx + 38;
-    const fx = (dx) => cx + side * dx;
-    switch (o.arms) {
-      case 'up':
-        E(fx(32), 38 + bob, 8, 14, 's');
-        E(fx(30), 13 + bob, 12, 10.5, 'S');
-        ops.push(['ell*', fx(30) - side * 3, 10 + bob, 7, 5, 'n']);
-        break;
-      case 'slam':
-        E(fx(36), 64 + bob, 9, 13, 's');
-        E(fx(26), 88, 13, 9, 'S');
-        ops.push(['ell*', fx(26) - side * 3, 85, 7, 4, 'n']);
-        break;
-      case 'spread':
-        E(fx(40), 48 + bob, 12, 8, 's');
-        E(fx(46), 36 + bob, 9, 10.5, 'S');
-        ops.push(['ell*', fx(46) - side * 2, 33 + bob, 5, 5, 'n']);
-        break;
-      default: {
-        const sw = (o.swing || 0) * side;
-        E(sx, 56 + bob + sw, 9, 15, 's');
-        E(fx(41), 75 + bob + sw * 1.5, 11.5, 10, 'S');
-        ops.push(['ell*', fx(41) - side * 3, 72 + bob + sw * 1.5, 6, 4.5, 'n']);
-      }
-    }
-  };
-  arm(-1); arm(1);
-  // 몸통: 보라 조끼 + 초록 배 + 사슬 허리띠
-  E(cx, 62 + bob, 33, 23, 'm');
-  ops.push(['ell*', cx, 72 + bob, 33, 14, 'M']);
-  ops.push(['ell*', cx - 12, 52 + bob, 14, 7, 'v']);
-  ops.push(['ell', cx, 65 + bob, 17, 14.5, 'K'], ['ell', cx, 65 + bob, 16, 13.5, 's']);
-  ops.push(['ell*', cx + 4, 70 + bob, 14, 9, 'S']);
-  ops.push(['ell*', cx - 5, 60 + bob, 6, 4, 'n']);
-  ops.push(['rect', cx - 26, 74 + bob, 52, 4, 'K'], ['rect', cx - 25, 75 + bob, 50, 2, 'c']);
-  for (let i = 0; i < 8; i++) ops.push(['px', cx - 22 + i * 6, 75 + bob, 'C'], ['px', cx - 21 + i * 6, 76 + bob, 'C']);
-  ops.push(['rect', cx - 4, 73 + bob, 8, 6, 'K'], ['rect', cx - 3, 74 + bob, 6, 4, 'y'], ['px', cx - 2, 75 + bob, 'Y']);
-  // 위로 든 팔은 머리 앞에 와도 되게 나중에
-  // 머리
-  const hy = 30 + bob;
-  // 뿔
-  const horn = (side) => {
-    const hx = cx + side * 18;
-    ops.push(['ell', hx, hy - 16, 5.5, 7, 'K'], ['ell', hx + side * 3, hy - 22, 4.5, 5, 'K'], ['ell', hx + side * 6, hy - 27, 3.4, 3.4, 'K']);
-    ops.push(['ell', hx, hy - 16, 4.5, 6, 'h'], ['ell', hx + side * 3, hy - 22, 3.5, 4, 'h'], ['ell', hx + side * 6, hy - 27, 2.4, 2.4, 'h']);
-    ops.push(['ell*', hx + side * 2, hy - 15, 2.5, 5, 'H']);
-  };
-  horn(-1); horn(1);
-  // 귀
-  ops.push(['ell', cx - 24, hy + 2, 5, 6, 'K'], ['ell', cx - 24, hy + 2, 4, 5, 's'], ['ell', cx - 25, hy + 2, 2, 3, 'S']);
-  ops.push(['ell', cx + 24, hy + 2, 5, 6, 'K'], ['ell', cx + 24, hy + 2, 4, 5, 's'], ['ell', cx + 25, hy + 2, 2, 3, 'S']);
-  E(cx, hy, 22, 19, 's');
-  ops.push(['ell*', cx + 6, hy + 9, 19, 10, 'S']);
-  ops.push(['ell*', cx - 9, hy - 9, 9, 6, 'n']);
-  ops.push(['rect', cx - 13, hy - 17, 4, 2, 'n'], ['px', cx - 7, hy - 18, 'n']);
-  // 얼굴
-  if (o.eyes === 'dead') {
-    ops.push(['rows', cx - 15, hy - 5, ['K...K......K...K', '.K.K........K.K.', '..K..........K..', '.K.K........K.K.', 'K...K......K...K']]);
-  } else {
-    // 성난 눈썹 + 노란 눈
-    ops.push(['rows', cx - 17, hy - 9, [
-      'KKKK..............KKKK',
-      '.KKKKK..........KKKKK.',
-      '...KKKK........KKKK...',
-    ]]);
-    ops.push(['ell', cx - 10, hy - 1, 5.5, 5, 'K'], ['ell', cx + 10, hy - 1, 5.5, 5, 'K']);
-    ops.push(['ell', cx - 10, hy - 1, 4.5, 4, 'e'], ['ell', cx + 10, hy - 1, 4.5, 4, 'e']);
-    ops.push(['ell', cx - 9, hy, 2.2, 2.6, 'E'], ['ell', cx + 9, hy, 2.2, 2.6, 'E']);
-    ops.push(['ell', cx - 9, hy, 1.2, 1.6, 'K'], ['ell', cx + 9, hy, 1.2, 1.6, 'K']);
-    ops.push(['px', cx - 12, hy - 3, 'W'], ['px', cx + 8, hy - 3, 'W']);
-  }
-  // 볼 홍조
-  ops.push(['rect', cx - 19, hy + 5, 5, 2, 'p'], ['rect', cx + 15, hy + 5, 5, 2, 'p']);
-  // 입
-  if (o.mouth === 'roar') {
-    ops.push(['ell', cx, hy + 11, 10, 7.5, 'K'], ['ell', cx, hy + 11, 9, 6.5, 'r'], ['ell', cx, hy + 15, 6, 3, 'P']);
-    ops.push(['rows', cx - 8, hy + 5, ['hh............hh', '.hh..........hh.', '.h............h..'.slice(0, 16)]]);
-  } else if (o.mouth === 'open') {
-    ops.push(['ell', cx, hy + 10, 7, 4.5, 'K'], ['ell', cx, hy + 10, 6, 3.5, 'r']);
-    ops.push(['rows', cx - 6, hy + 7, ['hh........hh', '.h........h.']]);
-  } else {
-    ops.push(['rect', cx - 9, hy + 9, 18, 2, 'K'], ['px', cx - 10, hy + 8, 'K'], ['px', cx + 9, hy + 8, 'K']);
-    ops.push(['rows', cx - 8, hy + 7, ['h..............h', 'hh............hh']]);
-  }
-  // 위로 든 주먹은 머리 위에 겹쳐도 앞에 보이게 다시 그린다
-  if (o.arms === 'up') {
-    for (const side of [-1, 1]) {
-      const fx = cx + side * 30;
-      ops.push(['ell', fx, 13 + bob, 13.2, 11.7, 'K'], ['ell', fx, 13 + bob, 12, 10.5, 'S'], ['ell*', fx - side * 3, 10 + bob, 7, 5, 'n']);
-      ops.push(['rows', fx - 6, 18 + bob, ['K.K.K.K.K'.slice(0, 9)]]);
-    }
-  }
-  return { w: BOSS_W, h: BOSS_H, ops };
-}
-const BOSS_POSES = [
-  { name: 'walk0', arms: 'down', swing: 2, legL: 3, bob: 0 },
-  { name: 'walk1', arms: 'down', swing: 0, bob: 1 },
-  { name: 'walk2', arms: 'down', swing: -2, legR: 3, bob: 0 },
-  { name: 'walk3', arms: 'down', swing: 0, bob: 1 },
-  { name: 'windup', arms: 'up', mouth: 'open', bob: -1 },
-  { name: 'slam', arms: 'slam', mouth: 'open', bob: 3 },
-  { name: 'roar0', arms: 'spread', mouth: 'roar', bob: 0 },
-  { name: 'roar1', arms: 'spread', mouth: 'roar', bob: -1 },
-  { name: 'stomp0', arms: 'down', swing: 3, legL: 6, mouth: 'open', bob: -1 },
-  { name: 'stomp1', arms: 'slam', mouth: 'roar', bob: 2 },
-  { name: 'dead', arms: 'spread', mouth: 'open', eyes: 'dead', bob: 2 },
-];
-const BOSS_PAL = {
-  K: OUT, W: '#FFFFFF', s: '#8BBF5E', S: '#5E9046', n: '#B5DE7E', m: '#7A4FA8', M: '#5A3780', v: '#9D74CC',
-  h: '#F2E6C8', H: '#C9BC98', e: '#FFD23F', E: '#FF7A2F', p: '#FF8FA8', l: '#4A3D6E', f: '#2E2838', F: '#5C5070',
-  c: '#B0B6C2', C: '#6E7586', y: '#FFD84A', Y: '#FFF09A', r: '#5A1E3A', P: '#FF7F9E',
-};
-const BOSS_RAGE = {
-  ...BOSS_PAL, s: '#FF8A6B', S: '#D9505A', n: '#FFC2B3', m: '#A92644', M: '#7A1E3A', v: '#D6455A', e: '#FFFFFF', E: '#FFD84A',
-};
-
 /* ---------------- 소품·효과 ---------------- */
 const SAW_PAL = { a: '#E8ECF2', b: '#C9CED6', c: '#9AA2B0', d: '#FF5D5D', W: '#FFFFFF', K: OUT };
 function sawOps(f) {
@@ -859,7 +539,7 @@ const FX_PAL = {
    flash: 흰 실루엣도 굽는다.   alts: 팔레트를 바꾼 변형(이름 → 팔레트 또는 { pal, out }).
    out: 외곽선 색(null이면 없음).   detail: 줄일 때 우선할 색. */
 export const SHEETS = {
-  soldier: { pal: 'team', frames: crowdFrames(SOL_HEAD, SOL_BODY, 12), alts: { hurt: 'teamHurt' }, muzzle: [11, 3] },
+  soldier: { pal: 'team', frames: crowdFrames(SOL_HEAD, SOL_BODY, 12), alts: { hurt: 'teamHurt' }, muzzle: [11, 3], muzzles: [[11, 4], [11, 3], [11, 4], [11, 3], [11, 4], [11, 5]] },
   medic: { pal: 'medic', frames: crowdFrames(MED_HEAD, MED_BODY, 12), alts: { glow: { pal: 'medic', out: '#FF6FA0' }, hurt: 'medicHurt' } },
   sniper: { pal: 'sniper', frames: crowdFrames(SNP_HEAD, SNP_BODY, 12), alts: { hurt: 'sniperHurt' }, muzzle: [11, 0] },
   rocket: {
@@ -867,23 +547,22 @@ export const SHEETS = {
     frames: crowdFrames(RKT_HEAD, RKT_BODY, 12).concat([RKT_CROUCH, RKT_FIRE]),
     alts: { hurt: 'rocketHurt' }, muzzle: [10, 0],
   },
-  helmet: { pal: 'team', frames: [HELMET] },
+  sq10: { pal: 'tier', frames: sq10Frames(), alts: { hurt: 'tierHurt' }, muzzle: [15, 2], muzzles: [[15, 3], [15, 2], [15, 3], [15, 2], [15, 3], [15, 4]] },
+  sq100: { pal: 'tier', frames: hvFrames(), alts: { hurt: 'tierHurt' }, muzzle: [17, 0], muzzles: [[17, 1], [17, 0], [17, 1], [17, 0], [17, 1], [17, 2]] },
+  sq1000: { pal: 'tier', frames: tankFrames(), alts: { hurt: 'tierHurt' }, muzzle: [14, 0], muzzles: [[14, 1], [14, 0], [14, 1], [14, 0], [14, 1], [14, 0]] },
   captive_medic: { pal: PAL_FRONT(MEDIC), frames: captive('medic'), lod: [1, 0.75, 0.5] },
   captive_sniper: { pal: PAL_FRONT(SNIPER), frames: captive('sniper'), lod: [1, 0.75, 0.5] },
   captive_rocket: { pal: PAL_FRONT(ROCKET), frames: captive('rocket'), lod: [1, 0.75, 0.5] },
 
-  hero_mungchi: { pal: MUNGCHI, frames: munchiSheet() },
-  hero_bori: { pal: BORI, frames: boriSheet() },
-  hero_nabi: { pal: NABI, frames: nabiSheet() },
-  face_mungchi: { pal: { ...MUNGCHI, w: '#9FD8FF' }, frames: [FACE_MUNGCHI] },
-  face_bori: { pal: { ...BORI, G: '#E9B26B', v: '#FFF1DE' }, frames: [FACE_BORI] },
-  face_nabi: { pal: NABI, frames: [FACE_NABI] },
+  /* 영웅(미소녀): 뒷모습 16×20 · 얼굴 30×30 [0 미소, 1 외침] — pix/heroines.js */
+  ...HEROINE_SHEETS,
 
   grunt: { pal: ZG, frames: zombieWalk(0).concat(Z_LUNGE), lod: [1, 0.75, 0.5], flash: true },
   runner: { pal: ZR, frames: zombieWalk(1).concat(Z_LUNGE), lod: [1, 0.75, 0.5], flash: true },
   spit: { pal: ZS, frames: [0, 1, 2, 3, 4].map(SPIT_ROWS), lod: [1, 0.75, 0.5], flash: true },
   brute: { pal: ZB, frames: [0, 1, 2, 3].map(bruteOps), lod: [1, 0.75, 0.5], flash: true },
-  boss: { pal: BOSS_PAL, frames: BOSS_POSES.map(bossOps), lod: [1, 0.75, 0.5, 0.33], flash: true, alts: { rage: BOSS_RAGE }, detail: ['K', 'W', 'e', 'E', 'p'] },
+  /* 보스: 지역마다 하나(사막 'boss' = 우락이, 나머지는 boss_<지역>) + 정예·대왕 왕관 — pix/bosses.js(아래에서 펼친다) */
+  boss: BOSS_SHEETS.boss,
 
   saw: { pal: SAW_PAL, frames: [0, 1, 2, 3].map(sawOps), lod: [1, 0.75, 0.5] },
 
@@ -949,13 +628,16 @@ export const UNIT_ART = { medic: 'medic', sniper: 'sniper', rocket: 'rocket' };
 export const CAPTIVE_ART = { medic: 'captive_medic', sniper: 'captive_sniper', rocket: 'captive_rocket' };
 export const HERO_ART = {
   mungchi: { back: 'hero_mungchi', portrait: 'face_mungchi', color: '#FF9F43', dark: '#B4561A' },
-  bori: { back: 'hero_bori', portrait: 'face_bori', color: '#FF8FB8', dark: '#B03C70' },
+  bori: { back: 'hero_bori', portrait: 'face_bori', color: '#FF8FB8', dark: '#B03C70', band: '#D9558F' },   // band: 스킬 컷인 띠
   nabi: { back: 'hero_nabi', portrait: 'face_nabi', color: '#4FD1C5', dark: '#1F7A72' },
 };
 
 /* 애니메이션 표(프레임 번호, 초당 프레임) */
 export const ANIM = {
   soldier: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
+  sq10: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
+  sq100: { walk: { f: [0, 1, 2, 3], fps: 8 }, idle: { f: [4, 5], fps: 2 } },
+  sq1000: { walk: { f: [0, 1, 2, 3], fps: 8 }, idle: { f: [4, 5], fps: 3 } },
   medic: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
   sniper: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
   rocket: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 }, fire: { f: [6, 7, 0], fps: 9 } },
@@ -970,7 +652,8 @@ export const ANIM = {
   puff: { pop: { f: [0, 1, 2, 3], fps: 12 } },
   coin: { spin: { f: [0, 1, 2, 3], fps: 10 } },
 };
-export const BOSS_POSE_NAMES = BOSS_POSES.map((p) => p.name);
+/* 보스 자세 11장(이 순서가 약속: render.js FRAMES.boss·ANIM.boss, 여섯 지역 보스가 모두 같다 — tests/bosses.mjs가 bosses.js와 맞춰 본다) */
+export const BOSS_POSE_NAMES = ['walk0', 'walk1', 'walk2', 'walk3', 'windup', 'slam', 'roar0', 'roar1', 'stomp0', 'stomp1', 'dead'];
 
 /* ---------------- 숫자 글꼴(게임 화면 안의 글자는 숫자·기호뿐) ---------------- */
 export const FONT = {
@@ -1017,8 +700,36 @@ export const FONT = {
   },
 };
 
-/* 세계 크기(월드 단위 높이) — 축소 단계 고르기용 */
+/* 세계 크기(월드 단위 높이) — 축소 단계 고르기용.
+   졸개·질주는 그린 폭(외곽선 포함 12px)이 총알 받는 폭 ±(r + 0.12)과 같아지는 키(0.54·13/6, 0.48·13/6) — 쏘는 거리(6~25m)에서
+   0.75 단계로 작게 그려진 채 오래 남지 않게(망원 카메라라 그 거리의 배율이 커서, 1.05·0.95면 멀리 있는 좀비가 총알 맞는 폭보다 작게 보였다) */
 export const WORLD_H = {
-  grunt: 1.05, runner: 0.95, spit: 1.25, brute: 2.1, boss: 6.4, saw: 1.6,
+  grunt: 1.17, runner: 1.04, spit: 1.25, brute: 2.1, boss: 6.4, saw: 1.6,
   captive: 1.0, cactus: 2.2, sign: 2.2, pine: 2.4, pine2: 1.6, snowman: 1.9, rock: 0.9, barrel: 1.0, bush: 0.8, ice: 0.8, drift: 0.6,
 };
+
+/* ---------------- 지역(그래픽 업그레이드 2): 지역별 좀비 옷·소품·땅 ---------------- */
+Object.assign(SHEETS, buildFoeSkins(SHEETS), PROP_SHEETS);
+for (const k of Object.keys(FOE_ALTS)) SHEETS[k].alts = { ...(SHEETS[k].alts || {}), ...FOE_ALTS[k] };
+Object.assign(WORLD_H, PROP_WORLD_H);
+for (const k of Object.keys(BIOME_PATCH)) Object.assign(BIOME[k], BIOME_PATCH[k]);
+Object.assign(BIOME, BIOME_EXTRA);
+/* 지역 → 종류 → 시트(보스는 아래에서 SKIN[bid].boss를 더한다). 시트가 없으면 기본 종류 이름 */
+export const SKIN = FOE_SKIN;
+export const skinOf = (kind, bid) => (SKIN[bid] && SKIN[bid][kind]) || kind;
+/* 그 지역에서 쓰는 시트(좀비 옷·보스·길가 소품) — renderer.prepBiome(bid)가 쉬는 틈에 굽는다 */
+export function biomeSheets(bid) {
+  const out = Object.values(SKIN[bid] || {});
+  for (const p of (BIOME[bid] && BIOME[bid].props) || []) out.push(p);
+  return out.filter((n, i) => SHEETS[n] && out.indexOf(n) === i);
+}
+export { FOE_BURST };
+
+/* ---------------- 지역 보스(그래픽 업그레이드 2): 지역마다 다른 보스 + 정예·대왕 왕관 ---------------- */
+Object.assign(SHEETS, BOSS_SHEETS);   // 다른 지역 보스 다섯 + 왕관 둘('boss' = 사막 우락이는 위 SHEETS에 이미 있다)
+for (const [bid, sheet] of Object.entries(BOSS_SKIN)) if (sheet !== 'boss') (SKIN[bid] || (SKIN[bid] = {})).boss = sheet;
+/* 사막(기본) 밖의 지역에서만 쓰는 시트(좀비 옷·보스·길가 소품) — 부팅 때 굽지 않는다(보스 하나 ≈ 0.75M px, 여섯을 다 구우면 페이지 다섯 장).
+   renderer.prepBiome(bid)가 그 지역에 가기 전에 쉬는 틈에 굽고, 그리는 쪽은 아직 없으면 기본 시트로 그린다 */
+const DESERT_SHEETS = biomeSheets('desert');
+export const BIOME_ONLY = new Set(Object.keys(BIOME).filter((b) => b !== 'desert').flatMap((b) => biomeSheets(b)).filter((n) => !DESERT_SHEETS.includes(n)));
+export { BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TEXT, BOSS_TIER };

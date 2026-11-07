@@ -11,7 +11,7 @@ import {
 } from './store.js';
 import * as STORE from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
-import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, heroCost, heroCap, heroesEarned, biomeOf } from './roster.js';
+import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, heroCost, heroCap, heroesEarned, biomeOf, bossNameOf } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, upgState, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss, gearGap,
 } from './insight.js';
@@ -404,7 +404,7 @@ function renderHero() {
   top.className = 'hero-top';
   const face = document.createElement('div');
   face.className = 'portrait';
-  face.appendChild(faceEl(id, 5));
+  face.appendChild(faceEl(id, 3));
   const info = document.createElement('div');
   info.innerHTML = `<div class="hero-name"></div><span class="hero-role"></span><p class="hero-line"></p>`;
   info.querySelector('.hero-name').textContent = H.name + (lvH ? ` Lv${lvH}` : '');
@@ -524,7 +524,7 @@ function openJoin(id) {
   $('joinLater').hidden = already;
   const face = $('joinFace');
   face.textContent = '';
-  face.appendChild(faceEl(id, 6));
+  face.appendChild(faceEl(id, 4));
   $('joinName').textContent = `${H.name} · ${H.role}`;
   $('joinLine').textContent = `“${H.line}”`;
   $('joinSkill').innerHTML = `<b>${H.skill.name}</b>${H.skill.text(1)}<br><small>게이지가 다 차면 화면 아래 가운데 영웅 버튼${FINE ? '(또는 Space 키)' : ''}을 눌러요</small>`;
@@ -638,7 +638,7 @@ const SETTINGS = [
   { id: 'autoSkill', name: '영웅 스킬 자동 발동', note: '게이지가 차면 알맞은 때에 알아서 써요' },
   { id: 'shake', name: '화면 흔들림' },
   { id: 'preview', name: '게이트 결과 미리보기', note: '게이트 아래에 지나가면 몇 명이 되는지 보여줘요' },
-  { id: 'low', name: '저사양 모드', note: '병사를 덜 그리고 효과를 줄여요' },
+  { id: 'low', name: '저사양 모드', note: '총구 불꽃과 효과를 줄여요' },
   { id: 'hitbox', name: '충돌 범위 보기', note: '맞는 범위를 그림 위에 선으로 보여줘요(확인용)' },
 ];
 function applySettings() {
@@ -836,6 +836,8 @@ function fillCard(L) {
   // 예전 '강한 보스' 문구는 태그가 없는 시뮬레이션에서만(수치가 같은데 약속하지 않게)
   $('cardNew').textContent = NEW_THING[L] || TAG_LINE[tg.tag] || (!hasTags() && L % 5 === 0 ? '강한 보스가 기다려요' : '');
   const newUnit = UNIT_IDS.find((k) => UNITS[k].unlock === L);
+  const bb = b.boss;
+  $('cardBoss').textContent = bb ? `보스: ${bossNameOf(L, tg.tag)} — ${bb.title}` : '';
   $('cardUnit').hidden = !newUnit;
   $('cardUnit').textContent = newUnit ? `${UNITS[newUnit].name}: ${UNITS[newUnit].desc}` : '';
   return tg;
@@ -894,8 +896,15 @@ function startLevel(L, opts = {}) {
   }, 30);
 }
 
+/* 보스 체력 막대는 보스 이름 띠(렌더러가 등장 0.2~1.6초에 HUD 바로 아래 그린다)가 지나간 뒤에 — 띠 글자와 겹치지 않게 */
+let bossBarFor = null;
+function showBossBarLater() { bossBarFor = s; setTimeout(() => { if (s && s === bossBarFor && s.boss) $('bossBar').hidden = false; }, 1600); }
+/* 그 지역 좀비 옷·보스·소품을 쉬는 틈에 굽기(그림만; 아직 덜 구웠으면 렌더러가 기본 그림으로 그린다) */
+const prepBiome = (L) => { if (renderer.prepBiome) renderer.prepBiome(biomeOf(Math.max(1, L | 0)).id); };
+
 /* 레벨·영웅·강화로 이번 판을 준비하고 카드 뒤에 출발 장면을 깐다 */
 function prepareRun(L) {
+  prepBiome(L);   // 카드가 떠 있는 동안 굽는다(보스까지는 30초 넘게 남는다)
   lv = prepareLevel(L);
   const hero = heroForRun(L);
   const base = START_N + 2 * data.upg.start;
@@ -1045,6 +1054,8 @@ function resumeRun() {
   tutorial = false;
   lastSaveT = s.t;
   $('hudL').textContent = r.L;
+  $('bossName').textContent = bossNameOf(r.L, tagOf(r.L).tag);
+  prepBiome(r.L);
   $('bossBar').hidden = !s.boss;
   $('bossBar').classList.toggle('rage', !!(s.boss && s.boss.enraged));
   hideEta();
@@ -1185,7 +1196,8 @@ function handleEvents(ev) {
       case 'spitHit': if (e.hit) { sfx.hurt(); vibe(30); } break;
       case 'boss':
         sfx.bossIn();
-        $('bossBar').hidden = false;
+        $('bossName').textContent = bossNameOf(lv.L, tagOf(lv.L).tag);
+        showBossBarLater();
         if (run) run.arenaN = s.squad.n;
         tip('boss', '빨간 구역을 피하면서 보스를 쏘세요!');
         // 꾹 누르기만 써 온 사람에게(어려운 보스부터): 끌기는 원하는 자리에 딱 선다 — 내려찍기 피하기가 쉬워진다
@@ -1281,6 +1293,7 @@ function finish() {
   data.lastRunId = run ? run.id : '';
   save(data);
   clearRun();
+  if (won) prepBiome(L + 1);   // 다음 레벨이 새 지역이면 결과 화면이 떠 있는 동안 미리 굽는다
 
   $('resTitle').textContent = won ? '승리!' : '전멸';
   $('scrResult').classList.toggle('lost', !won);
@@ -1387,7 +1400,7 @@ function setSkillFace() {
   face.textContent = '';
   skillState = '';   // 다음 갱신에서 글자·모양을 다시 맞춘다
   if (s && s.hero) {
-    face.appendChild(faceEl(s.hero.id, 3));
+    face.appendChild(faceEl(s.hero.id, 2));
     $('skillLbl').textContent = HEROES[s.hero.id].skill.name;
   }
 }
@@ -1708,6 +1721,8 @@ function start(hotData) {
   if (hotData && hotData.run && !loadRun()) saveRun(hotData.run);
   applySettings();
   resize();
+  prepBiome(data.cur);   // 이어 할 레벨의 지역(첫 화면이 떠 있는 동안)
+  prepBiome(data.maxL);
   // 규칙(SIM)이 바뀌기 전에 저장한 판은 이어 할 수 없다 — 조용히 사라지지 않게 알린다(진 판으로 세지 않는다)
   const oldRun = loadRun();
   const dropped = oldRun && oldRun.sim !== SIM && oldRun.id !== data.lastRunId ? oldRun : null;
