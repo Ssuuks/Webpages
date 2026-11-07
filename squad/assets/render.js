@@ -2,10 +2,10 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, SQUAD_DEPTH, hitShapes } from './core.js';
-import { HEROES, biomeOf } from './roster.js';
+import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, SQUAD_DEPTH, hitShapes, levelTag } from './core.js';
+import { HEROES, biomeOf, bossNameOf } from './roster.js';
 import { gateAlts } from './insight.js';
-import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL } from './pix/art.js';
+import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, biomeSheets } from './pix/art.js';
 import { createAtlas, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
 import { createFont, opText, compactTexts } from './pix/font.js';
 import { createGround } from './pix/ground.js';
@@ -93,16 +93,18 @@ export const sceneryX = (h, side) => side * (6.4 + ((h >>> 3) % 34) / 10);
 export const sceneryZ = (h, z) => z + ((h >>> 8) % 50) / 10;
 
 /* 렌더러가 쓰는 프레임 번호(시트 길이와 맞는지 tests/art.mjs가 검사한다) */
+const SKINS = (kind) => ['snow', 'city', 'forest', 'lava', 'park'].map((b) => skinOf(kind, b)).filter((n) => n !== kind);
+const ALT3 = ['', 'a', 'b'];   // 무리 변형(f.seed % 3, 그림만)
 export const FRAMES = {
   tier: { sheets: ['soldier', 'sq10', 'sq100', 'sq1000'], walk: [0, 1, 2, 3], idle: [4, 5] },
   special: { sheets: 'unit', walk: [0, 1, 2, 3], idle: [4, 5], hit: [4] },
   rocket: { sheets: ['rocket'], fire: [6, 7] },
   hero: { sheets: 'hero', walk: [0, 1, 2, 3, 4, 5, 6, 7], idle: [8, 9], ko: [10], cast: [11, 12], look: [13], blink: [14] },
   captive: { sheets: 'captive', wave: [0, 1], sad: [2] },
-  foe: { sheets: ['grunt', 'runner'], walk: [0, 1, 2, 3], idle: [0, 2], lunge: [4, 5] },
-  brute: { sheets: ['brute'], walk: [0, 1, 2, 3], lunge: [1] },
-  spit: { sheets: ['spit'], idle: [0, 1], tell: [2, 3, 4] },
-  boss: { sheets: ['boss'], walk: [0, 1, 2, 3], windup: [4], slam: [5], roar: [6, 7], stomp: [8, 9], dead: [10] },
+  foe: { sheets: ['grunt', 'runner', ...SKINS('grunt'), ...SKINS('runner')], walk: [0, 1, 2, 3], idle: [0, 2], lunge: [4, 5] },
+  brute: { sheets: ['brute', ...SKINS('brute')], walk: [0, 1, 2, 3], lunge: [1] },
+  spit: { sheets: ['spit', ...SKINS('spit')], idle: [0, 1], tell: [2, 3, 4] },
+  boss: { sheets: Object.values(BOSS_SKIN), walk: [0, 1, 2, 3], windup: [4], slam: [5], roar: [6, 7], stomp: [8, 9], dead: [10] },
   fx2: { sheets: ['flash', 'spark', 'glint', 'boomfx', 'flag', 'rocketShot', 'smoke'], f: [0, 1] },
   fx4: { sheets: ['saw', 'puff', 'coin'], f: [0, 1, 2, 3] },
   one: { sheets: ['bubble', 'tear', 'helmetBit', 'plus', 'heart', 'dust'], f: [0] },
@@ -560,11 +562,27 @@ export function createRenderer(cvs) {
       ...font.prebakeTasks(GLYPH_PAIRS),
       () => { for (const k of Object.keys(ICONS)) atlas.icon(k); },
       ...first,
-      ...Object.keys(SHEETS).filter((n) => !first.includes(n)),
+      ...Object.keys(SHEETS).filter((n) => !first.includes(n) && !BIOME_ONLY.has(n)),
     ];
     atlas.bakeIdle(tasks, () => { readyResolve(true); idleAfterReady(); });
   }
   ensureJua();
+  /* 지역 시트(좀비 옷·보스·길가 소품)는 그 지역에 가기 전에 쉬는 틈에 굽는다(부팅 때 여섯 보스를 다 굽지 않게 — 보스 하나 ≈ 0.75M px).
+     부를 곳: 시작(이어 할 레벨), 레벨 카드(prepareRun), 이긴 결과 화면(다음 레벨). 한 지역씩 차례로(두 굽기가 한 틈을 나눠 먹지 않게).
+     그리는 쪽은 아직 없으면 기본 시트로 그리거나(좀비·보스) 비워 둔다(소품) — 그리는 중에는 굽지 않는다(lateBakes = 0) */
+  const prepped = new Map();
+  let prepChain = ready;
+  function prepBiome(bid) {
+    let p = prepped.get(bid);
+    if (!p) {
+      p = prepChain = prepChain.then(() => new Promise((res) => {
+        const todo = biomeSheets(bid).filter((n) => !atlas.has(n));
+        if (!todo.length) res(true); else atlas.bakeIdle(todo, () => res(true));
+      }));
+      prepped.set(bid, p);
+    }
+    return p;
+  }
 
   /* 프레임 상태 */
   let time = 0, prevTime = 0, f60 = 0, camX = 0, dolly = 0, fitted = -1, trauma = 0;
@@ -578,6 +596,8 @@ export function createRenderer(cvs) {
   let castT = -9, castId = '', castRun = false, castArena = false, healT = -9, rocketT = -9, snipeT = -9, readyT = -9;
   let healSum = 0, healShown = -9, groundMs = 0, putMs = 0, drawMs = 0, hurtSeed = 0;
   let cut = null;        // 컷인 { t, id }
+  let bossCut = null;    // 보스 등장 띠 { t }
+  let tagL = -1, bossTag = '', bossTitle = null, bossTitleKey = '';   // 이 레벨의 보스 등급(정예·대왕)과 미리 그린 이름
   let lookNext = 3;
   const SPAWN_CAP = 160;
   let spawnBudget = SPAWN_CAP;   // 그리기 한 번(+그 뒤 이벤트)에 새로 띄우는 파편 수 상한 — 폭발이 한꺼번에 터져도 프레임이 튀지 않게(V5)
@@ -613,6 +633,8 @@ export function createRenderer(cvs) {
   for (let i = 0; i < 24; i++) tracers.push({ on: false });
   const rings = [];
   for (let i = 0; i < 16; i++) rings.push({ on: false });
+  let curBid = 'desert';
+  const bfx = () => BOSS_FX[curBid] || BOSS_FX.desert;   // 지역 보스 효과 색(내려찍기 먼지·고리·외침·분노·김·쓰러짐)
   const flakes = [];
   for (let i = 0; i < 40; i++) flakes.push({ x: Math.random(), y: Math.random(), v: 0.5 + Math.random(), p: Math.random() * 6 });
 
@@ -710,7 +732,7 @@ export function createRenderer(cvs) {
     dolly = 0; layout();   // 보스전 렌즈를 되돌린다(R1)
     hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9; surgeT = -9; stompT = -9;
     castT = -9; castRun = false; castArena = false; healT = -9; rocketT = -9; snipeT = -9; readyT = -9; healSum = 0; healShown = -9;
-    cut = null; clearOverlay();
+    cut = null; bossCut = null; clearOverlay();
     lodScen.clear(); lodFoe.clear(); lodSaw.clear(); lodCage.clear(); lodBoss = undefined;
     flashFoe.clear(); flashBoss.clear(); hitSeen.clear(); tickAt.clear(); bruteStep.clear(); spSeen.clear(); pendingGet.length = 0;
     lastS = null; stillFor = 0; dirty = true;
@@ -857,13 +879,17 @@ export function createRenderer(cvs) {
         case 'kill': {
           const big = e.kind === 'brute';
           fx('puff', e.x, big ? 0.9 : 0.5, e.z, big ? 0.4 : 0.3, { step: big ? 0 : 1 });
-          burst(e.x, big ? 1.2 : 0.7, e.z, big ? 14 : 7, e.kind === 'spit' ? FX_COL.purple : FX_COL.green, big ? 3.5 : 2.5, 3);
+          burst(e.x, big ? 1.2 : 0.7, e.z, big ? 14 : 7, e.kind === 'spit' ? FX_COL.purple : FOE_BURST[curBid] || FX_COL.green, big ? 3.5 : 2.5, 3);
           if (big) shake(0.15);
           break;
         }
         case 'bite': {
-          const sh = e.kind === 'runner' ? 'runner' : e.kind === 'brute' ? 'brute' : 'grunt';
-          fx('lunge', e.x, 0, e.z, 0.14, { sheet: sh });
+          const fk = e.kind === 'runner' ? 'runner' : e.kind === 'brute' ? 'brute' : 'grunt';
+          const sk = skinOf(fk, curBid);
+          // 문 좀비의 무리 변형(a·b)을 이어 쓴다 — 방금 죽은 그 좀비(같은 종류·자리)를 찾는다, 없으면 기본 색
+          let alt = '';
+          for (const g of s.foes) if (g.kind === e.kind && g.x === e.x && g.z === e.z) { alt = ALT3[g.seed % 3]; break; }
+          fx('lunge', e.x, 0, e.z, 0.14, { sheet: atlas.has(sk) ? sk : fk, foe: fk, alt });
           burst(e.x, 0.7, e.z, 5, FX_COL.blood, 2, 2.5);
           break;
         }
@@ -904,8 +930,9 @@ export function createRenderer(cvs) {
           break;
         case 'slam':
           bossImpactT = time;
-          burst((e.x0 + e.x1) / 2, 0.3, q.z + 3, 26, FX_COL.dust, 7, 4);
-          ring((e.x0 + e.x1) / 2, q.z + 3, 0.5, 4.5, 0.4, '#FFF1DE', { thick: 2 });
+          burst((e.x0 + e.x1) / 2, 0.3, q.z + 3, 26, bfx().dust, 7, 4);
+          ring((e.x0 + e.x1) / 2, q.z + 3, 0.5, 4.5, 0.4, bfx().ring, { thick: 2 });
+          if (bfx().shard) for (let i = 0; i < 8; i++) part((e.x0 + e.x1) / 2 + (Math.random() - 0.5) * 3, 0.6, q.z + 3, (Math.random() - 0.5) * 6, 3 + Math.random() * 3, (Math.random() - 0.5) * 2, 0.8, '#DDF3FF', 1, 9, bfx().shard);
           shake(0.6);
           if (e.hit) screenFlash(0.3, '232,56,79');
           break;
@@ -915,20 +942,21 @@ export function createRenderer(cvs) {
           stompT = time;   // 짓밟기는 길 전체를 흔든다(SIM: 옆 위치와 상관없이 맞는다) — 보스 발에서 분대까지 땅이 번쩍인다
           shake(0.3);
           burst(q.x, 0.4, q.z + R * 0.6, 10, FX_COL.blood, 4, 3);
-          if (s.boss) burst(s.boss.x, 0.2, s.boss.z, 10, FX_COL.dust, 4, 2);
+          if (s.boss) burst(s.boss.x, 0.2, s.boss.z, 10, bfx().dust, 4, 2);
           break;
         case 'boss':
           bossIntroT = time;
+          if (!cut) bossCut = { t: 0 };
           shake(0.4);
           break;
         case 'summon':
           roarT = time;
-          if (s.boss) ring(s.boss.x, s.boss.z, 1, 7, 0.6, '#FFF1DE', { thick: 2 });
+          if (s.boss) ring(s.boss.x, s.boss.z, 1, 7, 0.6, bfx().roar, { thick: 2 });
           shake(0.2);
           break;
         case 'enrage':
           enrageT = time;
-          if (s.boss) burst(s.boss.x, 4, s.boss.z, 20, ['#FFFFFF', '#E8ECF2', '#C9CED6'], 3, 4, 0.9);
+          if (s.boss) burst(s.boss.x, 4, s.boss.z, 20, bfx().enrage, 3, 4, 0.9);
           screenFlash(0.15, '255,140,90');
           break;
         case 'bossDead':
@@ -960,7 +988,7 @@ export function createRenderer(cvs) {
         case 'snipe': {
           snipeT = time;
           let x0 = q.x, z0 = q.z, y0 = 1.1;
-          if (e.src === 'hero') { z0 = heroZ(q, R); y0 = 1.5; }
+          if (e.src === 'hero') { x0 = q.x + 0.22; z0 = heroZ(q, R); y0 = 1.25; }   // 나비 총구(스킬 장: 머리 오른쪽 위 총열 끝)
           else { const i = sp.findIndex((m) => m.k === 'sniper'); if (i >= 0) { const p = slotPos(q, i, R, q.x); x0 = p.x; z0 = p.z; y0 = 1.2; } }
           tracer(x0, y0, z0, e.x1, 0.7, e.z1, e.src === 'hero' ? '#7FF0E2' : '#FFF4B0', e.src === 'hero' ? 0.1 : 0.08);
           fx('glint', x0, y0 + 0.1, z0, 0.12);
@@ -1000,7 +1028,7 @@ export function createRenderer(cvs) {
           const hz = heroZ(q, R);
           if (e.id === 'bori') for (let i = 0; i < 10; i++) part(q.x + (Math.random() - 0.5) * 2 * R, 0.8 + Math.random(), q.z + (Math.random() - 0.5) * R, (Math.random() - 0.5) * 2, 2 + Math.random() * 2, 0, 1.1, '#FF6FA0', 1, 0, 'heart');
           if (e.id === 'mungchi') ring(q.x, hz, 0.5, 4, 0.5, '#FFD84A', { follow: true, thick: 2 });
-          if (e.id === 'nabi') fx('glint', q.x + 0.3, 2, hz, 0.25);
+          if (e.id === 'nabi') fx('glint', q.x + 0.22, 1.3, hz, 0.25);   // 총구
           break;
         }
         default:
@@ -1120,8 +1148,9 @@ export function createRenderer(cvs) {
     const props = bio.props;
     for (let z = Math.floor((view.camZ + 4) / step) * step; z < view.camZ + view.zFar; z += step) {
       for (let side = -1; side <= 1; side += 2) {
-        const h = sceneryHash(z, side);
-        push(sceneryZ(h, z), 10, props[h % props.length], z * 2 + (side > 0 ? 1 : 0), sceneryX(h, side));
+        const h = sceneryHash(z, side), name = props[h % props.length];
+        // 그 지역 소품을 아직 굽지 않았으면 그 자리는 비워 둔다(그리는 중에는 굽지 않는다 — prepBiome이 쉬는 틈에 굽는다)
+        if (atlas.has(name)) push(sceneryZ(h, z), 10, name, z * 2 + (side > 0 ? 1 : 0), sceneryX(h, side));
       }
     }
   }
@@ -1504,9 +1533,10 @@ export function createRenderer(cvs) {
     if (!project(view, f.x, 0, z)) return;
     const a = fadeIn(P.d);
     if (!a) return;
-    const sheet = f.kind === 'spit' ? 'spit' : f.kind;
+    const sk = skinOf(f.kind, curBid);
+    const sheet = atlas.has(sk) ? sk : f.kind;   // 그 지역 시트를 아직 굽지 않았으면 기본(그리는 중에는 굽지 않는다)
     const sh = atlas.sheet(sheet);
-    const want = (P.s * (WORLD_H[sheet] || 1.05)) / (sh.frames[0][0].h - 2);
+    const want = (P.s * (WORLD_H[f.kind] || 1.05)) / (sh.frames[0][0].h - 2);
     const st = lodStep(lodFoe, f.id, want, STEPS3);
     let fr;
     if (f.kind === 'spit') {
@@ -1533,7 +1563,7 @@ export function createRenderer(cvs) {
     const white = flashFoe.on(f.id, f.hitT, s.t, time, reduce);
     const tell = f.kind === 'spit' && (fr === FR.spit.tell[0] || fr === FR.spit.tell[1]);
     if (tell) { ctx.fillStyle = '#B9F25B'; ellRing(pxs, pys, Math.max(4, f.r * 1.6 * ps), Math.max(2, f.r * 0.6 * ps), 1); }
-    const rr = atlas.draw(ctx, sheet, fr, pxs, pys, st, white ? 'white' : '');
+    const rr = atlas.draw(ctx, sheet, fr, pxs, pys, st, white ? 'white' : ALT3[f.seed % 3]);
     if (tell && (((time * 12) | 0) & 1)) {
       // 독침 예고: 머리 위 연두 반짝임(멀리서도 보이게)
       const hx = Math.round(pxs), hy = Math.round(pys) - rr.ay - 4;
@@ -1576,7 +1606,8 @@ export function createRenderer(cvs) {
       if (t < 0.8 && (f60 & 2)) x += 0.12;
     }
     if (!project(view, x, 0, z)) return;
-    const sh = atlas.sheet('boss');
+    const bs0 = skinOf('boss', curBid), bs = atlas.has(bs0) ? bs0 : 'boss';
+    const sh = atlas.sheet(bs);
     const want = (P.s * 6.4) / (sh.frames[0][0].h - 2);
     const st = pickStep(Math.min(1, want), lodBoss, STEPS4);
     lodBoss = st;
@@ -1584,22 +1615,32 @@ export function createRenderer(cvs) {
     let py = P.y;
     const it = time - bossIntroT;
     if (it >= 0 && it < 0.35) py -= Math.round((1 - it / 0.35) ** 2 * 60);
-    else if (it >= 0.35 && it < 0.4 && bossIntroT > 0) { burst(b.x, 0.2, b.z, 18, bio === BIOME.snow ? FX_COL.snowDust : FX_COL.dust, 6, 3); bossIntroT = -9; shake(0.35); }
+    else if (it >= 0.35 && it < 0.4 && bossIntroT > 0) { burst(b.x, 0.2, b.z, 18, bfx().dust, 6, 3); bossIntroT = -9; shake(0.35); }
     ctx.fillStyle = bio.shadow;
     ellipse(px, P.y, 2.6 * P.s, 2.6 * P.s * 0.34);
     const fr = bossFrame(s, b);
     // 피격: 흰 실루엣을 반투명(50%)으로 덧칠, 0.5초에 한 번(V9). 쓰러질 때의 두 번 번쩍임도 움직임 줄이기면 끈다(T10)
     const dt0 = bossDeath ? time - bossDeath.t0 : 9;
     const white = b.hp > 0 ? flashBoss.on(-1, b.hitT, s.t, time, reduce) : !reduce && !!bossDeath && (dt0 < 0.05 || (dt0 > 0.4 && dt0 < 0.45));
-    atlas.draw(ctx, 'boss', fr, px, py, st, b.enraged ? 'rage' : '');
+    atlas.draw(ctx, bs, fr, px, py, st, b.enraged ? 'rage' : '');
     if (white) {
       const ga = ctx.globalAlpha;
       ctx.globalAlpha = ga * 0.5;
-      atlas.draw(ctx, 'boss', fr, px, py, st, 'white');
+      atlas.draw(ctx, bs, fr, px, py, st, 'white');
       ctx.globalAlpha = ga;
     }
+    // 정예(5의 배수)·대왕(10의 배수): 머리에 왕관(자세마다 자리, 줄인 단계면 그 배율로) + 기운 반짝이 — 그림만
+    const tier = BOSS_TIER[bossTag];
+    if (tier) {
+      const c = BOSS_CROWN[bs] && BOSS_CROWN[bs][fr];
+      if (c && atlas.has(tier.crown)) atlas.draw(ctx, tier.crown, c[2], px + Math.round(c[0] * STEPS4[st]), py + Math.round(c[1] * STEPS4[st]), st, bossTag === 'hard' ? curBid : '');
+      if (b.hp > 0) {
+        const sc = tier.sparkCol || bfx().spark;
+        for (let k = beats(tier.sparks); k > 0; k--) part(b.x + (Math.random() - 0.5) * 3.4, 1 + Math.random() * 5, z, (Math.random() - 0.5) * 0.4, 0.8 + Math.random(), 0, 0.7, sc[k & 1], 1, -1);
+      }
+    }
     // 분노: 머리에서 김(초당 12번, 화면 주사율과 상관없이)
-    if (b.enraged && b.hp > 0) for (let k = beats(12); k > 0; k--) part(b.x + (Math.random() - 0.5) * 2.5, 6.2, z, (Math.random() - 0.5) * 0.6, 1.5, 0, 0.7, '#F4F6FA', 1, -1, 'smoke');
+    if (b.enraged && b.hp > 0) for (let k = beats(12); k > 0; k--) part(b.x + (Math.random() - 0.5) * 2.5, 6.2, z, (Math.random() - 0.5) * 0.6, 1.5, 0, 0.7, bfx().steam.c, 1, -1, bfx().steam.spr);
     // 쓰러지는 중: 연기 연쇄 + 코인 비
     if (bossDeath) {
       const t = time - bossDeath.t0;
@@ -1609,7 +1650,7 @@ export function createRenderer(cvs) {
         fx('puff', b.x + (Math.random() - 0.5) * 4, 1 + Math.random() * 4.5, z - 0.5, 0.35, { step: 0 });
         if (bossDeath.n % 2) for (let i = 0; i < 4; i++) part(b.x + (Math.random() - 0.5) * 3, 4 + Math.random() * 2, z, (Math.random() - 0.5) * 5, 3 + Math.random() * 3, -2 - Math.random() * 2, 1.2, '#FFD84A', 1, 9, 'coin');
       }
-      if (t > 1 && bossDeath.n < 10) { bossDeath.n = 10; fx('puff', b.x, 2.5, z - 0.5, 0.45); burst(b.x, 3, z, 40, FX_COL.green.concat(FX_COL.gold), 8, 6, 1); }
+      if (t > 1 && bossDeath.n < 10) { bossDeath.n = 10; fx('puff', b.x, 2.5, z - 0.5, 0.45); burst(b.x, 3, z, 40, bfx().death, 8, 6, 1); }
     }
   }
 
@@ -2241,9 +2282,9 @@ export function createRenderer(cvs) {
         }
         case 'lunge': {
           if (!project(view, f.x, 0, f.z - 0.3)) break;
-          const sh = f.sheet === 'brute' ? 'brute' : f.sheet;
-          const fr = sh === 'brute' ? FR.brute.lunge[0] : FR.foe.lunge[u > 0.5 ? 1 : 0];
-          atlas.draw(ctx, sh, fr, P.x, P.y);
+          const sh = f.sheet;
+          const fr = f.foe === 'brute' ? FR.brute.lunge[0] : FR.foe.lunge[u > 0.5 ? 1 : 0];
+          atlas.draw(ctx, sh, fr, P.x, P.y, 0, f.alt || '');
           break;
         }
         case 'sadCaptive': {
@@ -2340,15 +2381,19 @@ export function createRenderer(cvs) {
       atlas.blit(ctx, r, Math.round(x - r.w / 2), Math.round(y - r.h / 2));
     }
   }
-  function drawSnow(dt) {
-    const n = quality === 'low' ? 20 : 40;
-    ctx.fillStyle = '#FFFFFF';
+  /* 화면 날씨: 지역의 weather 표(눈·재·포자·불씨·색종이) — 눈송이 풀 40개를 같이 쓴다(새 객체 없음) */
+  function drawWeather(w, dt) {
+    const n = Math.min(flakes.length, quality === 'low' ? w.low : w.n);
+    const vy = w.vy * 0.16, cols = w.col, nc = cols.length, conf = w.kind === 'confetti';
     for (let i = 0; i < n; i++) {
       const f = flakes[i];
-      f.y += dt * f.v * 0.16;
-      if (f.y > 1) { f.y -= 1; f.x = Math.random(); }
-      const x = Math.round(f.x * BW + Math.sin(time * 1.5 + f.p) * 3), y = Math.round(f.y * BH);
-      ctx.fillRect(x, y, f.v > 1.2 ? 2 : 1, f.v > 1.2 ? 2 : 1);
+      f.y += dt * f.v * vy;
+      if (f.y > 1) { f.y -= 1; f.x = Math.random(); } else if (f.y < 0) { f.y += 1; f.x = Math.random(); }
+      if (w.flicker && ((f60 + i * 7) % 23) < 4) continue;   // 불씨 깜빡임
+      const x = Math.round(f.x * BW + Math.sin(time * w.swayF + f.p) * w.sway), y = Math.round(f.y * BH);
+      ctx.fillStyle = cols[i % nc];
+      if (conf) { if (((f60 >> 3) + i) & 1) ctx.fillRect(x, y, 2, 1); else ctx.fillRect(x, y, 1, 2); }
+      else { const b = f.v > w.big ? 2 : 1; ctx.fillRect(x, y, b, b); }
     }
   }
 
@@ -2425,6 +2470,67 @@ export function createRenderer(cvs) {
     else go();
   }
   function idleAfterReady() { idle(prepCut); }
+  /* 보스 이름(이 레벨 것)을 쉬는 틈에 미리 그려 둔다(컷인 제목과 같은 방식, 등장 순간에 글자를 그리지 않게) */
+  function renderBossTitle() {
+    if (typeof document === 'undefined' || !cssW || tagL < 1) return;
+    const b = biomeOf(tagL).boss;
+    if (!b) return;
+    const { big, small } = titleFont();
+    const key = tagL + '|' + big + '|' + dpr;
+    if (key === bossTitleKey) return;
+    bossTitleKey = key;
+    const tier = BOSS_TIER[bossTag];
+    const name = bossNameOf(tagL, bossTag), line = tier && tier.line ? tier.line : b.line;
+    const lw1 = Math.max(3, big * 0.2), lw2 = Math.max(2, small * 0.25);
+    const c = mkCanvas(1, 1);
+    const g = c.getContext('2d');
+    const f1 = `${big}px Jua, "Black Han Sans", sans-serif`, f2 = `${small}px Jua, "Black Han Sans", sans-serif`;
+    g.font = f1; const w1 = g.measureText(name).width;
+    g.font = f2; const w2 = g.measureText(line).width;
+    const pad = Math.ceil(lw1) + 2;
+    c.width = Math.ceil(Math.max(w1, w2) + pad * 2);
+    c.height = Math.ceil(big * 0.95 + small + pad * 2 + big * 0.5);
+    const oy = pad + big / 2;
+    g.textAlign = 'left'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    g.font = f1; g.lineWidth = lw1; g.strokeStyle = OUT;
+    g.strokeText(name, pad, oy); g.fillStyle = bossTag === 'super' ? '#FFD84A' : '#FFF4B0'; g.fillText(name, pad, oy);
+    g.font = f2; g.lineWidth = lw2;
+    g.strokeText(line, pad, oy + big * 0.95); g.fillStyle = '#FFFFFF'; g.fillText(line, pad, oy + big * 0.95);
+    bossTitle = { c, ox: pad, oy };
+  }
+  /* 보스 등장 띠: 등장 0.2초 뒤부터 1.4초, 오른쪽에서 밀려 들어온다. 띠 색 = 보스 색, 대왕은 금 테두리. 작은 보스(lod .33) + 이름·대사 */
+  function drawBossCut(dt) {
+    if (!bossCut) return;
+    bossCut.t += dt;
+    const D = 1.4, t = bossCut.t - 0.2;
+    if (t >= D || cut) { bossCut = null; if (!cut) clearOverlay(); return; }
+    if (t < 0) return;
+    const fxc = bfx();
+    const inK = Math.min(1, t / 0.12), outK = t > D - 0.15 ? (t - (D - 0.15)) / 0.15 : 0;
+    const slide = Math.round((1 - inK) * BW - outK * BW);
+    const { hh, y0 } = band();
+    const edge = bossTag === 'super' ? '#FFD84A' : '#FFF1DE';
+    for (let y = 0; y < hh; y++) {
+      const sk = Math.round((hh - y) * 0.35);
+      ctx.fillStyle = y < 2 || y >= hh - 2 ? edge : y === 2 || y === hh - 3 ? OUT : fxc.band;
+      ctx.fillRect(slide - 24 - sk, y0 + y, BW + 48, 1);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.35)';
+    for (let i = 0; i < 7; i++) {
+      const yy = y0 + 6 + ((i * 7) % (hh - 12));
+      const xx = BW + 30 - (((i * 53 + time * 420) % (BW + 60)));
+      ctx.fillRect(Math.round(xx) + slide, yy, 14 + (i % 3) * 8, 1);
+    }
+    const bs0 = skinOf('boss', curBid), bs = atlas.has(bs0) ? bs0 : 'boss';
+    const fr = atlas.get(bs, FR.boss.roar[((time * 8) | 0) & 1], 3);
+    const bx = slide + BW - 8 - fr.w, by = y0 + hh - 3 - fr.h;
+    ctx.drawImage(fr.img, fr.sx, fr.sy, fr.w, fr.h, bx, Math.max(y0 + 1, by), fr.w, fr.h);
+    const o = overlay();
+    if (!o) return;
+    if (!ovShown) { ov.style.display = 'block'; ovShown = true; }
+    octx.clearRect(0, 0, ov.width, ov.height);
+    if (bossTitle) octx.drawImage(bossTitle.c, Math.round((slide + 8) * K - bossTitle.ox), Math.round(hh * 0.42 * K - bossTitle.oy));
+  }
   function drawCut(dt) {
     if (!cut) return;
     cut.t += dt;
@@ -2438,7 +2544,7 @@ export function createRenderer(cvs) {
     const { hh, y0 } = band();
     for (let y = 0; y < hh; y++) {
       const sk = Math.round((hh - y) * 0.35);
-      ctx.fillStyle = y < 2 || y >= hh - 2 ? '#FFD84A' : y === 2 || y === hh - 3 ? OUT : art.color;
+      ctx.fillStyle = y < 2 || y >= hh - 2 ? '#FFD84A' : y === 2 || y === hh - 3 ? OUT : art.band || art.color;
       ctx.fillRect(slide - 24 + sk, y0 + y, BW + 48, 1);
     }
     ctx.fillStyle = 'rgba(255,255,255,.4)';
@@ -2447,7 +2553,7 @@ export function createRenderer(cvs) {
       const xx = ((i * 53 + time * 420) % (BW + 60)) - 30;
       ctx.fillRect(Math.round(xx) + slide, yy, 14 + (i % 3) * 8, 1);
     }
-    const fr = atlas.get(art.portrait, 0);
+    const fr = atlas.get(art.portrait, SHEETS[art.portrait].frames.length > 1 ? 1 : 0);   // 얼굴 [0 미소, 1 외침]
     const sc = Math.max(1, Math.min(BW >= 170 ? 3 : 2, Math.floor((hh - 4) / fr.h)));
     const px = slide + 6, py = y0 + Math.round((hh - fr.h * sc) / 2);
     ctx.drawImage(fr.img, fr.sx, fr.sy, fr.w, fr.h, px, py, fr.w * sc, fr.h * sc);
@@ -2491,7 +2597,9 @@ export function createRenderer(cvs) {
     f60 = (time * 60) | 0;      // 60Hz 시계(깜빡임·박자는 프레임 수가 아니라 이것으로, T8)
     selLbl.on = false;
     const q = s.squad;
-    const bio = BIOME[biomeOf(s.L || 1).id] || BIOME.desert;
+    curBid = biomeOf(s.L || 1).id;
+    if ((s.L || 1) !== tagL) { tagL = s.L || 1; bossTag = levelTag(tagL).tag; idle(renderBossTitle); }
+    const bio = BIOME[curBid] || BIOME.desert;
     alpha = clamp(alpha || 0, 0, 1);
     const lag = (1 - alpha) * DT;
     // 카메라(보스전에는 뒤로 빠진다. 다시 시작하면 reset에서 되돌린다)
@@ -2586,9 +2694,10 @@ export function createRenderer(cvs) {
     if (hitboxOn) drawHitbox(s, qx, lag);
     drawCount(s, rdt, qx);
     drawFloats(rdt, !cardOn && s.t > 0);   // 게이트 숫자는 말풍선 위에(R3·V4), 출발 전에는 안 그린다(V6)
-    if (bio === BIOME.snow) drawSnow(rdt);
+    if (bio.weather) drawWeather(bio.weather, rdt);
     drawFlies(rdt);
     drawCut(rdt);
+    drawBossCut(rdt);
     if (flashA > 0) {
       ctx.fillStyle = flashCss;
       ctx.globalAlpha = Math.min(0.5, flashA);
@@ -2631,7 +2740,7 @@ export function createRenderer(cvs) {
   const api = {
     view, screen, resize, draw, events, reset, setQuality, setShake, setPreview, setFrozen, setCard, setHudTarget, setHitbox,
     get hitbox() { return hitboxOn; },
-    portrait, icon, ready, burst: burstCompat, float: floatCompat,
+    portrait, icon, ready, prepBiome, burst: burstCompat, float: floatCompat,
     get info() {
       return {
         BW, BH, K, dpr, cssPer, quality, frozen: frozenSet || stillFor > 0.25, reduce, pages: atlas.pages.length,

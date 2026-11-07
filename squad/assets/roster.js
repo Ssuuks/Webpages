@@ -29,7 +29,7 @@ export const UNIT_IDS = Object.keys(UNITS);
 export const HEROES = {
   mungchi: {
     name: '뭉치 대장', role: '지휘', color: '#FF9F43',
-    look: '별 달린 큰 철모가 눈썹까지 덮은 동글이, 주황 스카프, 몸만 한 확성기',
+    look: '별 달린 장교 모자를 비뚤게 쓴 귤빛 단발, 바람에 날리는 노랑 스카프, 몸만 한 확성기',
     line: '목소리는 부대 최강, 용기는… 연습 중!',
     unlock: { type: 'clear', L: 2, text: '레벨 2를 깨면 합류' },
     num: { pump: [1.2, 1.4], dmg: [1.12, 1.25] },
@@ -38,7 +38,7 @@ export const HEROES = {
   },
   bori: {
     name: '보리', role: '의무', color: '#FF8FB8', match: 'medic',
-    look: '토끼귀 간호모, 몸보다 큰 하트 가방, 코에 반창고',
+    look: '하트 간호모, 흰 리본으로 묶은 솜사탕빛 트윈테일, 몸보다 큰 하트 가방, 볼에 반창고',
     line: '다치면 혼나요! …그래도 다치면 바로 와요.',
     unlock: { type: 'clear', L: 8, text: '레벨 8을 깨면 합류' },
     num: { share: [0.08, 0.18], heal: [0.4, 0.55], guard: 0.5 },
@@ -47,12 +47,12 @@ export const HEROES = {
   },
   nabi: {
     name: '나비', role: '저격', color: '#4FD1C5', match: 'sniper',
-    look: '고양이귀 비니, 졸린 반달눈, 키 두 배의 총, 꼬리 끝 리본',
+    look: '커다란 분홍 나비 리본으로 묶은 긴 민트빛 머리, 졸린 반달눈, 키 두 배의 총',
     line: '하암… 한 발이면 돼. 깨우지 마.',
     unlock: { type: 'stars', n: 30, text: '별 30개를 모으면 합류' },
     num: { snipe: [0.08, 0.13], every: 1.8, boost: [0.15, 0.3], shot: [0.25, 0.35], shots: 8 },
-    passive: { name: '고양이 눈', text: (lv) => `${HEROES.nabi.num.every}초마다 직접 저격(위력 ${pc(hv('nabi', 'snipe', lv))}%). 저격수가 있으면 대신 저격수 위력 +${pc(hv('nabi', 'boost', lv))}%` },
-    skill: { name: '백발백묘', cd: 15, dur: 3, text: (lv) => `3초 동안 강한 적을 ${HEROES.nabi.num.shots}발 연속 저격(한 발 위력 ${pc(hv('nabi', 'shot', lv))}%, 보스전 추가 피해 한도 +${10 + 2 * (Math.max(1, Math.min(HERO_MAX_LV, lv)) - 1)}%)` },
+    passive: { name: '나비 눈', text: (lv) => `${HEROES.nabi.num.every}초마다 직접 저격(위력 ${pc(hv('nabi', 'snipe', lv))}%). 저격수가 있으면 대신 저격수 위력 +${pc(hv('nabi', 'boost', lv))}%` },
+    skill: { name: '벌처럼 쏜다', cd: 15, dur: 3, text: (lv) => `3초 동안 강한 적을 ${HEROES.nabi.num.shots}발 연속 저격(한 발 위력 ${pc(hv('nabi', 'shot', lv))}%, 보스전 추가 피해 한도 +${10 + 2 * (Math.max(1, Math.min(HERO_MAX_LV, lv)) - 1)}%)` },
   },
 };
 export const HERO_IDS = Object.keys(HEROES);
@@ -83,7 +83,14 @@ export function heroesEarned(maxL, stars) {
 
 /* 지역 */
 export const BIOMES = [
-  { id: 'desert', name: '모래 고개' },
-  { id: 'snow', name: '눈보라 기지' },
+  { id: 'desert', name: '모래 고개', boss: { name: '우락이', kind: '모래 도깨비', title: '모래 고개의 골목대장', line: '내 방망이 맛 좀 볼래?' } },
+  { id: 'snow', name: '눈보라 기지', boss: { name: '빙수', kind: '설인', title: '눈보라 기지의 털복숭이', line: '으슬으슬~ 꽁꽁 얼려 주마!' } },
+  { id: 'city', name: '무너진 도시', boss: { name: '와장창', kind: '철거반장', title: '무너진 도시의 공사왕', line: '공사 중! 싹 다 밀어 버린다!' } },
+  { id: 'forest', name: '버섯 숲', boss: { name: '뽀글이', kind: '왕버섯', title: '버섯 숲의 포자 군주', line: '포자 한 아름 받아라~!' } },
+  { id: 'lava', name: '용암 협곡', boss: { name: '화르륵', kind: '용암 거인', title: '용암 협곡의 심장', line: '뜨거운 맛 좀 봐라!' } },
+  { id: 'park', name: '한밤 놀이공원', boss: { name: '곰곰이', kind: '인형탈', title: '한밤 놀이공원의 인기 스타', line: '같이 놀자~ 안 놔줄 거야!' } },
 ];
+/* 보스 이름(정예 = 5의 배수 레벨, 대왕 = 10의 배수 — core.js levelTag의 tag) */
+export const BOSS_PREFIX = { hard: '정예', super: '대왕' };
+export function bossNameOf(L, tag = '') { const b = biomeOf(L).boss; return (BOSS_PREFIX[tag] ? BOSS_PREFIX[tag] + ' ' : '') + (b ? b.name : '보스'); }
 export function biomeOf(L) { return BIOMES[Math.floor((Math.max(1, L) - 1) / 10) % BIOMES.length]; }

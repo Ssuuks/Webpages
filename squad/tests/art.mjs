@@ -91,14 +91,19 @@ test('모든 병과·영웅에 그림이 있다', () => {
     const a = HERO_ART[id];
     assert.ok(a && SHEETS[a.back] && SHEETS[a.portrait], '영웅 ' + id);
     const face = SHEETS[a.portrait].frames[0];
-    assert.equal(face.length, 19, `${id} 얼굴 높이 19`);
-    assert.equal(face[0].length, 20, `${id} 얼굴 폭 20`);
+    assert.equal(face.length, 30, `${id} 얼굴 높이 30`);
+    assert.equal(face[0].length, 30, `${id} 얼굴 폭 30`);
+    assert.ok(SHEETS[a.portrait].frames.length >= 2, `${id} 얼굴 [미소, 외침]`);
     assert.ok(SHEETS[a.back].frames.length >= 15, `${id} 뒷모습 프레임`);
   }
   for (const b of BIOMES) assert.ok(BIOME[b.id], '지역 ' + b.id);
   assert.equal(biomeOf(1).id, 'desert');
   assert.equal(biomeOf(11).id, 'snow');
-  assert.equal(biomeOf(21).id, 'desert');
+  assert.equal(biomeOf(21).id, 'city');
+  assert.equal(biomeOf(31).id, 'forest');
+  assert.equal(biomeOf(41).id, 'lava');
+  assert.equal(biomeOf(51).id, 'park');
+  assert.equal(biomeOf(61).id, 'desert');
 });
 
 test('크기 규칙: 특수병은 병사 격자 위의 종이인형(13px 이하), 영웅 몸통 16×18 안팎', () => {

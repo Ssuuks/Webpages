@@ -166,11 +166,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .skill-box em { font-style: normal; color: var(--green); }
 .hero-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
 .hero-pick { border-radius: 14px; background: var(--panel2); border: 3px solid var(--edge); padding: 8px 4px; display: grid; justify-items: center; gap: 4px; font-family: var(--display); font-size: 14px; }
-.hero-pick canvas { width: 56px; height: 56px; }
+.hero-pick canvas { width: 64px; height: 64px; }
 .hero-pick.sel { border-color: var(--amber); }
 .hero-pick.locked { opacity: 0.55; }
 .hero-pick small { font-family: var(--body); font-size: 10px; color: var(--muted); text-align: center; line-height: 1.3; }
-.hero-pick .fallback { font-size: 30px; width: 56px; height: 56px; display: grid; place-items: center; }
+.hero-pick .fallback { font-size: 30px; width: 64px; height: 64px; display: grid; place-items: center; }
 
 /* 설정 */
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
@@ -198,6 +198,8 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .card .eyebrow { font-family: var(--display); font-size: 16px; color: var(--muted); }
 .card .big { font-family: var(--display); font-size: 96px; line-height: 1; color: #fff; text-shadow: 0 5px 0 var(--edge), 3px 0 0 var(--edge), -3px 0 0 var(--edge), 0 -3px 0 var(--edge); }
 .card .region { font-family: var(--display); font-size: 15px; color: var(--blue); }
+.card .boss-line { margin-top: 4px; font-size: 14px; opacity: 0.85; }
+#bossName { white-space: nowrap; }
 .card .new { margin-top: 6px; font-family: var(--display); font-size: 18px; color: var(--amber); text-shadow: 0 2px 0 var(--edge); }
 .card .goal { margin-top: 2px; font-size: 13px; font-weight: 600; text-shadow: 0 1px 2px #000; }
 .card .unit-tip { margin: 6px auto 0; max-width: 300px; font-size: 13px; font-weight: 600; line-height: 1.45; background: rgba(14, 10, 26, 0.62); border-radius: 12px; padding: 6px 10px; }
@@ -249,7 +251,7 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
   display: grid; place-items: center;
 }
 #skillBtn .face { width: 100%; height: 100%; border-radius: 50%; background: var(--panel); display: grid; place-items: center; overflow: hidden; border: 2px solid var(--edge); }
-#skillBtn .face canvas { width: 54px; height: 54px; }
+#skillBtn .face canvas { width: 64px; height: 64px; }
 #skillBtn .face .fallback { font-family: var(--display); font-size: 26px; }
 #skillBtn .lbl { position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: var(--display); font-size: 12px; background: var(--edge); color: var(--muted); border-radius: 8px; padding: 1px 7px; }
 #skillBtn.ready { animation: bounce 0.6s ease-in-out infinite; }
@@ -358,7 +360,7 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
 /* 합류 안내 */
 #scrJoin .sheet { text-align: center; }
 #scrJoin .portrait { margin: 6px auto 8px; width: 140px; height: 140px; }
-#scrJoin .portrait canvas { width: 120px; height: 120px; }
+#scrJoin .portrait canvas { width: 128px; height: 128px; }
 #joinTitle { font-family: var(--display); font-size: 30px; color: var(--amber); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -377,7 +379,7 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
     <span class="hud-coins coinchip" id="hudCoins">0</span>
     <button id="btnPause" aria-label="일시정지" title="일시정지 (Esc)"></button>
   </div>
-  <div id="bossBar" hidden><span>보스</span><div class="bar"><i id="bossFill"></i></div><span id="bossEta" hidden role="timer"><span id="bossEtaT"></span></span></div>
+  <div id="bossBar" hidden><span id="bossName">보스</span><div class="bar"><i id="bossFill"></i></div><span id="bossEta" hidden role="timer"><span id="bossEtaT"></span></span></div>
   <div id="spChips" aria-label="함께하는 특수병"></div>
 </div>
 <div id="touchL" class="touch-hint" hidden aria-hidden="true">◀</div>
@@ -490,6 +492,7 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
     <div class="region" id="cardRegion"></div>
     <div class="card-tag" id="cardTag" hidden></div>
     <div class="new" id="cardNew"></div>
+    <div class="boss-line" id="cardBoss"></div>
     <div class="goal" id="cardGoal"></div>
     <div class="unit-tip" id="cardUnit" hidden></div>
     <button class="card-hero" id="cardHero" hidden></button>
