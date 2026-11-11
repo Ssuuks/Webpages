@@ -232,6 +232,9 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 #spChips { margin-top: 8px; display: flex; gap: 6px; }
 .sp-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px 3px 3px; border-radius: 999px; background: rgba(14, 10, 26, 0.7); border: 2px solid var(--edge); font-family: var(--display); font-size: 13px; }
 .sp-chip canvas, .sp-chip .dot { width: 20px; height: 20px; border-radius: 50%; }
+/* SIM 9: 레벨 오른 특수병 — 노란 'Lv2', Lv3은 금빛 테두리 */
+.sp-chip b { color: #FFE27A; font-weight: normal; margin-left: 2px; }
+.sp-chip.lv3 { border-color: #FFD84A; box-shadow: 0 0 0 2px rgba(255, 216, 74, 0.35); }
 
 /* 터치 안내·스킬 버튼 */
 .touch-hint {

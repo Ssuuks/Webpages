@@ -200,7 +200,9 @@ export function hold(x, opt = {}) {
    그 칸 가운데로 곧장 간다(늦지 않게). 쏘아서 숫자가 바뀌어도 처음 고른 칸을 지킨다.
    opt.mode: 'face'(기본, faceworst) 겉보기 숫자로 가장 나쁜 칸 — 잭팟·보스 직전 줄에서는 그 칸이 쏘아 올리면 최선이라 '쏘아 올리기 전략'이다.
    'true'(trueworst) 덧셈 칸을 끝(cap)까지 쏘아 올려도 가장 나쁜 칸 — 정말 나쁜 선택만 하는 사람. 'second' 겉보기 두 번째로 좋은 칸 */
-const fullValue = (n, c) => C.applyOp(n, c.op, c.op === 'add' ? Math.max(c.v, c.cap) : c.v);
+/* 끝까지 쏘아 올린 값. SIM 9의 빨간 칸 높은 끝(c.cap — 같은 줄 파랑보다 높지만 화력 강화·뭉치·몰아 쏘기 없이는 다가오는 동안 못 닿는다)
+   대신 높이기 전 끝(c.cap0, SIM 8의 끝)을 본다 — 정말 나쁜 칸을 고르는 사람의 선택이 SIM 8과 같게 */
+const fullValue = (n, c) => C.applyOp(n, c.op, c.op === 'add' ? Math.max(c.v, c.cap0 ?? c.cap) : c.v);
 export function worst(seed, opt = {}) {
   const err = opt.err ?? 0.1;
   const on = skillOf(opt, false);

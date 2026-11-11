@@ -627,6 +627,12 @@ export function createRenderer(cvs) {
   for (let i = 0; i < 72; i++) fxs.push({ on: false });
   const floats = [];
   for (let i = 0; i < 18; i++) floats.push({ on: false });
+  /* 역전(SIM 9): 빨간 게이트가 파랑으로 뒤집힌 칸 — 칸이 하얗게 번쩍이고(FLIP_FLASH초) 위에 '역전!'이 튀어 올랐다 사라진다(FLIP_T초) */
+  const FLIP_T = 0.95, FLIP_FLASH = 0.22;
+  const flips = [];
+  for (let i = 0; i < 4; i++) flips.push({ on: false, t: 0, x: 0, z: 0, row: -1, x0: 0 });
+  const spUpAt = new Map();   // 특수병 id → 레벨 오른 시각(별이 잠깐 크게 반짝인다)
+  const maxTexts = new Map(); // 빨간 칸 끝(cap) → ['MAX+45', '+45'](값마다 한 번만 만든다)
   const flies = [];
   for (let i = 0; i < 24; i++) flies.push({ on: false });
   const tracers = [];
@@ -735,6 +741,8 @@ export function createRenderer(cvs) {
     cut = null; bossCut = null; clearOverlay();
     lodScen.clear(); lodFoe.clear(); lodSaw.clear(); lodCage.clear(); lodBoss = undefined;
     flashFoe.clear(); flashBoss.clear(); hitSeen.clear(); tickAt.clear(); bruteStep.clear(); spSeen.clear(); pendingGet.length = 0;
+    for (const f of flips) f.on = false;
+    spUpAt.clear();
     lastS = null; stillFor = 0; dirty = true;
   }
 
@@ -978,6 +986,29 @@ export function createRenderer(cvs) {
         case 'spFull':
           float(e.x ?? q.x, 2.4, e.z ?? q.z, '+' + e.n, '#DDF3FF', { icon: 'men', out: PANEL.good.out, life: 1.1 });
           break;
+        case 'spUp': {
+          // 같은 특수병을 또 구했다(SIM 9): 'Lv2' + 그 특수병 자리에서 금빛 반짝임(별은 drawSpecial이 크게)
+          spUpAt.set(e.id, time);
+          float(e.x ?? q.x, 2.4, e.z ?? q.z, 'Lv' + e.lv, '#FFF09A', { icon: e.k, out: PANEL.unit.out, life: 1.3 });
+          const i = sp.findIndex((m) => m.id === e.id);
+          if (i >= 0) { const pos = slotPos(q, i, R, q.x); burst(pos.x, 1.1, pos.z, 16, FX_COL.gold, 3, 4); ring(pos.x, pos.z, 0.2, 1.4, 0.35, '#FFD84A'); }
+          screenFlash(0.12, '255,220,120');
+          break;
+        }
+        case 'flip': {
+          // 역전(SIM 9): 칸 번쩍임·'역전!' 글자(drawRow·drawFlips) + 파란 불꽃
+          let slot = flips[0];
+          for (const f of flips) { if (!f.on) { slot = f; break; } if (f.t > slot.t) slot = f; }
+          slot.on = true; slot.t = 0; slot.x = e.x; slot.z = e.z; slot.row = e.row; slot.x0 = e.x0;
+          burst(e.x, 1.6, e.z, 26, FX_COL.good, 4.5, 4.5, 0.7);
+          ring(e.x, e.z, 0.4, 2.6, 0.35, '#6CC0FF', { thick: 2 });
+          screenFlash(0.1, '108,192,255');
+          break;
+        }
+        case 'capped':
+          float(e.x, 3.6, e.z, 'MAX', '#FFF09A', { out: PANEL.unit.out, life: 0.9, rise: 1 });
+          burst(e.x, 2.6, e.z, 14, FX_COL.gold, 3, 3);
+          break;
         case 'spLose': {
           const i = Math.min(2, sp.length);
           const pos = slotPos(q, i, R, q.x);
@@ -1184,6 +1215,7 @@ export function createRenderer(cvs) {
     if (!vface(c0.x0 - 0.17, cN.x1 + 0.17, H, H + 0.4, row.z)) return;
     const a = fadeIn(face.d);
     if (!a) return;
+    const beamY = face.dy;   // 윗 띠의 위 끝(빨간 칸의 MAX 표가 그 위에 붙는다)
     ctx.globalAlpha = a;
     // 윗 띠 + 깜빡이는 전구(쫓아가는 무늬, 번쩍임 아님)
     ctx.fillStyle = '#3A3550';
@@ -1239,10 +1271,20 @@ export function createRenderer(cvs) {
         trap(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy);
       }
       if (pw > 14 && ph > 10) { ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(Math.round(face.dx + 2), Math.round(face.dy + 2), Math.max(2, (pw * 0.22) | 0), 1); }
+      // 역전 번쩍임: 방금 0을 넘어 파랑이 된 칸이 하얗게 빛났다가 가라앉는다
+      const fl = flipOf(row.id, c);
+      if (fl && fl.t < FLIP_FLASH) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.globalAlpha = a * 0.85 * (1 - fl.t / FLIP_FLASH);
+        trap(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy);
+        ctx.globalAlpha = a;
+      }
       ctx.fillStyle = sel ? '#FFFFFF' : pumped ? '#FFFFFF' : st.line;
       trapLine(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy, sel ? 2 : 1);
       const mx = (face.ax + face.bx) / 2, my = (face.ay + face.dy) / 2 - bump;
       cellLabel(c, st, mx, my, pw, ph, sel);
+      // 파고들기(SIM 9): 끝이 같은 줄 파랑보다 높은 빨간 칸(높인 끝·잭팟)은 윗 띠 위에 'MAX+끝' 표 — 다 오르면 금빛 'MAX'
+      if ((c.cap0 != null || c.jack) && c.cap > 0 && c.v0 < 0) maxTag(c, st, mx, beamY, pw);
       if (preview && c.op && dz < 40 && dz > 0 && ph > 16) {
         const r = Math.max(0, applyOp(q.n, c.op, c.v));
         const t = '=' + r;
@@ -1250,6 +1292,79 @@ export function createRenderer(cvs) {
       }
     }
     ctx.globalAlpha = 1;
+  }
+  /* 빨간 칸의 끝 표: 칸 폭(기둥까지)에 들어갈 때만, 윗 띠 위에 칸 색 테두리의 작은 표로. 다 오르면 금빛 'MAX' */
+  function maxText(cap) {
+    let t = maxTexts.get(cap);
+    if (t === undefined) {
+      const n = '+' + (cap >= 1000 ? Math.floor(cap / 1000) + 'k' : cap);
+      t = ['MAX' + n, n];   // 한 줄 'MAX+45', 두 줄일 때 아랫줄 '+45'
+      if (maxTexts.size > 500) maxTexts.clear();
+      maxTexts.set(cap, t);
+    }
+    return t;
+  }
+  function maxTag(c, st, mx, y, pw) {
+    const done = c.v >= c.cap;
+    const tt = done ? null : maxText(c.cap);
+    let t = done ? 'MAX' : tt[0];
+    let t2 = null;
+    // 큰 글꼴이 들어가면 큰 글꼴(작은 글꼴의 M은 H와 헷갈린다), 아니면 작은 글꼴, 그것도 안 들어가면 작은 글꼴 두 줄('MAX' / '+45'),
+    // 그것도 안 들어가면(먼 줄) 그리지 않는다. 표(글자 + 4px)는 칸 폭 안에 — 세 칸 줄에 빨간 칸이 둘이면 표가 나란히 서도 붙지 않게
+    let size = 'big';
+    let w = font.measure(t, 'big');
+    if (w + 4 > pw) { size = 'small'; w = font.measure(t, 'small'); }
+    if (w + 4 > pw && tt) { t = 'MAX'; t2 = tt[1]; w = Math.max(font.measure(t, 'small'), font.measure(t2, 'small')); }
+    if (w + 4 > pw || w < 1) return;
+    const h = font.height(size);
+    const hh = t2 ? 2 * h + 1 : h;
+    const x0 = Math.round(mx - w / 2) - 1, y0 = Math.round(y) - hh - 3;
+    ctx.fillStyle = done ? '#FFD84A' : st.line;
+    ctx.fillRect(x0 - 1, y0 - 1, w + 4, hh + 2);
+    ctx.fillStyle = done ? PANEL.unit.out : st.out;
+    ctx.fillRect(x0, y0, w + 2, hh);
+    tagOpt.size = size;
+    tagOpt.fill = done ? '#FFF09A' : '#FFFFFF';
+    tagOpt.out = done ? PANEL.unit.out : st.out;
+    font.draw(ctx, t, mx, y0 + h / 2, tagOpt);
+    if (t2) font.draw(ctx, t2, mx, y0 + h + 1 + h / 2, tagOpt);
+  }
+  const tagOpt = { size: 'small', scale: 1, fill: '#FFFFFF', out: OUT };   // 매 프레임 새 객체를 만들지 않게
+  /* 이 칸에 걸린 역전 효과(없으면 null) */
+  function flipOf(rowId, c) {
+    for (const f of flips) if (f.on && f.row === rowId && f.x0 === c.x0) return f;
+    return null;
+  }
+  /* '역전!' 그림 글자: 뒤집힌 칸 윗 띠(그 위 MAX 표까지) 위에서 두 배로 튀어나왔다가(FLIP_POP초) 제 크기로 떠오르며 사라진다 */
+  const FLIP_POP = 0.3;
+  function drawFlips(dt, show) {
+    for (const f of flips) {
+      if (!f.on) continue;
+      f.t += dt;
+      if (f.t >= FLIP_T) { f.on = false; continue; }
+      if (!show || !project(view, f.x, 3.1, f.z)) continue;   // 윗 띠 위 끝(H + 0.4)
+      const r = atlas.get('flipWord', 0);
+      const sc = f.t < 0.04 || f.t >= FLIP_POP ? 1 : 2;
+      const by = P.y - 16 - Math.round(12 * f.t);
+      ctx.globalAlpha = f.t > FLIP_T - 0.25 ? (FLIP_T - f.t) / 0.25 : 1;
+      ctx.drawImage(r.img, r.sx, r.sy, r.w, r.h, Math.round(P.x - (r.w * sc) / 2), Math.round(by - r.h * sc), r.w * sc, r.h * sc);
+      ctx.globalAlpha = 1;
+    }
+  }
+  /* 특수병 레벨 별: 머리 위에 Lv만큼(Lv2 둘, Lv3 셋). 방금 오른 별은 잠깐 크게, Lv3은 가끔 반짝인다 */
+  function lvStars(x, y, lv, fresh) {
+    for (let i = 0; i < lv; i++) {
+      const sx = Math.round(x + (i - (lv - 1) / 2) * 5), sy = Math.round(y);
+      const big = fresh && ((f60 >> 2) & 1);
+      ctx.fillStyle = OUT;
+      ctx.fillRect(sx - 2, sy - 1, 5, 3); ctx.fillRect(sx - 1, sy - 2, 3, 5);
+      if (big) { ctx.fillRect(sx - 3, sy, 7, 1); ctx.fillRect(sx, sy - 3, 1, 7); }
+      ctx.fillStyle = '#FFD84A';
+      ctx.fillRect(sx - 1, sy, 3, 1); ctx.fillRect(sx, sy - 1, 1, 3);
+      if (big) { ctx.fillRect(sx - 2, sy, 5, 1); ctx.fillRect(sx, sy - 2, 1, 5); }
+      ctx.fillStyle = lv >= 3 && ((f60 + i * 13) % 40) < 6 ? '#FFFFFF' : '#FFF4B0';
+      ctx.fillRect(sx, sy, 1, 1);
+    }
   }
   /* 칸 글자 후보(원래 → '+' 뺀 것 → 'k'), 값마다 한 번만 만든다 */
   function labelTexts(c) {
@@ -1933,7 +2048,10 @@ export function createRenderer(cvs) {
     if (m.k === 'medic' && time - healT < 0.25) variant = 'glow';
     let py = P.y;
     if (won) py -= Math.round(Math.abs(Math.sin(time * 9 + i)) * 2);
-    atlas.draw(ctx, sheet, fr, P.x, py, 0, variant);
+    const r = atlas.draw(ctx, sheet, fr, P.x, py, 0, variant);
+    // 레벨(SIM 9): Lv2·Lv3은 머리 위 별
+    const lv = m.lv || 1;
+    if (lv > 1) lvStars(P.x, Math.round(py) - r.ay - 3, lv, time - (spUpAt.get(m.id) ?? -9) < 0.8);
     // 저격수 조준 반짝임(쿨이 거의 다 찼을 때)
     if (m.k === 'sniper' && typeof m.cd === 'number' && m.cd < 0.18 && m.cd > 0 && (f60 & 2)) atlas.draw(ctx, 'glint', 0, P.x + 6, py - 14);
   }
@@ -2694,6 +2812,7 @@ export function createRenderer(cvs) {
     if (hitboxOn) drawHitbox(s, qx, lag);
     drawCount(s, rdt, qx);
     drawFloats(rdt, !cardOn && s.t > 0);   // 게이트 숫자는 말풍선 위에(R3·V4), 출발 전에는 안 그린다(V6)
+    drawFlips(rdt, !cardOn);
     if (bio.weather) drawWeather(bio.weather, rdt);
     drawFlies(rdt);
     drawCut(rdt);

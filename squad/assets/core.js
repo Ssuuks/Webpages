@@ -1,4 +1,4 @@
-import { HEROES, heroVal } from './roster.js';
+import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX } from './roster.js';
 import { CAL } from './caltable.js';
 
 /* 숫자부대 돌격 — 시뮬레이션 코어 (DOM 없음)
@@ -22,7 +22,9 @@ export const WEAPON = [1, 1.35, 1.7, 2.1];
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
 export const VERSION = 'squad-v1';   // 레벨 배치의 소금 — 바꾸지 않는다(바꾸면 모든 레벨이 달라진다)
-export const SIM = 8;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
+export const SIM = 9;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
+/* SIM 9(파고들기): 빨간(−) 덧셈 칸의 끝(cap)이 같은 줄 파랑 칸의 끝보다 높다(RED_OVER) — 오르는 빠르기는 그대로라 기대 강화로는 끝까지 못 올리고,
+   화력 강화·뭉치(쏘아 올리기·스킬)·그 칸 앞에 서서 몰아 쏘기가 있어야 닿는다. 같은 특수병을 또 구하면 그 특수병의 레벨이 오른다(Lv3까지) */
 /* 보스: 피하기에 대가가 있게 — 좌우로 천천히 따라오고(초당 m), 총알은 가운데 ±BOSS_HIT m 안만 맞고, 첫 내려찍기는 빨리 온다 */
 export const BOSS_TRACK = 0.6;
 export const BOSS_HIT = 1.8;      // 몸통(팔 안쪽 — 보라 옷·허리띠·다리 폭). 그 밖의 총알은 보스 옆(팔 아래)으로 지나간다 — 화면은 보스 뒤로 그린다
@@ -112,17 +114,21 @@ export const UNLOCK = {
   recruit: 9, sniper: 9, triple: 10, mul3: 10, rocket: 13,
 };
 
-/* 특수병과 수치(이름·소개는 roster.js) */
+/* 특수병과 수치(이름·소개·레벨별 수치는 roster.js — 여기 SP의 share·every·dmg·r은 Lv1 값) */
 export const SP_MAX = 3;      // 분대에 최대 3명
 export const SP_ESCORT = 4;   // 병사가 특수병 수 × 4보다 적으면 가장 늦게 온 특수병이 떠난다
+export { SP_LV_MAX };         // 같은 병과를 또 구하면 Lv2·Lv3(SIM 9) — 그 뒤로는 병사로
 export const SP = {
-  medic: { share: 0.6 },
-  sniper: { every: 1.2, dmg: 0.35, near: 2, far: 36 },
-  rocket: { every: 2.4, dmg: 0.6, r: 2.2, speed: 30, near: 8, far: 30 },
+  medic: { share: unitVal('medic', 'share', 1) },
+  sniper: { every: unitVal('sniper', 'every', 1), dmg: unitVal('sniper', 'dmg', 1), near: 2, far: 36 },
+  rocket: { every: unitVal('rocket', 'every', 1), dmg: 0.6, r: unitVal('rocket', 'r', 1), speed: 30, near: 8, far: 30 },
 };
+/* 회복 풀로 가는 몫의 상한(의무병 + 보리). SIM 9: 0.8 → 0.9 — 의무병 Lv2·Lv3과 보리 짝 효과가 쌓일 자리(Lv1 의무병 + 보리 Lv5 = 0.78은 그대로) */
+export const SHARE_MAX = 0.9;
 export const SP_KINDS = Object.keys(SP);
 export const BONUS_CAP = 0.1;
 export const NABI_CAP = 0.02;   // 나비 레벨 1당 보스전 추가 피해 한도
+export const SP_LV_CAP = 0.02;  // 저격수·로켓병의 레벨 1당(Lv1 위로) 보스전 추가 피해 한도(SIM 9 — 레벨 오른 특수병이 보스전에서도 세게)
 const has = (L, m) => L >= UNLOCK[m];
 
 /* ---------- 난수 ---------- */
@@ -409,11 +415,17 @@ function lanes(count) {
 
 /* 덧셈 칸: 쏘면 오른다. rise = 기대 화력으로 PUMP_T초 쏘면 오르는 몫(그 줄 병력 ng의 비율), cap = 오를 수 있는 끝.
    파랑(+) 칸은 v + 0.35·ng까지(P07: 덧셈이 차이를 메우지 않게), 빨강(−) 칸은 v + 0.6·ng까지.
+   SIM 9(파고들기): 같은 줄에 파랑 덧셈 칸이 있으면 빨강 칸의 끝은 그 줄 파랑 칸 끝의 최댓값 + RED_OVER·ng(최소 RED_OVER_MIN) 이상 —
+   오르는 빠르기(step)는 그대로라 끝까지 가려면 오래 쏴야 한다(기대 강화로 다가오는 동안에는 못 닿는다 — tests/run.mjs).
+   끝을 직접 정한 칸(o.cap: 잭팟·생각·위기·보스 직전·지킨 줄의 쏴서 키우는 +)과 파랑 덧셈 칸이 없는 줄(× 대 −a 판돈 줄, 통짜 마이너스)은 그대로.
+   골든 패스·고정 위치 할당량은 다가오는 동안 오르는 만큼만 보고(goldenValue·holdVal — 새 끝에 닿지 않는다) 레벨 배치는 SIM 8과 같다.
    o = { rise, cap, jack } — jack: 빨강 잭팟(몰아 쏘면 빨리 올라 그 줄의 최선이 된다) */
 export const PUMP_T = 3.2;
 export const PUMP_RISE = 0.4;
 export const CAP_BLUE = 0.35;
 export const CAP_RED = 0.6;
+export const RED_OVER = 0.25;
+export const RED_OVER_MIN = 4;
 export function makeCell(op, v, ng, x0, x1, fire = 0, o = {}) {
   const c = { op, v, v0: v, x0, x1, step: 0, acc: 0, cap: v, hitT: -9 };
   if (op === 'add') {
@@ -425,6 +437,75 @@ export function makeCell(op, v, ng, x0, x1, fire = 0, o = {}) {
   }
   return c;
 }
+/* 한 줄의 칸들(ch = [[op, v, o], …] — cells와 같은 순서)에 빨강 칸의 높은 끝(RED_OVER)을 매긴다 */
+function redOver(cells, ch, ng) {
+  let blue = -Infinity;
+  for (const c of cells) if (c.op === 'add' && c.v > 0 && c.cap > blue) blue = c.cap;
+  if (blue === -Infinity) return cells;
+  const top = blue + Math.max(RED_OVER_MIN, nice(ng * RED_OVER));
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    const o = ch[i][2];
+    // cap0: 높이기 전 끝(SIM 8의 끝 — 기대 화력으로 4.8초쯤 몰아 쏘면 닿는다). 화면은 이 칸에 'MAX'를, 측정 봇 trueworst는 이 끝을 본다
+    if (c.op === 'add' && c.v < 0 && !(o && o.cap != null) && c.cap < top) { c.cap0 = c.cap; c.cap = top; }
+  }
+  return cells;
+}
+/* SIM 9(파고들기) 마무리: 높인 빨간 칸은 빨리 오른다(c.fast배, RED_FAST_MIN~RED_FAST_MAX) — 대신 정말 닿는 칸에만 남긴다.
+   레벨을 다 만든 뒤 칸마다 '앞 줄을 지나면 그 칸 앞에 서서 몰아 쏘기(기대 강화, 영웅 없음)'를 실제로 돌려 보고(focusPass),
+   지날 때 값이 같은 줄 파란 칸의 끝을 RED_WIN만큼 넘게 하는 가장 작은 배수(0.5 단위)를 그 칸의 빠르기로 삼는다 —
+   기대 강화로 몰아 쏘면 파랑보다 조금 낫고, 끝(MAX)까지는 화력 강화·뭉치·스킬이 있어야 닿는다.
+   RED_FAST_MAX배로도 못 넘는 깊은 빨간 칸과 L1~RED_FROM−1(첫 안내 레벨)은 SIM 8 그대로(끝·빠르기 모두) — 화면의 MAX 표시가 거짓말이 되지 않게.
+   레벨 배치(골든 패스·고정 위치 할당량)는 이 전에 끝나 SIM 8과 같다 */
+export const RED_FROM = 5;
+export const RED_FAST_MIN = 2;
+export const RED_FAST_MAX = 4;
+export const redWin = (blue, ng) => blue + Math.max(2, Math.ceil(0.05 * ng));
+function redFast(lv) {
+  const cand = [];
+  lv.rows.forEach((r, i) => r.cells.forEach((c, j) => { if (c.cap0 != null) cand.push([i, j]); }));
+  const off = (c) => { c.cap = c.cap0; delete c.cap0; };
+  if (!cand.length) return;
+  if (lv.L < RED_FROM) { for (const [i, j] of cand) off(lv.rows[i].cells[j]); return; }
+  const co = expectLoadout(lv.L);
+  for (const [i, j] of cand) {
+    const row = lv.rows[i];
+    const c = row.cells[j];
+    const need = redWin(Math.max(...row.cells.filter((d) => d.op === 'add' && d.v0 > 0).map((d) => d.cap)), row.ng);
+    const step0 = c.step;
+    const at = (f) => { c.step = step0 / f; const v = focusPass(lv, co, i, j); return v != null && v >= need ? v : null; };
+    const top = at(RED_FAST_MAX);
+    if (top == null) { c.step = step0; off(c); continue; }
+    // 오르는 몫은 배수에 거의 비례 — 넘는 데 드는 배수를 어림하고(0.5 단위로 올림) 확인, 모자라면 한 칸씩 올린다
+    const rise = Math.max(1, (top - c.v0) / RED_FAST_MAX);
+    let f = Math.min(RED_FAST_MAX, Math.max(RED_FAST_MIN, Math.ceil(((need - c.v0) / rise) * 2) / 2));
+    while (f < RED_FAST_MAX && at(f) == null) f += 0.5;
+    c.fast = f;
+    c.step = step0 / f;
+  }
+}
+/* 몰아 쏘기 한 번: 그 줄의 기준 병력(골든 패스 ng, 기대 강화, 영웅 없음)이 앞 줄(i−1)을 막 지나(사거리 30m보다 멀면 30m 앞에서) 칸 (i, j) 가운데에 서서
+   쏘며 다가간다 — 그 사이의 적·소품·톱날만 남긴다(총알을 막고 분대를 문다). 그 칸을 지날 때의 값(못 지나거나 다른 칸이면 null) */
+export function focusPass(lv, co, i, j) {
+  const row = lv.rows[i];
+  const c = row.cells[j];
+  const z0 = Math.max(i > 0 ? lv.rows[i - 1].z + 0.5 : 0, row.z - BULLET_RANGE);
+  const near = (z) => z > z0 && z < row.z + 2;
+  const s = newGame({ ...lv, rows: [row], foes: lv.foes.filter((f) => near(f.z)), props: lv.props.filter((p) => near(p.z)), saws: lv.saws.filter((w) => near(w.z)), marks: [] },
+    { start: row.ng, fire: co.fire });
+  const q = s.squad;
+  const cx = (c.x0 + c.x1) / 2;
+  q.z = z0;
+  q.x = cx;
+  const id = s.rows[0].id;
+  const max = Math.ceil((row.z - z0 + 4) / Math.max(1, lv.speed) / DT);
+  while (s.phase === 'run' && s.tick < max) {
+    step(s, steer(s, cx));
+    for (const e of s.ev) if (e.t === 'gate' && e.row === id) return e.x >= c.x0 - 1e-6 && e.x <= c.x1 + 1e-6 ? e.v : null;
+  }
+  return null;
+}
+
 /* 레벨 생성 중 위협 체력의 기준 화력: 골든 패스 병력 × 기대 화력 × 그 청크의 태그 배수 */
 /* 첫 레벨들(L1~4)은 위협을 골든 패스의 ONBOARD_REF배 병력 기준으로 — 뒤처진 초보도 살아남게 */
 export const ONBOARD_REF = 0.75;
@@ -670,7 +751,7 @@ function holdBalance(ch, ng, ctx, fire = 0, goodIdx = -1, cost = null) {
   const n0 = Math.max(1, ng);
   let best = null;
   perms.forEach((pm, pi) => {
-    const cells = pm.map((j, i) => makeCell(ch[j][0], ch[j][1], ng, ln[i].x0, ln[i].x1, fire, ch[j][2]));
+    const cells = redOver(pm.map((j, i) => makeCell(ch[j][0], ch[j][1], ng, ln[i].x0, ln[i].x1, fire, ch[j][2])), pm.map((j) => ch[j]), ng);
     // 서 있는 분대는 앞의 덧셈 칸을 3.5초쯤 쏘아 올린다
     const val = cells.map((c, i) => holdVal(c, ng) - (cost ? cost(pm[i]) : 0));
     let bi = 0;
@@ -691,7 +772,7 @@ function holdBalance(ch, ng, ctx, fire = 0, goodIdx = -1, cost = null) {
   out.perm = best.pm;
   return out;
 }
-const cellsOf = (ch, ng, fire) => { const ln = lanes(ch.length); return ch.map(([op, v, o], i) => makeCell(op, v, ng, ln[i].x0, ln[i].x1, fire, o)); };
+const cellsOf = (ch, ng, fire) => { const ln = lanes(ch.length); return redOver(ch.map(([op, v, o], i) => makeCell(op, v, ng, ln[i].x0, ln[i].x1, fire, o)), ch, ng); };
 const bestGolden = (cells, ng) => { let b = -Infinity; for (const c of cells) b = Math.max(b, goldenValue(ng, c)); return b; };
 const wallProp = (lv, x0, x1, z, hp, extra) => {
   const h = Math.max(1, Math.round(hp));
@@ -968,16 +1049,20 @@ const CHUNK = {
 
 /* 특수병 배치 — 기존 배치를 바꾸지 않도록 레벨 생성이 끝난 뒤 별도 난수 흐름으로 넣는다.
    쉼 청크에 철창(L5+), 일부 'men' 상자를 철창으로(L5+), 게이트 줄의 가장 덜 좋은 칸을 금색 특수병 칸으로(L9+).
-   금색 칸은 보통·생각·판돈 줄에만(함정·잭팟·지킨 줄의 뜻을 바꾸지 않게) — 바뀐 줄은 kind 'gold' */
+   금색 칸은 보통·생각·판돈 줄에만(함정·잭팟·지킨 줄의 뜻을 바꾸지 않게) — 바뀐 줄은 kind 'gold'.
+   SIM 9: 철창·금색 칸의 수·자리·확률은 SIM 8 그대로(억지로 늘리지 않는다). 병과만 '바로 앞과 다른 병과' 규칙 없이 무작위 —
+   같은 병과가 자연스럽게 두 번 나오면 두 번째는 병사 대신 레벨 업 */
 const GOLD_KINDS = ['plain', 'think', 'stake'];
-function placeSpecials(lv, p) {
+function placeSpecials(lv, p, bare = false) {
   const kinds = SP_KINDS.filter((k) => p.L >= UNLOCK[k]);
   if (!kinds.length || p.L < UNLOCK.cage) return;
   const sg = { rs: hash(VERSION, 'sp', p.L, lv.attempt) };
   const intro = kinds.find((k) => UNLOCK[k] === p.L);
   let last = '';
+  // SIM 9: 같은 병과를 또 구하면 레벨이 오르므로 '바로 앞과 다른 병과' 규칙(SIM 8 — 겹치면 병사로 바뀌어 쓸모없던 때)을 없애고
+  // 열린 병과 중 그냥 무작위로 — 같은 rand 한 번이라 철창·금색 칸의 수·자리는 SIM 8과 같다(병과만 다를 수 있다). bare는 SIM 8 그대로
   const pickKind = () => {
-    let list = kinds.filter((k) => k !== last);
+    let list = bare ? kinds.filter((k) => k !== last) : kinds;
     if (!list.length) list = kinds;
     const k = list[Math.floor(rand(sg) * list.length)];
     last = k;
@@ -1043,7 +1128,9 @@ function placeSpecials(lv, p) {
   }
 }
 
-export function buildLevel(L, attempt = 0) {
+/* bare(SIM 9): 그 배치를 SIM 8처럼 — MAX 칸 없이(높인 끝을 cap0으로 되돌리고 빠르기도 그대로), 특수병 병과도 SIM 8 규칙(바로 앞과 다른 병과).
+   보정(calibrateLevel)이 '이 배치에서 MAX 칸 때문에 서 있기만 해도 이기게 됐다'고 볼 때만 쓴다(표의 bare) */
+export function buildLevel(L, attempt = 0, bare = false) {
   const p = levelParams(L);
   const g = { rs: hash(VERSION, p.L, attempt) };
   // 골든 패스는 기대 강화(EXPECT)의 시작 병력·화력으로 출발한다 — 판 중 위협이 '실제로 들고 오는 힘'에 맞게
@@ -1052,7 +1139,7 @@ export function buildLevel(L, attempt = 0) {
     L: p.L, attempt, seed: hash(VERSION, 'run', p.L, attempt), speed: p.speed, params: p, tag: p.tag,
     rows: [], foes: [], props: [], saws: [], plan: [], golden: [], chunks: [], nextId: 1,
     arenaZ: 0, bossHp: 0, par: 0, arrive: 0, helpStart: 0,
-    startE: E.start, fireE: E.fire, heroE: E.hero, marks: [],
+    startE: E.start, fireE: E.fire, heroE: E.hero, marks: [], bare: !!bare,
   };
   const plan = planChunks(p, g);
   lv.plan = plan;
@@ -1095,13 +1182,16 @@ export function buildLevel(L, attempt = 0) {
     lv.golden.push(ng);
   }
   lv.arenaZ = z + 12;
-  placeSpecials(lv, p);
+  placeSpecials(lv, p, bare);
+  // 높인 끝은 레벨 생성(골든 패스·고정 위치 할당량)에 쓰이지 않으므로(tests/run.mjs) 되돌리면 SIM 8의 칸과 같다
+  if (bare) for (const r of lv.rows) for (const c of r.cells) if (c.cap0 != null) { c.cap = c.cap0; delete c.cap0; }
   lv.foes.sort((a, b) => a.z - b.z || a.id - b.id);
   lv.missing = [...force];   // 끝까지 못 넣은 소개 항목(테스트에서 비어 있어야 함)
   delete lv.force;
   delete lv.thr;
   delete lv.wm;
   delete lv.gh;
+  if (!bare) redFast(lv);
   return lv;
 }
 
@@ -1133,7 +1223,7 @@ export function newGame(lv, opt = {}) {
     refFire: lv.fireE || 0,
     nextId: lv.nextId + 1,
     ev: [],
-    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0 },
+    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0, spUp: 0, flips: 0 },
   };
   if (s.hero) {
     const h = s.hero;
@@ -1162,7 +1252,10 @@ export function restore(o) {
   if (!Array.isArray(o.rockets)) o.rockets = [];
   if (!Array.isArray(o.marks)) o.marks = [];
   if (!Array.isArray(q.sp)) q.sp = [];
+  // SIM 8까지의 스냅숏에는 특수병 레벨이 없다(Lv1로 본다)
+  for (const m of q.sp) m.lv = Math.max(1, Math.min(SP_LV_MAX, Number.isFinite(m.lv) ? Math.floor(m.lv) : 1));
   num0(q, ['pool', 'healAcc', 'recent', 'lossFrac']);
+  if (o.stats && typeof o.stats === 'object') num0(o.stats, ['spUp', 'flips']);
   if (o.hero === undefined) o.hero = null;
   if (o.hero) num0(o.hero, ['charge', 'act', 'T', 'cd', 'shot']);
   if (o.boss) num0(o.boss, ['bonus']);
@@ -1196,7 +1289,9 @@ function lose(s, k, cause, x, z, sub) {
   if (cause !== 'gate') {
     q.recent += real;
     // 짓밟기(보스가 닿은 뒤)로 잃은 병사는 회복 풀로 가지 않는다 — 닿기 전에 잡는 것이 보스전의 목표
-    const share = sub === 'stomp' ? 0 : Math.min(0.8, (hasSp(q, 'medic') ? SP.medic.share : 0) + (h && h.id === 'bori' ? heroVal('bori', 'share', h.lv) : 0));
+    // 의무병은 레벨만큼(Lv1 60%·Lv2 70%·Lv3 80%), 보리의 응급처치는 의무병 레벨만큼 더(짝 효과 — 의무병이 없거나 Lv1이면 그대로)
+    const med = spLv(q, 'medic');
+    const share = sub === 'stomp' ? 0 : Math.min(SHARE_MAX, (med ? unitVal('medic', 'share', med) : 0) + (h && h.id === 'bori' ? heroVal('bori', 'share', h.lv) * (med ? synergyOf(med) : 1) : 0));
     q.pool += real * share;
   }
   if (soft && q.sp.length && (sub === 'slam' || real >= Math.max(3, Math.ceil(0.15 * before)))) spDrop(s, 'hit');
@@ -1204,6 +1299,8 @@ function lose(s, k, cause, x, z, sub) {
 }
 
 const hasSp = (q, k) => q.sp.some((m) => m.k === k);
+/* 그 병과 특수병의 레벨(없으면 0) */
+function spLv(q, k) { for (const m of q.sp) if (m.k === k) return m.lv || 1; return 0; }
 
 function spDrop(s, cause) {
   const q = s.squad;
@@ -1219,19 +1316,28 @@ function escort(s) {
   while (q.sp.length && q.n < SP_ESCORT * q.sp.length) spDrop(s, 'escort');
 }
 
-/* 특수병 합류. 자리가 없거나 같은 병과가 있으면 병사로 바꿔 준다 */
+/* 특수병 합류. 같은 병과가 이미 있으면 그 특수병의 레벨이 오른다(SIM 9, Lv3까지 — 새 자리·호위 병사는 필요 없다).
+   Lv3인 같은 병과·자리 초과·호위 병사 부족이면 병사로 바꿔 준다(spFull.why: 'max' | 'full' | 'escort') */
 function addSpecial(s, k, via, x, z) {
   const q = s.squad;
-  if (q.sp.length >= SP_MAX || hasSp(q, k) || q.n < SP_ESCORT * (q.sp.length + 1)) {
-    const n = Math.max(5, nice(0.12 * q.n));
-    gain(s, n, x, z, 'spFull');
-    emit(s, { t: 'spFull', k, n, x: x ?? q.x, z: z ?? q.z });
+  const h = s.hero;
+  const m = q.sp.find((o) => o.k === k);
+  if (m && (m.lv || 1) < SP_LV_MAX) {
+    m.lv = (m.lv || 1) + 1;
+    s.stats.spUp++;
+    emit(s, { t: 'spUp', k, lv: m.lv, id: m.id, via, x: x ?? q.x, z: z ?? q.z });
+    if (h && HEROES[h.id].match === k) chargeHero(s, 0.25);
     return;
   }
-  q.sp.push({ id: s.nextId++, k, cd: 0.6 });
+  if (m || q.sp.length >= SP_MAX || q.n < SP_ESCORT * (q.sp.length + 1)) {
+    const n = Math.max(5, nice(0.12 * q.n));
+    gain(s, n, x, z, 'spFull');
+    emit(s, { t: 'spFull', k, n, why: m ? 'max' : q.sp.length >= SP_MAX ? 'full' : 'escort', x: x ?? q.x, z: z ?? q.z });
+    return;
+  }
+  q.sp.push({ id: s.nextId++, k, cd: 0.6, lv: 1 });
   s.stats.spGot++;
   emit(s, { t: 'spGet', k, via, x: x ?? q.x, z: z ?? q.z });
-  const h = s.hero;
   if (h && HEROES[h.id].match === k) chargeHero(s, 0.25);
 }
 
@@ -1296,8 +1402,10 @@ export function step(s, input) {
   if (wiped(s)) return s;
   if (s.hero) heroUpdate(s, input);
   if (s.boss) {
-    // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +BONUS_CAP까지(나비는 레벨마다 +NABI_CAP)
-    const cap = BONUS_CAP + (s.hero && s.hero.id === 'nabi' ? NABI_CAP * (s.hero.lv - 1) : 0);
+    // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +BONUS_CAP까지(나비는 레벨마다 +NABI_CAP, 저격수·로켓병은 Lv1 위 레벨마다 +SP_LV_CAP)
+    let up = 0;
+    for (const m of q.sp) if (m.k !== 'medic') up += (m.lv || 1) - 1;
+    const cap = BONUS_CAP + (s.hero && s.hero.id === 'nabi' ? NABI_CAP * (s.hero.lv - 1) : 0) + SP_LV_CAP * up;
     const base = cap * dps(q.n, q.tier, s.fireLv);
     s.boss.bonus = Math.min(s.boss.bonus + base * DT, base * 1.5);
   }
@@ -1614,10 +1722,16 @@ function bulletsUpdate(s) {
       const c = hitCell;
       c.acc += b.dmg;
       c.hitT = s.t;
+      const was = c.v;
       let ticks = 0;
       while (c.acc >= c.step && c.v < c.cap) { c.acc -= c.step; c.v++; ticks++; }
       if (c.v >= c.cap) c.acc = 0;
-      if (ticks) emit(s, { t: 'tick', row: hitObj.id, v: c.v, x: b.x, z: hitObj.z });
+      if (ticks) {
+        emit(s, { t: 'tick', row: hitObj.id, v: c.v, x: b.x, z: hitObj.z });
+        // 역전(SIM 9): 빨간 칸이 0을 넘어 파랑이 됐다(화면 '역전!' — 상태는 바꾸지 않는다)
+        if (was <= 0 && c.v > 0 && c.v0 < 0) { s.stats.flips++; emit(s, { t: 'flip', row: hitObj.id, v: c.v, cap: c.cap, x: (c.x0 + c.x1) / 2, x0: c.x0, x1: c.x1, z: hitObj.z }); }
+        if (c.v >= c.cap && c.v0 < 0 && c.cap > 0) emit(s, { t: 'capped', row: hitObj.id, v: c.v, x: (c.x0 + c.x1) / 2, z: hitObj.z });
+      }
       continue;
     }
     if (hitKind === 2) { hitProp(s, hitObj, b.dmg); continue; }
@@ -1819,7 +1933,8 @@ function castHero(s) {
   s.stats.heroUses++;
   emit(s, { t: 'heroCast', id: h.id, x: q.x, z: q.z });
   if (h.id === 'bori') {
-    const k = Math.round(heroVal('bori', 'heal', h.lv) * q.recent);
+    const med = spLv(q, 'medic');
+    const k = Math.round(Math.min(0.95, heroVal('bori', 'heal', h.lv) * (med ? synergyOf(med) : 1)) * q.recent);
     q.recent = 0;
     if (k > 0) {
       q.pool = Math.max(0, q.pool - k);
@@ -1893,11 +2008,10 @@ function snipe(s, dmg, src) {
   return true;
 }
 
-/* 로켓 표적: 8–30m 안 반경 안의 체력 합이 가장 큰 무리(0.3D 이상) → 분대 통로의 벽 → 보스 */
-function rocketTarget(s, D) {
+/* 로켓 표적: 8–30m 안 반경 r(로켓병 레벨) 안의 체력 합이 가장 큰 무리(0.3D 이상) → 분대 통로의 벽 → 보스 */
+function rocketTarget(s, D, r = SP.rocket.r) {
   const q = s.squad;
   const R = radius(q.n);
-  const r = SP.rocket.r;
   let best = null;
   let bestHp = 0.3 * D;
   for (const f of s.foes) {
@@ -1938,19 +2052,24 @@ function specialsUpdate(s, R) {
     } else if (q.pool < 1) q.healAcc = 0;   // 1명이 안 되는 몫은 남겨 두고 다음 손실과 합친다
   }
   const h = s.hero;
-  const nabiBoost = h && h.id === 'nabi' ? 1 + heroVal('nabi', 'boost', h.lv) : 1;
   for (const m of q.sp) {
     m.cd -= DT;
     if (m.cd > 0) continue;
-    if (m.k === 'sniper') m.cd = snipe(s, SP.sniper.dmg * D * nabiBoost, 'sniper') ? SP.sniper.every : 0.25;
-    else if (m.k === 'rocket') {
-      const t = rocketTarget(s, D);
+    const lv = m.lv || 1;
+    if (m.k === 'sniper') {
+      // 저격수: 레벨마다 더 자주·더 세게. 나비가 있으면 위력 +boost — 저격수 레벨만큼 더(짝 효과)
+      const nabiBoost = h && h.id === 'nabi' ? 1 + heroVal('nabi', 'boost', h.lv) * synergyOf(lv) : 1;
+      m.cd = snipe(s, unitVal('sniper', 'dmg', lv) * D * nabiBoost, 'sniper') ? unitVal('sniper', 'every', lv) : 0.25;
+    } else if (m.k === 'rocket') {
+      // 로켓병: 레벨마다 더 자주·더 넓게
+      const r = unitVal('rocket', 'r', lv);
+      const t = rocketTarget(s, D, r);
       if (!t) { m.cd = 0.25; continue; }
       const T = Math.max(0.25, (t.z - q.z) / SP.rocket.speed);
-      const rk = { id: s.nextId++, x0: q.x, z0: q.z + 0.5, x: t.x, z: t.z, t: T, T, r: SP.rocket.r, dmg: SP.rocket.dmg * D, fid: t.fid };
+      const rk = { id: s.nextId++, x0: q.x, z0: q.z + 0.5, x: t.x, z: t.z, t: T, T, r, dmg: SP.rocket.dmg * D, fid: t.fid };
       s.rockets.push(rk);
       emit(s, { t: 'rocket', id: rk.id, x0: rk.x0, z0: rk.z0, x: rk.x, z: rk.z });
-      m.cd = SP.rocket.every;
+      m.cd = unitVal('rocket', 'every', lv);
     } else m.cd = 1;
   }
   // 영웅 나비: 패시브 직접 저격(저격수가 없을 때), 스킬 중에는 연속 저격
@@ -2178,11 +2297,17 @@ export function crateWorth(s, p) {
   const v = r.type === 'gun' ? (q.tier < 3 ? q.n * 0.25 + 3 : 2) : r.type === 'men' ? r.v : 2;
   return v + (p.key ? KEY_WORTH * q.n : 0);
 }
-/* 특수병 한 명이 병사 몇 명 몫인가(봇 판단용) */
+/* 특수병 한 명이 병사 몇 명 몫인가(봇 판단용). 이미 있는 병과의 레벨 올리기는 합류의 SP_UP_WORTH배(SIM 9) —
+   단 SIM 8에서 같은 병과가 바뀌던 병사 몫보다 낮게 보지는 않는다(봇의 길이 SIM 8보다 나빠지지 않게) */
+const SP_WORTH = { medic: 0.1, sniper: 0.09, rocket: 0.12 };
+export const SP_UP_WORTH = 0.6;
 export function spWorth(s, k) {
   const q = s.squad;
-  if (q.sp.length >= SP_MAX || hasSp(q, k) || q.n < SP_ESCORT * (q.sp.length + 1)) return Math.max(5, nice(0.12 * q.n));
-  return 3 + q.n * { medic: 0.1, sniper: 0.09, rocket: 0.12 }[k];
+  const lv = spLv(q, k);
+  const men = Math.max(5, nice(0.12 * q.n));
+  if (lv && lv < SP_LV_MAX) return Math.max(men, 3 + q.n * SP_WORTH[k] * SP_UP_WORTH);
+  if (lv || q.sp.length >= SP_MAX || q.n < SP_ESCORT * (q.sp.length + 1)) return men;
+  return 3 + q.n * SP_WORTH[k];
 }
 
 /* ---------- 보정 ----------
@@ -2190,13 +2315,13 @@ export function spWorth(s, k) {
    기준 봇이 보정에 실패하면(경기장에 못 가거나 정한 보스를 못 이기면) 다른 시드로 다시 만든다.
    L1~120은 미리 계산한 표(caltable.js)를 쓰고, 그 뒤는 처음 열 때 계산한다. */
 const cache = new Map();
-export const CAL_FIELDS = ['attempt', 'bossHp', 'arrive', 'arriveStrong', 'arriveWeak', 'par', 'calTier', 'helpStart', 'Hstar', 'qa'];
+export const CAL_FIELDS = ['attempt', 'bare', 'bossHp', 'arrive', 'arriveStrong', 'arriveWeak', 'par', 'calTier', 'helpStart', 'Hstar', 'qa'];
 export function prepareLevel(L) {
   const key = Math.max(1, Math.floor(L));
   if (cache.has(key)) return cache.get(key);
   const pre = CALT && CALT.sim === SIM && CALT.levels && CALT.levels[key];
   if (pre) {
-    const lv = buildLevel(key, pre.attempt);
+    const lv = buildLevel(key, pre.attempt, !!pre.bare);
     for (const f of CAL_FIELDS) lv[f] = pre[f];
     cache.set(key, lv);
     return lv;
@@ -2226,23 +2351,31 @@ export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key)) 
   const order = keep != null && keep < tries ? [keep] : [];
   for (let a = 0; a < tries; a++) if (a !== keep) order.push(a);
   const lastTry = order[order.length - 1];
+  let done = false;
+  // 그 자리 보정(표 밖 레벨 — keep 없음)은 bare로 다시 보정하기를 한 번까지만(휴대폰에서 레벨 시작이 늦어지지 않게 — 보정은 많아야 tries + 1번)
+  let bareLeft = keep == null ? 1 : Infinity;
   for (const attempt of order) {
-    lv = buildLevel(key, attempt);
-    const cal = calibrate(lv, { last: attempt === lastTry });
-    if (cal.ok) {
+    // SIM 9: 먼저 새 규칙 그대로. 보정은 됐는데 서 있기만 해도 이기면(MAX 칸이 한 자리에 선 분대를 도운 곳)
+    // 같은 배치를 SIM 8처럼(bare) 다시 보정한다 — 레벨이 통째로 바뀌거나 보스가 세지는 것보다 그 레벨만 MAX 칸을 빼는 쪽이 낫다
+    let hasMax = false;
+    for (const bare of [false, true]) {
+      // MAX 칸이 없는 배치는 bare와 병과만 다르다 — SIM 8처럼 바로 qaBoost(다시 보정하지 않는다)
+      if (bare && (!hasMax || bareLeft-- <= 0)) break;
+      lv = buildLevel(key, attempt, bare);
+      if (!bare) hasMax = lv.rows.some((r) => r.cells.some((c) => c.cap0 != null));
+      const cal = calibrate(lv, { last: attempt === lastTry });
+      if (!cal.ok) { lv.failed = true; break; }   // 보정이 안 되는 배치는 bare로도 다시 보지 않는다(서 있기와 상관없는 실패)
       Object.assign(lv, cal.lv);
       help.set(lv, cal.help);
-      // 배치 검사: 한 자리에 서 있기만 해서는 이기지 못해야 한다. 못 넘으면 보스를 조금 세게(qaBoost), 그래도 안 되면 다른 배치로.
-      // 끝까지 못 넘으면 처음 보정된 배치를 쓴다(lv.qa = false — 테스트가 어느 레벨인지 본다)
+      // 배치 검사: 한 자리에 서 있기만 해서는 이기지 못해야 한다. 못 넘으면 SIM 8처럼(bare), 그래도 못 넘으면 보스를 조금 세게(qaBoost),
+      // 그래도 안 되면 다른 배치로. 끝까지 못 넘으면 처음 보정된 배치를 쓴다(lv.qa = false — 테스트가 어느 레벨인지 본다)
       if (!firstOk) firstOk = lv;
-      if (standStillLoses(lv) || (key <= POP_MAX && qaBoost(lv))) { lv.qa = true; break; }
+      if (standStillLoses(lv) || ((bare || !hasMax || bareLeft <= 0) && key <= POP_MAX && qaBoost(lv))) { lv.qa = true; done = true; break; }
       lv.qa = false;
-      if (attempt === lastTry) lv = firstOk;
-      continue;
     }
-    lv.failed = true;
-    if (attempt === lastTry && firstOk) lv = firstOk;
+    if (done) break;
   }
+  if (!done && firstOk) lv = firstOk;
   if (lv.failed) {
     // 끝까지 실패하면 추정치로 보스를 약하게 둔다
     lv.arrive = Math.max(START_N, lv.golden[lv.golden.length - 1] || START_N);
@@ -2511,15 +2644,15 @@ export function calibrate(lv, opt = {}) {
     // m은 '정면에 선 기준 병력이 bossKill초 동안 주는 피해'의 배수
     hp = Math.max(30, Math.round(dps(ref * spec.m, 0, fire) * kill * bossHitFrac(ref) * (opt.hpMul || 1)));
     // 상자·특수병 없이도: 무기 단계 0, 특수병 없이, 기준 병력으로 시작해 이길 수 있어야 한다 — 못 이기면 이길 때까지 조금씩 낮춘다
-    const bareMod = (x) => {
+    const noHelp = (x) => {
       x.squad.n = Math.min(x.squad.n, ref); x.squad.peak = x.squad.n; x.squad.tier = 0; x.squad.sp = []; x.squad.pool = 0; x.rockets = [];
     };
-    let bare = false;
-    for (let i = 0; i < 16 && !bare; i++) {
-      if (fightFrom(s, polStrong(false), hp, maxTicks, bareMod).phase === 'won') bare = true;
+    let wonBare = false;
+    for (let i = 0; i < 16 && !wonBare; i++) {
+      if (fightFrom(s, polStrong(false), hp, maxTicks, noHelp).phase === 'won') wonBare = true;
       else hp = Math.max(30, Math.round(hp * 0.95));
     }
-    if (!bare) return { ok: false };
+    if (!wonBare) return { ok: false };
     const t = fightFrom(s, polStrong(false), hp, maxTicks);
     if (t.phase !== 'won') return { ok: false };
     par = t.squad.n;
@@ -2643,7 +2776,7 @@ export function stateHash(s) {
   for (const f of s.foes) if (f.alive) h = hash(h, f.id, f.hp.toFixed(4), f.x.toFixed(4), f.z.toFixed(4));
   for (const r of s.rows) for (const c of r.cells) h = hash(h, c.v, c.acc.toFixed(4));
   if (s.boss) h = hash(h, s.boss.hp.toFixed(4), s.boss.z.toFixed(4));
-  for (const m of q.sp) h = hash(h, m.k, m.cd.toFixed(4));
+  for (const m of q.sp) h = hash(h, m.k, m.cd.toFixed(4), m.lv || 1);
   h = hash(h, q.pool.toFixed(4), q.recent.toFixed(4), q.healAcc.toFixed(4), q.lossFrac.toFixed(4));
   if (s.boss) h = hash(h, s.boss.bonus.toFixed(4));
   for (const rk of s.rockets) h = hash(h, rk.x.toFixed(4), rk.z.toFixed(4), rk.t.toFixed(4));

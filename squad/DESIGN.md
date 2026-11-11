@@ -18,9 +18,9 @@
 | sniper | 저격수 | 9 | 1.2초마다 2–36m 안 표적에 즉시 0.35D. 우선순위 독침 > 거구 > 질주 > 졸개 > 상자·철창 > 보스. 게이트·벽은 안 쏜다 |
 | rocket | 로켓병 | 13 | 2.4초마다 유도 로켓(30m/s). 8–30m 안 반경 2.2m에 hp 합 0.3D 이상인 가장 큰 무리 → 통로의 벽 → 보스. 0.6D 범위 피해 |
 
-D = 지금 분대 화력(dps). 분대 최대 3명, 병과마다 1명. 같은 병과를 또 얻으면 병사 +max(5, nice(0.12N)).
+D = 지금 분대 화력(dps). 분대 최대 3명, 병과마다 1명. 같은 병과를 또 얻으면 그 특수병의 레벨이 오른다(SIM 9, Lv3까지 — `UNITS[k].lv`: 의무병 60·70·80%, 저격수 1.2·0.9·0.7초·0.35·0.42·0.5D, 로켓병 2.4·2.0·1.7초·반경 2.2·2.6·3.0m). Lv3에서 또 얻거나 자리·호위 병사가 모자라면 병사 +max(5, nice(0.12N)). 나비·보리의 짝 효과는 짝 특수병 레벨만큼 ×1·×1.25·×1.5(`SYNERGY`), 회복 풀 몫 상한 0.9(`SHARE_MAX`), 저격수·로켓병의 Lv1 위 레벨마다 보스전 추가 피해 한도 +2%p(`SP_LV_CAP`).
 
-- 얻기: **철창**(L5+, 쉼 청크에 확률 0.5, 소개 레벨엔 반드시, L5~8은 레벨마다 하나 이상) — 쏴서 부수면 합류. **금색 게이트**(L9+, 줄당 확률 0.45, 레벨당 최대 2줄, 마지막·1칸·모두 나쁜 줄과 가장 나쁜 칸이 제자리(x=0) 칸인 줄 제외) — 가장 나쁜 칸을 `+v`와 병과로 바꾼다. v = max(3, 가장 좋은 다른 칸 결과 − 1.3·N)이라 '병사 조금 덜 + 특수병'의 진짜 선택이 된다. 금색 칸은 총알이 통과(쏴서 못 올림). 특수병 배치에는 별도 난수 흐름을 써서 기존 배치를 바꾸지 않는다.
+- 얻기: **철창**(L5+, 쉼 청크에 확률 0.5, 지원병 상자의 0.35를 철창으로, 소개 레벨엔 반드시, L5~8은 레벨마다 하나 이상) — 쏴서 부수면 합류. **금색 게이트**(L9+, 줄당 확률 0.45, 레벨당 최대 2줄, 마지막·1칸·모두 나쁜 줄과 가장 나쁜 칸이 제자리(x=0) 칸인 줄 제외) — 가장 나쁜 칸을 `+v`와 병과로 바꾼다. v = max(3, 가장 좋은 다른 칸 결과 − 1.3·N)이라 '병사 조금 덜 + 특수병'의 진짜 선택이 된다. 금색 칸은 총알이 통과(쏴서 못 올림). 특수병 배치에는 별도 난수 흐름을 써서 기존 배치를 바꾸지 않는다. SIM 9: 수·자리·확률은 SIM 8 그대로(억지로 늘리지 않는다)이고, 병과만 '바로 앞과 다른 병과' 규칙 없이 열린 병과 중 무작위(같은 rand 한 번) — 같은 병과가 두 번 나오면 두 번째는 레벨 업.
 - 잃기: 한 번에 max(3, ceil(15%·N)) 이상 잃으면(게이트·톱날 제외) 가장 늦게 온 특수병이 쓰러진다. 내려찍기를 맞으면 매번 하나. 병사가 4×특수병 수보다 적으면 가장 늦게 온 특수병이 떠난다. N이 0이면 패배.
 - 보스에게 주는 특수병·영웅 피해(뭉치 스킬로 늘어난 총알 피해 포함)는 병사 화력의 +10%(`BONUS_CAP`)까지. 초당 0.1·D씩 최대 1.5초 분량이 쌓이는 예산 `boss.bonus`에서 나간다(스킬을 안 누르는 사람과의 차이를 줄이려고 0.3 → 0.1).
 - 결과: 살아남은 특수병 1명당 +3코인.
@@ -92,8 +92,29 @@ hitShapes(s) → [{ k, x0, x1, z0, z1, ell? }]   // 시뮬레이션이 실제로
 - 보스 총알 판정(±`BOSS_HIT` 1.8)·짓밟기(옆 판정 없음)·내려찍기(`slamZone`)는 그대로.
 - 렌더러: `formationPlan(n, R, ppm, vf, vb, pb)`(대형 — 합친 병사 구성 `composeSquad`·이어 가기 `nextComp`·줄 배치 `formArrange`·자리 `formPositions`, 단계 표 `TIER`, 기준 `FORM_LIM`. 줄마다 옆 끝 그림 = ±R, 맨 앞·뒷줄 발 = ±(0.55R − `FORM_IN`)), `slotPos`·`heroZ`(특수병·영웅은 무리 뒤, 분대 폭 안)를 내보낸다(테스트가 읽는다). 그림자도 같은 네모. 보스 총알 판(보스 − 1m)을 지난 총알은 보스 그림 뒤에(정렬 항목 k 11) 그린다. 짓밟기(`stomp`)마다 분대 뒤 끝 ~ 보스 발의 길 전체를 0.22초 밝힌다. 독침 고리는 `SPIT_R`.
 - 충돌 크기 보기: `renderer.setHitbox(on)`·`renderer.hitbox`·`info.hitbox`, 화면은 `?hitbox=1`·`__squad.hitbox`. `hitShapes`만 그린다(그림과 같은 시간축으로 분대를 보간).
-- 배치 유지: `calibrateLevel(key, tries, keep = keepAttempt(key))` — 보정 표에 이미 적힌 배치(`CALT.keep[L]`, 없으면 `CALT.levels[L].attempt`, 어느 SIM이든)를 먼저 보고, 새 규칙의 보정·배치 검사를 넘으면 그대로 쓴다. `tools/caltable.mjs --keep <표>`(기본: 지금 표). SIM 8 표는 SIM 7 표를 keep으로 만들었다(L1~60 배치는 모두 그대로). 표 밖 레벨(그 자리 보정)과 `benchlib.timeCal`은 keep 없이.
+- 배치 유지: `calibrateLevel(key, tries, keep = keepAttempt(key))` — 보정 표에 이미 적힌 배치(`CALT.keep[L]`, 없으면 `CALT.levels[L].attempt`, 어느 SIM이든)를 먼저 보고, 새 규칙의 보정·배치 검사를 넘으면 그대로 쓴다. `tools/caltable.mjs --keep <표>`(기본: 지금 표). SIM 8 표는 SIM 7 표를 keep으로 만들었다(L1~60 배치는 모두 그대로). 표 밖 레벨(그 자리 보정)과 `benchlib.timeCal`은 keep 없이. SIM 9: 배치마다 먼저 새 규칙 그대로, 서 있기만 해도 이기면 같은 배치를 `buildLevel(L, attempt, bare = true)`(빨간 칸 끝 = `cap0`, 특수병은 SIM 8 배치 그대로)로 다시 보정하고, 보스 올리기(`qaBoost`)는 bare에서만 — 표의 `bare`(`CAL_FIELDS`).
 - 난이도 유지(SIM 8 — 스치기가 안 무는 만큼): 거구 상한 `BRUTE_CAP` 0.4 → 0.55, 일반 L11+ 보스 `BOSS_SPEC.normal.m` 0.55 → 0.565, 어려움(L15+) 판 중 위협 `TAG_THREAT.hard` 1.2 → 1.25, 일반 L11+ 보스 도착 `BOSS_SPEC.normal.c` 1.0 → 1.04(맞붙는 승리가 상한 50%에 붙지 않게). 지킨 줄 판돈 칸은 그대로(20~35%) — 알던 레벨의 게이트 숫자가 바뀌지 않게. 졸개 체력(`GRUNT_HP`)은 SIM 7 그대로.
+
+SIM 9 약속(파고들기 — 빨간 칸의 높은 끝, 특수병 레벨):
+
+```js
+RED_OVER = 0.25, RED_OVER_MIN = 4   // 같은 줄에 파랑 덧셈 칸이 있으면 빨간 덧셈 칸 cap = max(cap0, 파랑 cap 최댓값 + max(4, nice(0.25·ng))) — 아래 redFast가 남긴 칸만
+cell.cap0, cell.fast                // 높이기 전 끝(SIM 8 규칙 v + max(10, nice(0.6·ng)))과 빠르기 배수 — MAX 칸에만 있다. step = SIM 8 step / fast
+RED_FROM = 5, RED_FAST_MIN = 2, RED_FAST_MAX = 4, redWin(blue, ng) = blue + max(2, ceil(0.05·ng))
+focusPass(lv, co, i, j)             // 앞 줄(i−1)을 지날 때까지 기준 봇, 그 뒤 칸 (i, j) 가운데에 서서 몰아 쏘기(영웅 없음) — 지날 때의 값
+redFast(lv)                         // buildLevel 끝(bare가 아닐 때): 높인 칸마다 4배로 redWin을 못 넘으면 SIM 8로 되돌리고, 넘으면 넘게 하는 배수(0.5 단위, 2 이상)를 fast로
+s.squad.sp      = [{ id, k, cd, lv }]                 // lv 1..SP_LV_MAX(3). 스냅숏에 lv가 없거나 이상하면 1
+UNITS[k].lv     = { share | every | dmg | r: [Lv1, Lv2, Lv3] }, unitVal(k, key, lv)   // roster.js
+SYNERGY = [1, 1.25, 1.5], synergyOf(lv)              // 짝 특수병 레벨 → 나비 boost·보리 share·heal(heal은 0.95까지) 배수
+SHARE_MAX = 0.9, SP_LV_CAP = 0.02, SP_UP_WORTH = 0.6  // 회복 풀 몫 상한, 저격수·로켓병 Lv1 위 레벨당 보스전 한도, 봇이 보는 레벨 업 값(합류의 배수, SIM 8 병사 몫 아래로는 안 본다)
+buildLevel(L, attempt, bare)        // bare: 높인 끝·빠른 칸 없이, 특수병 병과도 SIM 8 규칙(바로 앞과 다른 병과) — SIM 8 배치 그대로. 표의 bare(CAL_FIELDS)
+```
+
+- 끝을 직접 정한 칸(`o.cap`: 잭팟·생각·위기·보스 직전·지킨 줄의 쏴서 키우는 +)과 파랑 덧셈 칸이 없는 줄은 높이지 않는다. 레벨 생성(`goldenValue`·`holdVal`)은 redFast 전에 끝나고 다가오는 동안 오르는 만큼만 봐서 cap0 아래 — bare 배치 = SIM 8 배치, 그 밖의 배치 = bare + 특수병 병과·MAX 칸.
+- 합류(`addSpecial`): 같은 병과가 Lv3 아래면 레벨 업(자리·호위 병사 필요 없음, 짝 영웅 게이지 +25%). Lv3인 같은 병과·자리 3명·호위 부족이면 병사 +max(5, nice(0.12N)).
+- 이벤트: `spUp {k, lv, id, via, x, z}`, `spFull {k, n, why: 'max'|'full'|'escort', x, z}`, `flip {row, v, cap, x, x0, x1, z}`(빨간 칸이 0을 넘어 파랑이 된 순간, 칸마다 한 번), `capped {row, v, x, z}`(빨간 칸이 끝에 닿음). `s.stats.spUp`·`s.stats.flips`. `stateHash`에 특수병 레벨이 들어간다.
+- 렌더러: 높인 빨간 칸·잭팟 칸 윗 띠 위에 `MAX+끝`(좁으면 두 줄, 다 오르면 금빛 `MAX`), flip에 하얀 번쩍임·'역전!'·터짐. 특수병 머리 위 별(레벨 수, Lv3 반짝임), spUp에 'Lv2' 숫자·금빛 반짝임. 화면(main.js): 레벨 업 알림·첫 안내, HUD 칩 'Lv2'·'Lv3', 일시정지 판의 지금 수치, 결과 화면 '빨간 게이트 역전 n번'.
+- 측정: 빠르기를 그대로 둔 첫 시도는 몰아 쏴도 파란 끝을 넘는 칸이 0개였다(MAX가 거짓말). 마지막 규칙은 L5~60에 MAX 칸 12개쯤, 몰아 쏘면 모두 파란 끝을 넘는다. bench·stakes·fairprobe·영웅 동등성은 마지막 규칙으로 아직 다시 재지 않았다(README).
 
 새 이벤트(`s.ev`): `spGet {k, via:'gate'|'cage', x, z}`, `spFull {k, n, x, z}`, `spLose {k, cause:'hit'|'escort', x, z}`, `snipe {x0, z0, x1, z1, src:'sniper'|'hero', kill}`, `rocket {id, x0, z0, x, z}`, `boom {x, z, r}`, `heal {n, x, z}`, `cageMiss {k, x, z}`, `heroReady {id}`, `heroCast {id}`, `heroEnd {id}`. `kill`에는 `by: 'gun'|'sniper'|'rocket'|'hero'`.
 

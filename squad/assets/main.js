@@ -11,7 +11,7 @@ import {
 } from './store.js';
 import * as STORE from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
-import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, heroCost, heroCap, heroesEarned, biomeOf, bossNameOf } from './roster.js';
+import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, SP_LV_MAX, heroCost, heroCap, heroesEarned, biomeOf, bossNameOf } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, upgState, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss, gearGap,
 } from './insight.js';
@@ -288,6 +288,8 @@ function goTitle() {
 
 /* 숫자 뒤 조사: 레벨 15를 · 레벨 13을 (끝자리 0·1·3·6·7·8은 받침이 있다) */
 const eul = (n) => ('013678'.includes(String(Math.abs(Math.floor(n))).slice(-1)) ? '을' : '를');
+/* 낱말 뒤 '이/가'(마지막 글자에 받침이 있으면 '이') */
+const ga = (w) => { const c = String(w).charCodeAt(String(w).length - 1) - 0xAC00; return c >= 0 && c < 11172 && c % 28 ? '이' : '가'; };
 const compact = (n) => {
   try { return n >= 10000 ? new Intl.NumberFormat('ko', { notation: 'compact', maximumFractionDigits: 1 }).format(n) : String(n); } catch { return String(n); }
 };
@@ -501,6 +503,7 @@ const BALANCE_NOTES = [
   [6, '판 중간이 조여졌어요: 판돈 걸린 게이트 줄, 보스 앞 몰이(양옆에서도 와요), 어려운 판의 열쇠 상자. 못 부순 상자·철창에 부딪히면 병사를 잃어요.'],
   [7, '보스 내려찍기의 빨간 구역이 실제로 맞는 범위만큼 넓게 보여요. 몰이가 오면 알림이 뜨고, 3번 지면 받는 지원은 강화가 적을수록 커져요.'],
   [8, '보이는 대로 부딪혀요: 부대 모양이 실제로 맞는 크기와 같아졌고, 살짝 스치기만 한 좀비·톱날·독침·벽은 안 맞아요. 벽·상자에 걸치면 걸친 쪽 병사만 잃어요. 대신 제대로 부딪힌 거구는 더 아파요.'],
+  [9, 'MAX가 붙은 빨간 게이트는 쏘면 빨리 올라요 — 앞 줄을 지나자마자 그 칸 앞에서 몰아 쏘면 옆 파란 칸보다 많아지고, 화력 강화·뭉치 대장이 있으면 MAX까지 가요. 같은 특수병을 또 구하면 병사 대신 그 특수병이 Lv2·Lv3로 강해져요.'],
 ];
 function balanceNoteText(seen) {
   const lines = BALANCE_NOTES.filter(([v]) => v > seen && v <= SIM).map(([, t]) => t);
@@ -868,7 +871,7 @@ function startLevel(L, opts = {}) {
   hideEta();
   $('hudBar').style.transform = 'scaleX(0)';
   $('spChips').textContent = '';
-  spKey = '';
+  spKey = 0;
   hudCache = '';
   pointers.clear();
   activeId = null;
@@ -1007,8 +1010,10 @@ function renderPauseUnits() {
     row.appendChild(iconEl(m.k, 2));
     const t = document.createElement('span');
     t.innerHTML = `<b></b> — `;
-    t.querySelector('b').textContent = U.name;
-    t.append(U.desc);
+    const lv = m.lv || 1;
+    t.querySelector('b').textContent = lv > 1 ? `${U.name} Lv${lv}` : U.name;
+    t.append(lv > 1 ? `${U.role}. 지금 ${U.up(lv)}` : U.desc);
+    if (lv < SP_LV_MAX) t.append(` · 또 구하면 Lv${lv + 1}`);
     row.appendChild(t);
     box.appendChild(row);
   }
@@ -1025,7 +1030,7 @@ function resume() {
 /* ---------- 이어하기 ---------- */
 function saveRunNow() {
   if (!s || !run || attract || !(s.phase === 'run' || s.phase === 'arena')) return;
-  saveRun({ v: 1, sim: SIM, id: run.id, at: Date.now(), L: run.L, attempt: lv.attempt, start: run.start, fire: run.fire, support: run.support, hero: run.hero, par, worst: run.worst || null, arenaN: run.arenaN | 0, state: snapshot(s) });
+  saveRun({ v: 1, sim: SIM, id: run.id, at: Date.now(), L: run.L, attempt: lv.attempt, bare: !!lv.bare, start: run.start, fire: run.fire, support: run.support, hero: run.hero, par, worst: run.worst || null, arenaN: run.arenaN | 0, state: snapshot(s) });
   lastSaveT = s.t;
 }
 function resumeRun() {
@@ -1034,7 +1039,7 @@ function resumeRun() {
   if (!r) { renderTitle(); return; }
   const level = prepareLevel(r.L);
   const st = restore(r.state);
-  if (level.attempt !== r.attempt || !st) {
+  if (level.attempt !== r.attempt || (r.bare != null && !!level.bare !== !!r.bare) || !st) {
     clearRun();
     toast('게임이 바뀌어서 하던 판은 처음부터 다시 해요', 3000);
     renderTitle();
@@ -1059,7 +1064,7 @@ function resumeRun() {
   $('bossBar').hidden = !s.boss;
   $('bossBar').classList.toggle('rage', !!(s.boss && s.boss.enraged));
   hideEta();
-  spKey = '';
+  spKey = 0;
   hudCache = '';
   setSkillFace();
   data.stats.resumes++;
@@ -1153,15 +1158,32 @@ function handleEvents(ev) {
       case 'spFull': {
         sfx.coin();
         const sp = s.squad.sp;
-        const why = sp.some((m) => m.k === e.k) ? '같은 특수병이 이미 있어서' : sp.length >= 3 ? '특수병 자리(3명)가 꽉 차서' : '병사가 적어서';
+        const nm = UNITS[e.k] ? UNITS[e.k].name : '특수병';
+        const why = e.why === 'max' || (!e.why && sp.some((m) => m.k === e.k)) ? `${nm}${ga(nm)} 이미 Lv${SP_LV_MAX}라서` : e.why === 'full' || (!e.why && sp.length >= 3) ? '특수병 자리(3명)가 꽉 차서' : '병사가 적어서';
         toast(`${why} 병사 +${e.n}명이 대신 왔어요`, 1800);
         break;
       }
+      case 'spUp': {
+        // 같은 특수병을 또 구했다(SIM 9): 레벨 업 — 글자는 여기서, 반짝임·'Lv2' 숫자는 renderer가
+        sfx.levelUp();
+        vibe([15, 30, 15]);
+        const U = UNITS[e.k];
+        if (U) toast(`${U.name} Lv${e.lv}! ${U.up(e.lv)}`, 2000);
+        tip('spUp', `같은 특수병을 또 구하면 레벨이 올라요(Lv${SP_LV_MAX}까지). 영웅 짝(나비·저격수, 보리·의무병)도 함께 세져요`);
+        break;
+      }
+      case 'flip':
+        // 빨간 게이트가 0을 넘어 파랑으로(SIM 9) — '역전!' 글자·불꽃은 renderer가
+        sfx.flip();
+        vibe(15);
+        tip('flip', '빨간 게이트도 계속 쏘면 뒤집혀요! 위에 MAX가 붙은 빨간 칸은 빨리 올라서, 일찍부터 몰아 쏘면 옆 파란 칸보다 많아져요');
+        break;
+      case 'capped': sfx.power(); break;
       case 'spLose': {
         sfx.leave();
         const nm = UNITS[e.k] ? UNITS[e.k].name : '특수병';
-        if (e.cause === 'escort') { toast(`병사가 너무 적어서 ${nm}이 떠났어요`, 1400); tip('escort', '특수병 1명마다 병사가 4명은 있어야 함께해요'); }
-        else { toast(`${nm}이 쓰러졌어요`, 1400); tip('spHit', '크게 맞거나 내려찍기에 맞으면 특수병이 쓰러져요'); }
+        if (e.cause === 'escort') { toast(`병사가 너무 적어서 ${nm}${ga(nm)} 떠났어요`, 1400); tip('escort', '특수병 1명마다 병사가 4명은 있어야 함께해요'); }
+        else { toast(`${nm}${ga(nm)} 쓰러졌어요`, 1400); tip('spHit', '크게 맞거나 내려찍기에 맞으면 특수병이 쓰러져요'); }
         break;
       }
       case 'snipe': sfx.snipe(); break;
@@ -1281,6 +1303,8 @@ function finish() {
     data.stats.maxN = Math.max(data.stats.maxN, s.squad.peak);
     data.stats.spGot += s.stats.spGot;
     data.stats.heroUses += s.stats.heroUses;
+    data.stats.spUp += s.stats.spUp | 0;
+    data.stats.flips += s.stats.flips | 0;
   }
   // 진행으로 새 영웅이 합류했는지
   for (const id of heroesEarned(data.maxL, totalStars(data))) if (!data.heroes.lv[id]) data.heroes.lv[id] = 1;
@@ -1311,6 +1335,7 @@ function finish() {
     lines.push(['★★★ 기준', `${g.three}명`]);
     if (support) lines.push(['지원 병력 사용', '별 최대 1개']);
     if (s.squad.sp.length) lines.push(['살아남은 특수병', `${s.squad.sp.length}명 · +${3 * s.squad.sp.length}코인`]);
+    if (s.stats.flips > 0) lines.push(['빨간 게이트 역전', `${s.stats.flips}번`]);
     // 별을 다 못 받았으면 어디서 놓쳤는지 한 줄
     if (stars < 3 && !support && run && run.worst) lines.push(['가장 아까운 게이트', `${run.worst.k}번째 줄 −${run.worst.m}명`]);
   } else if (!s.boss) {
@@ -1405,7 +1430,7 @@ function setSkillFace() {
   }
 }
 let skillState = '';
-let spKey = '';
+let spKey = 0;
 function updateHeroUi() {
   const btn = $('skillBtn');
   const h = s && s.hero;
@@ -1422,7 +1447,9 @@ function updateHeroUi() {
 }
 function updateSpChips() {
   const sp = (s && s.squad.sp) || [];
-  const key = sp.map((m) => m.k).join(',');
+  // 병과·레벨이 바뀔 때만 다시 만든다(매 프레임 문자열·배열을 만들지 않게 숫자 열쇠)
+  let key = 1;
+  for (const m of sp) key = key * 16 + (UNIT_IDS.indexOf(m.k) + 1) * 4 + (m.lv || 1);
   if (key === spKey) return;
   spKey = key;
   document.body.classList.toggle('has-sp', sp.length > 0);
@@ -1430,9 +1457,14 @@ function updateSpChips() {
   box.textContent = '';
   for (const m of sp) {
     const chip = document.createElement('span');
-    chip.className = 'sp-chip';
+    chip.className = 'sp-chip' + ((m.lv || 1) > 1 ? ' up lv' + m.lv : '');
     chip.appendChild(iconEl(m.k, 2));
     chip.append(UNITS[m.k] ? UNITS[m.k].name : m.k);
+    if ((m.lv || 1) > 1) {
+      const b = document.createElement('b');
+      b.textContent = 'Lv' + m.lv;
+      chip.appendChild(b);
+    }
     box.appendChild(chip);
   }
 }

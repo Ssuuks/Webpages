@@ -23,7 +23,7 @@ export function defaults() {
     heroes: { sel: '', lv: {} },     // 합류한 영웅 → 레벨
     seenHeroes: [],                  // 합류 안내를 본 영웅
     codex: { foe: [], unit: [], hero: [], biome: [] },
-    stats: { wins: 0, kills: 0, bossKills: 0, maxN: 0, spGot: 0, heroUses: 0, resumes: 0 },
+    stats: { wins: 0, kills: 0, bossKills: 0, maxN: 0, spGot: 0, heroUses: 0, resumes: 0, spUp: 0, flips: 0 },   // spUp·flips: SIM 9(특수병 레벨 업·빨간 게이트 역전)
     lastRunId: '',
     backupAt: 0,
     nagged: 0,
