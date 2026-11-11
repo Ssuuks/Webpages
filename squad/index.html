@@ -366,6 +366,16 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
 #scrJoin .sheet { text-align: center; }
 #scrJoin .portrait { margin: 6px auto 8px; width: 140px; height: 140px; }
 #scrJoin .portrait canvas { width: 128px; height: 128px; }
+.cyc-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.cyc-bar b { font-family: var(--display); font-size: 18px; color: var(--amber); font-weight: 400; }
+.cyc-bar .btn { min-width: 52px; }
+#tCycle { font-size: 0.7em; }
+#endTitle { font-family: var(--display); font-size: 44px; text-align: center; color: var(--amber); line-height: 1.05; text-shadow: 0 4px 0 var(--amber-dark), 0 7px 0 var(--edge); }
+.end-line { text-align: center; font-size: 15px; }
+.res-stats { display: flex; flex-direction: column; }
+.res-stats div { display: flex; justify-content: space-between; padding: 8px 2px; border-bottom: 1px solid var(--line); font-size: 15px; }
+.res-stats span { color: var(--muted); }
+.upg-head small { font-family: var(--body); font-size: 12px; color: var(--muted); font-weight: 600; }
 #joinTitle { font-family: var(--display); font-size: 30px; color: var(--amber); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -411,7 +421,7 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
         <div class="row"><button id="resumeDropYes" class="btn small">포기하기</button><button id="resumeDropNo" class="btn small">취소</button></div>
       </div>
     </div>
-    <button id="btnPlay" class="btn primary" data-focus>레벨 <span id="tPlayL">1</span> 출격</button>
+    <button id="btnPlay" class="btn primary" data-focus><span id="tCycle" hidden></span>레벨 <span id="tPlayL">1</span> 출격</button>
     <button id="btnEndless" class="btn endless" hidden>무한모드<small id="tEndless"></small></button>
     <div class="menu-grid">
       <button id="btnLevels" class="btn">레벨</button>
@@ -426,6 +436,7 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
 <section id="scrLevels" class="screen dim" hidden>
   <div class="sheet">
     <h2>레벨 선택 <button class="back" data-back="title" data-focus>닫기</button></h2>
+    <div id="cycBar" class="cyc-bar" hidden><button id="cycPrev" class="btn small" aria-label="앞 회차">◀</button><b id="cycName"></b><button id="cycNext" class="btn small" aria-label="다음 회차">▶</button></div>
     <div id="levelGrid"></div>
   </div>
 </section>
@@ -532,6 +543,28 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
       <button id="resBackup" class="btn small" hidden>백업 코드 복사(저장이 꺼져 있어요)</button>
       <div class="row"><button id="resUpg" class="btn">강화</button><button id="resMenu" class="btn">메뉴로</button></div>
     </div>
+  </div>
+</section>
+
+<section id="scrEnding" class="screen dim" hidden>
+  <div class="sheet stack ending">
+    <div id="endTitle">작전 완료!</div>
+    <p class="end-line" id="endLine"></p>
+    <div id="endStats" class="res-stats"></div>
+    <p class="muted" id="endNextInfo"></p>
+    <p class="muted" id="endEndlessInfo"></p>
+    <button id="endNext" class="btn primary" data-focus>2회차 시작</button>
+    <div class="row"><button id="endEndless" class="btn">무한모드</button><button id="endMenu" class="btn">메뉴로</button></div>
+  </div>
+</section>
+
+<section id="scrPet" class="screen dim" hidden>
+  <div class="sheet">
+    <h2>펫 <span class="coinchip" id="pCoins">0</span></h2>
+    <div id="petDetail"></div>
+    <div class="hero-list" id="petList"></div>
+    <div id="petEgg" class="pet-egg"></div>
+    <button id="petBack" class="btn" data-back="title" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
   </div>
 </section>
 

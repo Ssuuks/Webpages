@@ -1285,8 +1285,8 @@ export function createRenderer(cvs) {
       trapLine(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy, sel ? 2 : 1);
       const mx = (face.ax + face.bx) / 2, my = (face.ay + face.dy) / 2 - bump;
       cellLabel(c, st, mx, my, pw, ph, sel);
-      // 파고들기(SIM 9): 끝이 같은 줄 파랑보다 높은 빨간 칸(높인 끝·잭팟)은 윗 띠 위에 'MAX+끝' 표 — 다 오르면 금빛 'MAX'
-      if ((c.cap0 != null || c.jack) && c.cap > 0 && c.v0 < 0) maxTag(c, st, mx, beamY, pw);
+      // 파고들기(SIM 9)의 'MAX+끝' 표는 그리지 않는다(사용자 판단: 너무 노골적 — 어느 빨간 칸이 빨리 오르는지는 쏴 보고 알아낸다). 규칙은 그대로
+      void maxTag; void beamY;
       if (preview && c.op && dz < 40 && dz > 0 && ph > 16) {
         const r = Math.max(0, applyOp(q.n, c.op, c.v));
         const t = '=' + r;

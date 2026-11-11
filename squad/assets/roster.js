@@ -73,9 +73,17 @@ export const HEROES = {
   },
 };
 export const HERO_IDS = Object.keys(HEROES);
-export const HERO_MAX_LV = 5;
+export const HERO_MAX_LV = 5;          // 1회차의 레벨 상한(수치 num의 [Lv1, Lv5]가 가리키는 끝)
+export const HERO_LV_PER_CYCLE = 2;    // 회차마다 상한 +2 (Lv5 → 7 → 9 …, ENDGAME.md 4절)
+export const HERO_LV_HARD = 99;        // 저장·시뮬레이션이 받아들이는 가장 높은 레벨
+/* 유효 레벨: Lv5까지는 레벨 그대로, 그 위는 줄어드는 폭으로(끝 9) — e(6) 5.8, e(7) 6.44, e(9) 7.36, e(11) 7.95.
+   수치(선형 보간)·스킬 쿨다운·나비의 보스전 한도가 모두 이 값을 쓴다: Lv5 너머로 선형 연장하면 쿨다운이 0 아래로, 회복 몫이 한계 위로 간다 */
+export function heroEff(lv) {
+  const l = Math.max(1, +lv || 1);
+  return l <= HERO_MAX_LV ? l : HERO_MAX_LV + 4 * (1 - Math.pow(0.8, l - HERO_MAX_LV));
+}
 
-function lerp(a, b, lv) { return a + ((b - a) * (Math.max(1, Math.min(HERO_MAX_LV, lv)) - 1)) / (HERO_MAX_LV - 1); }
+function lerp(a, b, lv) { return a + ((b - a) * (heroEff(lv) - 1)) / (HERO_MAX_LV - 1); }
 export const heroLerp = lerp;
 /* 영웅 수치 num[k]의 그 레벨 값([Lv1, Lv5]면 사이를 선형으로, 숫자 하나면 그대로) */
 export function heroVal(id, k, lv) { const v = HEROES[id].num[k]; return Array.isArray(v) ? lerp(v[0], v[1], lv) : v; }
@@ -84,8 +92,17 @@ const pc = (x) => Math.round(x * 100);
 
 /* 영웅 레벨업 비용(Lv→Lv+1)과 진행에 따른 상한 */
 export const HERO_COST = [0, 150, 300, 500, 800];
-export function heroCost(lv) { return HERO_COST[lv] ?? Infinity; }
+/* Lv5부터(2회차에서 풀리는 레벨)는 200·lv + 200: Lv5→6 1200, Lv6→7 1400 … */
+export function heroCost(lv) { return lv >= HERO_MAX_LV ? 200 * lv + 200 : HERO_COST[lv] ?? Infinity; }
 export function heroCap(maxL) { return Math.min(HERO_MAX_LV, 2 + Math.floor((Math.max(1, maxL) - 1) / 10)); }
+/* 회차 c(열린 가장 높은 회차)와 그 회차의 진행(maxL)에서 새로 살 수 있는 영웅 레벨 상한: 회차마다 +2.
+   앞 회차에서 다 풀린 상한(5 + 2·(c−2)) 아래로는 내려가지 않는다 — 2회차는 L21에 Lv6, L31에 Lv7 */
+export function heroCapC(cycle, maxL) {
+  const c = Math.max(1, cycle | 0);
+  if (c === 1) return heroCap(maxL);
+  const up = HERO_LV_PER_CYCLE * (c - 1);
+  return Math.max(HERO_MAX_LV + up - HERO_LV_PER_CYCLE, Math.min(HERO_MAX_LV + up, up + heroCap(maxL)));
+}
 
 /* 진행으로 합류한 영웅 목록(지난 진행에도 소급) */
 export function heroesEarned(maxL, stars) {

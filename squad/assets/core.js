@@ -1,5 +1,6 @@
-import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX } from './roster.js';
+import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD } from './roster.js';
 import { CAL } from './caltable.js';
+import { CYC } from './cyctable.js';
 
 /* 숫자부대 돌격 — 시뮬레이션 코어 (DOM 없음)
    - 고정 틱 DT, 시드 난수(mulberry32). 상태는 평범한 객체라 structuredClone으로 복제된다.
@@ -316,12 +317,25 @@ let CALT = CAL;
 /* 도구용: 보정 표를 통째로 바꾼다({ sim, expect, levels }). 캐시도 비운다 */
 export function useCal(t) { CALT = t || { sim: -1, levels: {} }; cache.clear(); parCache.clear(); for (const k in ratioCache) delete ratioCache[k]; }
 export const calTable = () => CALT;
-const heroCapAt = (L) => Math.min(5, 2 + Math.floor((Math.max(1, L) - 1) / 10));   // roster.heroCap과 같다
+/* 회차 표(cyctable.js — 2회차부터의 L1~60 보정 결과). 도구용: 통째로 바꾼다({ sim, cycles: { 2: { levels } } }) */
+let CYCT = CYC;
+export function useCyc(t) { CYCT = t || { sim: -1, cycles: {} }; cache.clear(); parCache.clear(); }
+export const cycTable = () => CYCT;
+const heroCapAt = (L, c = 1) => (c > 1 ? heroCapC(c, L) : Math.min(5, 2 + Math.floor((Math.max(1, L) - 1) / 10)));   // roster.heroCap(C)과 같다
 function draftExpect(l) {
   const u = Math.min(10, Math.floor((l - 1) / 5));
   return { start: u, fire: u, coin: u, hero: l >= UNLOCK.hero ? 'mungchi' : '', heroLv: l >= UNLOCK.hero ? Math.max(1, heroCapAt(l) - 1) : 0 };
 }
-export function expectAt(L) {
+/* 회차 c(2부터)의 기대 강화 = 1회차 EXPECT + 10·(c−1)단계, 영웅 +2·(c−1)레벨(ENDGAME.md 4절) — 앞 회차에서 다 올린 레벨(5 + 2·(c−2)) 아래로는 보지 않는다.
+   회차의 값 곡선(store.upgCost)이 1회차의 걸음을 되풀이하게 되어 있어 강화가 붙는 순서도 1회차와 같다고 본다 */
+export const CYCLE_UPG = 10;
+export const CYCLE_HERO = 2;
+export function expectAt(L, c = 1) {
+  if (c > 1) {
+    const b = expectAt(L);
+    const up = CYCLE_UPG * (c - 1);
+    return { start: b.start + up, fire: b.fire + up, coin: b.coin + up, hero: b.hero || 'mungchi', heroLv: Math.max((b.heroLv | 0) + CYCLE_HERO * (c - 1), 5 + CYCLE_HERO * (c - 2)) };
+  }
   const l = Math.max(1, Math.floor(L));
   const T = CALT && CALT.sim === SIM && CALT.expect;
   if (!T) return draftExpect(l);
@@ -339,16 +353,18 @@ export function expectAt(L) {
   };
 }
 /* EXPECT(L)을 newGame 옵션으로 { start, fire, hero } */
-export function expectLoadout(L) {
-  const e = expectAt(L);
-  const hero = Math.floor(L) >= UNLOCK.hero && e.hero && e.heroLv > 0 && HEROES[e.hero] ? { id: e.hero, lv: e.heroLv } : null;
+export function expectLoadout(L, c = 1) {
+  const e = expectAt(L, c);
+  // 2회차부터는 영웅이 L1부터 함께 간다
+  const hero = (c > 1 || Math.floor(L) >= UNLOCK.hero) && e.hero && e.heroLv > 0 && HEROES[e.hero] ? { id: e.hero, lv: e.heroLv } : null;
   return { start: START_N + 2 * e.start, fire: e.fire, hero };
 }
 /* 지금 진행(열린 가장 높은 레벨 maxL)에서 코인으로 '새로' 살 수 있는 강화 단계 상한 = EXPECT(maxL) + 1.
    이미 더 산 저장은 그대로 둔다(상한은 새로 사는 것만 막는다). 세 강화 모두 같은 값 */
-export function upgCap(maxL) {
+/* 회차 c(열린 가장 높은 회차)에서는 10·(c−1) + (그 회차 진행 maxL에 따른 1회차 식) — 회차마다 +10단계가 진행에 따라 풀린다 */
+export function upgCap(maxL, c = 1) {
   const e = expectAt(maxL);
-  return clamp(Math.max(e.start, e.fire, e.coin) + 1, 1, 10);
+  return (c > 1 ? CYCLE_UPG * (c - 1) : 0) + clamp(Math.max(e.start, e.fire, e.coin) + 1, 1, 10);
 }
 
 /* ---------- 레벨 생성 ---------- */
@@ -472,7 +488,7 @@ function redFast(lv) {
   const off = (c) => { c.cap = c.cap0; delete c.cap0; };
   if (!cand.length) return;
   if (lv.L < RED_FROM) { for (const [i, j] of cand) off(lv.rows[i].cells[j]); return; }
-  const co = expectLoadout(lv.L);
+  const co = expectLoadout(lv.L, lv.cycle || 1);
   for (const [i, j] of cand) {
     const row = lv.rows[i];
     const c = row.cells[j];
@@ -1135,17 +1151,20 @@ function placeSpecials(lv, p, bare = false, seed = null) {
 
 /* bare(SIM 9): 그 배치를 SIM 8처럼 — MAX 칸 없이(높인 끝을 cap0으로 되돌리고 빠르기도 그대로), 특수병 병과도 SIM 8 규칙(바로 앞과 다른 병과).
    보정(calibrateLevel)이 '이 배치에서 MAX 칸 때문에 서 있기만 해도 이기게 됐다'고 볼 때만 쓴다(표의 bare) */
-export function buildLevel(L, attempt = 0, bare = false) {
+/* cycle(회차, 2부터): 배치의 난수 흐름은 1회차와 같고(같은 청크·같은 종류·같은 자리), 골든 패스만 그 회차의 기대 강화로 출발한다 —
+   게이트 숫자·적 체력이 회차의 힘에 맞게 커진다(병력에 따라 갈리는 몇 곳 — ×3은 150명 아래, 세 칸 벽은 작은 분대 — 은 달라질 수 있다) */
+export function buildLevel(L, attempt = 0, bare = false, cycle = 1) {
   const p = levelParams(L);
   const g = { rs: hash(VERSION, p.L, attempt) };
   // 골든 패스는 기대 강화(EXPECT)의 시작 병력·화력으로 출발한다 — 판 중 위협이 '실제로 들고 오는 힘'에 맞게
-  const E = expectLoadout(p.L);
+  const E = expectLoadout(p.L, cycle);
   const lv = {
     L: p.L, attempt, seed: hash(VERSION, 'run', p.L, attempt), speed: p.speed, params: p, tag: p.tag,
     rows: [], foes: [], props: [], saws: [], plan: [], golden: [], chunks: [], nextId: 1,
     arenaZ: 0, bossHp: 0, par: 0, arrive: 0, helpStart: 0,
     startE: E.start, fireE: E.fire, heroE: E.hero, marks: [], bare: !!bare,
   };
+  if (cycle > 1) lv.cycle = cycle;
   const plan = planChunks(p, g);
   lv.plan = plan;
   // 그 레벨에서 처음 소개하는 것은 반드시 한 번 나오게
@@ -1384,7 +1403,7 @@ export function newGame(lv, opt = {}) {
       sp: [], pool: 0, healAcc: 0, recent: 0, lossFrac: 0,
     },
     rockets: [],
-    hero: opt.hero && HEROES[opt.hero.id] ? { id: opt.hero.id, lv: Math.max(1, Math.min(5, opt.hero.lv | 0 || 1)), charge: 0.35, act: 0, T: 0, cd: 0, shot: 0 } : null,
+    hero: opt.hero && HEROES[opt.hero.id] ? { id: opt.hero.id, lv: Math.max(1, Math.min(HERO_LV_HARD, opt.hero.lv | 0 || 1)), charge: 0.35, act: 0, T: 0, cd: 0, shot: 0 } : null,
     rows: structuredClone(lv.rows),
     foes: structuredClone(lv.foes),
     props: structuredClone(lv.props),
@@ -1585,7 +1604,7 @@ export function step(s, input) {
     // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +BONUS_CAP까지(나비는 레벨마다 +NABI_CAP, 저격수·로켓병은 Lv1 위 레벨마다 +SP_LV_CAP)
     let up = 0;
     for (const m of q.sp) if (m.k !== 'medic') up += (m.lv || 1) - 1;
-    const cap = BONUS_CAP + (s.hero && s.hero.id === 'nabi' ? NABI_CAP * (s.hero.lv - 1) : 0) + SP_LV_CAP * up;
+    const cap = BONUS_CAP + (s.hero && s.hero.id === 'nabi' ? NABI_CAP * (Math.min(5, s.hero.lv) - 1) : 0) + SP_LV_CAP * up;
     const base = cap * dps(q.n, q.tier, s.fireLv);
     s.boss.bonus = Math.min(s.boss.bonus + base * DT, base * 1.5);
   }
@@ -2119,7 +2138,8 @@ function heroUpdate(s, input) {
     h.act -= DT;
     if (h.act <= 0) { h.act = 0; emit(s, { t: 'heroEnd', id: h.id }); }
   }
-  if (h.act <= 0 && h.charge < 1) chargeHero(s, DT / (H.skill.cd * (1 - 0.06 * (h.lv - 1))));
+  // 쿨다운은 유효 레벨로(Lv5 너머는 줄어드는 폭 — 가장 짧아도 기본의 52%)
+  if (h.act <= 0 && h.charge < 1) chargeHero(s, DT / (H.skill.cd * (1 - 0.06 * (heroEff(h.lv) - 1))));
   if (input && input.skill && h.charge >= 1 && h.act <= 0) castHero(s);
 }
 
@@ -2517,8 +2537,10 @@ export function spWorth(s, k) {
    L1~120은 미리 계산한 표(caltable.js)를 쓰고, 그 뒤는 처음 열 때 계산한다. */
 const cache = new Map();
 export const CAL_FIELDS = ['attempt', 'bare', 'bossHp', 'arrive', 'arriveStrong', 'arriveWeak', 'par', 'calTier', 'helpStart', 'Hstar', 'qa'];
-export function prepareLevel(L) {
+export function prepareLevel(L, cycle = 1) {
   const key = Math.max(1, Math.floor(L));
+  const c = Math.max(1, Math.floor(cycle) || 1);
+  if (c > 1) return prepareCycle(key, c);
   if (cache.has(key)) return cache.get(key);
   const pre = CALT && CALT.sim === SIM && CALT.levels && CALT.levels[key];
   if (pre) {
@@ -2530,6 +2552,21 @@ export function prepareLevel(L) {
   // 표 밖 레벨(게임이 처음 열 때): 배치를 RUNTIME_TRIES번까지만 다시 만든다(휴대폰에서 레벨 시작이 늦지 않게)
   const lv = calibrateLevel(key, RUNTIME_TRIES);
   cache.set(key, lv);
+  return lv;
+}
+/* 회차 c(2부터)의 레벨: 회차 표(cyctable.js — 2·3회차)가 있으면 그대로, 없으면(그 뒤 회차) 처음 열 때 그 자리에서 보정한다 —
+   배치는 1회차 표의 것을 먼저 보고(같은 레벨), 어려운 레벨의 보스는 H* × 표의 '체력/H*' 중앙값(L121+와 같은 빠른 길, lv.fast) */
+function prepareCycle(key, c) {
+  const ck = `${c}:${key}`;
+  if (cache.has(ck)) return cache.get(ck);
+  const T = CYCT && CYCT.sim === SIM && CYCT.cycles && CYCT.cycles[c];
+  const pre = T && T.levels && T.levels[key];
+  let lv;
+  if (pre) {
+    lv = buildLevel(key, pre.attempt, !!pre.bare, c);
+    for (const f of CAL_FIELDS) lv[f] = pre[f];
+  } else lv = calibrateLevel(key, RUNTIME_TRIES, keepAttempt(key), c, true);
+  cache.set(ck, lv);
   return lv;
 }
 
@@ -2544,7 +2581,7 @@ export function keepAttempt(key) {
   const k = CALT && CALT.keep ? CALT.keep[key] : CALT && CALT.levels && CALT.levels[key] ? CALT.levels[key].attempt : null;
   return Number.isInteger(k) && k >= 0 ? k : null;
 }
-export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key)) {
+export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key), cycle = 1, fast = false) {
   let lv = null;
   let firstOk = null;
   // 3패 지원 병력은 끝에 고른 배치에서만 잰다(보스 체력과 상관없어 결과는 같고, 배치 검사에서 떨어진 배치에 판 한 번씩을 덜 돈다)
@@ -2554,7 +2591,7 @@ export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key)) 
   const lastTry = order[order.length - 1];
   let done = false;
   // 그 자리 보정(표 밖 레벨 — keep 없음)은 bare로 다시 보정하기를 한 번까지만(휴대폰에서 레벨 시작이 늦어지지 않게 — 보정은 많아야 tries + 1번)
-  let bareLeft = keep == null ? 1 : Infinity;
+  let bareLeft = keep == null || fast ? 1 : Infinity;
   for (const attempt of order) {
     // SIM 9: 먼저 새 규칙 그대로. 보정은 됐는데 서 있기만 해도 이기면(MAX 칸이 한 자리에 선 분대를 도운 곳)
     // 같은 배치를 SIM 8처럼(bare) 다시 보정한다 — 레벨이 통째로 바뀌거나 보스가 세지는 것보다 그 레벨만 MAX 칸을 빼는 쪽이 낫다
@@ -2562,7 +2599,8 @@ export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key)) 
     for (const bare of [false, true]) {
       // MAX 칸이 없는 배치는 bare와 병과만 다르다 — SIM 8처럼 바로 qaBoost(다시 보정하지 않는다)
       if (bare && (!hasMax || bareLeft-- <= 0)) break;
-      lv = buildLevel(key, attempt, bare);
+      lv = buildLevel(key, attempt, bare, cycle);
+      if (fast) lv.fast = true;
       if (!bare) hasMax = lv.rows.some((r) => r.cells.some((c) => c.cap0 != null));
       const cal = calibrate(lv, { last: attempt === lastTry });
       if (!cal.ok) { lv.failed = true; break; }   // 보정이 안 되는 배치는 bare로도 다시 보지 않는다(서 있기와 상관없는 실패)
@@ -2571,7 +2609,7 @@ export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key)) 
       // 배치 검사: 한 자리에 서 있기만 해서는 이기지 못해야 한다. 못 넘으면 SIM 8처럼(bare), 그래도 못 넘으면 보스를 조금 세게(qaBoost),
       // 그래도 안 되면 다른 배치로. 끝까지 못 넘으면 처음 보정된 배치를 쓴다(lv.qa = false — 테스트가 어느 레벨인지 본다)
       if (!firstOk) firstOk = lv;
-      if (standStillLoses(lv) || ((bare || !hasMax || bareLeft <= 0) && key <= POP_MAX && qaBoost(lv))) { lv.qa = true; done = true; break; }
+      if (standStillLoses(lv) || ((bare || !hasMax || bareLeft <= 0) && key <= POP_MAX && !fast && qaBoost(lv))) { lv.qa = true; done = true; break; }
       lv.qa = false;
     }
     if (done) break;
@@ -2594,9 +2632,9 @@ const maxTicksOf = (lv) => Math.ceil((lv.arenaZ / lv.speed + 60) / DT);
 /* 배치 검사(P03의 뒷받침): 판 내내 한 자리(QA_XS)에 서 있는 분대가 — 기대 강화로도, 그 진행에서 살 수 있는 최대 강화로도 — 이기면 안 된다.
    L1은 튜토리얼(둘째 줄부터 오른쪽이 정답)이라 뺀다 */
 export const QA_XS = [-4.4, -2.5, 0, 2.5, 4.4];
-export function capLoadout(L) {
-  const u = upgCap(L);
-  return { start: START_N + 2 * u, fire: u, hero: L >= UNLOCK.hero ? { id: 'mungchi', lv: heroCapAt(L) } : null };
+export function capLoadout(L, c = 1) {
+  const u = upgCap(L, c);
+  return { start: START_N + 2 * u, fire: u, hero: c > 1 || L >= UNLOCK.hero ? { id: 'mungchi', lv: heroCapAt(L, c) } : null };
 }
 /* 서 있기만 해도 이기는 배치('ref' 보스): 보스 체력을 ×QA_MULS 차례로 올려 다시 보정해 본다. 산만한 사람(sl3)이 qaKeep 아래로
    떨어지거나 기준 봇이 못 이기면 그만둔다(원래 값으로 되돌림) */
@@ -2609,7 +2647,7 @@ function qaBoost(lv) {
   if (spec.mode !== 'ref' || !spec.qaKeep) return false;
   const keep = {};
   for (const f of CAL_FIELDS) keep[f] = lv[f];
-  const sl3 = popCaps(lv, expectLoadout(lv.L), maxTicksOf(lv), ['sl3'], QA_POP_K).sl3;
+  const sl3 = popCaps(lv, expectLoadout(lv.L, lv.cycle || 1), maxTicksOf(lv), ['sl3'], QA_POP_K).sl3;
   for (const mul of QA_MULS) {
     const cal = calibrate(lv, { hpMul: mul });
     if (!cal.ok || sl3.filter((c) => c >= cal.lv.bossHp * QA_MARGIN).length < spec.qaKeep * sl3.length) break;
@@ -2623,8 +2661,9 @@ export function standStillLoses(lv) {
   if (lv.L <= 1) return true;
   const maxTicks = maxTicksOf(lv);
   // 그 자리에서 보정하는 레벨(L > POP_MAX)은 휴대폰에서도 빠르게: 기대 강화로, 가장 자주 이기는 자리(±2.5, 0)만
-  const fast = lv.L > POP_MAX;
-  for (const co of fast ? [expectLoadout(lv.L)] : [expectLoadout(lv.L), capLoadout(lv.L)]) {
+  const fast = lv.L > POP_MAX || !!lv.fast;
+  const cy = lv.cycle || 1;
+  for (const co of fast ? [expectLoadout(lv.L, cy)] : [expectLoadout(lv.L, cy), capLoadout(lv.L, cy)]) {
     for (const x of fast ? [-2.5, 0, 2.5] : QA_XS) {
       const s = runTo(newGame(lv, co), (t) => { const inp = steer(t, x); inp.skill = heroWants(t); return inp; }, maxTicks);
       if (s.phase === 'won') return false;
@@ -2792,7 +2831,7 @@ export const PAR_KEEP = 0.25;
 
 export function calibrate(lv, opt = {}) {
   const maxTicks = maxTicksOf(lv);
-  const co = expectLoadout(lv.L);
+  const co = expectLoadout(lv.L, lv.cycle || 1);
   const spec = lv.params.boss;
   const fire = co.fire;
   const kill = lv.params.bossKill;
@@ -2826,7 +2865,7 @@ export function calibrate(lv, opt = {}) {
     else for (let i = 0; i < 10; i++) { const mid = (lo + hi) / 2; if (wins(base * mid)) lo = mid; else hi = mid; }
     Hstar = Math.round(base * lo);
     // L1~POP_MAX: 사람 흉내 무리로 맞춘 체력. 그 뒤(그 자리에서 보정하는 레벨)는 표의 같은 태그 레벨들의 '체력 / H*' 중앙값을 곱한다
-    const pop = lv.L <= POP_MAX ? popHp(lv, co, spec.band, maxTicks) : { h: Hstar * popRatio(lv.tag), score: 0 };
+    const pop = lv.L <= POP_MAX && !lv.fast ? popHp(lv, co, spec.band, maxTicks) : { h: Hstar * popRatio(lv.tag), score: 0 };
     const want = pop.h;
     if (want > Hstar * POP_OVER && !opt.last) return { ok: false };
     hp = Math.max(30, Math.round(Math.min(want, Hstar)));
@@ -2869,9 +2908,9 @@ export function calibrate(lv, opt = {}) {
 const parCache = new Map();
 const sameHero = (a, b) => (!a && !b) || (a && b && a.id === b.id && (a.lv | 0) === (b.lv | 0));
 export function parFor(lv, start = START_N, fire = 0, hero = null) {
-  const E = expectLoadout(lv.L);
+  const E = expectLoadout(lv.L, lv.cycle || 1);
   if (start === E.start && fire === E.fire && sameHero(hero, E.hero)) return lv.par;
-  const key = `${lv.L}:${lv.attempt}:${start}:${fire}:${hero ? hero.id + hero.lv : '-'}`;
+  const key = `${lv.cycle || 1}:${lv.L}:${lv.attempt}:${start}:${fire}:${hero ? hero.id + hero.lv : '-'}`;
   if (parCache.has(key)) return parCache.get(key);
   const maxTicks = maxTicksOf(lv);
   let par = lv.par;
@@ -2923,7 +2962,7 @@ export function coinsFor(lv, s, won, stars, bonusPct = 0) {
 export function supportFor(lv, own) {
   const base = lv && lv.helpStart > 0 ? lv.helpStart : Math.max(5, nice(0.2 * ((lv && lv.arrive) || 30)));
   if (!lv || !own) return base;
-  const E = expectLoadout(lv.L);
+  const E = expectLoadout(lv.L, lv.cycle || 1);
   const have = Number.isFinite(own.start) ? own.start : START_N;
   const fire = Number.isFinite(own.fire) ? own.fire : 0;
   const k = Math.max(1, Math.pow((1 + 0.05 * E.fire) / (1 + 0.05 * fire), 1.25));
