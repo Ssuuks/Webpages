@@ -2350,6 +2350,7 @@ window.__squad = {
   startLevel, startEndless, radius, UNLOCK, skill() { skillPressed = true; },
   // 충돌 크기 보기: 시뮬레이션이 재는 모양을 그림 위에 그린다(주소에 ?hitbox=1 을 붙여도 켜진다)
   get hitbox() { return renderer.hitbox; }, set hitbox(v) { renderer.setHitbox(v); },
+  get info() { return renderer.info; },   // 렌더러 상태(그리는 시간·늦은 굽기 수 등)
 };
 if (hitboxParam) renderer.setHitbox(true);
 
