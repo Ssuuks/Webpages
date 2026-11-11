@@ -198,6 +198,20 @@ export const sfx = {
     if (!ready('join', 150)) return;
     [659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.12, { type: 'square', vol: 0.06, delay: i * 0.06 }));
   },
+  /* 특수병 레벨 업(SIM 9): 합류 소리보다 한 옥타브 위로 한 번 더 */
+  levelUp() {
+    if (!ready('levelUp', 200)) return;
+    [784, 1047, 1319, 1568, 2093].forEach((f, i) => tone(f, 0.1, { type: 'square', vol: 0.06, delay: i * 0.05 }));
+    tone(2093, 0.25, { type: 'triangle', vol: 0.07, delay: 0.25 });
+  },
+  /* 빨간 게이트 역전(SIM 9): 아래에서 위로 쓸어 올린 뒤 밝은 두 음 */
+  flip() {
+    if (!ready('flip', 250)) return;
+    noise(0.22, { vol: 0.1, freq: 500, q: 0.9, slide: 5 });
+    tone(330, 0.2, { type: 'sawtooth', vol: 0.06, slide: 3 });
+    tone(1047, 0.12, { type: 'square', vol: 0.07, delay: 0.16 });
+    tone(1568, 0.22, { type: 'triangle', vol: 0.09, delay: 0.24 });
+  },
   leave() {
     if (!ready('leave', 150)) return;
     tone(523, 0.18, { type: 'triangle', vol: 0.1, slide: 0.6 });

@@ -21,7 +21,7 @@ function glyphRows(set, ch) {
 }
 
 /* 게임 화면에 쓰는 글자 전부(닫힌 집합) — 쉬는 틈에 미리 굽는다(게임 중 굽기 0) */
-export const GLYPH_CHARS = '0123456789+-x/=MAXk';
+export const GLYPH_CHARS = '0123456789+-x/=MAXkLv';
 
 export function createFont(atlas) {
   /* (채움 → 외곽 → 글꼴 → 글자) 기록. 문자열 키를 만들지 않아 그릴 때 쓰레기가 없다 */
