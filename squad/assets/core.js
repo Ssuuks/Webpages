@@ -1,4 +1,4 @@
-import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD } from './roster.js';
+import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -1419,6 +1419,12 @@ export function newGame(lv, opt = {}) {
     ev: [],
     stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0, spUp: 0, flips: 0 },
   };
+  // 펫(ENDGAME.md 6절): 데려간 판에만 s.pet이 있다 — 펫 전용 난수 흐름(rs)을 따로 써서 판의 난수(s.rs)를 건드리지 않는다.
+  // avg(별 기준을 재는 기준 봇용): 확률 대신 기대값으로 고르게 — par가 한 판의 운에 흔들리지 않게
+  if (opt.pet && PETS[opt.pet.id]) {
+    s.pet = { id: opt.pet.id, lv: Math.max(1, Math.min(PET_MAX_LV, opt.pet.lv | 0 || 1)), rs: hash(lv.seed, 'pet', opt.pet.id) >>> 0, procs: 0, acc: 0 };
+    if (opt.petAvg) s.pet.avg = true;
+  }
   if (s.hero) {
     const h = s.hero;
     if (h.id === 'mungchi') {
@@ -1454,6 +1460,11 @@ export function restore(o) {
   if (o.hero) num0(o.hero, ['charge', 'act', 'T', 'cd', 'shot']);
   if (o.boss) num0(o.boss, ['bonus']);
   if (typeof o.refFire !== 'number') o.refFire = 0;
+  if (o.pet) {
+    if (typeof o.pet !== 'object' || !PETS[o.pet.id]) o.pet = undefined;
+    else { num0(o.pet, ['rs', 'procs', 'acc']); o.pet.lv = Math.max(1, Math.min(PET_MAX_LV, o.pet.lv | 0 || 1)); }
+  }
+  if (o.pet == null) delete o.pet;
   if (o.endless) {
     if (typeof o.endless !== 'object') return null;
     num0(o.endless, ['seed', 'seg', 'bosses', 'bank', 'wait', 'z0']);
@@ -1478,6 +1489,19 @@ function lose(s, k, cause, x, z, sub) {
     q.lossFrac = a - k;
     if (k <= 0) return;
   }
+  // 펫 '막아 주기': 게이트가 아닌 손실의 병사마다 확률로 안 잃는다(많이 잃을 때는 기대값으로 — 병사마다 굴리지 않는다)
+  if (cause !== 'gate' && petFx(s) === 'block') {
+    const p = petP(s.pet.id, s.pet.lv);
+    let saved = 0;
+    if (s.pet.avg || k > 40) { const a = k * p + s.pet.acc; saved = Math.floor(a); s.pet.acc = a - saved; }
+    else for (let i = 0; i < k; i++) if (rand(s.pet) < p) saved++;
+    if (saved > 0) {
+      s.pet.procs += saved;
+      k -= saved;
+      emit(s, { t: 'pet', fx: 'block', n: saved, x: x ?? q.x, z: z ?? q.z });
+      if (k <= 0) return;
+    }
+  }
   const before = q.n;
   const real = Math.min(q.n, k);
   q.n -= real;
@@ -1497,6 +1521,15 @@ function lose(s, k, cause, x, z, sub) {
   escort(s);
 }
 
+/* 이 판의 펫 효과 이름(없으면 '') */
+const petFx = (s) => (s.pet ? PETS[s.pet.id].fx : '');
+/* 판이 끝나는 순간(승리·전멸): '줍줍'이 터졌는지 한 번 굴려 둔다(화면이 받는 코인을 두 배로 — petCoinMul) */
+function petEnd(s) {
+  if (petFx(s) !== 'coin' || s.pet.avg || s.pet.done) return;
+  s.pet.done = 1;
+  if (rand(s.pet) < petP(s.pet.id, s.pet.lv)) { s.pet.double = 1; s.pet.procs++; emit(s, { t: 'pet', fx: 'coin', x: s.squad.x, z: s.squad.z }); }
+}
+export const petCoinMul = (s) => (s && s.pet && s.pet.double ? 2 : 1);
 const hasSp = (q, k) => q.sp.some((m) => m.k === k);
 /* 그 병과 특수병의 레벨(없으면 0) */
 function spLv(q, k) { for (const m of q.sp) if (m.k === k) return m.lv || 1; return 0; }
@@ -1625,6 +1658,7 @@ function wiped(s) {
   s.endT = 0;
   s.bullets.length = 0;
   if (!s.cause) s.cause = 'foe';
+  petEnd(s);
   emit(s, { t: 'lose', cause: s.cause });
   return true;
 }
@@ -1858,6 +1892,13 @@ function spitsUpdate(s, R) {
   if (s.spits.length) s.spits = s.spits.filter((sp) => sp.t > 0);
 }
 
+/* 펫 효과의 크기(고정 — 레벨은 확률만 올린다). *_AVG: 기대값 모드(별 기준)에서 확률 1당 피해로 치는 몫(ENDGAME.md 6절의 어림) */
+export const PET_CRIT = 2;
+export const PET_FAR = 1.5;
+export const PET_WIDE = 1.5;
+export const PET_CHEER = 0.3;
+export const PET_FAR_AVG = 0.5;
+export const PET_WIDE_AVG = 0.2;
 function fire(s, R) {
   const q = s.squad;
   if (q.n <= 0) return;
@@ -1868,14 +1909,37 @@ function fire(s, R) {
     q.volley++;
     const b = volleySize(q.n);
     const hm = heroDmg(s);
-    const dmg = (dps(q.n, q.tier, s.fireLv) * hm) / (VOLLEY_HZ * b);
+    let dmg = (dps(q.n, q.tier, s.fireLv) * hm) / (VOLLEY_HZ * b);
     const span = R + 0.3;
+    // 펫의 확률 효과(크리티컬은 총알마다, 멀리·넓게 쏘기는 일제 사격마다 굴린다 — 펫 전용 난수). avg면 기대값만큼 피해를 고르게 올린다
+    const pet = s.pet;
+    const fx = pet ? PETS[pet.id].fx : '';
+    const pp = pet ? petP(pet.id, pet.lv) : 0;
+    let far = false;
+    let wide = false;
+    let crits = 0;
+    if (pet && pet.avg) dmg *= fx === 'crit' ? 1 + pp : fx === 'far' ? (s.phase === 'run' ? 1 + PET_FAR_AVG * pp : 1) : fx === 'wide' ? 1 + PET_WIDE_AVG * pp : 1;
+    else if (fx === 'far') far = rand(pet) < pp;
+    else if (fx === 'wide') wide = rand(pet) < pp;
     for (let i = 0; i < b; i++) {
       // 고르게 퍼뜨리되 매번 조금씩 어긋나게(황금비 수열 — 난수를 쓰지 않는다)
       const j = ((q.volley * 0.618034 + i * 0.381966) % 1) - 0.5;
       const x = q.x - span + ((i + 0.5 + j * 0.8) / b) * 2 * span;
-      s.bullets.push({ x, z: q.z + 0.4 * R, d: 0, dmg, hm });
+      const bl = { x, z: q.z + 0.4 * R, d: 0, dmg, hm };
+      if (far) bl.r = BULLET_RANGE * PET_FAR;
+      if (fx === 'crit' && !pet.avg && rand(pet) < pp) { bl.dmg = dmg * PET_CRIT; bl.c = 1; crits++; }
+      s.bullets.push(bl);
     }
+    if (wide) {
+      // 양옆에 총알을 더: 가운데 밀도는 그대로, 폭만 PET_WIDE배(옆에 뭔가 있을 때만 맞는다)
+      const ex = Math.max(2, 2 * Math.round(b / 4));
+      for (let i = 0; i < ex; i++) {
+        const sd = i % 2 ? 1 : -1;
+        const u = (Math.floor(i / 2) + 0.5) / (ex / 2);
+        s.bullets.push({ x: q.x + sd * span * (1 + (PET_WIDE - 1) * u), z: q.z + 0.4 * R, d: 0, dmg, hm, w: 1 });
+      }
+    }
+    if (far || wide || crits) { pet.procs += crits || 1; emit(s, { t: 'pet', fx, n: crits, x: q.x, z: q.z }); }
     emit(s, { t: 'shot', b });
   }
 }
@@ -1885,7 +1949,7 @@ function bulletsUpdate(s) {
   const adv = BULLET_SPEED * DT;
   const list = s.bullets;
   // 총알이 이번 틱에 닿을 수 있는 적만 미리 고른다(순서 그대로 — 결과는 같고 빠르다)
-  const zMax = q.z + BULLET_RANGE + 4;
+  const zMax = q.z + BULLET_RANGE * (petFx(s) === 'far' ? PET_FAR : 1) + 4;
   const near = [];
   if (list.length) for (const f of s.foes) if (f.alive && f.z - f.r < zMax) near.push(f);
   let w = 0;
@@ -1945,7 +2009,7 @@ function bulletsUpdate(s) {
     }
     b.z = z1;
     b.d += adv;
-    if (b.d < BULLET_RANGE) list[w++] = b;
+    if (b.d < (b.r || BULLET_RANGE)) list[w++] = b;
   }
   list.length = w;
 }
@@ -1968,6 +2032,12 @@ function hitFoe(s, f, dmg, by) {
   s.stats.killHp += f.max;
   emit(s, { t: 'kill', kind: f.kind, x: f.x, z: f.z, by });
   chargeHero(s, 0.01);
+  // 펫 '기운 내': 처치마다 확률로 영웅 게이지 +PET_CHEER
+  if (s.hero && petFx(s) === 'cheer') {
+    const p = petP(s.pet.id, s.pet.lv);
+    if (s.pet.avg) chargeHero(s, PET_CHEER * p);
+    else if (rand(s.pet) < p) { s.pet.procs++; chargeHero(s, PET_CHEER); emit(s, { t: 'pet', fx: 'cheer', x: f.x, z: f.z }); }
+  }
   return true;
 }
 /* 특수병·영웅이 보스에게 주는 피해는 병사 화력의 +BONUS_CAP(10%)까지(쌓인 몫 b.bonus 안에서) */
@@ -2041,6 +2111,7 @@ function bossUpdate(s, R) {
       s.phase = 'won';
       s.endT = 0;
       s.stats.bossT = b.t;
+      petEnd(s);
       emit(s, { t: 'bossDead', x: b.x, z: b.z });
       emit(s, { t: 'win' });
     }
@@ -2907,17 +2978,19 @@ export function calibrate(lv, opt = {}) {
    강화·영웅은 이기기 쉽게 해 주지만 별은 실력으로. */
 const parCache = new Map();
 const sameHero = (a, b) => (!a && !b) || (a && b && a.id === b.id && (a.lv | 0) === (b.lv | 0));
-export function parFor(lv, start = START_N, fire = 0, hero = null) {
+export function parFor(lv, start = START_N, fire = 0, hero = null, pet = null) {
   const E = expectLoadout(lv.L, lv.cycle || 1);
-  if (start === E.start && fire === E.fire && sameHero(hero, E.hero)) return lv.par;
-  const key = `${lv.cycle || 1}:${lv.L}:${lv.attempt}:${start}:${fire}:${hero ? hero.id + hero.lv : '-'}`;
+  if (pet && !PETS[pet.id]) pet = null;
+  if (start === E.start && fire === E.fire && sameHero(hero, E.hero) && !pet) return lv.par;
+  const key = `${lv.cycle || 1}:${lv.L}:${lv.attempt}:${start}:${fire}:${hero ? hero.id + hero.lv : '-'}:${pet ? pet.id + pet.lv : '-'}`;
   if (parCache.has(key)) return parCache.get(key);
   const maxTicks = maxTicksOf(lv);
   let par = lv.par;
-  const a = runTo(newGame(lv, { start, fire, hero }), polStrong(false), maxTicks);
+  // 펫은 기대값으로(petAvg) — 펫 때문에 별이 쉬워지지 않게, 그렇다고 par가 한 판의 운에 흔들리지도 않게
+  const a = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true }), polStrong(false), maxTicks);
   if (a.phase === 'won') par = a.squad.n;
   else if (hero) {
-    const b = runTo(newGame(lv, { start, fire, hero }), polStrong(true), maxTicks);
+    const b = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true }), polStrong(true), maxTicks);
     if (b.phase === 'won') par = b.squad.n;
   }
   par = Math.max(1, par);
@@ -3032,6 +3105,8 @@ export function stateHash(s) {
   h = hash(h, s.bullets.length);
   for (const b of s.bullets) h = hash(h, b.x.toFixed(3), b.z.toFixed(3));
   if (s.boss) h = hash(h, s.boss.x.toFixed(4), s.boss.slam ? s.boss.slam.t.toFixed(4) : -1, s.boss.slamCd.toFixed(4), s.boss.summonCd.toFixed(4));
+  // 펫(안 데려간 판에는 없다 — 해시 그대로)
+  if (s.pet) h = hash(h, s.pet.id, s.pet.lv, s.pet.rs >>> 0, s.pet.procs, s.pet.acc.toFixed(4), s.pet.double ? 1 : 0);
   // 무한모드(캠페인 판에는 없다 — 해시 그대로)
   if (s.endless) { const e = s.endless; h = hash(h, e.seed, e.seg, e.bosses, e.bank, e.wait.toFixed(4), e.z0.toFixed(4), s.L, s.arenaZ.toFixed(4), (s.refMul || 1).toFixed(6)); }
   return h;

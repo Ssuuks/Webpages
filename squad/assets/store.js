@@ -1,6 +1,6 @@
 /* 진행 저장 — 키는 'squad.v1' 그대로, v2는 필드를 더하기만 한다(옛 탭이 저장해도 새 필드가 남는다).
    localStorage가 막혀 있으면(사생활 보호 모드 등) 메모리로 계속 돈다. */
-import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap } from './roster.js';
+import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap, PETS, PET_MAX_LV } from './roster.js';
 
 const KEY = 'squad.v1';
 const BAK = 'squad.bak';
@@ -35,6 +35,7 @@ export function defaults() {
     upgX: { start: 0, fire: 0, coin: 0 },   // 10단계 위로 산 강화(upg는 옛 탭이 0~10으로 자르므로 따로 둔다)
     heroX: {},                       // 영웅마다 Lv5 위로 올린 레벨(heroes.lv는 옛 탭이 5로 자른다)
     endless: { best: 0, bestN: 0, runs: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수
+    pets: { own: {}, sel: '', eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
   };
 }
 /* 회차 하나는 L1~CYCLE_LEVELS. 그 회차의 L60을 깨면(maxL > 60) 끝난 회차다 */
@@ -135,6 +136,15 @@ export function normalize(o) {
   out.cycle = clampInt(out.cycle, 1, maxCycle(out));
   out.endSeen = clampInt(out.endSeen, 0, endedCycles(out));
   for (const k of ['best', 'bestN', 'runs']) out.endless[k] = Math.max(0, Math.floor(num(out.endless[k])));
+  // 펫: 모르는 id는 버리고, 레벨 1..PET_MAX_LV, 조각·알은 0 이상
+  const ps = o.pets && typeof o.pets === 'object' ? o.pets : {};
+  const pets = { own: {}, sel: '', eggs: Math.max(0, Math.floor(num(ps.eggs))), pity: clampInt(ps.pity, 0, 99), got: num(ps.got) ? 1 : 0 };
+  for (const id of Object.keys(ps.own && typeof ps.own === 'object' ? ps.own : {})) {
+    if (!PETS[id] || !ps.own[id]) continue;
+    pets.own[id] = { lv: clampInt(ps.own[id].lv, 1, PET_MAX_LV), sh: Math.max(0, Math.floor(num(ps.own[id].sh))) };
+  }
+  pets.sel = pets.own[ps.sel] ? ps.sel : '';
+  out.pets = pets;
   return out;
 }
 

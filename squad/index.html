@@ -366,6 +366,12 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
 #scrJoin .sheet { text-align: center; }
 #scrJoin .portrait { margin: 6px auto 8px; width: 140px; height: 140px; }
 #scrJoin .portrait canvas { width: 128px; height: 128px; }
+.end-row .btn { flex: 1; min-width: 0; }
+.end-row #btnEndless { flex: 1.6; }
+.btn.pet-up { flex-direction: column; gap: 2px; line-height: 1.15; padding: 6px 12px; }
+.btn.pet-up small { font-family: var(--body); font-size: 13px; color: var(--muted); font-weight: 600; }
+.pet-egg { margin-top: 12px; }
+.pet-egg .muted { font-size: 12px; margin-top: 8px; }
 .cyc-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .cyc-bar b { font-family: var(--display); font-size: 18px; color: var(--amber); font-weight: 400; }
 .cyc-bar .btn { min-width: 52px; }
@@ -422,7 +428,10 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
       </div>
     </div>
     <button id="btnPlay" class="btn primary" data-focus><span id="tCycle" hidden></span>레벨 <span id="tPlayL">1</span> 출격</button>
-    <button id="btnEndless" class="btn endless" hidden>무한모드<small id="tEndless"></small></button>
+    <div class="row end-row" id="endRow" hidden>
+      <button id="btnEndless" class="btn endless">무한모드<small id="tEndless"></small></button>
+      <button id="btnPet" class="btn endless">펫<small id="tPet"></small></button>
+    </div>
     <div class="menu-grid">
       <button id="btnLevels" class="btn">레벨</button>
       <button id="btnHero" class="btn">영웅<small id="tHero">—</small></button>

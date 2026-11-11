@@ -5,6 +5,7 @@
    외곽선(1px, 자두색)은 굽는 단계에서 자동으로 붙는다. 세계 스프라이트는 줄이기만 한다(1, 0.75, 0.5 단계). */
 
 import { HEROINE_SHEETS } from './heroines.js';
+import { PET_SHEETS, PET_ART } from './pets.js';
 import { buildFoeSkins, FOE_ALTS, FOE_SKIN, FOE_BURST } from './foes.js';
 import { BIOME_EXTRA, BIOME_PATCH, PROP_SHEETS, PROP_WORLD_H } from './biomes.js';
 import { BOSS_SHEETS, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TEXT, BOSS_TIER } from './bosses.js';
@@ -556,6 +557,8 @@ export const SHEETS = {
 
   /* 영웅(미소녀): 뒷모습 16×20 · 얼굴 30×30 [0 미소, 1 외침] — pix/heroines.js */
   ...HEROINE_SHEETS,
+  /* 펫(뒷모습 두 장 · 얼굴 한 장 · 알) — pix/pets.js */
+  ...PET_SHEETS,
 
   grunt: { pal: ZG, frames: zombieWalk(0).concat(Z_LUNGE), lod: [1, 0.75, 0.5], flash: true },
   runner: { pal: ZR, frames: zombieWalk(1).concat(Z_LUNGE), lod: [1, 0.75, 0.5], flash: true },
@@ -751,4 +754,4 @@ for (const [bid, sheet] of Object.entries(BOSS_SKIN)) if (sheet !== 'boss') (SKI
    renderer.prepBiome(bid)가 그 지역에 가기 전에 쉬는 틈에 굽고, 그리는 쪽은 아직 없으면 기본 시트로 그린다 */
 const DESERT_SHEETS = biomeSheets('desert');
 export const BIOME_ONLY = new Set(Object.keys(BIOME).filter((b) => b !== 'desert').flatMap((b) => biomeSheets(b)).filter((n) => !DESERT_SHEETS.includes(n)));
-export { BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TEXT, BOSS_TIER };
+export { BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TEXT, BOSS_TIER, PET_ART };
