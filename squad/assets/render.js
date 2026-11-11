@@ -953,6 +953,7 @@ export function createRenderer(cvs) {
           if (s.boss) burst(s.boss.x, 0.2, s.boss.z, 10, bfx().dust, 4, 2);
           break;
         case 'boss':
+          bossDeath = null;   // 무한모드: 앞 구간 보스의 쓰러지는 연출이 남아 새 보스를 가리지 않게
           bossIntroT = time;
           if (!cut) bossCut = { t: 0 };
           shake(0.4);
@@ -972,6 +973,7 @@ export function createRenderer(cvs) {
           screenFlash(0.5, '255,255,255');
           shake(0.8);
           break;
+        case 'segClear':   // 무한모드: 보스를 잡고 다음 구간으로(승리 색종이만 — 판은 이어진다)
         case 'win':
           for (let i = 0; i < 60; i++) part(q.x + (Math.random() - 0.5) * 8, 5 + Math.random() * 3, q.z + 5 + Math.random() * 8, (Math.random() - 0.5) * 3, Math.random() * 2, (Math.random() - 0.5) * 2, 2.4, FX_COL.confetti[i % 5], 1, 2.5);
           break;

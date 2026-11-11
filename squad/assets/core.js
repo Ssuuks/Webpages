@@ -426,12 +426,17 @@ export const CAP_BLUE = 0.35;
 export const CAP_RED = 0.6;
 export const RED_OVER = 0.25;
 export const RED_OVER_MIN = 4;
+/* 무한모드 구간을 만드는 동안만 1보다 작다(buildSegment가 걸었다 푼다): 덧셈 칸의 이득(+a, 쏘아 올리는 몫, 지원병 상자)을 이 배수로 줄여
+   한 구간의 순성장을 묶는다(ENDLESS.gk). 캠페인 생성에서는 늘 1 — x·1 = x라 배치·숫자가 그대로다 */
+let GK = 1;
+const G = (x) => x * GK;
+const blueCapOf = (ng) => Math.max(GK < 1 ? 2 : 6, nice(G(ng * CAP_BLUE)));
 export function makeCell(op, v, ng, x0, x1, fire = 0, o = {}) {
   const c = { op, v, v0: v, x0, x1, step: 0, acc: 0, cap: v, hitT: -9 };
   if (op === 'add') {
-    const rise = o.rise ?? PUMP_RISE;
+    const rise = o.rise ?? G(PUMP_RISE);
     c.step = (dps(ng, 0, fire) * PUMP_T) / (rise * Math.max(ng, 6));
-    c.cap = o.cap ?? v + (v < 0 ? Math.max(10, nice(ng * CAP_RED)) : Math.max(6, nice(ng * CAP_BLUE)));
+    c.cap = o.cap ?? v + (v < 0 ? Math.max(10, nice(ng * CAP_RED)) : blueCapOf(ng));
     c.rise = rise;
     if (o.jack) c.jack = true;
   }
@@ -515,7 +520,7 @@ const approachT = (p, foeSpd = 0) => (BULLET_RANGE - 2) / (p.speed + foeSpd);
 
 /* 기준 플레이(골든 패스)가 이 칸을 고르면 몇 명이 되나 — 덧셈 칸은 2.4초쯤 쏴서 올린다고 본다(칸마다 오르는 빠르기대로) */
 function goldenValue(n, c) {
-  const v = c.op === 'add' ? Math.min(c.cap, c.v + Math.floor(0.75 * (c.rise ?? PUMP_RISE) * n)) : c.v;
+  const v = c.op === 'add' ? Math.min(c.cap, c.v + Math.floor(0.75 * (c.rise ?? G(PUMP_RISE)) * n)) : c.v;
   return applyOp(n, c.op, v);
 }
 
@@ -626,7 +631,7 @@ const ROW_MIX = {
 /* 어려움·매우 어려움(L15+)의 보스 직전 줄이 생각 줄인 몫(일반은 LAST_THINK) */
 export const LAST_THINK_HARD = 0.6;
 function rowKind(g, p, canMul) {
-  const mix = p.L < THINK_FROM ? ROW_MIX.early : p.hardish && p.tagFull ? ROW_MIX.hard : ROW_MIX.main;
+  const mix = p.mix ? p.mix : p.L < THINK_FROM ? ROW_MIX.early : p.hardish && p.tagFull ? ROW_MIX.hard : ROW_MIX.main;
   let sum = 0;
   const ok = (k) => (k !== 'jack' || p.L >= JACK_FROM) && (k !== 'think' || (p.L >= THINK_FROM && (canMul || has(p.L, 'div'))));
   for (const k in mix) if (ok(k)) sum += mix[k];
@@ -648,7 +653,7 @@ const badCell = (g, p, ng, lo, hi, divP) => (has(p.L, 'div') && chance(g, divP) 
 export const JACK_T = 2.5;
 function jackCell(g, ng, blueCap) {
   const a = Math.max(3, nice(ng * U(g, 0.12, 0.25)));
-  const cap = blueCap + Math.max(4, nice(0.2 * ng));
+  const cap = blueCap + Math.max(4, nice(G(0.2 * ng)));
   const rise = ((a + cap) / Math.max(ng, 6)) * (PUMP_T / JACK_T);
   return ['add', -a, { rise, cap, jack: true }];
 }
@@ -684,7 +689,7 @@ function gateChoices(g, p, ng, target, ctx) {
     if (kind === 'stake') {
       const [lo, hi] = p.L <= 4 ? [0.2, 0.35] : [0.3, 0.5];
       if (canMul && (forceMul || ratio > 1.1 || chance(g, 0.6))) out.push(mulOf(), badCell(g, p, ng, lo, hi, 0.5));
-      else out.push(['add', Math.max(5, nice(ng * clamp(ratio - 1, 0.35, 1.2) * U(g, 0.9, 1.2)))], badCell(g, p, ng, lo + 0.05, hi + 0.05, 0.4));
+      else out.push(['add', Math.max(5, nice(G(ng * clamp(ratio - 1, 0.35, 1.2) * U(g, 0.9, 1.2))))], badCell(g, p, ng, lo + 0.05, hi + 0.05, 0.4));
     } else if (kind === 'think') {
       // 겉보기 차이 8~15% — 어느 쪽이 큰지 계산해야 한다. 덧셈 칸은 거의 오르지 않아(천천히 오른다) 겉보기가 곧 답이다.
       // L8+는 THINK_EVIL만큼 '덜 나쁜 쪽' 계산: ÷2 대 −a(a ≈ 병력의 절반 ± 8~15%, 거의 안 오른다)
@@ -699,14 +704,14 @@ function gateChoices(g, p, ng, target, ctx) {
       } else {
         // ×도 '덜 나쁜 쪽'도 남지 않았으면 보통 줄
         kind = 'plain';
-        const a = Math.max(5, nice(ng * clamp(ratio - 1, 0.25, 1.5) * U(g, 0.85, 1.2)));
+        const a = Math.max(5, nice(G(ng * clamp(ratio - 1, 0.25, 1.5) * U(g, 0.85, 1.2))));
         out.push(['add', a], ['add', -Math.max(3, nice(ng * U(g, 0.2, 0.45)))]);
       }
     } else if (kind === 'jack') {
-      const b = Math.max(3, nice(ng * U(g, 0.2, 0.35)));
-      out.push(['add', b], jackCell(g, ng, b + Math.max(6, nice(ng * CAP_BLUE))));
+      const b = Math.max(3, nice(G(ng * U(g, 0.2, 0.35))));
+      out.push(['add', b], jackCell(g, ng, b + blueCapOf(ng)));
     } else {
-      const a = Math.max(5, nice(ng * clamp(ratio - 1, 0.25, 1.5) * U(g, 0.85, 1.2)));
+      const a = Math.max(5, nice(G(ng * clamp(ratio - 1, 0.25, 1.5) * U(g, 0.85, 1.2))));
       out.push(['add', a]);
       const r = rand(g);
       if (has(p.L, 'div') && ctx.rows > 0 && r < 0.15) out.push(['div', 2]);
@@ -717,7 +722,7 @@ function gateChoices(g, p, ng, target, ctx) {
   if (third) {
     const r = rand(g);
     if (r < 0.6 || kind === 'last') out.push(['add', -Math.max(3, nice(ng * U(g, 0.3, 0.6)))]);
-    else out.push(['add', Math.max(3, nice(ng * U(g, 0.15, 0.35)))]);
+    else out.push(['add', Math.max(3, nice(G(ng * U(g, 0.15, 0.35))))]);
   }
   // '덜 나쁜 쪽' 줄: −a 대 ÷2 (L8부터 가끔, 마지막 두 청크에는 없음)
   if (has(p.L, 'div') && ctx.lessBad > 0 && !ctx.late && out.length === 2 && !out.some((o) => o[0] === 'div') && chance(g, 0.18)) {
@@ -741,7 +746,7 @@ function gateChoices(g, p, ng, target, ctx) {
    점수가 같으면 원래(난수로 섞은) 순서를 쓴다. ctx.hold = [왼, 가운데, 오른] 성장 합, ctx.mid3 = 세 칸 줄 가운데 정답 수.
    cost(i)를 주면 칸 i 쪽 차선에 따로 드는 손실(지키는 벽·무리)을 뺀다 */
 const HOLD_X = [-2.5, 0, 2.5];
-const holdVal = (c, ng) => (c.op === 'add' ? applyOp(ng, 'add', Math.min(c.cap, c.v + Math.floor(1.1 * (c.rise ?? PUMP_RISE) * ng))) : goldenValue(ng, c));
+const holdVal = (c, ng) => (c.op === 'add' ? applyOp(ng, 'add', Math.min(c.cap, c.v + Math.floor(1.1 * (c.rise ?? G(PUMP_RISE)) * ng))) : goldenValue(ng, c));
 function holdBalance(ch, ng, ctx, fire = 0, goodIdx = -1, cost = null) {
   const n = ch.length;
   if (n < 2) return ch;
@@ -839,7 +844,7 @@ const CHUNK = {
     const ratio = target / ng;
     let good;
     if (ctx.mulLeft > ctx.reserve && ng <= 3000) { ctx.mulLeft--; good = ['mul', has(p.L, 'mul3') && ng < 150 && chance(g, 0.3) ? 3 : 2]; }
-    else good = ['add', Math.max(8, nice(ng * clamp(ratio - 1, 0.5, 1.5) * U(g, 1.2, 1.5)))];
+    else good = ['add', Math.max(8, nice(G(ng * clamp(ratio - 1, 0.5, 1.5) * U(g, 1.2, 1.5))))];
     const stake = has(p.L, 'shoot') && chance(g, 0.7);
     // 판돈이 아니면 '쏴서 키우는 +'(L4+): 작게 보이지만 몰아 쏘면 ×2와 비슷해진다 — 벽을 뚫고 ×2냐, 열린 칸을 키우냐
     let poor;
@@ -847,10 +852,10 @@ const CHUNK = {
     // 판돈 줄 최악 칸의 손해·승→패 뒤집힘이 SIM 7보다 낮아졌다 — 갈라 보기 시드 8로 0.22·22% → 0.23·23%, SIM 7과 같다)
     if (stake) poor = ['add', -Math.max(3, nice(ng * U(g, 0.2, 0.35)))];
     else if (p.L >= JACK_FROM) {
-      const c = Math.max(2, nice(ng * U(g, 0.08, 0.2)));
-      const cap = c + Math.max(6, nice(ng * U(g, GUARD_PUMP[0], GUARD_PUMP[1])));
+      const c = Math.max(2, nice(G(ng * U(g, 0.08, 0.2))));
+      const cap = c + Math.max(6, nice(G(ng * U(g, GUARD_PUMP[0], GUARD_PUMP[1]))));
       poor = ['add', c, { rise: ((cap - c) / Math.max(ng, 6)) * (PUMP_T / JACK_T), cap }];
-    } else poor = ['add', Math.max(2, nice(ng * U(g, 0.08, 0.22)))];
+    } else poor = ['add', Math.max(2, nice(G(ng * U(g, 0.08, 0.22))))];
     const wall = chance(g, 0.5);
     const D = threatD(lv, ng);
     const melt = D * 0.85 * (wall ? approachT(p) : approachT(p, FOE_BASE.grunt.spd));
@@ -956,7 +961,7 @@ const CHUNK = {
     const l = ln[side];
     const cz = z + 32;
     const r = rand(g);
-    const reward = r < 0.5 ? { type: 'gun' } : r < 0.85 ? { type: 'men', v: Math.max(5, nice(ng * U(g, 0.25, 0.4))) } : { type: 'coin', v: 10 + 2 * p.L };
+    const reward = r < 0.5 ? { type: 'gun' } : r < 0.85 ? { type: 'men', v: Math.max(5, nice(G(ng * U(g, 0.25, 0.4)))) } : { type: 'coin', v: 10 + 2 * p.L };
     const cx = (l.x0 + l.x1) / 2;
     const hp = Math.round(D * U(g, 1.0, 1.6));
     lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.1, x1: cx + 1.1, z: cz, hp, max: hp, alive: true, hitT: -9, reward });
@@ -1042,7 +1047,7 @@ const CHUNK = {
       lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.1, x1: cx + 1.1, z: cz, hp: h, max: h, alive: true, hitT: -9, reward, ...extra });
     };
     put(ln[side], fireWin * U(g, KEY_WIN[0], KEY_WIN[1]), { type: 'gun' }, { key: true });
-    put(ln[1 - side], fireWin * U(g, RIVAL_WIN[0], RIVAL_WIN[1]), { type: 'men', v: Math.max(5, nice(ng * U(g, 0.3, 0.45))) });
+    put(ln[1 - side], fireWin * U(g, RIVAL_WIN[0], RIVAL_WIN[1]), { type: 'men', v: Math.max(5, nice(G(ng * U(g, 0.3, 0.45)))) });
     return { len: 50, ng };
   },
 };
@@ -1053,10 +1058,10 @@ const CHUNK = {
    SIM 9: 철창·금색 칸의 수·자리·확률은 SIM 8 그대로(억지로 늘리지 않는다). 병과만 '바로 앞과 다른 병과' 규칙 없이 무작위 —
    같은 병과가 자연스럽게 두 번 나오면 두 번째는 병사 대신 레벨 업 */
 const GOLD_KINDS = ['plain', 'think', 'stake'];
-function placeSpecials(lv, p, bare = false) {
+function placeSpecials(lv, p, bare = false, seed = null) {
   const kinds = SP_KINDS.filter((k) => p.L >= UNLOCK[k]);
   if (!kinds.length || p.L < UNLOCK.cage) return;
-  const sg = { rs: hash(VERSION, 'sp', p.L, lv.attempt) };
+  const sg = { rs: seed ?? hash(VERSION, 'sp', p.L, lv.attempt) };
   const intro = kinds.find((k) => UNLOCK[k] === p.L);
   let last = '';
   // SIM 9: 같은 병과를 또 구하면 레벨이 오르므로 '바로 앞과 다른 병과' 규칙(SIM 8 — 겹치면 병사로 바뀌어 쓸모없던 때)을 없애고
@@ -1195,6 +1200,176 @@ export function buildLevel(L, attempt = 0, bare = false) {
   return lv;
 }
 
+/* ---------- 무한모드(ENDGAME.md 5절) ----------
+   한 판이 끝나지 않는다: 구간(달리기 + 보스 하나)을 잇달아 붙인다. 보스를 잡으면 결과 화면 없이 다음 구간이 이어지고,
+   병력·무기 단계·특수병·영웅 게이지·회복 풀을 그대로 들고 간다. 죽을 때까지.
+   - 구간 k(1부터): 지역은 차례로(모래 고개 → … → 한밤 놀이공원 → 다시), 3번째는 정예, 6번째(한 바퀴의 끝)는 대왕.
+     렌더러·화면은 s.L(그 지역·등급의 가상 레벨 61~120)만 보고 지역 그림·왕관·이름을 고른다.
+   - 다음 구간은 '보스가 쓰러진 순간 들고 있는 병력·무기 단계'로 만든다(게이트 숫자·적 체력). 보정은 돌리지 않는다 — 식으로만 정한다.
+     위협 = 그 병력의 화력(기준 화력 단계 ENDLESS.fire) × segMul(k). 구간마다 커져 언젠가는 무너진다.
+     병력이 바닥선(segFloor — 무난한 진행의 병력)보다 적으면 위협은 바닥선 병력 기준이다: 뒤처지면 적이 그만큼 약해지지 않아 손실이 쌓인다.
+   - 속도·예고는 캠페인 L30+ 값 그대로(더 빨라지지 않는다 — 사람을 죽이는 것은 체력 배수에 밀려 쌓이는 손실).
+   - 한 구간의 순성장: 보스 직전 줄의 ×2 하나 + 작은 덧셈(GK = ENDLESS.gk). 병력 상한은 캠페인과 같은 MAX_N(9999).
+   - 상태는 평범한 JSON(s.endless) — 다음 구간은 상태와 시드만으로 정해진다. 캠페인 판에는 s.endless가 없다(stateHash 그대로) */
+export const ENDLESS = {
+  fire: 10,                 // 위협을 만드는 기준 화력 단계(1회차 끝의 기대 강화) — 화력 강화가 이보다 높으면 그만큼 더 멀리 간다
+  floor0: START_N + 20,     // 바닥선의 밑(시작 병력 강화 10단계의 출발 병력)
+  floorGrow: 1.6,           // 바닥선은 구간마다 이만큼(무난한 진행의 순성장 아래쪽)
+  grow: 1.7,                // 골든 패스 목표 순성장(구간당 — 덧셈 칸 크기를 정한다. 보스 직전 ×2까지 실제로는 ×2 안팎)
+  gk: 0.2,                  // 덧셈 이득 배수(생성 중 GK)
+  chunks: { '': 7, hard: 6, super: 7 },
+  threat: { hard: 1.15, super: 1.3 },   // 정예·대왕 구간의 판 중 위협 배수(캠페인 어려움 1.25·매우 어려움 1.5보다 낮다 — 이미 segMul이 곱해진다)
+  wave: { hard: 1.1, super: 1.3 },
+  mul0: 0.65, mulStep: 1.15,   // 판 중 위협 배수 segMul(k) = mul0 × mulStep^(k−1)
+  bossMul0: 0.85, bossStep: 1.06,   // 보스 체력 배수 = bossMul0 × bossStep^(k−1) — 달리기보다 높게 시작한다(가만히 서 있는 분대가 첫 보스를 못 넘게)
+  bossM: { '': 0.7, hard: 0.7, super: 0.75 },   // 보스 체력 = 골든 도착 병력 × m의 화력 × bossKill초 × 보스 배수
+  bossKill: { '': 12, hard: 13, super: 14 },
+  bossC: 1.05,              // 보스가 닿기까지 c × bossKill초
+  wait: 1.2,                // 보스가 쓰러진 뒤 다음 구간이 이어지기까지(초) — 쓰러지는 연출
+  lead: 6,                  // 다음 구간의 첫 청크까지 더 두는 거리(m)
+  coinBase: 10, coinStep: 20, coinTag: { '': 1, hard: 1.5, super: 2 }, coinLoop: 0.25,
+};
+/* 구간 k(1부터)의 지역·등급·가상 레벨 */
+export function segInfo(k) {
+  const n = Math.max(1, Math.floor(k));
+  const bi = (n - 1) % 6;
+  const tag = n % 6 === 0 ? 'super' : n % 6 === 3 ? 'hard' : '';
+  return { k: n, loop: Math.floor((n - 1) / 6), biome: bi, tag, L: 60 + 10 * bi + (tag === 'super' ? 10 : tag === 'hard' ? 5 : 2) };
+}
+export const segMul = (k) => ENDLESS.mul0 * Math.pow(ENDLESS.mulStep, Math.max(1, k) - 1);
+/* 바닥선: 1구간에는 없다(누구나 제 병력 기준으로 출발한다), 2구간부터 floor0 × floorGrow^(k−1) */
+export const segFloor = (k) => (k <= 1 ? 0 : Math.min(MAX_N, Math.round(ENDLESS.floor0 * Math.pow(ENDLESS.floorGrow, k - 1))));
+/* 구간 k의 보스를 잡으면 적립되는 코인: 그 지역의 기본 몫 × 등급 × (1 + 0.25·바퀴 수). 죽어도·포기해도 받는다 */
+export function segCoins(k) {
+  const i = segInfo(k);
+  return Math.round((ENDLESS.coinBase + ENDLESS.coinStep * (i.biome + 1)) * ENDLESS.coinTag[i.tag] * (1 + ENDLESS.coinLoop * i.loop));
+}
+const ENDLESS_MIX = { stake: 0.3, jack: 0.4, plain: 0.3 };
+export function segParams(k) {
+  const i = segInfo(k);
+  const p = levelParams(i.L);
+  const E = ENDLESS;
+  p.endless = true;
+  p.seg = i.k;
+  p.k = 1.3;
+  p.pressure = 1.5;
+  p.maxMul = 1;                 // 보스 직전 줄의 ×2 하나
+  p.chunks = E.chunks[i.tag];
+  if (i.tag) { p.threat = E.threat[i.tag]; p.waveMul = E.wave[i.tag]; }
+  p.mix = ENDLESS_MIX;
+  p.bossKill = E.bossKill[i.tag];
+  p.bossWalk = BOSS_WALK_DIST / (E.bossC * p.bossKill);
+  p.boss = { mode: 'endless', m: E.bossM[i.tag], c: E.bossC };
+  return p;
+}
+/* 구간 하나(레벨 한 판과 같은 모양의 객체 — z는 0부터). n = 그 순간 병력, tier = 무기 단계. 같은 (seed, k, n, tier, attempt) → 같은 구간 */
+export function buildSegment(seed, k, n, tier = 0, attempt = 0) {
+  const p = segParams(k);
+  const E = ENDLESS;
+  const g = { rs: hash(VERSION, 'endless', seed >>> 0, p.seg, attempt) };
+  const n0 = clamp(Math.floor(n), 1, MAX_N);
+  // 뒤처진 분대(바닥선 아래)에게는 위협이 바닥선 병력 기준(화력 ∝ 병력^0.8)
+  const behind = Math.pow(Math.max(1, segFloor(p.seg) / n0), 0.8);
+  const base = WEAPON[clamp(tier | 0, 0, 3)] * segMul(p.seg) * behind;
+  const lv = {
+    L: p.L, attempt, seed: hash(VERSION, 'endless-run', seed >>> 0), speed: p.speed, params: p, tag: p.tag,
+    rows: [], foes: [], props: [], saws: [], plan: [], golden: [], chunks: [], nextId: 1,
+    arenaZ: 0, bossHp: 0, par: 0, arrive: 0, helpStart: 0,
+    startE: n0, fireE: E.fire, heroE: null, marks: [], bare: true, refMul: base,
+  };
+  GK = E.gk;
+  try {
+    const plan = planChunks(p, g);
+    lv.plan = plan;
+    lv.force = new Set();
+    const ctx = { mulLeft: p.maxMul, reserve: 1, lessBad: 0, late: false, last: false, force: lv.force, hold: [0, 0, 0], rows3: 0, mid3: 0, rows: 0 };
+    let z = 34;
+    let ng = n0;
+    const PE = n0 * E.grow;
+    for (let i = 0; i < plan.length; i++) {
+      ctx.late = i >= plan.length - 2;
+      ctx.last = i === plan.length - 1;
+      lv.thr = base * (p.tagFull ? p.threat : 1);
+      lv.wm = p.tagFull ? p.waveMul : 1;
+      lv.gh = p.tagFull ? p.gruntHp : p.gruntBase;
+      const target = n0 * Math.pow(PE / n0, (i + 1) / plan.length);
+      const t = ng > target * 1.25 ? target * 0.9 : ng < target * 0.8 ? target * 1.15 : target;
+      const rowsBefore = lv.rows.length;
+      const foesBefore = lv.foes.length;
+      const r = CHUNK[plan[i]](lv, g, p, z, ng, t, ctx);
+      for (let j = foesBefore; j < lv.foes.length; j++) {
+        const f = lv.foes[j];
+        if (f.kind === 'brute') f.hp = f.max = Math.max(1, Math.min(f.hp, Math.floor(BRUTE_CAP * ng * SOLDIER_HP)));
+      }
+      ctx.rows = lv.rows.length;
+      lv.chunks.push({ kind: plan[i], z, len: r.len, ng, rows: lv.rows.length - rowsBefore, thr: lv.thr });
+      z += r.len;
+      ng = Math.max(1, Math.round(r.ng));
+      lv.golden.push(ng);
+    }
+    lv.arenaZ = z + 12;
+    placeSpecials(lv, p, false, hash(VERSION, 'endless-sp', seed >>> 0, p.seg, attempt));
+  } finally { GK = 1; }
+  // MAX 칸(높인 끝)은 쓰지 않는다 — 몰아 쏘기 확인(redFast)을 판 중간에 돌릴 수 없다
+  for (const r of lv.rows) for (const c of r.cells) if (c.cap0 != null) { c.cap = c.cap0; delete c.cap0; }
+  // 코인 상자는 구간 번호만큼(가상 레벨 61~120의 값을 그대로 주지 않는다)
+  for (const pr of lv.props) if (pr.reward && pr.reward.type === 'coin') pr.reward.v = Math.min(60, 10 + 5 * p.seg);
+  lv.foes.sort((a, b) => a.z - b.z || a.id - b.id);
+  delete lv.force;
+  delete lv.thr;
+  delete lv.wm;
+  delete lv.gh;
+  const Gn = lv.golden[lv.golden.length - 1] || n0;
+  lv.arrive = Gn;
+  lv.bossHp = Math.max(30, Math.round(dps(Gn * p.boss.m, 0, E.fire) * (base / segMul(p.seg)) * E.bossMul0 * Math.pow(E.bossStep, p.seg - 1) * p.bossKill * bossHitFrac(Gn)));
+  return lv;
+}
+/* 무한모드 새 판. opt = { seed, start, fire, hero } */
+export function newEndless(opt = {}) {
+  const seed = (opt.seed >>> 0) || 1;
+  const seg = buildSegment(seed, 1, opt.start ?? START_N, 0);
+  const s = newGame(seg, opt);
+  s.endless = { seed, seg: 1, bosses: 0, bank: 0, wait: 0, z0: 0 };
+  s.refMul = seg.refMul;
+  return s;
+}
+/* 보스가 쓰러진 뒤: 지나간 것을 버리고 다음 구간을 지금 자리 앞에 이어 붙인다(상태가 커지지 않는다) */
+function nextSegment(s) {
+  const q = s.squad;
+  const e = s.endless;
+  e.seg++;
+  const seg = buildSegment(e.seed, e.seg, q.n, q.tier);
+  const dz = q.z + ENDLESS.lead;
+  const off = s.nextId;
+  for (const r of seg.rows) { r.id += off; r.z += dz; }
+  for (const f of seg.foes) { f.id += off; f.z += dz; }
+  for (const pr of seg.props) { pr.id += off; pr.z += dz; }
+  for (const w of seg.saws) { w.id += off; w.z += dz; }
+  for (const m of seg.marks) m.z += dz;
+  s.nextId = off + seg.nextId + 1;
+  s.rows = seg.rows; s.foes = seg.foes; s.props = seg.props; s.saws = seg.saws; s.marks = seg.marks;
+  s.spits = []; s.rockets = [];
+  s.L = seg.L; s.params = seg.params; s.speed = seg.speed;
+  s.arenaZ = seg.arenaZ + dz; s.stopZ = s.arenaZ + 6;
+  s.bossHp = seg.bossHp; s.bossRef = seg.arrive; s.refFire = ENDLESS.fire; s.refMul = seg.refMul;
+  s.boss = null;
+  s.phase = 'run';
+  e.z0 = q.z;
+  e.wait = 0;
+  const h = s.hero;
+  if (h && h.id === 'mungchi') {
+    const mul = heroVal('mungchi', 'pump', h.lv);
+    for (const row of s.rows) for (const c of row.cells) if (c.op === 'add') c.step /= mul;
+  }
+  emit(s, { t: 'segStart', seg: e.seg, L: s.L });
+}
+/* 무한모드 판이 끝났을 때(전멸·포기) 받는 코인: 적립한 보스 코인 + 처치 10마리당 1 (보급 강화 %) + 상자 코인 */
+export function endlessCoins(s, bonusPct = 0) {
+  const e = s.endless;
+  if (!e) return 0;
+  return Math.round((e.bank + Math.floor(s.stats.kills / 10)) * (1 + bonusPct / 100)) + s.stats.coins;
+}
+
 /* ---------- 게임 상태 ---------- */
 export function newGame(lv, opt = {}) {
   const start = opt.start ?? START_N;
@@ -1260,6 +1435,11 @@ export function restore(o) {
   if (o.hero) num0(o.hero, ['charge', 'act', 'T', 'cd', 'shot']);
   if (o.boss) num0(o.boss, ['bonus']);
   if (typeof o.refFire !== 'number') o.refFire = 0;
+  if (o.endless) {
+    if (typeof o.endless !== 'object') return null;
+    num0(o.endless, ['seed', 'seg', 'bosses', 'bank', 'wait', 'z0']);
+    if (o.endless.seg < 1) return null;
+  }
   for (const b of o.bullets) if (typeof b.hm !== 'number') b.hm = 1;
   return o;
 }
@@ -1816,6 +1996,27 @@ function bossUpdate(s, R) {
   const q = s.squad;
   const b = s.boss;
   const p = s.params;
+  if (b.hp <= 0 && s.endless) {
+    // 무한모드: 끝나지 않는다 — 코인을 적립하고, 쓰러지는 연출(ENDLESS.wait) 뒤 다음 구간이 이어진다
+    const e = s.endless;
+    if (!b.dead) {
+      b.dead = true;
+      b.slam = null;
+      e.wait = ENDLESS.wait;
+      e.bosses++;
+      const coins = segCoins(e.seg);
+      e.bank += coins;
+      s.stats.bossT += b.t;
+      for (const f of s.foes) f.alive = false;
+      s.spits = [];
+      emit(s, { t: 'bossDead', x: b.x, z: b.z });
+      emit(s, { t: 'segClear', seg: e.seg, coins, tag: p.tag });
+    } else {
+      e.wait -= DT;
+      if (e.wait <= 0) nextSegment(s);
+    }
+    return;
+  }
   if (b.hp <= 0) {
     if (s.phase !== 'won') {
       s.phase = 'won';
@@ -1882,7 +2083,7 @@ function bossUpdate(s, R) {
     if (b.summonCd <= 0 && b.z - q.z > 9) {
       b.summonCd = 5.5;
       const m = Math.min(8, 3 + Math.floor(s.L / 5));
-      const hp = SUMMON_HP * dps(s.bossRef, 0, s.refFire || 0);
+      const hp = SUMMON_HP * dps(s.bossRef, 0, s.refFire || 0) * (s.refMul || 1);
       // L4+: 둘은 길 양 가장자리를 따라 달려와 마지막에 파고드는 질주 좀비(정면 사격에 늦게 들어온다 — 막으려면 옆으로 가서 쏴야 한다)
       const flank = s.L >= UNLOCK.runner ? 2 : 0;
       for (let i = 0; i < m; i++) {
@@ -2744,7 +2945,8 @@ export function bossEta(s) {
 /* 진행률(0~1) — 보스전이면 보스 체력으로 */
 export function progress(s) {
   if (s.boss) return 1;
-  return clamp(s.squad.z / s.arenaZ, 0, 1);
+  const z0 = s.endless ? s.endless.z0 : 0;   // 무한모드: 이번 구간의 출발 자리부터
+  return clamp((s.squad.z - z0) / (s.arenaZ - z0), 0, 1);
 }
 
 /* 충돌 크기 보기(?hitbox=1 또는 __squad.hitbox = true, SIM 8): 시뮬레이션이 실제로 재는 모양을 그대로 돌려준다 — 렌더러는 이것만 그린다.
@@ -2791,5 +2993,7 @@ export function stateHash(s) {
   h = hash(h, s.bullets.length);
   for (const b of s.bullets) h = hash(h, b.x.toFixed(3), b.z.toFixed(3));
   if (s.boss) h = hash(h, s.boss.x.toFixed(4), s.boss.slam ? s.boss.slam.t.toFixed(4) : -1, s.boss.slamCd.toFixed(4), s.boss.summonCd.toFixed(4));
+  // 무한모드(캠페인 판에는 없다 — 해시 그대로)
+  if (s.endless) { const e = s.endless; h = hash(h, e.seed, e.seg, e.bosses, e.bank, e.wait.toFixed(4), e.z0.toFixed(4), s.L, s.arenaZ.toFixed(4), (s.refMul || 1).toFixed(6)); }
   return h;
 }

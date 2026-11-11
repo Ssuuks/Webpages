@@ -1,7 +1,7 @@
 /* 숫자부대 돌격 — 게임 루프, 조작, 화면 흐름, 저장 */
 import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
-  progress, radius, snapshot, restore,
+  progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo,
 } from './core.js';
 import { createRenderer } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -11,7 +11,7 @@ import {
 } from './store.js';
 import * as STORE from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
-import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, SP_LV_MAX, heroCost, heroCap, heroesEarned, biomeOf, bossNameOf } from './roster.js';
+import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, SP_LV_MAX, heroCost, heroCap, heroesEarned, biomeOf, bossNameOf, BIOMES } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, upgState, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss, gearGap,
 } from './insight.js';
@@ -39,7 +39,7 @@ let frameTimes = [];
 let autoLow = false;
 let wake = null;
 let par = 0;            // 이번 판 별 기준(강화·영웅 반영)
-let run = null;         // 이번 판 정보 { id, L, start, fire, support, hero }
+let run = null;         // 이번 판 정보 { id, L, start, fire, support, hero, mode? } — mode 'endless'면 무한모드(L은 그 구간의 가상 레벨)
 let lastSaveT = 0;      // 마지막 자동 저장(시뮬레이션 시간)
 let skillPressed = false;
 let music = null;
@@ -315,16 +315,26 @@ function renderTitle() {
   $('tHero').textContent = sel ? sel.name : '레벨 3부터';
   $('storeChip').hidden = storageMode() === 'ok';
   $('storeChip').textContent = storageMode() === 'full' ? '저장 공간이 가득 찼어요' : '저장 꺼짐 · 눌러서 확인';
+  // 무한모드: 엔딩 뒤(또는 시험용 주소 ?endless=1)에 열린다
+  $('btnEndless').hidden = !endlessOpen();
+  const eb = endlessBest();
+  $('tEndless').textContent = eb.runs ? `최고 기록 · 보스 ${eb.best}` : '죽을 때까지 이어지는 한 판';
   const r = pendingRun();
   $('resumeCard').hidden = !r;
   $('resumeConfirm').hidden = true;
   if (r) {
     const st = r.state;
-    const where = st.boss ? '보스전' : `보스까지 ${Math.round(Math.min(1, st.squad.z / st.arenaZ) * 100)}%`;
-    $('resumeInfo').textContent = `레벨 ${r.L} · ${st.squad.n}명 · ${where} · ${ago(r.at)} 저장`;
-    // 첫 게이트를 지난 판만 진 판으로 센다
-    $('resumeConfirm').querySelector('.warn').textContent = restartCounts(st) ? '이 판을 포기할까요? 진 판으로 기록돼요.' : '이 판을 포기할까요?';
+    const where = st.boss ? '보스전' : `보스까지 ${Math.round(progress(st) * 100)}%`;
+    $('resumeInfo').textContent = `${runName(r)} · ${st.squad.n}명 · ${where} · ${ago(r.at)} 저장`;
+    // 첫 게이트를 지난 판만 진 판으로 센다(무한모드는 진 판이 없다 — 모은 코인을 받고 끝난다)
+    $('resumeConfirm').querySelector('.warn').textContent = r.mode === 'endless' ? '이 판을 여기서 끝낼까요? 지금까지 모은 코인은 받아요.'
+      : restartCounts(st) ? '이 판을 포기할까요? 진 판으로 기록돼요.' : '이 판을 포기할까요?';
   }
+}
+/* 저장된 판의 이름: '레벨 12' 또는 '무한모드 3구간' */
+function runName(r) {
+  if (r.mode === 'endless') return `무한모드 ${(r.state && r.state.endless && r.state.endless.seg) | 0}구간`;
+  return `레벨 ${r.L}`;
 }
 
 /* 타이틀 뒤에서는 봇이 지금 레벨을 대신 돈다 */
@@ -789,6 +799,13 @@ function tryStart(L, opts = {}) {
   if (modalOpen()) return;
   const r = pendingRun();
   if (!r) { startLevel(L, opts); return; }
+  if (r.mode === 'endless') {
+    notice('하던 무한모드 판이 있어요', `${runName(r)}에서 멈춘 판을 끝내고 레벨 ${L}${eul(L)} 시작할까요? 지금까지 모은 코인은 받아요.`, [
+      { label: '끝내고 시작', primary: true, fn: () => { abandonRun(r); startLevel(L, opts); } },
+      { label: '취소' },
+    ]);
+    return;
+  }
   // 첫 게이트를 지난 판만 진 판으로 센다(그 전에 그만둔 판은 공짜)
   const counts = restartCounts(r.state);
   if (r.L === L && !opts.support) {
@@ -805,6 +822,14 @@ function tryStart(L, opts = {}) {
   ]);
 }
 function abandonRun(r) {
+  if (r.mode === 'endless') {
+    // 무한모드는 포기해도 모은 코인·기록을 받는다
+    const st = restore(r.state);
+    if (st && st.endless) { const got = settleEndless(st, r.id); if (got.coins > 0) toast(`무한모드 정산 · 코인 +${got.coins}`, 2200); }
+    else { data.lastRunId = r.id; save(data); }
+    clearRun();
+    return;
+  }
   if (restartCounts(r.state)) data.fails[r.L] = (data.fails[r.L] | 0) + 1;
   data.lastRunId = r.id;
   clearRun();
@@ -861,6 +886,9 @@ function startLevel(L, opts = {}) {
   tutorial = false;
   heroPickFromCard = false;
   $('tut').hidden = true;
+  if (run && run.mode === 'endless') run = null;
+  $('cardEyebrow').textContent = '레벨';
+  $('hudLbl').textContent = '레벨';
   const tg = fillCard(L);
   $('cardGoal').textContent = '준비 중…';
   $('cardHero').hidden = true;
@@ -935,8 +963,175 @@ function prepareRun(L) {
 function backToCard() {
   mode = 'card';
   show('scrCard');
-  prepareRun(run ? run.L : data.cur);
+  if (run && run.mode === 'endless') prepareEndless();
+  else prepareRun(run ? run.L : data.cur);
   $('cardGo').hidden = false;
+}
+
+/* ---------- 무한모드(ENDGAME.md 5절) ---------- */
+const endlessParam = (() => { try { return new URLSearchParams(location.search).get('endless') === '1'; } catch { return false; } })();
+function endlessOpen() { return (data.ended | 0) >= 1 || data.maxL > 60 || endlessParam; }
+function endlessBest() { const e = data.endless || {}; return { best: e.best | 0, bestN: e.bestN | 0, runs: e.runs | 0 }; }
+const isEndless = () => !!(run && run.mode === 'endless');
+/* 구간 이름: '3구간 · 무너진 도시' */
+function segName(k) { const i = segInfo(k); return `${i.k}구간 · ${BIOMES[i.biome].name}`; }
+function levelOfSeg() { return { L: s.L, attempt: 0, endless: true, params: s.params, tag: s.params.tag }; }
+function setHudLevel() {
+  const e = isEndless() && s && s.endless;
+  $('hudLbl').textContent = e ? '구간' : '레벨';
+  $('hudL').textContent = e ? s.endless.seg : lv ? lv.L : 1;
+}
+function tryEndless() {
+  if (modalOpen() || !endlessOpen()) return;
+  const r = pendingRun();
+  if (!r) { startEndless(); return; }
+  if (r.mode === 'endless') {
+    notice('하던 무한모드 판이 있어요', `${runName(r)}부터 이어서 할까요? 새로 시작하면 하던 판은 끝나고 모은 코인을 받아요.`, [
+      { label: '이어서 하기', primary: true, fn: resumeRun },
+      { label: '새로 시작', fn: () => { abandonRun(r); startEndless(); } },
+      { label: '취소' },
+    ]);
+    return;
+  }
+  const counts = restartCounts(r.state);
+  notice('진행 중인 판이 있어요', `레벨 ${r.L}${eul(r.L)} 포기하고 무한모드를 시작할까요?${counts ? ' 포기한 판은 진 판으로 기록돼요.' : ''}`, [
+    { label: '포기하고 시작', primary: true, fn: () => { abandonRun(r); startEndless(); } },
+    { label: '취소' },
+  ]);
+}
+/* 무한모드 카드 → 출발. opts.quick: 카드 없이 바로(다시 하기) */
+function startEndless(opts = {}) {
+  attract = false;
+  mode = 'card';
+  support = 0;
+  tutorial = false;
+  heroPickFromCard = false;
+  $('tut').hidden = true;
+  $('cardEyebrow').textContent = '무한모드';
+  $('cardL').textContent = '∞';
+  $('cardRegion').textContent = `${BIOMES[0].name}부터 차례로`;
+  $('cardTag').hidden = true;
+  $('cardNew').textContent = '보스를 잡으면 곧바로 다음 지역! 병력·무기·특수병을 그대로 들고 가요';
+  const eb = endlessBest();
+  $('cardBoss').textContent = eb.runs ? `최고 기록: 보스 ${eb.best} · 최대 병력 ${eb.bestN}명` : '죽을 때까지 몇 구간을 갈 수 있을까요?';
+  $('cardUnit').hidden = true;
+  $('cardGoal').textContent = '준비 중…';
+  $('cardHero').hidden = true;
+  $('cardGo').hidden = true;
+  $('bossBar').hidden = true;
+  $('bossBar').classList.remove('rage');
+  hideEta();
+  $('hudBar').style.transform = 'scaleX(0)';
+  $('spChips').textContent = '';
+  spKey = 0;
+  hudCache = '';
+  pointers.clear();
+  activeId = null;
+  run = null;
+  const token = ++startToken;
+  if (opts.quick) {
+    sfx.click();
+    prepareEndless();
+    begin(0);
+    toast(`무한모드 · ${segName(1)}`, 1600);
+    return;
+  }
+  show('scrCard');
+  armHistory();
+  sfx.click();
+  const t0 = performance.now();
+  setTimeout(() => {
+    if (token !== startToken || mode !== 'card') return;
+    prepareEndless();
+    const wait = Math.max(0, 2200 - (performance.now() - t0));
+    setTimeout(() => { if (token === startToken && mode === 'card') begin(0); }, wait);
+  }, 30);
+}
+function prepareEndless() {
+  const hero = heroForRun(UNLOCK.hero);
+  const start = START_N + 2 * data.upg.start;
+  const seed = run && run.mode === 'endless' && run.seed ? run.seed : (Math.random() * 0xFFFFFFFF) >>> 0 || 1;
+  run = { id: Math.random().toString(36).slice(2, 10), mode: 'endless', seed, L: 0, start, fire: data.upg.fire, support: 0, hero, worst: null, arenaN: 0 };
+  s = newEndless({ seed, start, fire: run.fire, hero });
+  lv = levelOfSeg();
+  run.L = s.L;
+  par = 0;
+  prevZ = s.squad.z;
+  renderer.reset();
+  // 첫 두 지역의 그림을 카드가 떠 있는 동안 굽는다(다음 지역은 구간이 바뀔 때마다 미리)
+  prepBiome(segInfo(1).L);
+  prepBiome(segInfo(2).L);
+  setHudLevel();
+  $('cardGoal').textContent = `보스마다 코인 적립 · 전멸해도 받아요`;
+  const chip = $('cardHero');
+  chip.textContent = '';
+  if (hero) {
+    chip.appendChild(faceEl(hero.id, 1));
+    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv} ▸`);
+    chip.hidden = false;
+  } else if (HERO_IDS.some((id) => ownedHero(id))) {
+    chip.append('영웅 고르기 ▸');
+    chip.hidden = false;
+  }
+  seen(data, 'biome', BIOMES[0].id);
+}
+/* 무한모드 판 정산(전멸·포기·다시 시작): 적립한 코인과 기록. 같은 판을 두 번 정산하지 않는다(lastRunId) */
+function settleEndless(st, id) {
+  if (storageMode() === 'ok') { const fresh = load(); if (!fresh.corrupt) data = fresh; }
+  const e = st.endless;
+  const paid = data.lastRunId !== id;
+  const out = { paid, coins: 0, bosses: e.bosses | 0, record: false, prev: endlessBest().best };
+  if (paid) {
+    out.coins = endlessCoins(st, 10 * data.upg.coin);
+    data.coins += out.coins;
+    const rec = { ...endlessBest() };
+    out.record = out.bosses > rec.best;
+    rec.best = Math.max(rec.best, out.bosses);
+    rec.bestN = Math.max(rec.bestN, st.squad.peak | 0);
+    rec.runs++;
+    data.endless = rec;
+    data.stats.kills += st.stats.kills;
+    data.stats.bossKills += out.bosses;
+    data.stats.maxN = Math.max(data.stats.maxN, st.squad.peak);
+    data.stats.spGot += st.stats.spGot;
+    data.stats.heroUses += st.stats.heroUses;
+    data.stats.spUp += st.stats.spUp | 0;
+    data.stats.flips += st.stats.flips | 0;
+  }
+  data.lastRunId = id;
+  save(data);
+  return out;
+}
+function finishEndless() {
+  const e = s.endless;
+  const got = settleEndless(s, run ? run.id : '');
+  clearRun();
+  tutorial = false;
+  $('tut').hidden = true;
+  $('resTitle').textContent = '무한모드 끝';
+  $('scrResult').classList.add('lost');
+  $('resStars').hidden = true;
+  const i = segInfo(e.seg);
+  const lines = [
+    ['잡은 보스', `${got.bosses}` + (got.record ? ' · 최고 기록!' : got.paid && got.prev ? ` (최고 ${got.prev})` : '')],
+    ['도달 지역', `${segName(e.seg)}${i.loop ? ` (${i.loop + 1}바퀴째)` : ''}`],
+    ['최대 병력', `${s.squad.peak}명`],
+    ['처치', `${s.stats.kills}`],
+    ['획득 코인', `+${got.coins}`],
+  ];
+  $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
+  $('resNear').hidden = true;
+  const cause = CAUSE[s.cause] || CAUSE.foe;
+  $('resCause').hidden = false;
+  $('resCause').innerHTML = `<b>${cause[0]}</b><span>${cause[1]}</span>`;
+  $('resPrimary').textContent = '다시 하기';
+  $('resReplay').hidden = true;
+  $('resHelp').hidden = true;
+  $('resBackup').hidden = storageMode() === 'ok';
+  $('resUpg').classList.toggle('glow', canAffordUpg());
+  $('hudCoins').textContent = compact(data.coins);
+  hudCache = '';
+  show('scrResult');
 }
 
 function begin(L) {
@@ -974,6 +1169,7 @@ function pause() {
   // 승리·패배가 정해진 뒤에는 멈추지 않고 결과로 간다(승리를 잃지 않게)
   if (s && (s.phase === 'won' || s.phase === 'lost')) return;
   mode = 'pause';
+  $('pRestart').textContent = isEndless() ? '여기서 끝내고 새로 시작' : '처음부터 다시';
   pointers.clear();
   activeId = null;
   keys.left = keys.right = false;
@@ -985,6 +1181,13 @@ function pause() {
 }
 /* 일시정지의 '처음부터 다시': 첫 게이트를 지났으면 진 판으로 센다고 알리고, 3번째면 지원 받고 다시도 고를 수 있게 */
 function renderPauseRestart() {
+  if (isEndless()) {
+    $('pHelp').hidden = true;
+    const note = $('pRestartNote');
+    note.hidden = false;
+    note.textContent = `지금까지 모은 코인(보스 ${s.endless.bosses}마리)은 받아요`;
+    return;
+  }
   const counts = !!(s && lv && restartCounts(s));
   const f = lv ? (data.fails[lv.L] | 0) + (counts ? 1 : 0) : 0;
   const help = counts && !support && f >= 3;
@@ -1030,6 +1233,11 @@ function resume() {
 /* ---------- 이어하기 ---------- */
 function saveRunNow() {
   if (!s || !run || attract || !(s.phase === 'run' || s.phase === 'arena')) return;
+  if (run.mode === 'endless') {
+    saveRun({ v: 1, sim: SIM, mode: 'endless', id: run.id, at: Date.now(), L: s.L, seed: run.seed, start: run.start, fire: run.fire, support: 0, hero: run.hero, state: snapshot(s) });
+    lastSaveT = s.t;
+    return;
+  }
   saveRun({ v: 1, sim: SIM, id: run.id, at: Date.now(), L: run.L, attempt: lv.attempt, bare: !!lv.bare, start: run.start, fire: run.fire, support: run.support, hero: run.hero, par, worst: run.worst || null, arenaN: run.arenaN | 0, state: snapshot(s) });
   lastSaveT = s.t;
 }
@@ -1037,20 +1245,27 @@ function resumeRun() {
   if (modalOpen()) return;
   const r = pendingRun();
   if (!r) { renderTitle(); return; }
-  const level = prepareLevel(r.L);
+  const endless = r.mode === 'endless';
+  const level = endless ? null : prepareLevel(r.L);
   const st = restore(r.state);
-  if (level.attempt !== r.attempt || (r.bare != null && !!level.bare !== !!r.bare) || !st) {
+  if (!st || (endless ? !st.endless : level.attempt !== r.attempt || (r.bare != null && !!level.bare !== !!r.bare) || !!st.endless)) {
     clearRun();
     toast('게임이 바뀌어서 하던 판은 처음부터 다시 해요', 3000);
     renderTitle();
     return;
   }
   attract = false;
-  lv = level;
   s = st;
-  run = { id: r.id, L: r.L, start: r.start, fire: r.fire, support: r.support | 0, hero: r.hero || null, worst: r.worst && r.worst.k ? r.worst : null, arenaN: r.arenaN | 0 };
+  if (endless) {
+    run = { id: r.id, mode: 'endless', seed: r.seed, L: s.L, start: r.start, fire: r.fire, support: 0, hero: r.hero || null, worst: null, arenaN: 0 };
+    lv = levelOfSeg();
+    prepBiome(segInfo(s.endless.seg + 1).L);
+  } else {
+    lv = level;
+    run = { id: r.id, L: r.L, start: r.start, fire: r.fire, support: r.support | 0, hero: r.hero || null, worst: r.worst && r.worst.k ? r.worst : null, arenaN: r.arenaN | 0 };
+  }
   support = run.support;
-  par = r.par || lv.par;
+  par = endless ? 0 : r.par || lv.par;
   prevZ = s.squad.z;
   acc = 0;
   renderer.reset();
@@ -1058,9 +1273,9 @@ function resumeRun() {
   anyInput = true;
   tutorial = false;
   lastSaveT = s.t;
-  $('hudL').textContent = r.L;
-  $('bossName').textContent = bossNameOf(r.L, tagOf(r.L).tag);
-  prepBiome(r.L);
+  setHudLevel();
+  $('bossName').textContent = bossNameOf(lv.L, tagOf(lv.L).tag);
+  prepBiome(lv.L);
   $('bossBar').hidden = !s.boss;
   $('bossBar').classList.toggle('rage', !!(s.boss && s.boss.enraged));
   hideEta();
@@ -1071,6 +1286,7 @@ function resumeRun() {
   save(data);
   // 멈춘 채로 시작 — 준비되면 계속하기
   mode = 'pause';
+  $('pRestart').textContent = isEndless() ? '여기서 끝내고 새로 시작' : '처음부터 다시';
   renderPauseUnits();
   renderPauseRestart();
   show('scrPause');
@@ -1233,6 +1449,27 @@ function handleEvents(ev) {
       case 'stomp': sfx.stomp(); vibe(30); break;
       case 'enrage': $('bossBar').classList.add('rage'); break;
       case 'bossDead': sfx.win(); vibe([40, 60, 80]); slow(0.25, 1200); break;
+      case 'segClear':
+        // 무한모드: 보스를 잡았다 — 결과 화면 없이 곧 다음 구간(코인은 판 안에 적립)
+        $('bossBar').hidden = true;
+        $('bossBar').classList.remove('rage');
+        bossBarFor = null;
+        hideEta();
+        toast(`보스 격파! 코인 +${e.coins} 적립`, 1800);
+        break;
+      case 'segStart': {
+        lv = levelOfSeg();
+        if (run) run.L = s.L;
+        setHudLevel();
+        const i = segInfo(e.seg);
+        const lead = i.tag === 'super' ? '대왕이 기다려요 · ' : i.tag === 'hard' ? '정예 보스 · ' : '';
+        toast(`${lead}${segName(e.seg)}`, 2200);
+        seen(data, 'biome', BIOMES[i.biome].id);
+        prepBiome(segInfo(e.seg + 1).L);   // 다음 지역 그림은 이 구간을 달리는 동안 쉬는 틈에 굽는다
+        saveRunNow();
+        updateMusic();
+        break;
+      }
       case 'lose': sfx.lose(); vibe([60, 40, 90]); break;
       default:
     }
@@ -1272,6 +1509,7 @@ function finish() {
   mode = 'result';
   releaseWake();
   hideEta();
+  if (s.endless) { finishEndless(); return; }
   const won = s.phase === 'won';
   const L = lv.L;
   const n = s.squad.n;
@@ -1541,7 +1779,7 @@ let hudCache = '';
 function updateHud() {
   const p = s.boss ? 1 : progress(s);
   $('hudBar').style.transform = `scaleX(${p})`;
-  const key = `${data.coins + s.stats.coins}`;
+  const key = `${data.coins + s.stats.coins + (s.endless ? s.endless.bank : 0)}`;
   if (key !== hudCache) { hudCache = key; $('hudCoins').textContent = key; }
   if (s.boss) $('bossFill').style.transform = `scaleX(${Math.max(0, s.boss.hp) / s.boss.max})`;
   updateEta();
@@ -1619,6 +1857,7 @@ function releaseWake() {
 /* ---------- 버튼 ---------- */
 function on(id, fn) { $(id).addEventListener('click', (e) => { unlock(); fn(e); }); }
 on('btnPlay', () => tryStart(data.cur));
+on('btnEndless', () => tryEndless());
 on('btnLevels', () => { sfx.click(); mode = 'levels'; renderLevels(); show('scrLevels'); armHistory(); });
 on('btnHero', () => { sfx.click(); mode = 'hero'; heroPickFromCard = false; heroView = data.heroes.sel; renderHero(); show('scrHero'); armHistory(); });
 on('btnUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); armHistory(); });
@@ -1654,6 +1893,13 @@ on('pResume', () => { sfx.click(); resume(); });
 /* 처음부터 다시(일시정지): 카드 없이 바로. 첫 게이트를 지난 뒤면 진 판으로 센다(3번이면 지원) — 그 전에는 공짜 */
 function restartRun(opts = {}) {
   if (!lv) return;
+  if (isEndless()) {
+    // 무한모드: 지금 판을 정산(모은 코인을 받는다)하고 새 판
+    if (s && s.endless && run) { const got = settleEndless(s, run.id); if (got.coins > 0) toast(`코인 +${got.coins}`, 1400); }
+    clearRun();
+    startEndless({ quick: true });
+    return;
+  }
   if (run && s && !attract && restartCounts(s) && data.lastRunId !== run.id) {
     data.fails[lv.L] = (data.fails[lv.L] | 0) + 1;
     data.lastRunId = run.id;
@@ -1672,6 +1918,7 @@ on('pSaveQuit', () => {
   goTitle();
 });
 on('resPrimary', () => {
+  if (isEndless()) { startEndless({ quick: true }); return; }
   const won = s.phase === 'won';
   const next = won ? lv.L + 1 : lv.L;
   // 다시 도전은 카드 없이 바로 달린다(카드 내용은 짧은 알림으로)
@@ -1708,7 +1955,7 @@ on('cardHero', () => {
   show('scrHero');
   armHistory();
 });
-on('cardGo', () => { if (mode === 'card') begin(run ? run.L : data.cur); });
+on('cardGo', () => { if (mode === 'card') begin(run && run.mode !== 'endless' ? run.L : run ? 0 : data.cur); });
 on('joinTake', () => { sfx.click(); closeJoin(true); });
 on('joinLater', () => { sfx.click(); closeJoin(false); });
 on('storeChip', () => {
@@ -1792,7 +2039,7 @@ fontsReady.then(() => {
 /* 테스트·디버그용 */
 window.__squad = {
   auto: false, get state() { return s; }, set state(v) { s = v; }, get mode() { return mode; }, get data() { return data; },
-  startLevel, radius, UNLOCK, skill() { skillPressed = true; },
+  startLevel, startEndless, radius, UNLOCK, skill() { skillPressed = true; },
   // 충돌 크기 보기: 시뮬레이션이 재는 모양을 그림 위에 그린다(주소에 ?hitbox=1 을 붙여도 켜진다)
   get hitbox() { return renderer.hitbox; }, set hitbox(v) { renderer.setHitbox(v); },
 };
