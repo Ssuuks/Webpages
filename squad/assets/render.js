@@ -5,7 +5,7 @@ import { makeView, fitView, project, P } from './view.js';
 import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, SQUAD_DEPTH, hitShapes, levelTag } from './core.js';
 import { HEROES, biomeOf, bossNameOf } from './roster.js';
 import { gateAlts } from './insight.js';
-import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, biomeSheets } from './pix/art.js';
+import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, biomeSheets, PET_ART } from './pix/art.js';
 import { createAtlas, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
 import { createFont, opText, compactTexts } from './pix/font.js';
 import { createGround } from './pix/ground.js';
@@ -590,6 +590,7 @@ export function createRenderer(cvs) {
   let shownN = 0, countPop = 0, countTint = 0, lastN = -1, pillA = 1;
   let lastS = null, lastT = -1, stillFor = 0;
   let hurtAt = -9, bossImpactT = -9, roarT = -9, bossIntroT = -9, bossDeath = null, enrageT = -9;
+  let petT = -9;       // 펫 효과가 터진 때(core 'pet' 이벤트)
   let surgeT = -9;   // 몰이 알림(core 'surge' 이벤트): 화면 양옆에서 안쪽을 가리키는 붉은 화살표가 잠깐 깜박인다
   let stompT = -9;     // 보스 짓밟기(길 전체 땅 흔들림 표시)
   let hitboxOn = false; // 충돌 크기 보기(?hitbox=1, __squad.hitbox)
@@ -953,6 +954,7 @@ export function createRenderer(cvs) {
           if (s.boss) burst(s.boss.x, 0.2, s.boss.z, 10, bfx().dust, 4, 2);
           break;
         case 'boss':
+          bossDeath = null;   // 무한모드: 앞 구간 보스의 쓰러지는 연출이 남아 새 보스를 가리지 않게
           bossIntroT = time;
           if (!cut) bossCut = { t: 0 };
           shake(0.4);
@@ -972,6 +974,15 @@ export function createRenderer(cvs) {
           screenFlash(0.5, '255,255,255');
           shake(0.8);
           break;
+        case 'pet':
+          // 펫 효과가 터졌다: 펫이 통 튀고 반짝(크리티컬·멀리·넓게는 총구 쪽 금빛, 막아 주기는 초록 방패 고리, 기운 내는 별, 줍줍은 코인)
+          petT = time;
+          if (e.fx === 'block') ring(e.x, e.z, 0.3, 1.6, 0.3, '#7CE07A', { thick: 2 });
+          else if (e.fx === 'cheer') part(e.x, 1.2, e.z, 0, 2.2, 0, 0.6, '#FFD84A', 1, 0, 'star');
+          else if (e.fx === 'coin') burst(e.x, 2, e.z, 16, FX_COL.gold, 4, 4);
+          else if (Math.random() < 0.5) fx('spark', q.x + (Math.random() - 0.5) * 2 * R, 1.3, q.z + R * 0.5, 0.09);
+          break;
+        case 'segClear':   // 무한모드: 보스를 잡고 다음 구간으로(승리 색종이만 — 판은 이어진다)
         case 'win':
           for (let i = 0; i < 60; i++) part(q.x + (Math.random() - 0.5) * 8, 5 + Math.random() * 3, q.z + 5 + Math.random() * 8, (Math.random() - 0.5) * 3, Math.random() * 2, (Math.random() - 0.5) * 2, 2.4, FX_COL.confetti[i % 5], 1, 2.5);
           break;
@@ -1283,8 +1294,8 @@ export function createRenderer(cvs) {
       trapLine(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy, sel ? 2 : 1);
       const mx = (face.ax + face.bx) / 2, my = (face.ay + face.dy) / 2 - bump;
       cellLabel(c, st, mx, my, pw, ph, sel);
-      // 파고들기(SIM 9): 끝이 같은 줄 파랑보다 높은 빨간 칸(높인 끝·잭팟)은 윗 띠 위에 'MAX+끝' 표 — 다 오르면 금빛 'MAX'
-      if ((c.cap0 != null || c.jack) && c.cap > 0 && c.v0 < 0) maxTag(c, st, mx, beamY, pw);
+      // 파고들기(SIM 9)의 'MAX+끝' 표는 그리지 않는다(사용자 판단: 너무 노골적 — 어느 빨간 칸이 빨리 오르는지는 쏴 보고 알아낸다). 규칙은 그대로
+      void maxTag; void beamY;
       if (preview && c.op && dz < 40 && dz > 0 && ph > 16) {
         const r = Math.max(0, applyOp(q.n, c.op, c.v));
         const t = '=' + r;
@@ -2055,6 +2066,25 @@ export function createRenderer(cvs) {
     // 저격수 조준 반짝임(쿨이 거의 다 찼을 때)
     if (m.k === 'sniper' && typeof m.cd === 'number' && m.cd < 0.18 && m.cd > 0 && (f60 & 2)) atlas.draw(ctx, 'glint', 0, P.x + 6, py - 14);
   }
+  /* 펫: 영웅 뒤 오른쪽을 따라다닌다(영웅이 없으면 그 자리). 효과가 터지면(core 'pet' 이벤트) 통 튀며 반짝인다 */
+  function drawPet(s, pet, qx, R) {
+    const art = PET_ART[pet.id];
+    if (!art || !atlas.has(art.back)) return;
+    const q = sq;
+    const z = heroZ(q, R) - 0.55;
+    const x = qx + (s.hero ? 0.95 : 0);
+    if (!project(view, x, 0, z)) return;
+    const moving = q.vz > 0.5 && s.phase !== 'won' && s.phase !== 'lost';
+    const fr = moving ? ((time * 8) | 0) & 1 : 0;
+    const pt = time - petT;
+    let py = P.y;
+    if (pt >= 0 && pt < 0.3) py -= Math.round(Math.sin((pt / 0.3) * Math.PI) * 5);
+    else if (s.phase === 'won') py -= Math.round(Math.abs(Math.sin(time * 8 + 1)) * 3);
+    ctx.fillStyle = 'rgba(43,29,46,.28)';
+    ellipse(P.x, P.y, 0.4 * P.s, 0.15 * P.s);
+    const r = atlas.draw(ctx, art.back, fr, P.x, py);
+    if (pt >= 0 && pt < 0.35 && (f60 & 2)) atlas.draw(ctx, 'glint', 1, P.x + 4, Math.round(py) - r.ay - 1);
+  }
   function drawHero(s, h, qx, R) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
     const art = HERO_ART[h.id];
@@ -2772,6 +2802,7 @@ export function createRenderer(cvs) {
     const sp = sq.sp;
     if (q.n > 0) for (let i = 0; i < sp.length; i++) push(slotPos(sq, i, R, qx).z, 7, sp[i], i);
     if (s.hero && (q.n > 0 || s.phase === 'lost')) push(heroZ(sq, R), 8, s.hero);
+    if (s.pet && (q.n > 0 || s.phase === 'lost')) push(heroZ(sq, R) - 0.55, 13, s.pet);
     const nOrd = sortItems();
     // 길가 소품은 먼저(가까운 나무가 게이트 숫자를 가리지 않게)
     for (let j = 0; j < nOrd; j++) { const it = items[sortKeys[j] & 1023]; if (it.k === 10) drawScenery(it.o, it.i, it.x, it.z); }
@@ -2787,6 +2818,7 @@ export function createRenderer(cvs) {
         case 12: drawMember(s, it.o, qx, true); break;
         case 7: drawSpecial(s, it.o, it.i, qx, R); break;
         case 8: drawHero(s, it.o, qx, R); break;
+        case 13: drawPet(s, it.o, qx, R); break;
         case 9: drawFlag(s, it.i, qx, R, it.z); break;
         case 11: if (s.phase !== 'won' && s.phase !== 'lost') drawBullets(s, alpha, true); break;
         default:
@@ -2848,6 +2880,11 @@ export function createRenderer(cvs) {
     const pal = typeof sh.pal === 'string' ? PAL[sh.pal] : sh.pal;
     return rasterCanvas(outline(frameRaster(sh.frames[0], pal), OUT), Math.max(1, scale | 0));
   }
+  /* 펫 얼굴(고르기·키우기 화면), id 'egg'는 알 */
+  function petFace(id, scale = 3) {
+    const sh = SHEETS[id === 'egg' ? 'pet_egg' : (PET_ART[id] || PET_ART.fox).face];
+    return rasterCanvas(outline(frameRaster(sh.frames[0], sh.pal), OUT), Math.max(1, scale | 0));
+  }
   function icon(name, scale = 2) {
     const rows = ICONS[name] || ICONS.star;
     return rasterCanvas(outline(frameRaster(rows, ICON_PAL_EXPORT), OUT), Math.max(1, scale | 0));
@@ -2859,7 +2896,7 @@ export function createRenderer(cvs) {
   const api = {
     view, screen, resize, draw, events, reset, setQuality, setShake, setPreview, setFrozen, setCard, setHudTarget, setHitbox,
     get hitbox() { return hitboxOn; },
-    portrait, icon, ready, prepBiome, burst: burstCompat, float: floatCompat,
+    portrait, petFace, icon, ready, prepBiome, burst: burstCompat, float: floatCompat,
     get info() {
       return {
         BW, BH, K, dpr, cssPer, quality, frozen: frozenSet || stillFor > 0.25, reduce, pages: atlas.pages.length,

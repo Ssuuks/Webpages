@@ -123,9 +123,46 @@ buildLevel(L, attempt, bare)        // bare: 높인 끝·빠른 칸 없이, 특�
 - `resize(w, h, dpr)`, `draw(s, alpha, dt, prevZ)`, `events(s, ev)`, `reset()`, `setQuality(q)`, `setShake(on)`, `setPreview(on)`, `setFrozen(on)`(일시정지·결과 화면에서 애니메이션 멈춤), `setCard(on)`(레벨 카드 뒤에서 병력 숫자·떠오르는 숫자 숨김), `setHudTarget(x, y)`(코인이 날아갈 CSS 좌표). 글자·아이콘·시트는 `ready` 전에 모두 굽는다 — 준비 뒤 게임 중 굽기는 0이어야 한다(`info.lateBakes`)
 - `portrait(id, scale)` → 영웅 얼굴 캔버스(DOM 버튼·영웅 화면용), `icon(name, scale)` → 병과·상자 아이콘 캔버스
 
+엔드게임 약속(ENDGAME.md — `SIM` 9 그대로, 새 상태는 모두 선택 필드):
+
+```js
+// 무한모드
+ENDLESS                                  // 상수(위협의 기준 화력 10단계, 바닥선, 순성장, 배수, 보스, 코인)
+segInfo(k) → { k, loop, biome, tag, L }  // 구간 k(1부터)의 지역·등급·가상 레벨(61~120 — 렌더러·화면은 s.L만 보고 지역 그림·왕관·이름을 고른다)
+segMul(k), segFloor(k), segCoins(k), segParams(k)
+buildSegment(seed, k, n, tier, attempt)  // 그 순간 병력 n·무기 단계로 만든 구간(레벨 한 판과 같은 모양, z는 0부터). 보정 없음 — 식으로만
+newEndless({ seed, start, fire, hero, pet })
+s.endless = { seed, seg, bosses, bank, wait, z0 }   // 평범한 JSON. 캠페인 판에는 없다
+s.refMul                                 // 보스가 부르는 졸개 체력 배수(무한모드만)
+s.boss.dead                              // 무한모드: 쓰러지는 연출 중(ENDLESS.wait초 뒤 nextSegment — 지나간 줄·적·소품을 버리고 이어 붙인다)
+endlessCoins(s, bonusPct)                // 적립한 보스 코인 + 처치 10마리당 1(보급 %) + 상자 코인
+progress(s)                              // 무한모드는 이번 구간의 출발 자리(z0)부터
+// 이벤트: segClear { seg, coins, tag }(보스를 잡음 — 코인 적립), segStart { seg, L }(다음 구간이 이어짐). 'win'은 나오지 않는다
+
+// 회차
+expectAt(L, c), expectLoadout(L, c), upgCap(maxL, c), capLoadout(L, c)   // c = 회차(기본 1 — 1회차는 예전 그대로)
+buildLevel(L, attempt, bare, cycle)      // lv.cycle(2부터만 있다). 난수 흐름은 1회차와 같고 골든 패스만 회차의 기대 강화로
+prepareLevel(L, cycle)                   // 회차 표(cyctable.js, useCyc) → 없으면 calibrateLevel(key, RUNTIME_TRIES, keep, cycle, fast = true)
+lv.fast                                  // 그 자리 보정의 빠른 길(L121+와 같다: 어려운 보스 = H* × popRatio, 배치 검사는 세 자리)
+parFor(lv, start, fire, hero, pet), supportFor(lv, own)   // lv.cycle을 따른다
+heroEff(lv), heroCapC(cycle, maxL), heroCost(lv ≥ 5)      // roster.js
+
+// 펫
+PETS[id] = { name, biome, fx, p: [Lv1, Lv10], … }, petP(id, lv), petCost(lv), EGG, openEgg(pets, rnd)   // roster.js — 뽑기 난수는 시뮬레이션 밖
+s.pet = { id, lv, rs(펫 전용 난수), procs, acc, avg?, done?, double? }   // 데려간 판에만 있다(없으면 해시 그대로)
+newGame(lv, { pet, petAvg })             // petAvg: 확률 대신 기대값으로 고르게(별 기준용)
+petCoinMul(s)                            // '줍줍'이 터졌으면 2
+bullet.c(크리티컬) · bullet.r(사거리) · bullet.w(넓게 쏘기로 더한 총알)
+// 이벤트: pet { fx, n?, x, z }
+```
+
+- 화면(main.js): `run.mode === 'endless'`·`run.cycle`·`run.pet`. 이어하기 스냅숏에 `mode`·`cycle`. 무한모드 정산은 `settleEndless`(전멸·포기·다시 시작 — `lastRunId`로 한 번만). 렌더러: `petFace(id, scale)`, 정렬 항목 13(펫), 'boss' 이벤트에 앞 보스의 쓰러지는 연출을 지운다. 다음 지역 그림은 구간이 시작될 때 그다음 구간 것을 쉬는 틈에 굽는다(`prepBiome`).
+- 빨간 칸의 'MAX+끝' 표(`maxTag`)는 그리지 않는다(사용자 판단) — 규칙·이벤트는 그대로.
+
 ## 5. 저장
 
 - 진행: 키 `squad.v1` 그대로, v2는 **필드 추가만**(옛 탭이 써도 깨지지 않게). 추가 필드: `v, updated, lastRunId, backupAt, nagged, heroes{sel, lv{}}, codex{foe,unit,hero,biome}, stats{wins,kills,bossKills,maxN,spGot,heroUses,resumes}, set.music, set.autoSkill`. 불러올 때 normalize(값 범위 고치기, 영웅 합류 소급).
+- 엔드게임 필드(더하기만): `cycle`(지금 회차), `endSeen`(엔딩 화면을 본 가장 높은 회차), `cyc{ c: { maxL, cur, stars, best, fails } }`(2회차부터의 진행 — 1회차는 옛 필드 그대로, `prog(d, c)`), `upgX{start,fire,coin}`(10단계 위 강화 — 옛 탭이 `upg`를 0~10으로 자르므로 따로 둔다, `upgLv`·`addUpg`), `heroX{id}`(Lv5 위, `heroLvOf`·`addHeroLv`), `endless{best,bestN,runs}`, `pets{own{id:{lv,sh}},sel,eggs,pity,got}`, `tips.endgame`. 끝낸 회차는 저장에서 셈한다(`endedCycles`: 그 회차의 maxL > 60 — 예전에 L60을 넘긴 저장은 1회차를 끝낸 것). 백업 코드는 저장을 통째로 싣기 때문에 새 필드도 그대로 간다(가져오기 비교 표의 '진행'에 회차가 나온다).
 - 이어하기: `squad.run.v1` = `{ v:1, sim:SIM, id, at, L, attempt, start, fire, support, hero, par, state }`. 3초마다·일시정지·화면 내릴 때·경기장 입장 때 저장. 결과 정산 뒤 `lastRunId`를 기록하고 지운다(이중 보상 방지). 다시 열면 멈춘 상태로 시작.
 - 백업 코드: `save.js`의 `SQD1.` 코드(압축 + 검사값). 넣기 전 비교 표, 덮어쓰기 전 `squad.bak`에 보관해 되돌리기.
 - 저장이 막히면 "저장 꺼짐" 표시, 첫 승리 뒤 `navigator.storage.persist()`, 레벨 10 이후 백업 한 번 권하기.
@@ -144,4 +181,4 @@ buildLevel(L, attempt, bare)        // bare: 높인 끝·빠른 칸 없이, 특�
 
 ## 7. 미룬 것
 
-방패병·화염병, 영웅 쾅이·철순이·딸깍, 도감 화면, 업적, 오늘의 작전, 정면 승리 포즈, 오래 안 간 지역 그림을 아틀라스에서 비우기(지금은 지역을 다 돌면 페이지가 8장까지 는다).
+방패병·화염병, 영웅 쾅이·철순이·딸깍, 도감 화면·업적·오늘의 작전(하지 않기로 했다 — ENDGAME.md), 정면 승리 포즈, 무한모드 보스 뒤 3택 1 보상(구간 사이 `nextSegment`가 끼울 자리), 펫 등급·펫 레벨 상한의 회차 해제, 무한모드 병력 숫자 줄여 쓰기(상한이 9999라 필요 없었다), 오래 안 간 지역 그림을 아틀라스에서 비우기(지금은 지역을 다 돌면 페이지가 8장까지 는다).

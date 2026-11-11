@@ -1,19 +1,19 @@
 /* 숫자부대 돌격 — 게임 루프, 조작, 화면 흐름, 저장 */
 import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
-  progress, radius, snapshot, restore,
+  progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
 } from './core.js';
 import { createRenderer } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
 import { createMusic } from './music.js';
 import {
   load, save, wipe, normalize, probe, storageMode, keepBackup, readBackup, UPGRADES, upgCost, totalStars, seen, SAVE_V,
+  prog, endedCycles, maxCycle, upgLv, addUpg, heroLvOf, addHeroLv, cycleStars, CYCLE_LEVELS,
 } from './store.js';
-import * as STORE from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
-import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, SP_LV_MAX, heroCost, heroCap, heroesEarned, biomeOf, bossNameOf } from './roster.js';
+import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg } from './roster.js';
 import {
-  tagOf, hasTags, mulText, TAG_FIRE, upgState, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss, gearGap,
+  tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
 
 const $ = (id) => document.getElementById(id);
@@ -39,11 +39,42 @@ let frameTimes = [];
 let autoLow = false;
 let wake = null;
 let par = 0;            // 이번 판 별 기준(강화·영웅 반영)
-let run = null;         // 이번 판 정보 { id, L, start, fire, support, hero }
+let run = null;         // 이번 판 정보 { id, L, start, fire, support, hero, mode? } — mode 'endless'면 무한모드(L은 그 구간의 가상 레벨)
 let lastSaveT = 0;      // 마지막 자동 저장(시뮬레이션 시간)
 let skillPressed = false;
 let music = null;
 let heroPickFromCard = false;
+/* 회차(ENDGAME.md 4절): data.cycle = 지금 하는 회차. 판마다 run.cycle. 강화·영웅 상한은 열린 가장 높은 회차(maxCycle)와 그 진행으로 */
+const curProg = () => prog(data, data.cycle);
+const topCycle = () => maxCycle(data);
+const topProg = () => prog(data, topCycle());
+const cycName = (c) => `${c}회차`;
+/* 레벨 이름: 1회차만 있을 때는 '레벨 12', 회차가 열린 뒤에는 '2회차 레벨 12' */
+const lvName = (L, c = 1) => (c > 1 || topCycle() > 1 ? `${cycName(c)} 레벨 ${L}` : `레벨 ${L}`);
+const upgOf = (id) => upgLv(data, id);
+/* 강화 하나의 상태(회차 상한 포함): { lv, cap(지금 살 수 있는 끝), max(이 회차의 끝 = 10·회차), canBuy, locked, maxed, at(더 올리려면 깨야 하는 레벨 — 0이면 다음 회차) } */
+function upgInfo(u) {
+  const c = topCycle();
+  const m = topProg().maxL;
+  const lv = upgOf(u.id);
+  const max = 10 * c;
+  const cap = Math.min(max, upgCap(m, c));
+  const maxed = lv >= max;
+  const locked = !maxed && lv >= cap;
+  let at = 0;
+  if (locked) for (let k = m + 1; k <= CYCLE_LEVELS + 1; k++) if (upgCap(k, c) > lv) { at = k - 1; break; }
+  return { lv, cap, max, maxed, locked, canBuy: !maxed && !locked, at, cycle: c };
+}
+/* 영웅 레벨 상한: 지금 살 수 있는 끝(cap)과 이 회차의 끝(max), 더 올리려면 깨야 하는 레벨(at — 0이면 다음 회차) */
+function heroLimit() {
+  const c = topCycle();
+  const m = topProg().maxL;
+  const cap = heroCapC(c, m);
+  const max = HERO_MAX_LV + HERO_LV_PER_CYCLE * (c - 1);
+  let at = 0;
+  if (cap < max) for (let k = m + 1; k <= CYCLE_LEVELS + 1; k++) if (heroCapC(c, k) > cap) { at = k - 1; break; }
+  return { cap, max, at, cycle: c };
+}
 
 /* ---------- 조작 ---------- */
 /* 좌우 누르기: 화면 왼쪽·오른쪽 절반을 누르고 있으면 그쪽으로 간다.
@@ -253,7 +284,7 @@ function notice(title, text, buttons) {
 }
 
 /* ---------- 화면 전환 ---------- */
-const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPause', 'scrResult'];
+const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPause', 'scrResult', 'scrEnding', 'scrPet'];
 function show(id) {
   for (const k of SCREENS) $(k).hidden = k !== id;
   $('hud').hidden = !(mode === 'play' || mode === 'pause' || mode === 'card' || mode === 'result');
@@ -308,43 +339,59 @@ function pendingRun() {
 }
 
 function renderTitle() {
-  $('tPlayL').textContent = data.cur;
+  $('tPlayL').textContent = curProg().cur;
+  $('tCycle').hidden = topCycle() <= 1;
+  $('tCycle').textContent = cycName(data.cycle) + ' · ';
   $('tCoins').textContent = compact(data.coins);
   $('tStars').textContent = totalStars(data);
   const sel = data.heroes.sel && HEROES[data.heroes.sel];
   $('tHero').textContent = sel ? sel.name : '레벨 3부터';
   $('storeChip').hidden = storageMode() === 'ok';
   $('storeChip').textContent = storageMode() === 'full' ? '저장 공간이 가득 찼어요' : '저장 꺼짐 · 눌러서 확인';
+  // 무한모드·펫: 엔딩 뒤(또는 시험용 주소 ?endless=1)에 열린다
+  $('endRow').hidden = !endlessOpen();
+  $('tPet').textContent = data.pets.eggs > 0 ? `알 ${data.pets.eggs}개!` : data.pets.sel && PETS[data.pets.sel] ? PETS[data.pets.sel].name : '알에서 태어나요';
+  $('btnPet').classList.toggle('glow', data.pets.eggs > 0);
+  const eb = endlessBest();
+  $('tEndless').textContent = eb.runs ? `최고 기록 · 보스 ${eb.best}` : '죽을 때까지 이어지는 한 판';
   const r = pendingRun();
   $('resumeCard').hidden = !r;
   $('resumeConfirm').hidden = true;
   if (r) {
     const st = r.state;
-    const where = st.boss ? '보스전' : `보스까지 ${Math.round(Math.min(1, st.squad.z / st.arenaZ) * 100)}%`;
-    $('resumeInfo').textContent = `레벨 ${r.L} · ${st.squad.n}명 · ${where} · ${ago(r.at)} 저장`;
-    // 첫 게이트를 지난 판만 진 판으로 센다
-    $('resumeConfirm').querySelector('.warn').textContent = restartCounts(st) ? '이 판을 포기할까요? 진 판으로 기록돼요.' : '이 판을 포기할까요?';
+    const where = st.boss ? '보스전' : `보스까지 ${Math.round(progress(st) * 100)}%`;
+    $('resumeInfo').textContent = `${runName(r)} · ${st.squad.n}명 · ${where} · ${ago(r.at)} 저장`;
+    // 첫 게이트를 지난 판만 진 판으로 센다(무한모드는 진 판이 없다 — 모은 코인을 받고 끝난다)
+    $('resumeConfirm').querySelector('.warn').textContent = r.mode === 'endless' ? '이 판을 여기서 끝낼까요? 지금까지 모은 코인은 받아요.'
+      : restartCounts(st) ? '이 판을 포기할까요? 진 판으로 기록돼요.' : '이 판을 포기할까요?';
   }
+}
+/* 저장된 판의 이름: '레벨 12' 또는 '무한모드 3구간' */
+function runName(r) {
+  if (r.mode === 'endless') return `무한모드 ${(r.state && r.state.endless && r.state.endless.seg) | 0}구간`;
+  return lvName(r.L, r.cycle || 1);
 }
 
 /* 타이틀 뒤에서는 봇이 지금 레벨을 대신 돈다 */
 function startAttract() {
   attract = true;
-  const L = data.cur;
+  // 뒤 배경은 늘 1회차 배치로(회차 표가 없는 회차의 그 자리 보정을 첫 화면에서 돌리지 않는다)
+  const L = Math.min(CYCLE_LEVELS, curProg().cur);
   setTimeout(() => {
-    if (!['title', 'levels', 'hero', 'upg', 'set', 'backup'].includes(mode)) return;
+    if (!['title', 'levels', 'hero', 'upg', 'set', 'backup', 'pet', 'ending'].includes(mode)) return;
     lv = prepareLevel(L);
-    s = newGame(lv, { start: START_N + 2 * data.upg.start, fire: data.upg.fire, hero: heroForRun(L) });
+    s = newGame(lv, { start: START_N + 2 * upgOf('start'), fire: upgOf('fire'), hero: heroForRun(L, data.cycle) });
     prevZ = s.squad.z;
     renderer.reset();
   }, 40);
 }
 
 /* ---------- 영웅 ---------- */
-function ownedHero(id) { return data.heroes.lv[id] | 0; }
-function heroForRun(L) {
+function ownedHero(id) { return heroLvOf(data, id); }
+/* 2회차부터는 영웅이 L1부터 함께 간다 */
+function heroForRun(L, cycle = 1) {
   const id = data.heroes.sel;
-  if (L < UNLOCK.hero || !id || !ownedHero(id)) return null;
+  if ((cycle <= 1 && L < UNLOCK.hero) || !id || !ownedHero(id)) return null;
   return { id, lv: ownedHero(id) };
 }
 function faceEl(id, scale, cls = 'fallback') {
@@ -399,7 +446,8 @@ function renderHero() {
   const id = heroView;
   const H = HEROES[id];
   const lvH = ownedHero(id);
-  const cap = heroCap(data.maxL);
+  const lim = heroLimit();
+  const cap = lim.cap;
   const box = $('heroDetail');
   box.textContent = '';
   const top = document.createElement('div');
@@ -417,7 +465,7 @@ function renderHero() {
   const skill = document.createElement('div');
   skill.className = 'skill-box';
   const shown = Math.max(1, lvH);
-  const next = lvH && lvH < HERO_MAX_LV;
+  const next = lvH && lvH < lim.max;
   const nextSkill = next ? `<br><em>Lv${lvH + 1}: ${H.skill.text(lvH + 1)}</em>` : '';
   const nextPassive = next ? `<br><em>Lv${lvH + 1}: ${H.passive.text(lvH + 1)}</em>` : '';
   skill.innerHTML = `<b>스킬 · ${H.skill.name}</b>${H.skill.text(shown)}${nextSkill}<b style="margin-top:6px">패시브 · ${H.passive.name}</b>${H.passive.text(shown)}${nextPassive}`;
@@ -431,19 +479,21 @@ function renderHero() {
     p.textContent = `잠김 · ${H.unlock.text}` + (H.unlock.type === 'stars' ? ` (지금 ${totalStars(data)}개)` : '');
     actions.appendChild(p);
   } else {
-    if (lvH < HERO_MAX_LV) {
+    {
       const cost = heroCost(lvH);
       const up = document.createElement(lvH >= cap ? 'p' : 'button');
       up.className = lvH >= cap ? 'muted hero-cap' : 'btn';
       if (lvH >= cap) {
-        up.textContent = `레벨 ${(cap - 1) * 10}을 깨면 Lv${cap + 1}까지 올릴 수 있어요`;
+        // 회차로 풀리는 상한(회차마다 +2): 이 회차 안에서 더 풀릴 것이 있으면 그 레벨, 없으면 다음 회차
+        up.textContent = lim.at ? `${lvName(lim.at, lim.cycle)}${eul(lim.at)} 깨면 Lv${cap + 1}까지 올릴 수 있어요`
+          : endedCycles(data) >= 1 || lim.max > HERO_MAX_LV ? `${cycName(lim.cycle + 1)}에서 Lv${lim.max + HERO_LV_PER_CYCLE}까지 열려요` : `레벨 ${CYCLE_LEVELS}${eul(CYCLE_LEVELS)} 깨고 2회차에 가면 Lv${lim.max + HERO_LV_PER_CYCLE}까지 열려요`;
       } else {
         up.innerHTML = `Lv${lvH} → Lv${lvH + 1} · <span class="coinchip">${cost}</span>`;
         up.disabled = data.coins < cost;
         up.addEventListener('click', () => {
           if (data.coins < cost) { sfx.deny(); return; }
           data.coins -= cost;
-          data.heroes.lv[id] = lvH + 1;
+          addHeroLv(data, id);
           save(data);
           sfx.buy();
           renderHero();
@@ -494,7 +544,7 @@ let balanceNote = false;   // 난이도 개편 뒤 처음: 기존 플레이어�
 function nextJoinNotice() {
   if (mode !== 'title' || modalOpen()) return;
   const id = newlyEarned()[0];
-  if (!id) { if (!showBalanceNote()) maybeNudge(); return; }
+  if (!id) { if (!pendingEnding() && !showBalanceNote() && !showEndgameNote()) maybeNudge(); return; }
   openJoin(id);
 }
 /* 규칙(SIM)이 바뀔 때마다 기존 플레이어에게 그 사이 바뀐 것만 한 번 알린다. 키 = 그 규칙이 들어온 SIM */
@@ -503,7 +553,7 @@ const BALANCE_NOTES = [
   [6, '판 중간이 조여졌어요: 판돈 걸린 게이트 줄, 보스 앞 몰이(양옆에서도 와요), 어려운 판의 열쇠 상자. 못 부순 상자·철창에 부딪히면 병사를 잃어요.'],
   [7, '보스 내려찍기의 빨간 구역이 실제로 맞는 범위만큼 넓게 보여요. 몰이가 오면 알림이 뜨고, 3번 지면 받는 지원은 강화가 적을수록 커져요.'],
   [8, '보이는 대로 부딪혀요: 부대 모양이 실제로 맞는 크기와 같아졌고, 살짝 스치기만 한 좀비·톱날·독침·벽은 안 맞아요. 벽·상자에 걸치면 걸친 쪽 병사만 잃어요. 대신 제대로 부딪힌 거구는 더 아파요.'],
-  [9, 'MAX가 붙은 빨간 게이트는 쏘면 빨리 올라요 — 앞 줄을 지나자마자 그 칸 앞에서 몰아 쏘면 옆 파란 칸보다 많아지고, 화력 강화·뭉치 대장이 있으면 MAX까지 가요. 같은 특수병을 또 구하면 병사 대신 그 특수병이 Lv2·Lv3로 강해져요.'],
+  [9, '빨간 게이트 가운데에는 쏘면 빨리 오르는 칸이 숨어 있어요 — 앞 줄을 지나자마자 그 칸 앞에서 몰아 쏘면 옆 파란 칸보다 많아지기도 해요. 같은 특수병을 또 구하면 병사 대신 그 특수병이 Lv2·Lv3로 강해져요.'],
 ];
 function balanceNoteText(seen) {
   const lines = BALANCE_NOTES.filter(([v]) => v > seen && v <= SIM).map(([, t]) => t);
@@ -518,6 +568,15 @@ function showBalanceNote() {
   save(data);
   if (!text) return false;
   notice('난이도가 새로 맞춰졌어요', text, [{ label: '알겠어요', primary: true }]);
+  return true;
+}
+/* 엔드게임이 생긴 것을 기존 플레이어(아직 엔딩 전)에게 한 번 알린다 */
+function showEndgameNote() {
+  if (data.tips.endgame) return false;
+  data.tips.endgame = 1;
+  save(data);
+  if (data.maxL <= 1 || endedCycles(data) >= 1) return false;
+  notice('끝이 생겼어요', `레벨 ${CYCLE_LEVELS}의 대왕 곰곰이를 물리치면 엔딩이에요. 그 뒤에는 더 센 2회차(강화·영웅 상한이 풀려요), 죽을 때까지 이어지는 무한모드, 함께 다니는 펫이 열려요.`, [{ label: '알겠어요', primary: true }]);
   return true;
 }
 function openJoin(id) {
@@ -549,6 +608,203 @@ function closeJoin(take) {
   setTimeout(nextJoinNotice, 300);
 }
 
+/* ---------- 펫(ENDGAME.md 6절) ---------- */
+const petOpen = () => endlessOpen();
+function petForRun() {
+  const id = data.pets.sel;
+  if (!petOpen() || !id || !data.pets.own[id] || !PETS[id]) return null;
+  return { id, lv: data.pets.own[id].lv };
+}
+function petFaceEl(id, scale) {
+  try { const c = renderer.petFace && renderer.petFace(id, scale); if (c) { c.classList.add('pix'); return c; } } catch { /* 아직 그림이 없다 */ }
+  const sp = document.createElement('span');
+  sp.className = 'fallback';
+  sp.textContent = id === 'egg' ? '알' : PETS[id] ? PETS[id].name[0] : '?';
+  return sp;
+}
+let petView = '';
+function renderPet() {
+  $('pCoins').textContent = compact(data.coins);
+  const P = data.pets;
+  if (!petView || !PETS[petView]) petView = P.sel || Object.keys(P.own)[0] || PET_IDS[0];
+  const id = petView;
+  const T = PETS[id];
+  const own = P.own[id];
+  const box = $('petDetail');
+  box.textContent = '';
+  const top = document.createElement('div');
+  top.className = 'hero-top';
+  const face = document.createElement('div');
+  face.className = 'portrait';
+  face.appendChild(own ? petFaceEl(id, 5) : petFaceEl('egg', 5));
+  const info = document.createElement('div');
+  info.innerHTML = '<div class="hero-name"></div><span class="hero-role"></span><p class="hero-line"></p>';
+  info.querySelector('.hero-name').textContent = own ? `${T.name} Lv${own.lv}` : '아직 못 만난 펫';
+  info.querySelector('.hero-role').textContent = T.fxName;
+  info.querySelector('.hero-line').textContent = own ? `“${T.line}”` : '알에서 태어나요';
+  top.append(face, info);
+  box.appendChild(top);
+  const fx = document.createElement('div');
+  fx.className = 'skill-box';
+  const lvP = own ? own.lv : 1;
+  fx.innerHTML = `<b>효과 · ${T.fxName}</b>${T.text(lvP)}${own && lvP < PET_MAX_LV ? `<br><em>Lv${lvP + 1}: ${T.text(lvP + 1)}</em>` : ''}<br><small>레벨이 오르면 터질 확률이 올라요. 터지면 펫이 통 튀며 반짝여요.</small>`;
+  box.appendChild(fx);
+  const actions = document.createElement('div');
+  actions.className = 'stack';
+  actions.style.marginTop = '12px';
+  if (own) {
+    if (own.lv < PET_MAX_LV) {
+      const c = petCost(own.lv);
+      const up = document.createElement('button');
+      up.className = 'btn';
+      up.classList.add('pet-up');
+      up.innerHTML = `<span>Lv${own.lv} → Lv${own.lv + 1}</span><small><span class="coinchip">${c.coins.toLocaleString('ko')}</span> · 조각 ${own.sh}/${c.shards}</small>`;
+      up.disabled = data.coins < c.coins || own.sh < c.shards;
+      up.addEventListener('click', () => {
+        if (data.coins < c.coins || own.sh < c.shards) { sfx.deny(); return; }
+        data.coins -= c.coins;
+        own.sh -= c.shards;
+        own.lv++;
+        save(data);
+        sfx.levelUp();
+        renderPet();
+        renderTitle();
+      });
+      actions.appendChild(up);
+    } else {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = `최고 레벨이에요 · 남은 조각 ${own.sh}개`;
+      actions.appendChild(p);
+    }
+    const sel = document.createElement('button');
+    sel.className = 'btn primary';
+    const isSel = P.sel === id;
+    sel.textContent = isSel ? '두고 가기' : '이 펫과 출격';
+    sel.addEventListener('click', () => { P.sel = isSel ? '' : id; save(data); sfx.click(); renderPet(); renderTitle(); });
+    actions.appendChild(sel);
+  }
+  box.appendChild(actions);
+  const list = $('petList');
+  list.textContent = '';
+  for (const pid of PET_IDS) {
+    const o = P.own[pid];
+    const b = document.createElement('button');
+    b.className = 'hero-pick' + (pid === petView ? ' sel' : '') + (o ? '' : ' locked');
+    b.appendChild(o ? petFaceEl(pid, 3) : petFaceEl('egg', 3));
+    const nm = document.createElement('span');
+    nm.textContent = o ? `${PETS[pid].name} Lv${o.lv}` : '???';
+    b.appendChild(nm);
+    const sm = document.createElement('small');
+    sm.textContent = o ? (P.sel === pid ? '출격 중' : PETS[pid].fxName) : PETS[pid].fxName;
+    b.appendChild(sm);
+    b.addEventListener('click', () => { sfx.click(); petView = pid; renderPet(); });
+    list.appendChild(b);
+  }
+  // 알: 값과 확률을 그대로 보여 준다(숨은 확률 없음)
+  const egg = $('petEgg');
+  egg.textContent = '';
+  const missing = PET_IDS.filter((x) => !P.own[x]).length;
+  const row = document.createElement('div');
+  row.className = 'row';
+  const open = document.createElement('button');
+  open.className = 'btn' + (P.eggs > 0 ? ' glow' : '');
+  open.textContent = `알 열기 (${P.eggs}개)`;
+  open.disabled = P.eggs <= 0;
+  open.addEventListener('click', () => hatchEgg());
+  const buy = document.createElement('button');
+  buy.className = 'btn';
+  buy.innerHTML = `알 사기 · <span class="coinchip">${EGG.price}</span>`;
+  buy.disabled = data.coins < EGG.price;
+  buy.addEventListener('click', () => {
+    if (data.coins < EGG.price) { sfx.deny(); return; }
+    data.coins -= EGG.price;
+    P.eggs++;
+    save(data);
+    sfx.buy();
+    renderPet();
+    renderTitle();
+  });
+  row.append(open, buy);
+  egg.appendChild(row);
+  const odds = document.createElement('p');
+  odds.className = 'muted';
+  odds.textContent = missing
+    ? `알 하나: 새 펫 ${Math.round(EGG.pNew * 100)}% · 가진 펫의 조각 ${EGG.shards}개 ${100 - Math.round(EGG.pNew * 100)}%. 알 ${EGG.pity}개 안에 새 펫 하나는 꼭 나와요(지금 ${P.pity}개째 중복). 알은 무한모드 보스(대왕은 꼭, 그 밖은 ${Math.round(EGG.pEndless * 100)}%)와 2회차부터 대왕 레벨 첫 격파에서도 얻어요.`
+    : `여섯 마리를 모두 만났어요! 이제 알은 가진 펫 가운데 하나의 조각 ${EGG.shards}개가 돼요.`;
+  egg.appendChild(odds);
+}
+function hatchEgg() {
+  const P = data.pets;
+  if (P.eggs <= 0) { sfx.deny(); return; }
+  P.eggs--;
+  const r = openEgg(P);
+  if (r.fresh && !P.sel) P.sel = r.id;
+  save(data);
+  petView = r.id;
+  renderPet();
+  renderTitle();
+  sfx.join();
+  vibe([20, 40, 20]);
+  const T = PETS[r.id];
+  notice(r.fresh ? `${T.name}${ga(T.name)} 태어났어요!` : `${T.name} 조각 +${r.shards}`,
+    r.fresh ? `“${T.line}” — ${T.fxName}: ${T.text(1)}` : `이미 함께하는 펫이라 조각 ${r.shards}개가 됐어요. 조각과 코인으로 레벨을 올리면 효과가 더 자주 터져요.`,
+    [{ label: '좋아요!', primary: true }]);
+}
+
+/* ---------- 엔딩 · 회차(ENDGAME.md 3·4절) ---------- */
+/* 이 레벨을 맞춘 기대 강화(그 회차)보다 시작 병력·화력이 낮은가 — 진 판에서 '강화하고 다시'를 권할 때 */
+function gearGap(L, cyc) {
+  const e = expectAt(L, cyc);
+  const out = { below: [], gap: 0 };
+  for (const u of UPGRADES) {
+    if (u.id !== 'start' && u.id !== 'fire') continue;
+    const have = upgOf(u.id);
+    if (have < (e[u.id] | 0)) { out.below.push(u.name); out.gap += (e[u.id] | 0) - have; }
+  }
+  return out;
+}
+/* 회차 c로 넘어가 그 회차의 이어 할 레벨을 시작한다 */
+function startCycle(c) {
+  const k = Math.max(1, Math.min(topCycle(), c));
+  data.cycle = k;
+  save(data);
+  tryStart(prog(data, k).cur, { cycle: k });
+}
+/* 엔딩 화면: 회차 c의 L60(대왕 곰곰이)을 깬 뒤 한 번. 이번 회차 요약 + 다음 회차·무한모드 안내 */
+let endingCycle = 0;
+function openEnding(c) {
+  endingCycle = c;
+  // 첫 엔딩 선물: 펫 알 하나(펫은 여기서 처음 열린다)
+  if (!data.pets.got) { data.pets.got = 1; data.pets.eggs++; }
+  data.endSeen = Math.max(data.endSeen | 0, c);
+  save(data);
+  mode = 'ending';
+  $('endTitle').textContent = c > 1 ? `${cycName(c)} 완료!` : '작전 완료!';
+  $('endLine').textContent = c > 1 ? `더 세진 대왕 곰곰이도 물리쳤어요. 숫자부대는 멈추지 않아요!` : '대왕 곰곰이를 물리치고 여섯 지역을 모두 되찾았어요!';
+  const st = data.stats;
+  const lines = [
+    [`${cycName(c)} 별`, `★ ${cycleStars(data, c)} / ${CYCLE_LEVELS * 3}`],
+    ['총 처치', `${compact(st.kills | 0)}`],
+    ['잡은 보스', `${st.bossKills | 0}`],
+    ['최대 병력', `${st.maxN | 0}명`],
+  ];
+  $('endStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
+  $('endNextInfo').textContent = `${cycName(c + 1)}: 레벨 1부터 다시! 적이 더 세지고, 강화는 ${10 * (c + 1)}단계·영웅은 Lv${HERO_MAX_LV + HERO_LV_PER_CYCLE * c}까지 더 올릴 수 있어요. 지난 회차 레벨은 레벨 화면에서 다시 할 수 있어요.`;
+  $('endEndlessInfo').textContent = c > 1 ? '무한모드: 죽을 때까지 이어지는 한 판 — 강화가 오른 만큼 더 멀리 가요.' : '무한모드가 열렸어요: 보스를 잡으면 곧바로 다음 지역이 이어지는, 죽을 때까지 가는 한 판이에요. 펫도 이제 만날 수 있어요.';
+  $('endNext').textContent = `${cycName(c + 1)} 시작`;
+  show('scrEnding');
+  armHistory();
+  sfx.win();
+}
+/* 엔딩을 아직 못 본 끝낸 회차가 있으면(예전에 L60을 넘긴 저장, 결과 화면에서 바로 나간 판) 첫 화면에서 한 번 보여 준다 */
+function pendingEnding() {
+  const e = endedCycles(data);
+  if (mode !== 'title' || modalOpen() || e <= (data.endSeen | 0)) return false;
+  openEnding(e);
+  return true;
+}
+
 /* 레벨 10쯤에서 한 번만: 백업 권하기(영웅 합류 안내가 모두 끝난 뒤) */
 function maybeNudge() {
   if (mode !== 'title' || modalOpen() || data.maxL < 10 || data.backupAt || data.nagged || storageMode() !== 'ok') return;
@@ -561,16 +817,26 @@ function maybeNudge() {
 }
 
 /* ---------- 레벨 선택 ---------- */
+let levelsCycle = 1;   // 레벨 화면이 보여 주는 회차(지난 회차의 별 채우기)
 function renderLevels() {
   const grid = $('levelGrid');
   grid.textContent = '';
-  const top = Math.max(30, Math.ceil((data.maxL + 2) / 5) * 5);
+  const tc = topCycle();
+  levelsCycle = Math.max(1, Math.min(tc, levelsCycle));
+  const P = prog(data, levelsCycle);
+  // 회차 바꾸기(2회차가 열린 뒤에만 보인다)
+  $('cycBar').hidden = tc <= 1;
+  $('cycName').textContent = `${cycName(levelsCycle)} · ★ ${cycleStars(data, levelsCycle)}/${CYCLE_LEVELS * 3}`;
+  $('cycPrev').disabled = levelsCycle <= 1;
+  $('cycNext').disabled = levelsCycle >= tc;
+  // 한 회차는 L1~60(예전에 L61+를 연 저장도 60까지만 보인다 — 받은 별·기록은 그대로 남는다)
+  const top = Math.min(CYCLE_LEVELS, Math.max(30, Math.ceil((P.maxL + 2) / 5) * 5));
   for (let L = 1; L <= top; L++) {
     const b = document.createElement('button');
     b.className = 'lv';
-    const open = L <= data.maxL;
+    const open = L <= P.maxL;
     b.disabled = !open;
-    const st = data.stars[L] | 0;
+    const st = P.stars[L] | 0;
     b.innerHTML = `<b>${L}</b><span class="st" aria-label="별 ${st}개">${'★'.repeat(st)}${'☆'.repeat(3 - st)}</span>`;
     // 어려움·매우 어려움·쉼 배지(잠긴 레벨에도 — 벽이 어디 있는지 미리 보이게)
     const tg = tagOf(L);
@@ -580,9 +846,10 @@ function renderLevels() {
     }
     if (!open) b.setAttribute('aria-label', `레벨 ${L}${tg.label ? ' ' + tg.label : ''} 잠김`);
     else if (tg.label) b.setAttribute('aria-label', `레벨 ${L} ${tg.label}, 별 ${st}개`);
-    if (L === data.cur) b.classList.add('cur');
-    // 지난 레벨을 골라도 '이어하기' 위치(data.cur)는 바꾸지 않는다
-    b.addEventListener('click', () => { sfx.click(); tryStart(L); });
+    if (L === P.cur && levelsCycle === data.cycle) b.classList.add('cur');
+    // 지난 레벨을 골라도 '이어하기' 위치(cur)는 바꾸지 않는다
+    const cyc = levelsCycle;
+    b.addEventListener('click', () => { sfx.click(); tryStart(L, { cycle: cyc }); });
     grid.appendChild(b);
   }
 }
@@ -594,19 +861,22 @@ function renderUpg() {
   list.textContent = '';
   for (const u of UPGRADES) {
     // 진행에 따른 상한은 새로 사는 것만 막는다 — 이미 산 단계(상한보다 높아도)는 그대로 둔다
-    const st = upgState(data, u, undefined, STORE);
+    const st = upgInfo(u);
     const lvU = st.lv;
     const maxed = st.maxed;
     const locked = st.locked;
     const cost = upgCost(lvU);
     const card = document.createElement('div');
-    card.className = 'upg' + (locked ? ' locked' : '');
-    const pip = (i) => (i < lvU ? 'on' : i >= Math.max(st.cap, lvU) ? 'cap' : '');
+    card.className = 'upg' + (locked || maxed ? ' locked' : '');
+    // 점 열 개는 지금 올리는 열 단계(1~10, 11~20 …) — 회차마다 +10단계가 풀린다
+    const dec = Math.floor(Math.min(lvU, st.max - 1) / 10) * 10;
+    const pip = (i) => (dec + i < lvU ? 'on' : dec + i >= Math.max(st.cap, lvU) ? 'cap' : '');
     card.innerHTML = `
-      <div class="upg-head"><b>${u.name}</b><span class="pips" aria-hidden="true">${Array.from({ length: u.max }, (_, i) => `<i class="${pip(i)}"></i>`).join('')}</span></div>
+      <div class="upg-head"><b>${u.name}${lvU > 10 || st.max > 10 ? ` <small>${lvU}단계</small>` : ''}</b><span class="pips" aria-hidden="true">${Array.from({ length: u.max }, (_, i) => `<i class="${pip(i)}"></i>`).join('')}</span></div>
       <p class="upg-eff">${u.effect(lvU)}${maxed || locked ? '' : ` → <em>${u.effect(lvU + 1)}</em>`}</p>`;
-    const capText = st.at ? `레벨 ${st.at}${eul(st.at)} 깨면 더 올릴 수 있어요` : '지금은 더 올릴 수 없어요';
-    if (locked) {
+    const nextCyc = endedCycles(data) >= 1 ? `${cycName(st.cycle + 1)}에서 ${st.max + 10}단계까지 열려요` : `레벨 ${CYCLE_LEVELS}${eul(CYCLE_LEVELS)} 깨고 2회차에 가면 ${st.max + 10}단계까지 열려요`;
+    const capText = maxed ? nextCyc : st.at ? `${lvName(st.at, st.cycle)}${eul(st.at)} 깨면 더 올릴 수 있어요` : '지금은 더 올릴 수 없어요';
+    if (locked || maxed) {
       const note = document.createElement('p');
       note.className = 'upg-cap';
       note.textContent = capText;
@@ -614,13 +884,13 @@ function renderUpg() {
     }
     const btn = document.createElement('button');
     btn.className = 'buy';
-    btn.textContent = maxed ? '최대' : locked ? '상한' : `${cost} 코인`;
+    btn.textContent = maxed ? '최대' : locked ? '상한' : `${cost.toLocaleString('ko')} 코인`;
     btn.disabled = maxed || locked || data.coins < cost;
-    if (locked) btn.setAttribute('aria-label', `${u.name} 상한 — ${capText}`);
+    if (locked || maxed) btn.setAttribute('aria-label', `${u.name} 상한 — ${capText}`);
     btn.addEventListener('click', () => {
-      if (data.coins < cost || maxed || !upgState(data, u, undefined, STORE).canBuy) { sfx.deny(); return; }
+      if (data.coins < cost || maxed || !upgInfo(u).canBuy) { sfx.deny(); return; }
       data.coins -= cost;
-      data.upg[u.id] = lvU + 1;
+      addUpg(data, u.id);
       save(data);
       sfx.buy();
       renderUpg();
@@ -701,11 +971,15 @@ async function openBackup(kind) {
     $('bkCode').value = '만드는 중…';
     try {
       $('bkCode').value = await encodeBackup(data);
-      $('bkSummary').textContent = `레벨 ${data.maxL} · ★ ${totalStars(data)} · 코인 ${data.coins.toLocaleString('ko')} 기준`;
+      $('bkSummary').textContent = `${reachText(data)} · ★ ${totalStars(data)} · 코인 ${data.coins.toLocaleString('ko')} 기준`;
     } catch { $('bkCode').value = '코드를 만들지 못했어요. 다시 시도해 주세요.'; }
   }
 }
 function heroCount(d) { return Object.keys((d.heroes && d.heroes.lv) || {}).length; }
+/* 어디까지 왔나: '레벨 12' 또는 '2회차 레벨 12' */
+function reachText(d) { const c = maxCycle(d); const m = Math.min(CYCLE_LEVELS, prog(d, c).maxL); return c > 1 ? `${cycName(c)} 레벨 ${m}` : `레벨 ${m}`; }
+/* 진행을 한 수로(가져오기 비교용): 회차가 높을수록, 그 안에서는 레벨이 높을수록 */
+const reachRank = (d) => maxCycle(d) * 1000 + Math.min(CYCLE_LEVELS, prog(d, maxCycle(d)).maxL);
 function cmpRow(label, a, b) { return `<tr><td>${label}</td><td>${a}</td><td>${b}</td></tr>`; }
 async function checkImport() {
   $('bkErr').textContent = '';
@@ -716,10 +990,10 @@ async function checkImport() {
     const d = normalize(raw);
     pendingImport = d;
     const when = at ? new Date(at).toLocaleString('ko') : '—';
-    $('bkRows').innerHTML = cmpRow('레벨', data.maxL, d.maxL) + cmpRow('별', totalStars(data), totalStars(d))
+    $('bkRows').innerHTML = cmpRow('진행', reachText(data), reachText(d)) + cmpRow('별', totalStars(data), totalStars(d))
       + cmpRow('코인', data.coins.toLocaleString('ko'), d.coins.toLocaleString('ko')) + cmpRow('영웅', heroCount(data), heroCount(d))
       + cmpRow('저장 시각', data.updated ? new Date(data.updated).toLocaleString('ko') : '—', when);
-    $('bkWarn').hidden = !(totalStars(d) < totalStars(data) || d.maxL < data.maxL);
+    $('bkWarn').hidden = !(totalStars(d) < totalStars(data) || reachRank(d) < reachRank(data));
     $('bkCompare').hidden = false;
   } catch (e) {
     $('bkErr').textContent = e.message || '코드를 읽지 못했어요.';
@@ -782,30 +1056,48 @@ const NEW_THING = {
   13: '새로 나와요: 로켓병',
 };
 let startToken = 0;     // 카드가 떠 있는 동안 다른 레벨을 누르면 앞의 예약은 버린다
+let runCycle = 1;       // 이번 판의 회차
 let support = 0;        // 연패 지원 병력
 
 /* 진행 중인 판이 있으면 먼저 물어본다 */
 function tryStart(L, opts = {}) {
   if (modalOpen()) return;
+  const cyc = opts.cycle || data.cycle;
+  opts = { ...opts, cycle: cyc };
   const r = pendingRun();
   if (!r) { startLevel(L, opts); return; }
+  if (r.mode === 'endless') {
+    notice('하던 무한모드 판이 있어요', `${runName(r)}에서 멈춘 판을 끝내고 ${lvName(L, cyc)}${eul(L)} 시작할까요? 지금까지 모은 코인은 받아요.`, [
+      { label: '끝내고 시작', primary: true, fn: () => { abandonRun(r); startLevel(L, opts); } },
+      { label: '취소' },
+    ]);
+    return;
+  }
   // 첫 게이트를 지난 판만 진 판으로 센다(그 전에 그만둔 판은 공짜)
   const counts = restartCounts(r.state);
-  if (r.L === L && !opts.support) {
-    notice('하던 판이 있어요', `레벨 ${L}${eul(L)} 저장한 곳부터 이어서 할까요?${counts ? ' 처음부터 하면 하던 판은 진 판으로 기록돼요.' : ''}`, [
+  if (r.L === L && (r.cycle || 1) === cyc && !opts.support) {
+    notice('하던 판이 있어요', `${lvName(L, cyc)}${eul(L)} 저장한 곳부터 이어서 할까요?${counts ? ' 처음부터 하면 하던 판은 진 판으로 기록돼요.' : ''}`, [
       { label: '이어서 하기', primary: true, fn: resumeRun },
       { label: '처음부터', fn: () => { abandonRun(r); startLevel(L, opts); } },
       { label: '취소' },
     ]);
     return;
   }
-  notice('진행 중인 판이 있어요', `레벨 ${r.L}${eul(r.L)} 포기하고 레벨 ${L}${eul(L)} 시작할까요?${counts ? ' 포기한 판은 진 판으로 기록돼요.' : ''}`, [
+  notice('진행 중인 판이 있어요', `${runName(r)}${eul(r.L)} 포기하고 ${lvName(L, cyc)}${eul(L)} 시작할까요?${counts ? ' 포기한 판은 진 판으로 기록돼요.' : ''}`, [
     { label: '포기하고 시작', primary: true, fn: () => { abandonRun(r); startLevel(L, opts); } },
     { label: '취소' },
   ]);
 }
 function abandonRun(r) {
-  if (restartCounts(r.state)) data.fails[r.L] = (data.fails[r.L] | 0) + 1;
+  if (r.mode === 'endless') {
+    // 무한모드는 포기해도 모은 코인·기록을 받는다
+    const st = restore(r.state);
+    if (st && st.endless) { const got = settleEndless(st, r.id); if (got.coins > 0) toast(`무한모드 정산 · 코인 +${got.coins}`, 2200); }
+    else { data.lastRunId = r.id; save(data); }
+    clearRun();
+    return;
+  }
+  if (restartCounts(r.state)) { const F = prog(data, r.cycle || 1).fails; F[r.L] = (F[r.L] | 0) + 1; }
   data.lastRunId = r.id;
   clearRun();
   save(data);
@@ -813,11 +1105,12 @@ function abandonRun(r) {
 
 /* 이 저장이 실제로 들고 가는 강화(3패 지원 크기: 기대 강화보다 모자라면 그만큼 더 준다) */
 function ownLoadout() {
-  return { start: START_N + 2 * (data.upg.start | 0), fire: data.upg.fire | 0 };
+  return { start: START_N + 2 * upgOf('start'), fire: upgOf('fire') };
 }
 
 /* 레벨 카드 글자(지역·태그·새 메커닉) */
 function fillCard(L) {
+  $('cardEyebrow').textContent = runCycle > 1 || topCycle() > 1 ? `${cycName(runCycle)} · 레벨` : '레벨';
   $('cardL').textContent = L;
   const b = biomeOf(L);
   const firstInRegion = (L - 1) % 10 === 0 && L > 1;
@@ -858,9 +1151,12 @@ function startLevel(L, opts = {}) {
   attract = false;
   mode = 'card';
   support = opts.support || 0;
+  runCycle = Math.max(1, Math.min(topCycle(), opts.cycle || data.cycle));
   tutorial = false;
   heroPickFromCard = false;
   $('tut').hidden = true;
+  if (run && run.mode === 'endless') run = null;
+  $('hudLbl').textContent = '레벨';
   const tg = fillCard(L);
   $('cardGoal').textContent = '준비 중…';
   $('cardHero').hidden = true;
@@ -908,13 +1204,15 @@ const prepBiome = (L) => { if (renderer.prepBiome) renderer.prepBiome(biomeOf(Ma
 /* 레벨·영웅·강화로 이번 판을 준비하고 카드 뒤에 출발 장면을 깐다 */
 function prepareRun(L) {
   prepBiome(L);   // 카드가 떠 있는 동안 굽는다(보스까지는 30초 넘게 남는다)
-  lv = prepareLevel(L);
-  const hero = heroForRun(L);
-  const base = START_N + 2 * data.upg.start;
+  lv = prepareLevel(L, runCycle);   // 회차 표가 없는 회차(4회차부터)는 여기서 그 자리 보정이 돈다('준비 중…')
+  const hero = heroForRun(L, runCycle);
+  const base = START_N + 2 * upgOf('start');
+  const fire = upgOf('fire');
   // worst: 가장 아까운 게이트 { k(몇 번째 줄), m(가장 좋은 다른 칸보다 덜 얻은 병사) }, arenaN: 경기장에 들어설 때 병력(근소한 패배 계산용)
-  run = { id: Math.random().toString(36).slice(2, 10), L, start: base + support, fire: data.upg.fire, support, hero, worst: null, arenaN: 0 };
-  par = parFor(lv, base, data.upg.fire, hero);
-  s = newGame(lv, { start: run.start, fire: run.fire, hero });
+  const pet = petForRun();
+  run = { id: Math.random().toString(36).slice(2, 10), L, cycle: runCycle, start: base + support, fire, support, hero, pet, worst: null, arenaN: 0 };
+  par = parFor(lv, base, fire, hero, pet);   // 별 기준에는 펫의 기대 효과도 넣는다(펫 때문에 별이 쉬워지지 않게)
+  s = newGame(lv, { start: run.start, fire: run.fire, hero, pet });
   prevZ = s.squad.z;
   renderer.reset();
   const g = starGoals(par, lv);
@@ -923,9 +1221,9 @@ function prepareRun(L) {
   chip.textContent = '';
   if (hero) {
     chip.appendChild(faceEl(hero.id, 1));
-    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv} ▸`);
+    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''} ▸`);
     chip.hidden = false;
-  } else if (L >= UNLOCK.hero && HERO_IDS.some((id) => ownedHero(id))) {
+  } else if ((runCycle > 1 || L >= UNLOCK.hero) && HERO_IDS.some((id) => ownedHero(id))) {
     chip.append('영웅 고르기 ▸');
     chip.hidden = false;
   }
@@ -935,8 +1233,179 @@ function prepareRun(L) {
 function backToCard() {
   mode = 'card';
   show('scrCard');
-  prepareRun(run ? run.L : data.cur);
+  if (run && run.mode === 'endless') prepareEndless();
+  else prepareRun(run ? run.L : curProg().cur);
   $('cardGo').hidden = false;
+}
+
+/* ---------- 무한모드(ENDGAME.md 5절) ---------- */
+const endlessParam = (() => { try { return new URLSearchParams(location.search).get('endless') === '1'; } catch { return false; } })();
+function endlessOpen() { return endedCycles(data) >= 1 || endlessParam; }
+function endlessBest() { const e = data.endless || {}; return { best: e.best | 0, bestN: e.bestN | 0, runs: e.runs | 0 }; }
+const isEndless = () => !!(run && run.mode === 'endless');
+/* 구간 이름: '3구간 · 무너진 도시' */
+function segName(k) { const i = segInfo(k); return `${i.k}구간 · ${BIOMES[i.biome].name}`; }
+function levelOfSeg() { return { L: s.L, attempt: 0, endless: true, params: s.params, tag: s.params.tag }; }
+function setHudLevel() {
+  const e = isEndless() && s && s.endless;
+  $('hudLbl').textContent = e ? '구간' : '레벨';
+  $('hudL').textContent = e ? s.endless.seg : lv ? lv.L : 1;
+}
+function tryEndless() {
+  if (modalOpen() || !endlessOpen()) return;
+  const r = pendingRun();
+  if (!r) { startEndless(); return; }
+  if (r.mode === 'endless') {
+    notice('하던 무한모드 판이 있어요', `${runName(r)}부터 이어서 할까요? 새로 시작하면 하던 판은 끝나고 모은 코인을 받아요.`, [
+      { label: '이어서 하기', primary: true, fn: resumeRun },
+      { label: '새로 시작', fn: () => { abandonRun(r); startEndless(); } },
+      { label: '취소' },
+    ]);
+    return;
+  }
+  const counts = restartCounts(r.state);
+  notice('진행 중인 판이 있어요', `레벨 ${r.L}${eul(r.L)} 포기하고 무한모드를 시작할까요?${counts ? ' 포기한 판은 진 판으로 기록돼요.' : ''}`, [
+    { label: '포기하고 시작', primary: true, fn: () => { abandonRun(r); startEndless(); } },
+    { label: '취소' },
+  ]);
+}
+/* 무한모드 카드 → 출발. opts.quick: 카드 없이 바로(다시 하기) */
+function startEndless(opts = {}) {
+  attract = false;
+  mode = 'card';
+  support = 0;
+  tutorial = false;
+  heroPickFromCard = false;
+  $('tut').hidden = true;
+  $('cardEyebrow').textContent = '무한모드';
+  $('cardL').textContent = '∞';
+  $('cardRegion').textContent = `${BIOMES[0].name}부터 차례로`;
+  $('cardTag').hidden = true;
+  $('cardNew').textContent = '보스를 잡으면 곧바로 다음 지역! 병력·무기·특수병을 그대로 들고 가요';
+  const eb = endlessBest();
+  $('cardBoss').textContent = eb.runs ? `최고 기록: 보스 ${eb.best} · 최대 병력 ${eb.bestN}명` : '죽을 때까지 몇 구간을 갈 수 있을까요?';
+  $('cardUnit').hidden = true;
+  $('cardGoal').textContent = '준비 중…';
+  $('cardHero').hidden = true;
+  $('cardGo').hidden = true;
+  $('bossBar').hidden = true;
+  $('bossBar').classList.remove('rage');
+  hideEta();
+  $('hudBar').style.transform = 'scaleX(0)';
+  $('spChips').textContent = '';
+  spKey = 0;
+  hudCache = '';
+  pointers.clear();
+  activeId = null;
+  run = null;
+  const token = ++startToken;
+  if (opts.quick) {
+    sfx.click();
+    prepareEndless();
+    begin(0);
+    toast(`무한모드 · ${segName(1)}`, 1600);
+    return;
+  }
+  show('scrCard');
+  armHistory();
+  sfx.click();
+  const t0 = performance.now();
+  setTimeout(() => {
+    if (token !== startToken || mode !== 'card') return;
+    prepareEndless();
+    const wait = Math.max(0, 2200 - (performance.now() - t0));
+    setTimeout(() => { if (token === startToken && mode === 'card') begin(0); }, wait);
+  }, 30);
+}
+function prepareEndless() {
+  const hero = heroForRun(UNLOCK.hero, 2);
+  const start = START_N + 2 * upgOf('start');
+  const seed = run && run.mode === 'endless' && run.seed ? run.seed : (Math.random() * 0xFFFFFFFF) >>> 0 || 1;
+  run = { id: Math.random().toString(36).slice(2, 10), mode: 'endless', seed, L: 0, start, fire: upgOf('fire'), support: 0, hero, worst: null, arenaN: 0 };
+  const pet = petForRun();
+  run.pet = pet;
+  s = newEndless({ seed, start, fire: run.fire, hero, pet });
+  lv = levelOfSeg();
+  run.L = s.L;
+  par = 0;
+  prevZ = s.squad.z;
+  renderer.reset();
+  // 첫 두 지역의 그림을 카드가 떠 있는 동안 굽는다(다음 지역은 구간이 바뀔 때마다 미리)
+  prepBiome(segInfo(1).L);
+  prepBiome(segInfo(2).L);
+  setHudLevel();
+  $('cardGoal').textContent = `보스마다 코인 적립 · 전멸해도 받아요`;
+  const chip = $('cardHero');
+  chip.textContent = '';
+  if (hero) {
+    chip.appendChild(faceEl(hero.id, 1));
+    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''} ▸`);
+    chip.hidden = false;
+  } else if (HERO_IDS.some((id) => ownedHero(id))) {
+    chip.append('영웅 고르기 ▸');
+    chip.hidden = false;
+  }
+  seen(data, 'biome', BIOMES[0].id);
+}
+/* 무한모드 판 정산(전멸·포기·다시 시작): 적립한 코인과 기록. 같은 판을 두 번 정산하지 않는다(lastRunId) */
+function settleEndless(st, id) {
+  if (storageMode() === 'ok') { const fresh = load(); if (!fresh.corrupt) data = fresh; }
+  const e = st.endless;
+  const paid = data.lastRunId !== id;
+  const out = { paid, coins: 0, bosses: e.bosses | 0, record: false, prev: endlessBest().best };
+  if (paid) {
+    out.coins = endlessCoins(st, 10 * upgOf('coin')) * petCoinMul(st);
+    out.lucky = petCoinMul(st) > 1;
+    data.coins += out.coins;
+    const rec = { ...endlessBest() };
+    out.record = out.bosses > rec.best;
+    rec.best = Math.max(rec.best, out.bosses);
+    rec.bestN = Math.max(rec.bestN, st.squad.peak | 0);
+    rec.runs++;
+    data.endless = rec;
+    data.stats.kills += st.stats.kills;
+    data.stats.bossKills += out.bosses;
+    data.stats.maxN = Math.max(data.stats.maxN, st.squad.peak);
+    data.stats.spGot += st.stats.spGot;
+    data.stats.heroUses += st.stats.heroUses;
+    data.stats.spUp += st.stats.spUp | 0;
+    data.stats.flips += st.stats.flips | 0;
+  }
+  data.lastRunId = id;
+  save(data);
+  return out;
+}
+function finishEndless() {
+  const e = s.endless;
+  const got = settleEndless(s, run ? run.id : '');
+  clearRun();
+  tutorial = false;
+  $('tut').hidden = true;
+  $('resTitle').textContent = '무한모드 끝';
+  $('scrResult').classList.add('lost');
+  $('resStars').hidden = true;
+  const i = segInfo(e.seg);
+  const lines = [
+    ['잡은 보스', `${got.bosses}` + (got.record ? ' · 최고 기록!' : got.paid && got.prev ? ` (최고 ${got.prev})` : '')],
+    ['도달 지역', `${segName(e.seg)}${i.loop ? ` (${i.loop + 1}바퀴째)` : ''}`],
+    ['최대 병력', `${s.squad.peak}명`],
+    ['처치', `${s.stats.kills}`],
+    ['획득 코인', `+${got.coins}` + (got.lucky ? ' (줍줍! 두 배)' : '')],
+  ];
+  if (run && run.eggs) lines.push(['펫 알', `+${run.eggs}개`]);
+  $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
+  $('resNear').hidden = true;
+  const cause = CAUSE[s.cause] || CAUSE.foe;
+  $('resCause').hidden = false;
+  $('resCause').innerHTML = `<b>${cause[0]}</b><span>${cause[1]}</span>`;
+  $('resPrimary').textContent = '다시 하기';
+  $('resReplay').hidden = true;
+  $('resHelp').hidden = true;
+  $('resBackup').hidden = storageMode() === 'ok';
+  $('resUpg').classList.toggle('glow', canAffordUpg());
+  $('hudCoins').textContent = compact(data.coins);
+  hudCache = '';
+  show('scrResult');
 }
 
 function begin(L) {
@@ -974,6 +1443,7 @@ function pause() {
   // 승리·패배가 정해진 뒤에는 멈추지 않고 결과로 간다(승리를 잃지 않게)
   if (s && (s.phase === 'won' || s.phase === 'lost')) return;
   mode = 'pause';
+  $('pRestart').textContent = isEndless() ? '여기서 끝내고 새로 시작' : '처음부터 다시';
   pointers.clear();
   activeId = null;
   keys.left = keys.right = false;
@@ -985,8 +1455,15 @@ function pause() {
 }
 /* 일시정지의 '처음부터 다시': 첫 게이트를 지났으면 진 판으로 센다고 알리고, 3번째면 지원 받고 다시도 고를 수 있게 */
 function renderPauseRestart() {
+  if (isEndless()) {
+    $('pHelp').hidden = true;
+    const note = $('pRestartNote');
+    note.hidden = false;
+    note.textContent = `지금까지 모은 코인(보스 ${s.endless.bosses}마리)은 받아요`;
+    return;
+  }
   const counts = !!(s && lv && restartCounts(s));
-  const f = lv ? (data.fails[lv.L] | 0) + (counts ? 1 : 0) : 0;
+  const f = lv ? (prog(data, runCycle).fails[lv.L] | 0) + (counts ? 1 : 0) : 0;
   const help = counts && !support && f >= 3;
   const note = $('pRestartNote');
   note.hidden = !counts;
@@ -1030,27 +1507,40 @@ function resume() {
 /* ---------- 이어하기 ---------- */
 function saveRunNow() {
   if (!s || !run || attract || !(s.phase === 'run' || s.phase === 'arena')) return;
-  saveRun({ v: 1, sim: SIM, id: run.id, at: Date.now(), L: run.L, attempt: lv.attempt, bare: !!lv.bare, start: run.start, fire: run.fire, support: run.support, hero: run.hero, par, worst: run.worst || null, arenaN: run.arenaN | 0, state: snapshot(s) });
+  if (run.mode === 'endless') {
+    saveRun({ v: 1, sim: SIM, mode: 'endless', id: run.id, at: Date.now(), L: s.L, seed: run.seed, start: run.start, fire: run.fire, support: 0, hero: run.hero, state: snapshot(s) });
+    lastSaveT = s.t;
+    return;
+  }
+  saveRun({ v: 1, sim: SIM, id: run.id, at: Date.now(), L: run.L, cycle: run.cycle || 1, attempt: lv.attempt, bare: !!lv.bare, start: run.start, fire: run.fire, support: run.support, hero: run.hero, par, worst: run.worst || null, arenaN: run.arenaN | 0, state: snapshot(s) });
   lastSaveT = s.t;
 }
 function resumeRun() {
   if (modalOpen()) return;
   const r = pendingRun();
   if (!r) { renderTitle(); return; }
-  const level = prepareLevel(r.L);
+  const endless = r.mode === 'endless';
+  const level = endless ? null : prepareLevel(r.L, r.cycle || 1);
   const st = restore(r.state);
-  if (level.attempt !== r.attempt || (r.bare != null && !!level.bare !== !!r.bare) || !st) {
+  if (!st || (endless ? !st.endless : level.attempt !== r.attempt || (r.bare != null && !!level.bare !== !!r.bare) || !!st.endless)) {
     clearRun();
     toast('게임이 바뀌어서 하던 판은 처음부터 다시 해요', 3000);
     renderTitle();
     return;
   }
   attract = false;
-  lv = level;
   s = st;
-  run = { id: r.id, L: r.L, start: r.start, fire: r.fire, support: r.support | 0, hero: r.hero || null, worst: r.worst && r.worst.k ? r.worst : null, arenaN: r.arenaN | 0 };
+  if (endless) {
+    run = { id: r.id, mode: 'endless', seed: r.seed, L: s.L, start: r.start, fire: r.fire, support: 0, hero: r.hero || null, worst: null, arenaN: 0 };
+    lv = levelOfSeg();
+    prepBiome(segInfo(s.endless.seg + 1).L);
+  } else {
+    lv = level;
+    runCycle = r.cycle || 1;
+    run = { id: r.id, L: r.L, cycle: runCycle, start: r.start, fire: r.fire, support: r.support | 0, hero: r.hero || null, worst: r.worst && r.worst.k ? r.worst : null, arenaN: r.arenaN | 0 };
+  }
   support = run.support;
-  par = r.par || lv.par;
+  par = endless ? 0 : r.par || lv.par;
   prevZ = s.squad.z;
   acc = 0;
   renderer.reset();
@@ -1058,9 +1548,9 @@ function resumeRun() {
   anyInput = true;
   tutorial = false;
   lastSaveT = s.t;
-  $('hudL').textContent = r.L;
-  $('bossName').textContent = bossNameOf(r.L, tagOf(r.L).tag);
-  prepBiome(r.L);
+  setHudLevel();
+  $('bossName').textContent = bossNameOf(lv.L, tagOf(lv.L).tag);
+  prepBiome(lv.L);
   $('bossBar').hidden = !s.boss;
   $('bossBar').classList.toggle('rage', !!(s.boss && s.boss.enraged));
   hideEta();
@@ -1071,6 +1561,7 @@ function resumeRun() {
   save(data);
   // 멈춘 채로 시작 — 준비되면 계속하기
   mode = 'pause';
+  $('pRestart').textContent = isEndless() ? '여기서 끝내고 새로 시작' : '처음부터 다시';
   renderPauseUnits();
   renderPauseRestart();
   show('scrPause');
@@ -1176,7 +1667,7 @@ function handleEvents(ev) {
         // 빨간 게이트가 0을 넘어 파랑으로(SIM 9) — '역전!' 글자·불꽃은 renderer가
         sfx.flip();
         vibe(15);
-        tip('flip', '빨간 게이트도 계속 쏘면 뒤집혀요! 위에 MAX가 붙은 빨간 칸은 빨리 올라서, 일찍부터 몰아 쏘면 옆 파란 칸보다 많아져요');
+        tip('flip', '빨간 게이트도 계속 쏘면 뒤집혀요! 유난히 빨리 오르는 빨간 칸은 일찍부터 몰아 쏘면 옆 파란 칸보다 많아져요');
         break;
       case 'capped': sfx.power(); break;
       case 'spLose': {
@@ -1233,6 +1724,38 @@ function handleEvents(ev) {
       case 'stomp': sfx.stomp(); vibe(30); break;
       case 'enrage': $('bossBar').classList.add('rage'); break;
       case 'bossDead': sfx.win(); vibe([40, 60, 80]); slow(0.25, 1200); break;
+      case 'segClear':
+        // 무한모드: 보스를 잡았다 — 결과 화면 없이 곧 다음 구간(코인은 판 안에 적립)
+        $('bossBar').hidden = true;
+        $('bossBar').classList.remove('rage');
+        bossBarFor = null;
+        hideEta();
+        // 펫 알: 대왕은 반드시, 그 밖의 보스는 확률로(뽑기 난수는 시뮬레이션 밖). 바로 저장한다(이어하기로 두 번 받지 않게 판도 함께)
+        if (petOpen() && (e.tag === 'super' || Math.random() < EGG.pEndless)) {
+          data.pets.eggs++;
+          if (run) run.eggs = (run.eggs | 0) + 1;
+          save(data);
+          saveRunNow();
+          toast(`보스 격파! 코인 +${e.coins} 적립 · 펫 알 +1`, 2200);
+        } else toast(`보스 격파! 코인 +${e.coins} 적립`, 1800);
+        break;
+      case 'pet':
+        if (e.fx === 'coin') sfx.coin();
+        tip('petFx', '펫이 통 튀며 반짝이면 펫 효과가 터진 거예요');
+        break;
+      case 'segStart': {
+        lv = levelOfSeg();
+        if (run) run.L = s.L;
+        setHudLevel();
+        const i = segInfo(e.seg);
+        const lead = i.tag === 'super' ? '대왕이 기다려요 · ' : i.tag === 'hard' ? '정예 보스 · ' : '';
+        toast(`${lead}${segName(e.seg)}`, 2200);
+        seen(data, 'biome', BIOMES[i.biome].id);
+        prepBiome(segInfo(e.seg + 1).L);   // 다음 지역 그림은 이 구간을 달리는 동안 쉬는 틈에 굽는다
+        saveRunNow();
+        updateMusic();
+        break;
+      }
       case 'lose': sfx.lose(); vibe([60, 40, 90]); break;
       default:
     }
@@ -1272,6 +1795,7 @@ function finish() {
   mode = 'result';
   releaseWake();
   hideEta();
+  if (s.endless) { finishEndless(); return; }
   const won = s.phase === 'won';
   const L = lv.L;
   const n = s.squad.n;
@@ -1279,24 +1803,30 @@ function finish() {
   if (storageMode() === 'ok') { const fresh = load(); if (!fresh.corrupt) data = fresh; }
   const paid = !(run && data.lastRunId === run.id);
   const stars = won ? (support ? 1 : starsFor(par, n, true, lv)) : 0;
-  const prevStars = data.stars[L] | 0;
-  let coins = paid ? coinsFor(lv, s, won, stars, 10 * data.upg.coin) : 0;
+  const cyc = (run && run.cycle) || 1;
+  const P = prog(data, cyc);
+  const prevStars = P.stars[L] | 0;
+  let coins = paid ? coinsFor(lv, s, won, stars, 10 * upgOf('coin')) * petCoinMul(s) : 0;
+  // 펫 알: 2회차부터, 대왕 레벨(10의 배수)을 그 회차에서 처음 깰 때
+  const egg = paid && won && cyc >= 2 && L % 10 === 0 && !prevStars;
+  if (egg) data.pets.eggs++;
   const newStars = paid ? Math.max(0, stars - prevStars) : 0;
   coins += newStars * 20;
   data.coins += coins;
   const before = new Set(HERO_IDS.filter((id) => ownedHero(id)));
   if (!paid) { /* 이미 정산된 판 */ }
   else if (won) {
-    data.stars[L] = Math.max(prevStars, stars);
-    data.best[L] = Math.max(data.best[L] | 0, n);
-    data.maxL = Math.max(data.maxL, L + 1);
-    data.cur = Math.max(data.cur, L + 1);   // 지난 레벨을 다시 해도 '이어하기'는 앞으로만
-    data.fails[L] = 0;
+    P.stars[L] = Math.max(prevStars, stars);
+    P.best[L] = Math.max(P.best[L] | 0, n);
+    P.maxL = Math.max(P.maxL, L + 1);
+    P.cur = Math.max(P.cur, Math.min(CYCLE_LEVELS, L + 1));   // 지난 레벨을 다시 해도 '이어하기'는 앞으로만(회차의 끝은 L60)
+    P.fails[L] = 0;
+    if (cyc > data.cycle) data.cycle = cyc;
     data.stats.wins++;
     data.stats.bossKills++;
     if (data.stats.wins === 1 && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   } else {
-    data.fails[L] = (data.fails[L] | 0) + 1;
+    P.fails[L] = (P.fails[L] | 0) + 1;
   }
   if (paid) {
     data.stats.kills += s.stats.kills;
@@ -1317,7 +1847,8 @@ function finish() {
   data.lastRunId = run ? run.id : '';
   save(data);
   clearRun();
-  if (won) prepBiome(L + 1);   // 다음 레벨이 새 지역이면 결과 화면이 떠 있는 동안 미리 굽는다
+  if (won && L < CYCLE_LEVELS) prepBiome(L + 1);   // 다음 레벨이 새 지역이면 결과 화면이 떠 있는 동안 미리 굽는다
+  if (won && L >= CYCLE_LEVELS) prepBiome(1);
 
   $('resTitle').textContent = won ? '승리!' : '전멸';
   $('scrResult').classList.toggle('lost', !won);
@@ -1342,7 +1873,8 @@ function finish() {
     lines.push(['진행', `${Math.round(progress(s) * 100)}%`]);
   }
   lines.push(['처치', `${s.stats.kills}`]);
-  lines.push(['획득 코인', `+${coins}` + (tg.coinMul > 1 ? ` (${tg.label} ${mulText(tg.coinMul)})` : '')]);
+  lines.push(['획득 코인', `+${coins}` + (tg.coinMul > 1 ? ` (${tg.label} ${mulText(tg.coinMul)})` : '') + (petCoinMul(s) > 1 ? ' · 줍줍! 두 배' : '')]);
+  if (egg) lines.push(['펫 알', '+1개 (대왕 첫 격파)']);
   if (joined.length) lines.push(['새 영웅 합류', joined.map((id) => HEROES[id].name).join(', ')]);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
   renderNear(won);
@@ -1352,7 +1884,7 @@ function finish() {
   $('resCause').hidden = won;
   $('resCause').innerHTML = won ? '' : `<b>${cause[0]}</b><span>${cause[1]}</span>`;
   // 레벨은 그 무렵 흔한 강화를 단 사람에 맞춰 두었다 — 강화가 모자라서 졌을 수 있으면 알려 준다
-  const gg = won ? null : gearGap(data, L, UPGRADES);
+  const gg = won ? null : gearGap(L, cyc);
   const affordable = canAffordUpg();
   if (gg && gg.below.length && affordable) {
     const tip = document.createElement('span');
@@ -1360,7 +1892,9 @@ function finish() {
     tip.textContent = `${gg.below.join('·')} 강화가 이 레벨 권장보다 낮아요. 강화하고 다시 하면 훨씬 수월해요.`;
     $('resCause').appendChild(tip);
   }
-  $('resPrimary').textContent = won ? '다음 레벨' : '다시 도전';
+  // 회차의 마지막 레벨(L60)을 깼으면: 엔딩(처음 한 번) → 다음 회차
+  const lastWin = won && L >= CYCLE_LEVELS;
+  $('resPrimary').textContent = lastWin ? ((data.endSeen | 0) < cyc ? '엔딩 보기' : `${cycName(cyc + 1)}로`) : won ? '다음 레벨' : '다시 도전';
   // 별을 다 못 받은 승리: 바로 다시 해서 별을 채울 수 있게(다음 별까지 몇 명 더 — 지원 판은 지원 없이 다시)
   const replay = won && stars < 3;
   $('resReplay').hidden = !replay;
@@ -1370,7 +1904,7 @@ function finish() {
       : `다시 하기 · ${'★'.repeat(stars + 1)}까지 ${Math.max(1, goal - n)}명 더`;
   }
   const helpN = supportSize(lv, ownLoadout());
-  const offerHelp = !won && (data.fails[L] | 0) >= 3;
+  const offerHelp = !won && (P.fails[L] | 0) >= 3;
   $('resHelp').hidden = !offerHelp;
   $('resHelp').textContent = `지원 +${helpN}명 받고 다시 (별 1개까지)`;
   $('resHelp').dataset.n = helpN;
@@ -1413,7 +1947,7 @@ function renderNear(won) {
 function canAffordUpg() {
   let cheapest = Infinity;
   for (const u of UPGRADES) {
-    const st = upgState(data, u, undefined, STORE);
+    const st = upgInfo(u);
     if (st.canBuy) cheapest = Math.min(cheapest, upgCost(st.lv));
   }
   return data.coins >= cheapest;
@@ -1507,7 +2041,7 @@ function frame(now) {
       }
       if (n === 5) acc = 0;
       if (attract && (s.phase === 'won' || s.phase === 'lost') && s.endT > 3) {
-        s = newGame(lv, { start: START_N + 2 * data.upg.start, fire: data.upg.fire, hero: heroForRun(lv.L) });
+        s = newGame(lv, { start: START_N + 2 * upgOf('start'), fire: upgOf('fire'), hero: heroForRun(lv.L, data.cycle) });
         prevZ = s.squad.z;
         renderer.reset();
       }
@@ -1541,7 +2075,7 @@ let hudCache = '';
 function updateHud() {
   const p = s.boss ? 1 : progress(s);
   $('hudBar').style.transform = `scaleX(${p})`;
-  const key = `${data.coins + s.stats.coins}`;
+  const key = `${data.coins + s.stats.coins + (s.endless ? s.endless.bank : 0)}`;
   if (key !== hudCache) { hudCache = key; $('hudCoins').textContent = key; }
   if (s.boss) $('bossFill').style.transform = `scaleX(${Math.max(0, s.boss.hp) / s.boss.max})`;
   updateEta();
@@ -1618,8 +2152,15 @@ function releaseWake() {
 
 /* ---------- 버튼 ---------- */
 function on(id, fn) { $(id).addEventListener('click', (e) => { unlock(); fn(e); }); }
-on('btnPlay', () => tryStart(data.cur));
-on('btnLevels', () => { sfx.click(); mode = 'levels'; renderLevels(); show('scrLevels'); armHistory(); });
+on('btnPlay', () => tryStart(curProg().cur));
+on('cycPrev', () => { sfx.click(); levelsCycle--; renderLevels(); });
+on('cycNext', () => { sfx.click(); levelsCycle++; renderLevels(); });
+on('btnEndless', () => tryEndless());
+on('btnPet', () => { sfx.click(); mode = 'pet'; petView = data.pets.sel; renderPet(); show('scrPet'); armHistory(); });
+on('endNext', () => { sfx.click(); mode = 'title'; startCycle(endingCycle + 1); });
+on('endEndless', () => { sfx.click(); mode = 'title'; goTitle(); tryEndless(); });
+on('endMenu', () => { sfx.click(); goTitle(); });
+on('btnLevels', () => { sfx.click(); mode = 'levels'; levelsCycle = data.cycle; renderLevels(); show('scrLevels'); armHistory(); });
 on('btnHero', () => { sfx.click(); mode = 'hero'; heroPickFromCard = false; heroView = data.heroes.sel; renderHero(); show('scrHero'); armHistory(); });
 on('btnUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); armHistory(); });
 on('btnSet', () => { sfx.click(); mode = 'set'; renderSet(); show('scrSet'); armHistory(); });
@@ -1654,13 +2195,21 @@ on('pResume', () => { sfx.click(); resume(); });
 /* 처음부터 다시(일시정지): 카드 없이 바로. 첫 게이트를 지난 뒤면 진 판으로 센다(3번이면 지원) — 그 전에는 공짜 */
 function restartRun(opts = {}) {
   if (!lv) return;
+  if (isEndless()) {
+    // 무한모드: 지금 판을 정산(모은 코인을 받는다)하고 새 판
+    if (s && s.endless && run) { const got = settleEndless(s, run.id); if (got.coins > 0) toast(`코인 +${got.coins}`, 1400); }
+    clearRun();
+    startEndless({ quick: true });
+    return;
+  }
   if (run && s && !attract && restartCounts(s) && data.lastRunId !== run.id) {
-    data.fails[lv.L] = (data.fails[lv.L] | 0) + 1;
+    const F = prog(data, run.cycle || 1).fails;
+    F[lv.L] = (F[lv.L] | 0) + 1;
     data.lastRunId = run.id;
     save(data);
   }
   clearRun();
-  startLevel(lv.L, { support: opts.support ?? support, quick: true });
+  startLevel(lv.L, { support: opts.support ?? support, quick: true, cycle: runCycle });
 }
 on('pRestart', () => restartRun());
 on('pHelp', () => restartRun({ support: Number($('pHelp').dataset.n) || 0 }));
@@ -1672,10 +2221,17 @@ on('pSaveQuit', () => {
   goTitle();
 });
 on('resPrimary', () => {
+  if (isEndless()) { startEndless({ quick: true }); return; }
   const won = s.phase === 'won';
+  if (won && lv.L >= CYCLE_LEVELS) {
+    // 회차의 끝: 엔딩을 아직 안 봤으면 엔딩, 봤으면 다음 회차의 이어 할 레벨
+    sfx.click();
+    if ((data.endSeen | 0) < runCycle) openEnding(runCycle); else startCycle(runCycle + 1);
+    return;
+  }
   const next = won ? lv.L + 1 : lv.L;
   // 다시 도전은 카드 없이 바로 달린다(카드 내용은 짧은 알림으로)
-  const opts = won ? {} : { quick: true };
+  const opts = won ? { cycle: runCycle } : { quick: true, cycle: runCycle };
   const id = newlyEarned()[0];
   if (id) { sfx.click(); joinAfter = () => tryStart(next, opts); openJoin(id); return; }
   tryStart(next, opts);
@@ -1684,10 +2240,10 @@ on('resReplay', () => {
   // 별 채우기: 같은 레벨을 카드 없이 바로(새 영웅이 합류했으면 소개부터)
   const L = lv.L;
   const id = newlyEarned()[0];
-  if (id) { sfx.click(); joinAfter = () => tryStart(L, { quick: true }); openJoin(id); return; }
-  tryStart(L, { quick: true });
+  if (id) { sfx.click(); joinAfter = () => tryStart(L, { quick: true, cycle: runCycle }); openJoin(id); return; }
+  tryStart(L, { quick: true, cycle: runCycle });
 });
-on('resHelp', () => tryStart(lv.L, { support: Number($('resHelp').dataset.n) || 0, quick: true }));
+on('resHelp', () => tryStart(lv.L, { support: Number($('resHelp').dataset.n) || 0, quick: true, cycle: runCycle }));
 on('resUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); $('upgBack').dataset.back = 'result'; });
 on('resMenu', () => { sfx.click(); goTitle(); });
 on('resBackup', () => { sfx.click(); $('bkBack').dataset.back = 'result'; openBackup('make'); });
@@ -1708,7 +2264,7 @@ on('cardHero', () => {
   show('scrHero');
   armHistory();
 });
-on('cardGo', () => { if (mode === 'card') begin(run ? run.L : data.cur); });
+on('cardGo', () => { if (mode === 'card') begin(run && run.mode !== 'endless' ? run.L : run ? 0 : curProg().cur); });
 on('joinTake', () => { sfx.click(); closeJoin(true); });
 on('joinLater', () => { sfx.click(); closeJoin(false); });
 on('storeChip', () => {
@@ -1753,8 +2309,7 @@ function start(hotData) {
   if (hotData && hotData.run && !loadRun()) saveRun(hotData.run);
   applySettings();
   resize();
-  prepBiome(data.cur);   // 이어 할 레벨의 지역(첫 화면이 떠 있는 동안)
-  prepBiome(data.maxL);
+  prepBiome(curProg().cur);   // 이어 할 레벨의 지역(첫 화면이 떠 있는 동안)
   // 규칙(SIM)이 바뀌기 전에 저장한 판은 이어 할 수 없다 — 조용히 사라지지 않게 알린다(진 판으로 세지 않는다)
   const oldRun = loadRun();
   const dropped = oldRun && oldRun.sim !== SIM && oldRun.id !== data.lastRunId ? oldRun : null;
@@ -1792,7 +2347,7 @@ fontsReady.then(() => {
 /* 테스트·디버그용 */
 window.__squad = {
   auto: false, get state() { return s; }, set state(v) { s = v; }, get mode() { return mode; }, get data() { return data; },
-  startLevel, radius, UNLOCK, skill() { skillPressed = true; },
+  startLevel, startEndless, radius, UNLOCK, skill() { skillPressed = true; },
   // 충돌 크기 보기: 시뮬레이션이 재는 모양을 그림 위에 그린다(주소에 ?hitbox=1 을 붙여도 켜진다)
   get hitbox() { return renderer.hitbox; }, set hitbox(v) { renderer.setHitbox(v); },
 };

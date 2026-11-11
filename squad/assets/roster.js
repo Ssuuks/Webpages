@@ -73,9 +73,17 @@ export const HEROES = {
   },
 };
 export const HERO_IDS = Object.keys(HEROES);
-export const HERO_MAX_LV = 5;
+export const HERO_MAX_LV = 5;          // 1회차의 레벨 상한(수치 num의 [Lv1, Lv5]가 가리키는 끝)
+export const HERO_LV_PER_CYCLE = 2;    // 회차마다 상한 +2 (Lv5 → 7 → 9 …, ENDGAME.md 4절)
+export const HERO_LV_HARD = 99;        // 저장·시뮬레이션이 받아들이는 가장 높은 레벨
+/* 유효 레벨: Lv5까지는 레벨 그대로, 그 위는 줄어드는 폭으로(끝 9) — e(6) 5.8, e(7) 6.44, e(9) 7.36, e(11) 7.95.
+   수치(선형 보간)·스킬 쿨다운·나비의 보스전 한도가 모두 이 값을 쓴다: Lv5 너머로 선형 연장하면 쿨다운이 0 아래로, 회복 몫이 한계 위로 간다 */
+export function heroEff(lv) {
+  const l = Math.max(1, +lv || 1);
+  return l <= HERO_MAX_LV ? l : HERO_MAX_LV + 4 * (1 - Math.pow(0.8, l - HERO_MAX_LV));
+}
 
-function lerp(a, b, lv) { return a + ((b - a) * (Math.max(1, Math.min(HERO_MAX_LV, lv)) - 1)) / (HERO_MAX_LV - 1); }
+function lerp(a, b, lv) { return a + ((b - a) * (heroEff(lv) - 1)) / (HERO_MAX_LV - 1); }
 export const heroLerp = lerp;
 /* 영웅 수치 num[k]의 그 레벨 값([Lv1, Lv5]면 사이를 선형으로, 숫자 하나면 그대로) */
 export function heroVal(id, k, lv) { const v = HEROES[id].num[k]; return Array.isArray(v) ? lerp(v[0], v[1], lv) : v; }
@@ -84,8 +92,17 @@ const pc = (x) => Math.round(x * 100);
 
 /* 영웅 레벨업 비용(Lv→Lv+1)과 진행에 따른 상한 */
 export const HERO_COST = [0, 150, 300, 500, 800];
-export function heroCost(lv) { return HERO_COST[lv] ?? Infinity; }
+/* Lv5부터(2회차에서 풀리는 레벨)는 200·lv + 200: Lv5→6 1200, Lv6→7 1400 … */
+export function heroCost(lv) { return lv >= HERO_MAX_LV ? 200 * lv + 200 : HERO_COST[lv] ?? Infinity; }
 export function heroCap(maxL) { return Math.min(HERO_MAX_LV, 2 + Math.floor((Math.max(1, maxL) - 1) / 10)); }
+/* 회차 c(열린 가장 높은 회차)와 그 회차의 진행(maxL)에서 새로 살 수 있는 영웅 레벨 상한: 회차마다 +2.
+   앞 회차에서 다 풀린 상한(5 + 2·(c−2)) 아래로는 내려가지 않는다 — 2회차는 L21에 Lv6, L31에 Lv7 */
+export function heroCapC(cycle, maxL) {
+  const c = Math.max(1, cycle | 0);
+  if (c === 1) return heroCap(maxL);
+  const up = HERO_LV_PER_CYCLE * (c - 1);
+  return Math.max(HERO_MAX_LV + up - HERO_LV_PER_CYCLE, Math.min(HERO_MAX_LV + up, up + heroCap(maxL)));
+}
 
 /* 진행으로 합류한 영웅 목록(지난 진행에도 소급) */
 export function heroesEarned(maxL, stars) {
@@ -96,6 +113,75 @@ export function heroesEarned(maxL, stars) {
     else if (u.type === 'stars' && stars >= u.n) out.push(id);
   }
   return out;
+}
+
+/* 펫(ENDGAME.md 6절): 영웅과 별개로 분대를 따라다니는 작은 동료. 한 판에 한 마리. 스스로 공격하지 않는다 —
+   한 마리에 효과 하나, 효과는 '확률로 터지고' 터졌을 때의 크기는 고정, 레벨(1~10)이 올리는 것은 확률이다.
+   p: [Lv1, Lv10] 확률(선형). fx: 시뮬레이션(core.js)이 보는 효과 이름.
+   만렙 한 마리 = 화력 강화 두세 단계(화력 +5~10%) 상당을 목표로 식으로 어림한 수치(봇 확인은 tools/petbench.mjs) */
+export const PET_MAX_LV = 10;
+export const PETS = {
+  fox: {
+    name: '사막 여우', biome: 'desert', fx: 'crit', p: [0.02, 0.1], color: '#E8B86A',
+    line: '귀가 쫑긋! 빈틈이 보여요',
+    fxName: '크리티컬', text: (lv) => `총알이 ${pp('fox', lv)}% 확률로 2배 피해(보스에게도)`,
+  },
+  penguin: {
+    name: '펭귄', biome: 'snow', fx: 'far', p: [0.07, 0.35], color: '#8FD3FF',
+    line: '뒤뚱뒤뚱… 그래도 멀리 봐요',
+    fxName: '멀리 쏘기', text: (lv) => `일제 사격마다 ${pp('penguin', lv)}% 확률로 그 한 번은 사거리 1.5배`,
+  },
+  cat: {
+    name: '도시 고양이', biome: 'city', fx: 'wide', p: [0.06, 0.3], color: '#B9B4C8',
+    line: '골목은 내 구역이야옹',
+    fxName: '넓게 쏘기', text: (lv) => `일제 사격마다 ${pp('cat', lv)}% 확률로 양옆에 총알을 더 쏴요(폭 1.5배)`,
+  },
+  sprite: {
+    name: '버섯 요정', biome: 'forest', fx: 'block', p: [0.04, 0.18], color: '#FF7A8A',
+    line: '포자 방패, 폭신!',
+    fxName: '막아 주기', text: (lv) => `병사를 잃을 때 ${pp('sprite', lv)}% 확률로 그 병사는 안 잃어요(게이트 손실 제외)`,
+  },
+  newt: {
+    name: '불도롱뇽', biome: 'lava', fx: 'cheer', p: [0.1, 0.5], color: '#FF8A3C',
+    line: '꼬리 불꽃이 활활, 기운 내!',
+    fxName: '기운 내', text: (lv) => `좀비를 처치할 때 ${pp('newt', lv)}% 확률로 영웅 게이지가 30% 더 차요`,
+  },
+  puppy: {
+    name: '풍선 강아지', biome: 'park', fx: 'coin', p: [0.05, 0.25], color: '#FF9FD0',
+    line: '멍! 반짝이는 건 다 물어 와요',
+    fxName: '줍줍', text: (lv) => `판이 끝날 때 ${pp('puppy', lv)}% 확률로 받는 코인이 두 배`,
+  },
+};
+export const PET_IDS = Object.keys(PETS);
+/* 그 레벨의 발동 확률(0~1) */
+export function petP(id, lv) {
+  const P = PETS[id];
+  if (!P) return 0;
+  const l = Math.max(1, Math.min(PET_MAX_LV, lv | 0 || 1));
+  return P.p[0] + ((P.p[1] - P.p[0]) * (l - 1)) / (PET_MAX_LV - 1);
+}
+const pp = (id, lv) => Math.round(petP(id, lv) * 1000) / 10;
+/* 펫 키우기: Lv → Lv+1에 드는 코인과 조각(같은 펫이 알에서 또 나오면 조각이 된다) */
+export const petCost = (lv) => ({ coins: 200 * lv, shards: lv });
+/* 알: 값(코인), 안 가진 펫이 남아 있을 때 새 펫이 나올 확률, 천장(이 수의 알 안에 새 펫 하나), 중복일 때 받는 조각 */
+export const EGG = { price: 600, pNew: 0.4, pity: 5, shards: 3, pEndless: 0.15 };
+/* 알 하나 열기(뽑기 난수는 시뮬레이션 밖 — rnd: 0~1 난수 함수). pets = { own: { id: { lv, sh } }, pity } 를 고친다.
+   안 가진 펫이 있으면 pNew 확률(가진 펫이 없으면 반드시, 천장에 닿으면 반드시)로 새 펫, 아니면 가진 펫 하나의 조각 +EGG.shards — 꽝이 없다.
+   돌려주는 것: { id, fresh(새 펫인가), shards } */
+export function openEgg(pets, rnd = Math.random) {
+  const own = Object.keys(pets.own).filter((id) => PETS[id]);
+  const missing = PET_IDS.filter((id) => !pets.own[id]);
+  const pick = (list) => list[Math.min(list.length - 1, Math.floor(rnd() * list.length))];
+  if (missing.length && (!own.length || (pets.pity | 0) >= EGG.pity - 1 || rnd() < EGG.pNew)) {
+    const id = pick(missing);
+    pets.own[id] = { lv: 1, sh: 0 };
+    pets.pity = 0;
+    return { id, fresh: true, shards: 0 };
+  }
+  const id = pick(own);
+  pets.own[id].sh = (pets.own[id].sh | 0) + EGG.shards;
+  pets.pity = missing.length ? (pets.pity | 0) + 1 : 0;
+  return { id, fresh: false, shards: EGG.shards };
 }
 
 /* 지역 */
