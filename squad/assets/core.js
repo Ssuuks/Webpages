@@ -1,4 +1,4 @@
-import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV } from './roster.js';
+import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -1421,6 +1421,8 @@ export function newGame(lv, opt = {}) {
   };
   // 펫(ENDGAME.md 6절): 데려간 판에만 s.pet이 있다 — 펫 전용 난수 흐름(rs)을 따로 써서 판의 난수(s.rs)를 건드리지 않는다.
   // avg(별 기준을 재는 기준 봇용): 확률 대신 기대값으로 고르게 — par가 한 판의 운에 흔들리지 않게
+  // 탄종(ARSENAL.md 3절): 고른 판에만 s.ammo가 있다(보통탄이면 없다 — 해시 그대로)
+  if (opt.ammo && AMMO[opt.ammo]) s.ammo = opt.ammo;
   if (opt.pet && PETS[opt.pet.id]) {
     s.pet = { id: opt.pet.id, lv: Math.max(1, Math.min(PET_MAX_LV, opt.pet.lv | 0 || 1)), rs: hash(lv.seed, 'pet', opt.pet.id) >>> 0, procs: 0, acc: 0 };
     if (opt.petAvg) s.pet.avg = true;
@@ -1465,6 +1467,7 @@ export function restore(o) {
     else { num0(o.pet, ['rs', 'procs', 'acc']); o.pet.lv = Math.max(1, Math.min(PET_MAX_LV, o.pet.lv | 0 || 1)); }
   }
   if (o.pet == null) delete o.pet;
+  if (o.ammo != null && !AMMO[o.ammo]) delete o.ammo;   // 모르는 탄종이 든 스냅숏은 보통탄으로 이어진다
   if (o.endless) {
     if (typeof o.endless !== 'object') return null;
     num0(o.endless, ['seed', 'seg', 'bosses', 'bank', 'wait', 'z0']);
@@ -1794,7 +1797,7 @@ function foesUpdate(s, R) {
         }
       }
     } else {
-      f.z -= f.spd * DT;
+      f.z -= (f.slowT > s.t ? f.spd * (1 - AMMO.frost.slow) : f.spd) * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로)
       if (dz < f.homeDist) {
         const d = q.x - f.x;
         const m = f.home * DT;
@@ -1910,6 +1913,9 @@ function fire(s, R) {
     const b = volleySize(q.n);
     const hm = heroDmg(s);
     let dmg = (dps(q.n, q.tier, s.fireLv) * hm) / (VOLLEY_HZ * b);
+    const A = s.ammo ? AMMO[s.ammo] : null;
+    if (A && A.dmg) dmg *= A.dmg;
+    const rng = A && A.range ? A.range : 0;   // 탄종의 사거리(없으면 기본)
     const span = R + 0.3;
     // 펫의 확률 효과(크리티컬은 총알마다, 멀리·넓게 쏘기는 일제 사격마다 굴린다 — 펫 전용 난수). avg면 기대값만큼 피해를 고르게 올린다
     const pet = s.pet;
@@ -1926,7 +1932,7 @@ function fire(s, R) {
       const j = ((q.volley * 0.618034 + i * 0.381966) % 1) - 0.5;
       const x = q.x - span + ((i + 0.5 + j * 0.8) / b) * 2 * span;
       const bl = { x, z: q.z + 0.4 * R, d: 0, dmg, hm };
-      if (far) bl.r = BULLET_RANGE * PET_FAR;
+      if (far || rng) bl.r = (rng || BULLET_RANGE) * (far ? PET_FAR : 1);
       if (fx === 'crit' && !pet.avg && rand(pet) < pp) { bl.dmg = dmg * PET_CRIT; bl.c = 1; crits++; }
       s.bullets.push(bl);
     }
@@ -1936,7 +1942,9 @@ function fire(s, R) {
       for (let i = 0; i < ex; i++) {
         const sd = i % 2 ? 1 : -1;
         const u = (Math.floor(i / 2) + 0.5) / (ex / 2);
-        s.bullets.push({ x: q.x + sd * span * (1 + (PET_WIDE - 1) * u), z: q.z + 0.4 * R, d: 0, dmg, hm, w: 1 });
+        const wb = { x: q.x + sd * span * (1 + (PET_WIDE - 1) * u), z: q.z + 0.4 * R, d: 0, dmg, hm, w: 1 };
+        if (rng) wb.r = rng;
+        s.bullets.push(wb);
       }
     }
     if (far || wide || crits) { pet.procs += crits || 1; emit(s, { t: 'pet', fx, n: crits, x: q.x, z: q.z }); }
@@ -1998,7 +2006,7 @@ function bulletsUpdate(s) {
       continue;
     }
     if (hitKind === 2) { hitProp(s, hitObj, b.dmg); continue; }
-    if (hitKind === 3) { hitFoe(s, hitObj, b.dmg, 'gun'); continue; }
+    if (hitKind === 3) { hitFoe(s, hitObj, b.dmg, 'gun'); if (s.ammo) ammoHit(s, b, hitObj, near); continue; }
     if (hitKind === 4) {
       // 뭉치 스킬로 늘어난 몫은 특수병·영웅 보너스 예산에서만 들어간다(보스가 너무 빨리 녹지 않게)
       const base = b.hm > 1 ? b.dmg / b.hm : b.dmg;
@@ -2012,6 +2020,33 @@ function bulletsUpdate(s) {
     if (b.d < (b.r || BULLET_RANGE)) list[w++] = b;
   }
   list.length = w;
+}
+
+/* 탄종의 덧효과(총알이 좀비 f에 맞은 뒤): 관통 — 같은 줄 바로 뒤(남은 사거리 안) 좀비 하나에 몫, 작렬 — 둘레 r 안 다른 좀비에 몫,
+   빙결 — 맞은 좀비가 T초 느려진다. 게이트·벽·상자·보스에는 덧효과가 없다 */
+function ammoHit(s, b, f, near) {
+  const A = AMMO[s.ammo];
+  if (A.pierce) {
+    const left = (b.r || BULLET_RANGE) - b.d;
+    let g = null;
+    for (const o of near) {
+      if (!o.alive || o === f || o.z <= f.z || o.z - b.z > left) continue;
+      if (Math.abs(o.x - b.x) > o.r + 0.12) continue;
+      if (!g || o.z < g.z) g = o;
+    }
+    if (g) { emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: g.z }); hitFoe(s, g, b.dmg * A.pierce, 'gun'); }
+  } else if (A.splash) {
+    const r2 = A.r * A.r;
+    let n = 0;
+    for (const o of near) {
+      if (!o.alive || o === f) continue;
+      const dx = o.x - f.x, dz = o.z - f.z;
+      if (dx * dx + dz * dz > r2) continue;
+      hitFoe(s, o, b.dmg * A.splash, 'gun');
+      n++;
+    }
+    if (n) emit(s, { t: 'splash', x: f.x, z: f.z, r: A.r, n });
+  } else if (A.slow && f.alive) f.slowT = s.t + A.T;
 }
 
 /* 피해 공용 처리(총알·저격·로켓·영웅) */
@@ -2978,19 +3013,20 @@ export function calibrate(lv, opt = {}) {
    강화·영웅은 이기기 쉽게 해 주지만 별은 실력으로. */
 const parCache = new Map();
 const sameHero = (a, b) => (!a && !b) || (a && b && a.id === b.id && (a.lv | 0) === (b.lv | 0));
-export function parFor(lv, start = START_N, fire = 0, hero = null, pet = null) {
+export function parFor(lv, start = START_N, fire = 0, hero = null, pet = null, ammo = '') {
   const E = expectLoadout(lv.L, lv.cycle || 1);
   if (pet && !PETS[pet.id]) pet = null;
-  if (start === E.start && fire === E.fire && sameHero(hero, E.hero) && !pet) return lv.par;
-  const key = `${lv.cycle || 1}:${lv.L}:${lv.attempt}:${start}:${fire}:${hero ? hero.id + hero.lv : '-'}:${pet ? pet.id + pet.lv : '-'}`;
+  if (!AMMO[ammo]) ammo = '';
+  if (start === E.start && fire === E.fire && sameHero(hero, E.hero) && !pet && !ammo) return lv.par;
+  const key = `${lv.cycle || 1}:${lv.L}:${lv.attempt}:${start}:${fire}:${hero ? hero.id + hero.lv : '-'}:${pet ? pet.id + pet.lv : '-'}:${ammo}`;
   if (parCache.has(key)) return parCache.get(key);
   const maxTicks = maxTicksOf(lv);
   let par = lv.par;
   // 펫은 기대값으로(petAvg) — 펫 때문에 별이 쉬워지지 않게, 그렇다고 par가 한 판의 운에 흔들리지도 않게
-  const a = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true }), polStrong(false), maxTicks);
+  const a = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true, ammo }), polStrong(false), maxTicks);
   if (a.phase === 'won') par = a.squad.n;
   else if (hero) {
-    const b = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true }), polStrong(true), maxTicks);
+    const b = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true, ammo }), polStrong(true), maxTicks);
     if (b.phase === 'won') par = b.squad.n;
   }
   par = Math.max(1, par);
@@ -3107,6 +3143,8 @@ export function stateHash(s) {
   if (s.boss) h = hash(h, s.boss.x.toFixed(4), s.boss.slam ? s.boss.slam.t.toFixed(4) : -1, s.boss.slamCd.toFixed(4), s.boss.summonCd.toFixed(4));
   // 펫(안 데려간 판에는 없다 — 해시 그대로)
   if (s.pet) h = hash(h, s.pet.id, s.pet.lv, s.pet.rs >>> 0, s.pet.procs, s.pet.acc.toFixed(4), s.pet.double ? 1 : 0);
+  // 탄종(보통탄 판에는 없다 — 해시 그대로)
+  if (s.ammo) { h = hash(h, s.ammo); for (const f of s.foes) if (f.alive && f.slowT > s.t) h = hash(h, f.id, f.slowT.toFixed(4)); }
   // 무한모드(캠페인 판에는 없다 — 해시 그대로)
   if (s.endless) { const e = s.endless; h = hash(h, e.seed, e.seg, e.bosses, e.bank, e.wait.toFixed(4), e.z0.toFixed(4), s.L, s.arenaZ.toFixed(4), (s.refMul || 1).toFixed(6)); }
   return h;

@@ -11,7 +11,7 @@ import {
   prog, endedCycles, maxCycle, upgLv, addUpg, heroLvOf, addHeroLv, cycleStars, CYCLE_LEVELS,
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
-import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg } from './roster.js';
+import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg , AMMO, AMMO_IDS, ammoOpen, ammoText } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -615,6 +615,42 @@ function petForRun() {
   if (!petOpen() || !id || !data.pets.own[id] || !PETS[id]) return null;
   return { id, lv: data.pets.own[id].lv };
 }
+/* 탄종(ARSENAL.md 3절): 고른 탄종이 지금 모은 별로 열려 있으면 그 id, 아니면 ''(보통탄) */
+function ammoForRun() {
+  const id = data.ammo && data.ammo.sel;
+  return id && ammoOpen(id, totalStars(data)) ? id : '';
+}
+function renderAmmo() {
+  const stars = totalStars(data);
+  $('ammoStars').textContent = `★ ${stars}`;
+  const list = $('ammoList');
+  list.textContent = '';
+  const cur = ammoForRun();
+  for (const id of ['', ...AMMO_IDS]) {
+    const A = { name: '보통탄', stars: 0, ...(id ? AMMO[id] : {}), ...ammoText(id) };
+    const open = !id || ammoOpen(id, stars);
+    const card = document.createElement('div');
+    card.className = 'upg' + (open ? '' : ' locked');
+    const head = document.createElement('div');
+    head.className = 'upg-head';
+    const b = document.createElement('b');
+    b.textContent = A.name;
+    head.appendChild(b);
+    card.appendChild(head);
+    const eff = document.createElement('p');
+    eff.className = 'upg-eff';
+    eff.textContent = A.bad ? `${A.good} · 대신 ${A.bad}` : A.good;
+    card.appendChild(eff);
+    const btn = document.createElement('button');
+    btn.className = 'buy';
+    btn.textContent = !open ? `★ ${A.stars}개` : id === cur ? '사용 중' : '고르기';
+    btn.disabled = !open || id === cur;
+    if (!open) btn.setAttribute('aria-label', `${A.name} — 별 ${A.stars}개를 모으면 열려요(지금 ${stars}개)`);
+    btn.addEventListener('click', () => { data.ammo.sel = id; save(data); sfx.click(); renderAmmo(); });
+    card.appendChild(btn);
+    list.appendChild(card);
+  }
+}
 function petFaceEl(id, scale) {
   try { const c = renderer.petFace && renderer.petFace(id, scale); if (c) { c.classList.add('pix'); return c; } } catch { /* 아직 그림이 없다 */ }
   const sp = document.createElement('span');
@@ -856,6 +892,7 @@ function renderLevels() {
 
 /* ---------- 강화 ---------- */
 function renderUpg() {
+  renderAmmo();
   $('uCoins').textContent = compact(data.coins);
   const list = $('upgList');
   list.textContent = '';
@@ -1210,9 +1247,10 @@ function prepareRun(L) {
   const fire = upgOf('fire');
   // worst: 가장 아까운 게이트 { k(몇 번째 줄), m(가장 좋은 다른 칸보다 덜 얻은 병사) }, arenaN: 경기장에 들어설 때 병력(근소한 패배 계산용)
   const pet = petForRun();
-  run = { id: Math.random().toString(36).slice(2, 10), L, cycle: runCycle, start: base + support, fire, support, hero, pet, worst: null, arenaN: 0 };
-  par = parFor(lv, base, fire, hero, pet);   // 별 기준에는 펫의 기대 효과도 넣는다(펫 때문에 별이 쉬워지지 않게)
-  s = newGame(lv, { start: run.start, fire: run.fire, hero, pet });
+  const ammo = ammoForRun();
+  run = { id: Math.random().toString(36).slice(2, 10), L, cycle: runCycle, start: base + support, fire, support, hero, pet, ammo, worst: null, arenaN: 0 };
+  par = parFor(lv, base, fire, hero, pet, ammo);   // 별 기준에는 펫의 기대 효과도 넣는다(펫 때문에 별이 쉬워지지 않게)
+  s = newGame(lv, { start: run.start, fire: run.fire, hero, pet, ammo });
   prevZ = s.squad.z;
   renderer.reset();
   const g = starGoals(par, lv);
@@ -1221,7 +1259,7 @@ function prepareRun(L) {
   chip.textContent = '';
   if (hero) {
     chip.appendChild(faceEl(hero.id, 1));
-    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''} ▸`);
+    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''}${run.ammo ? ` · ${AMMO[run.ammo].name}` : ''} ▸`);
     chip.hidden = false;
   } else if ((runCycle > 1 || L >= UNLOCK.hero) && HERO_IDS.some((id) => ownedHero(id))) {
     chip.append('영웅 고르기 ▸');
@@ -1324,7 +1362,8 @@ function prepareEndless() {
   run = { id: Math.random().toString(36).slice(2, 10), mode: 'endless', seed, L: 0, start, fire: upgOf('fire'), support: 0, hero, worst: null, arenaN: 0 };
   const pet = petForRun();
   run.pet = pet;
-  s = newEndless({ seed, start, fire: run.fire, hero, pet });
+  run.ammo = ammoForRun();
+  s = newEndless({ seed, start, fire: run.fire, hero, pet, ammo: run.ammo });
   lv = levelOfSeg();
   run.L = s.L;
   par = 0;
@@ -1339,7 +1378,7 @@ function prepareEndless() {
   chip.textContent = '';
   if (hero) {
     chip.appendChild(faceEl(hero.id, 1));
-    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''} ▸`);
+    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''}${run.ammo ? ` · ${AMMO[run.ammo].name}` : ''} ▸`);
     chip.hidden = false;
   } else if (HERO_IDS.some((id) => ownedHero(id))) {
     chip.append('영웅 고르기 ▸');
@@ -1840,6 +1879,10 @@ function finish() {
   for (const id of heroesEarned(data.maxL, totalStars(data))) if (!data.heroes.lv[id]) data.heroes.lv[id] = 1;
   if (!data.heroes.sel) data.heroes.sel = HERO_IDS.find((id) => ownedHero(id)) || '';
   const joined = HERO_IDS.filter((id) => ownedHero(id) && !before.has(id));
+  // 모은 별로 새로 열린 탄종(한 번만 알린다)
+  const starsNow = totalStars(data);
+  const newAmmo = AMMO_IDS.filter((id) => AMMO[id].stars > (data.ammo.seen | 0) && starsNow >= AMMO[id].stars);
+  if (starsNow > (data.ammo.seen | 0)) data.ammo.seen = starsNow;
   if (anyInput && L === 1) data.tips.moved = 1;
   tutorial = false;
   $('tut').hidden = true;
@@ -1876,6 +1919,7 @@ function finish() {
   lines.push(['획득 코인', `+${coins}` + (tg.coinMul > 1 ? ` (${tg.label} ${mulText(tg.coinMul)})` : '') + (petCoinMul(s) > 1 ? ' · 줍줍! 두 배' : '')]);
   if (egg) lines.push(['펫 알', '+1개 (대왕 첫 격파)']);
   if (joined.length) lines.push(['새 영웅 합류', joined.map((id) => HEROES[id].name).join(', ')]);
+  if (newAmmo.length) lines.push(['새 탄종 열림', newAmmo.map((id) => AMMO[id].name).join(', ') + ' — 강화 화면에서 골라요']);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
   renderNear(won);
   const cause = !won && !anyInput

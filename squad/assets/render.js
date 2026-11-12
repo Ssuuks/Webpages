@@ -20,6 +20,7 @@ const STEPS3 = [1, 0.75, 0.5];
 const STEPS4 = [1, 0.75, 0.5, 0.33];
 const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9'];   // 무기 단계 색
 const GOLD_BULLET = '#FFD84A';
+const AMMO_COL = { pierce: '#F4F7FF', burst: '#FFB347', rapid: '#FFF4B0', frost: '#8FD3FF' };   // 탄종 머리 색(roster.AMMO와 같은 id)
 const SKILL_LINE = { mungchi: '#FFD84A', bori: '#FF8FB8', nabi: '#7FF0E2' };   // 스킬 중 화면 가장자리 속도선
 const PANEL = {
   good: { hex: '#3E8BEA', line: '#BFE2FF', out: '#1D3F8A', arrow: '#DDF3FF' },
@@ -639,6 +640,7 @@ export function createRenderer(cvs) {
   const SCORCH_T = 0.8;
   const scorches = [];
   for (let i = 0; i < 4; i++) scorches.push({ on: false, x: 0, z: 0, r: 1, t: 0 });
+  let splashT = -9;           // 작렬탄 고리를 마지막으로 그린 때
   let waveFront = 0;          // 맨 앞줄의 z(분대 기준 m)
   let waveT = -9;             // 좋은 게이트를 지난 때(분대가 앞줄부터 물결처럼 통 튄다)
   let bossHpSeen = -1, bossDmgAcc = 0, bossDmgT = 0, bossMark = 4, bossMax = 0;   // 보스 피해 숫자(모아서)·체력 75·25% 파편
@@ -1123,6 +1125,11 @@ export function createRenderer(cvs) {
           healSum = 0;
           break;
         }
+        case 'pierce': if (Math.random() < 0.5) fx('spark', e.x, 0.7, e.z1, 0.07); break;
+        case 'splash':
+          // 작렬탄: 실제 둘레(e.r)만큼의 작은 고리(초당 12번까지만 그린다)
+          if (time - splashT > 0.08) { splashT = time; ring(e.x, e.z, 0.15, e.r, 0.18, '#FFB347'); burst(e.x, 0.6, e.z, 3, FX_COL.boom, 2.5, 2.5, 0.3); }
+          break;
         case 'heroReady': readyT = time; break;
         case 'heroCast': {
           castT = time; castId = e.id;
@@ -1751,6 +1758,12 @@ export function createRenderer(cvs) {
     const tell = f.kind === 'spit' && (fr === FR.spit.tell[0] || fr === FR.spit.tell[1]);
     if (tell) { ctx.fillStyle = '#B9F25B'; ellRing(pxs, pys, Math.max(4, f.r * 1.6 * ps), Math.max(2, f.r * 0.6 * ps), 1); }
     const rr = atlas.draw(ctx, sheet, fr, pxs, pys, st, white ? 'white' : ALT3[f.seed % 3]);
+    if (f.slowT > s.t) {
+      // 빙결탄에 맞아 느려진 동안: 발밑 하늘빛 띠 + 머리 위 서리 두 점
+      const fx0 = Math.round(pxs), fy0 = Math.round(pys);
+      ctx.fillStyle = '#8FD3FF'; ctx.fillRect(fx0 - 3, fy0, 7, 1);
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(fx0 - 2 + ((f60 >> 2) & 1) * 3, fy0 - rr.ay - 1, 1, 1); ctx.fillRect(fx0 + 1 - ((f60 >> 2) & 1) * 2, fy0 - rr.ay + 2, 1, 1);
+    }
     if (tell && (((time * 12) | 0) & 1)) {
       // 독침 예고: 머리 위 연두 반짝임(멀리서도 보이게)
       const hx = Math.round(pxs), hy = Math.round(pys) - rr.ay - 4;
@@ -2270,10 +2283,35 @@ export function createRenderer(cvs) {
     const lenK = tier >= 1 ? 1.3 : 1;
     const after = !low && tier >= 3;
     const plane = s.boss && s.boss.hp > 0 ? s.boss.z - 1 : Infinity;
+    const ammo = AMMO_COL[s.ammo] ? s.ammo : '', ac = AMMO_COL[ammo];
     for (const b of s.bullets) {
       if ((b.z + ext > plane) !== behind) continue;
       if (!project(view, b.x, 0.75, b.z + ext)) continue;
       const hx = Math.round(P.x), hy = Math.round(P.y);
+      if (ammo) {
+        // 탄종(ARSENAL.md 3절): 모양이 탄종을 알린다 — 몸은 무기 단계 색, 머리는 탄종 색
+        if (!project(view, b.x, 0.75, b.z + ext - (ammo === 'pierce' ? 2.6 : 1.4))) continue;
+        const len = Math.max(1, Math.round(P.y) - hy);
+        if (ammo === 'pierce') {            // 길고 가는 바늘
+          ctx.fillStyle = col; ctx.fillRect(hx, hy, 1, len);
+          ctx.fillStyle = ac; ctx.fillRect(hx, hy, 1, Math.max(2, len >> 1));
+        } else if (ammo === 'burst') {      // 둥근 탄
+          ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 1, 3, 4); ctx.fillRect(hx - 2, hy, 5, 2);
+          ctx.fillStyle = col; ctx.fillRect(hx - 1, hy, 3, 2); ctx.fillRect(hx, hy - 1, 1, 4);
+          ctx.fillStyle = ac; ctx.fillRect(hx, hy, 1, 2);
+        } else if (ammo === 'rapid') {      // 짧은 토막 둘
+          const seg = Math.max(1, len >> 1);
+          ctx.fillStyle = col; ctx.fillRect(hx, hy, wide, seg); ctx.fillRect(hx, hy + seg + 2, wide, seg);
+          ctx.fillStyle = ac; ctx.fillRect(hx, hy, wide, 1);
+        } else {                            // 빙결: 마름모 + 옅은 꼬리
+          ctx.fillStyle = ac; ctx.fillRect(hx - 1, hy, 3, 1); ctx.fillRect(hx, hy - 1, 1, 3);
+          ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx, hy, 1, 1);
+          ctx.fillStyle = col; ctx.fillRect(hx, hy + 2, 1, Math.max(1, len - 2));
+        }
+        if (b.c) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx - 1, hy, 3, 1); ctx.fillRect(hx, hy - 1, 1, 3); }
+        for (let k = 0; k < embers; k++) { ctx.fillStyle = EMBER[k]; ctx.fillRect(hx, hy + len + 1 + 2 * k + ((f60 + k) & 1), 1, 1); }
+        continue;
+      }
       const u = (Math.abs(b.x) * 37.73) % 1;
       const shape = u < shotCum[0] ? 0 : u < shotCum[1] ? 1 : u < shotCum[2] ? 2 : 3;
       if (!project(view, b.x, 0.75, b.z + ext - 1.4 * lenK * (shape === 1 ? 1.5 : 1))) continue;

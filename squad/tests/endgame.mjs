@@ -12,6 +12,7 @@ import { makePool } from '../tools/benchlib.mjs';
 import { runEndless, median } from '../tools/endless.mjs';
 import { cycBench, rate, cycCampaign } from '../tools/cycbench.mjs';
 import { petBench } from '../tools/petbench.mjs';
+import { ammoBench } from '../tools/ammobench.mjs';
 
 const POOL = makePool(Math.max(1, Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length)));
 after(() => POOL.close());
@@ -598,5 +599,99 @@ test('펫의 세기(합격 기준): 만렙 펫의 승률 오름폭은 화력 강
     assert.ok(d > -2.5 && d < hi + 5, name + ' — 치트키가 아니다');
     if (d >= lo - 2.5 && d <= hi + 2.5) await t.test(name, () => {});
     else await t.test(name, { todo: '화력 두세 단계 폭을 벗어났다 — README 알려진 차이' }, () => { assert.ok(false); });
+  }
+});
+
+/* ---------- 탄종(ARSENAL.md 3절 '별 무기고') ---------- */
+test('탄종: 모은 별로 열리고(45·90·135·180), 보통탄 판은 상태·해시가 그대로다', () => {
+  assert.deepEqual(R.AMMO_IDS.map((id) => R.AMMO[id].stars), [45, 90, 135, 180]);
+  assert.ok(!R.ammoOpen('pierce', 44) && R.ammoOpen('pierce', 45) && !R.ammoOpen('nope', 999));
+  const lv = C.prepareLevel(22);
+  const co = C.expectLoadout(22);
+  const a = C.newGame(lv, co), b = C.newGame(lv, { ...co, ammo: '' }), c = C.newGame(lv, { ...co, ammo: 'nope' });
+  assert.ok(!('ammo' in a) && !('ammo' in b) && !('ammo' in c));
+  assert.equal(C.stateHash(a), C.stateHash(b));
+  // 저장: 모르는 탄종은 보통탄으로
+  assert.equal(S.normalize({ ammo: { sel: 'nope' } }).ammo.sel, '');
+  assert.equal(S.normalize({ ammo: { sel: 'frost', seen: 50 } }).ammo.sel, 'frost');
+  assert.deepEqual(S.normalize({}).ammo, { sel: '', seen: 0 });
+  // 소개 글은 수치에서 만든다
+  for (const id of R.AMMO_IDS) { const t = R.ammoText(id); assert.ok(t.good && t.bad, `${id} 소개 글`); if (R.AMMO[id].range) assert.ok(t.bad.includes(String(R.AMMO[id].range))); }
+});
+
+test('탄종 효과: 피해·사거리 배수, 관통은 뒤의 좀비 하나에, 작렬은 둘레의 좀비에, 빙결은 맞은 좀비를 느리게', () => {
+  const lv = C.prepareLevel(22);
+  const co = C.expectLoadout(22);
+  const first = (g) => { for (let i = 0; i < 30 && !g.bullets.length; i++) C.step(g, { dir: 0 }); return g.bullets[g.bullets.length - 1]; };
+  const d0 = first(C.newGame(lv, co)).dmg;
+  for (const id of R.AMMO_IDS) {
+    const A = R.AMMO[id];
+    const s = C.newGame(lv, { ...co, ammo: id });
+    const bl = first(s);
+    assert.ok(Math.abs(bl.dmg / d0 - (A.dmg || 1)) < 1e-9, `${id} 피해 배수`);
+    assert.equal(bl.r, A.range, `${id} 사거리`);
+    // 결정성
+    const t = C.newGame(lv, { ...co, ammo: id });
+    first(t);
+    for (let i = 0; i < 1200 && s.phase === 'run'; i++) { const inp = C.botInput(s); C.step(s, inp); C.step(t, inp); }
+    assert.equal(C.stateHash(s), C.stateHash(t), `${id} 결정성`);
+    assert.notEqual(C.stateHash(s), (() => { const u = C.newGame(lv, co); first(u); for (let i = 0; i < 1200 && u.phase === 'run'; i++) C.step(u, C.botInput(u)); return C.stateHash(u); })(), `${id}는 보통탄과 다른 판`);
+  }
+  // 덧효과: 한 줄로 선 좀비 둘과 옆의 좀비 하나에 총알 한 발
+  const shot = (id) => {
+    const s = C.newGame(lv, { ...co, ammo: id });
+    s.rows = []; s.props = []; s.saws = [];
+    const mk = (i, x, z) => ({ ...structuredClone(lv.foes.find((f) => f.kind === 'grunt')), id: 9000 + i, x, z, hp: 1e6, max: 1e6, alive: true, awake: true, spd: 1, home: 0 });
+    s.foes = [mk(0, 0, s.squad.z + 10), mk(1, 0, s.squad.z + 12), mk(2, 0.8, s.squad.z + 10.2)];
+    s.bullets = [{ x: 0, z: s.squad.z + 9.5, d: 5, dmg: 100, hm: 1 }];
+    s.squad.fireAcc = -9;   // 이 틱에는 새로 쏘지 않는다
+    const z0 = s.foes[0].z;
+    C.step(s, { dir: 0 });
+    return { hp: s.foes.map((f) => 1e6 - f.hp), slow: s.foes.map((f) => f.slowT > s.t), dz: z0 - s.foes[0].z, ev: s.ev.map((e) => e.t) };
+  };
+  const n = shot('');
+  assert.deepEqual(n.hp, [100, 0, 0]);
+  const p = shot('pierce');
+  assert.deepEqual(p.hp.map(Math.round), [100, 60, 0], '관통: 바로 뒤 좀비 하나에 60%');
+  assert.ok(p.ev.includes('pierce'));
+  const b = shot('burst');
+  assert.deepEqual(b.hp.map(Math.round), [100, 0, 35], '작렬: 둘레 1m 안(옆 0.8m)의 좀비에 몫, 2m 뒤 좀비는 아니다');
+  const f = shot('frost');
+  assert.deepEqual(f.slow, [true, false, false]);
+  // 느려진 좀비는 다음 틱부터 25% 덜 다가온다
+  const s = C.newGame(lv, { ...co, ammo: 'frost' });
+  const g = s.foes.find((x) => x.kind === 'grunt');
+  g.awake = true; g.z = s.squad.z + 40;
+  const z1 = g.z; s.squad.fireAcc = -9; C.step(s, { dir: 0 }); const plain = z1 - g.z;
+  g.slowT = s.t + 1; const z2 = g.z; s.squad.fireAcc = -9; C.step(s, { dir: 0 });
+  assert.ok(Math.abs((z2 - g.z) / plain - (1 - R.AMMO.frost.slow)) < 1e-6, '빙결: 다가오는 속도 ×0.75');
+});
+
+test('탄종과 별 기준·이어하기: par는 탄종을 넣어 재고, 스냅숏을 오가도 판이 같다. 무한모드에도 따라간다', () => {
+  const lv = C.prepareLevel(34);
+  const co = C.expectLoadout(34);
+  const p0 = C.parFor(lv, co.start, co.fire, co.hero);
+  assert.equal(C.parFor(lv, co.start, co.fire, co.hero, null, 'nope'), p0);
+  const p1 = C.parFor(lv, co.start, co.fire, co.hero, null, 'rapid');
+  assert.ok(p1 > 0 && C.parFor(lv, co.start, co.fire, co.hero, null, 'rapid') === p1);
+  const s = C.newGame(lv, { ...co, ammo: 'frost' });
+  for (let i = 0; i < 900; i++) C.step(s, C.botInput(s));
+  const t = C.restore(JSON.parse(JSON.stringify(C.snapshot(s))));
+  assert.equal(t.ammo, 'frost');
+  for (let i = 0; i < 1500 && s.phase !== 'won' && s.phase !== 'lost'; i++) { const inp = C.botInput(s); C.step(s, inp); C.step(t, inp); assert.equal(C.stateHash(t), C.stateHash(s)); }
+  assert.equal(C.newEndless({ seed: 3, start: 32, fire: 10, ammo: 'pierce' }).ammo, 'pierce');
+  const snap = JSON.parse(JSON.stringify(C.snapshot(s)));
+  snap.ammo = 'nope';
+  assert.ok(!('ammo' in C.restore(snap)));
+});
+
+test('탄종 동등성(합격 기준): 집중한 사람의 첫 시도 승률이 탄종마다 보통탄과 ±5%p 목표(표본 오차까지 ±9%p 안) — L11~60', async () => {
+  const levels = [];
+  for (let L = 11; L <= 60; L++) levels.push(L);
+  const sum = await ammoBench({ levels, seeds: 4, pool: POOL });
+  const base = sum.none[0] / sum.none[1];
+  for (const id of R.AMMO_IDS) {
+    const d = 100 * (sum[id][0] / sum[id][1] - base);
+    assert.ok(Math.abs(d) <= 9, `${id}: 보통탄과 ${d.toFixed(1)}%p`);
   }
 });
