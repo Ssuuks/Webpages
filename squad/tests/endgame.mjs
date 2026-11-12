@@ -27,8 +27,8 @@ function reach(name, n, co = UP10, maxSeg = 30) {
 }
 
 /* ---------- 1회차 캠페인은 그대로 ---------- */
-test('1회차 캠페인의 stateHash는 SIM 10 표를 만들 때 적어 둔 값 그대로다(규칙을 바꾸면 SIM을 올리고 표·이 값을 다시 만든다) — L1~60, 기준 봇 + 사람 흉내 봇', () => {
-  assert.equal(C.SIM, 10);
+test('1회차 캠페인의 stateHash는 SIM 11 표를 만들 때 적어 둔 값 그대로다(규칙을 바꾸면 SIM을 올리고 표·이 값을 다시 만든다) — L1~60, 기준 봇 + 사람 흉내 봇', () => {
+  assert.equal(C.SIM, 11);
   assert.equal(C.VERSION, 'squad-v1');
   const out = [];
   for (let L = 1; L <= 60; L += 3) {
@@ -43,10 +43,11 @@ test('1회차 캠페인의 stateHash는 SIM 10 표를 만들 때 적어 둔 값 
       out.push(C.hash(x, C.stateHash(s), s.phase, s.squad.n));
     }
   }
-  // SIM 10(정예 좀비를 캠페인에 넣음 + 독침의 피할 길 판단이 반응 중 가속을 봄) 보정 표를 만든 직후 같은 식을 돌린 값
+  // SIM 11(배치의 벽 검사 — L27·43·44·47·49·51·58의 배치가 바뀜. 표본 L1·4·…·58 중에는 L43·49·58) 보정 표를 만든 직후 같은 식을 돌린 값.
+  // SIM 10 값은 3690720509 — 규칙(시뮬레이션)은 SIM 10과 같고 달라진 것은 표의 배치뿐이다
   assert.equal(C.hash(...out), BASE_HASH);
 });
-const BASE_HASH = 3690720509;
+const BASE_HASH = 4115398684;
 
 /* ---------- 무한모드 ---------- */
 test('무한모드 구간: 지역은 차례로 돌고, 3번째는 정예·6번째는 대왕 — 가상 레벨이 그 지역·등급을 가리킨다', () => {
