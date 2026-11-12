@@ -23,7 +23,9 @@ export const WEAPON = [1, 1.35, 1.7, 2.1];
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
 export const VERSION = 'squad-v1';   // 레벨 배치의 소금 — 바꾸지 않는다(바꾸면 모든 레벨이 달라진다)
-export const SIM = 10;               // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
+export const SIM = 11;               // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
+/* SIM 11(배치의 벽 검사): 시뮬레이션 규칙은 그대로이고 보정이 배치를 고르는 기준만 늘었다 — 일반·쉼 레벨은 사람 흉내 봇이 경기장까지 가야 한다(WALL).
+   무리·지킨 줄·몰이가 가까이 몰린 배치(L43·44·47 …)는 보스 체력을 아무리 맞춰도 달리기에서 사람 봇이 절반 넘게 죽는 '벽'이었다. 표의 배치가 몇 곳 바뀐다 */
 /* SIM 9(파고들기): 빨간(−) 덧셈 칸의 끝(cap)이 같은 줄 파랑 칸의 끝보다 높다(RED_OVER) — 오르는 빠르기는 그대로라 기대 강화로는 끝까지 못 올리고,
    화력 강화·뭉치(쏘아 올리기·스킬)·그 칸 앞에 서서 몰아 쏘기가 있어야 닿는다. 같은 특수병을 또 구하면 그 특수병의 레벨이 오른다(Lv3까지) */
 /* 보스: 피하기에 대가가 있게 — 좌우로 천천히 따라오고(초당 m), 총알은 가운데 ±BOSS_HIT m 안만 맞고, 첫 내려찍기는 빨리 온다 */
@@ -3045,6 +3047,8 @@ export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key), 
   let done = false;
   // 그 자리 보정(표 밖 레벨 — keep 없음)은 bare로 다시 보정하기를 한 번까지만(휴대폰에서 레벨 시작이 늦어지지 않게 — 보정은 많아야 tries + 1번)
   let bareLeft = keep == null || fast ? 1 : Infinity;
+  // SIM 11: 서 있기 검사는 넘겼지만 벽 검사를 못 넘은 배치(가장 나은 것이 끝내 다른 배치가 없을 때의 대안)
+  const walls = [];
   for (const attempt of order) {
     // SIM 9: 먼저 새 규칙 그대로. 보정은 됐는데 서 있기만 해도 이기면(MAX 칸이 한 자리에 선 분대를 도운 곳)
     // 같은 배치를 SIM 8처럼(bare) 다시 보정한다 — 레벨이 통째로 바뀌거나 보스가 세지는 것보다 그 레벨만 MAX 칸을 빼는 쪽이 낫다
@@ -3062,12 +3066,22 @@ export function calibrateLevel(key, tries = CAL_TRIES, keep = keepAttempt(key), 
       // 배치 검사: 한 자리에 서 있기만 해서는 이기지 못해야 한다. 못 넘으면 SIM 8처럼(bare), 그래도 못 넘으면 보스를 조금 세게(qaBoost),
       // 그래도 안 되면 다른 배치로. 끝까지 못 넘으면 처음 보정된 배치를 쓴다(lv.qa = false — 테스트가 어느 레벨인지 본다)
       if (!firstOk) firstOk = lv;
-      if (standStillLoses(lv) || ((bare || !hasMax || bareLeft <= 0) && key <= POP_MAX && !fast && qaBoost(lv))) { lv.qa = true; done = true; break; }
+      if (standStillLoses(lv) || ((bare || !hasMax || bareLeft <= 0) && key <= POP_MAX && !fast && qaBoost(lv))) {
+        // SIM 11: 벽 검사 — 사람 흉내 봇이 경기장까지 가야 한다. 못 가면 다른 배치로(벽은 MAX 칸과 상관없어 bare로 다시 보지 않는다)
+        const wall = wallCheck(lv);
+        if (!wall || wall.ok) { lv.qa = true; done = true; break; }
+        lv.qa = true;
+        lv.wall = wall;
+        walls.push(lv);
+        break;
+      }
       lv.qa = false;
     }
     if (done) break;
   }
-  if (!done && firstOk) lv = firstOk;
+  // 모든 배치가 벽이면(보정·서 있기 검사는 넘긴 것 중) 경기장 도달률이 가장 나은 배치
+  if (!done && walls.length) lv = walls.reduce((best, x) => (x.wall.score > best.wall.score ? x : best));
+  else if (!done && firstOk) lv = firstOk;
   if (lv.failed) {
     // 끝까지 실패하면 추정치로 보스를 약하게 둔다
     lv.arrive = Math.max(START_N, lv.golden[lv.golden.length - 1] || START_N);
@@ -3123,6 +3137,37 @@ export function standStillLoses(lv) {
     }
   }
   return true;
+}
+/* 배치의 벽 검사(SIM 11): 사람 흉내 봇이 달리기에서 죽지 않고 경기장까지 가는 비율(보스 체력과 상관없다 — 달리기만 돈다).
+   무리·지킨 줄·몰이가 가까이 몰린 배치는 집중한 사람(on)의 도달률이 20~70%까지 떨어졌다(L43·44·47·58·49·27 — 같은 판을 기준 봇은 늘 넘고, 보스 체력으로는 못 고친다).
+   임계값은 SIM 10 표 L5~60(레벨마다 64판)의 도달률 분포에서 벽과 보통 사이의 빈 틈(일반: 73% ↔ 88%, 쉼: 67% ↔ 84%)에 둔다 —
+   on 집중한 사람, sl3 산만한 사람(산만한 사람은 원래 더 못 가므로 낮게). 어려움·매우 어려움은 경기장 전 실패가 목표라(L15+ 30% 이상) 보지 않는다.
+   1회차 L5~POP_MAX의 일반·쉼 레벨만: 회차(2·3회차 표)는 1회차 배치를 그대로 쓰고, 그 자리에서 보정하는 레벨은 휴대폰에서 느려지지 않게 건너뛴다 */
+export const WALL = { normal: { on: 0.82, sl3: 0.45 }, rest: { on: 0.9, sl3: 0.78 } };
+export const WALL_FROM = 5;
+export const WALL_K = 48;
+/* 사람 흉내 무리(on·sl3)가 경기장에 닿는 비율 { on, sl3 } — 시드는 보정(popCaps)과 따로 쓴다 */
+export function reachRates(lv, co, K = WALL_K, maxTicks = maxTicksOf(lv)) {
+  const out = {};
+  for (const t of POP) {
+    if (t.id !== 'on' && t.id !== 'sl3') continue;
+    let n = 0;
+    for (let j = 0; j < K; j++) {
+      const pol = humanBot(hash(VERSION, 'wall', lv.L, lv.attempt, t.id, j), t.err, t.skill, t);
+      if (runTo(newGame(lv, co), pol, maxTicks, true).phase === 'arena') n++;
+    }
+    out[t.id] = n / K;
+  }
+  return out;
+}
+/* 벽 검사 대상이 아니면 null, 아니면 { ok, score, on, sl3 } — score = 임계값 대비 가장 모자란 비율(1 이상이면 통과) */
+export function wallCheck(lv) {
+  if (lv.L < WALL_FROM || lv.L > POP_MAX || lv.fast || (lv.cycle || 1) > 1) return null;
+  const th = WALL[lv.params.tag || 'normal'];
+  if (!th) return null;
+  const r = reachRates(lv, expectLoadout(lv.L, 1));
+  const score = Math.min(r.on / th.on, r.sl3 / th.sl3);
+  return { ok: score >= 1, score, on: r.on, sl3: r.sl3 };
 }
 const WEAK = { pump: false, crates: false, specials: false };
 /* 봇 정책: 기준 봇(스킬 on/off), 약한 기준(쏘아 올리기·상자·특수병 모름, 스킬 끔) */

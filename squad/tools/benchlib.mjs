@@ -343,6 +343,17 @@ export function calJob(job) {
   for (const f of C.CAL_FIELDS) out[f] = lv[f];
   return out;
 }
+/* 벽 검사(SIM 11, core.wallCheck) 한 번: attempt가 null이면 표의 배치(prepareLevel), 아니면 그 배치를 새로 지은 것(옛 표의 배치를 되짚어 볼 때).
+   테스트가 워커에 나눠 돌린다('call' 일감) — 검사 하나가 판 96개라 한 스레드에서는 느리다 */
+export function wallOf(L, attempt = null) {
+  const lv = attempt == null ? C.prepareLevel(L) : C.buildLevel(L, attempt, false, 1);
+  return C.wallCheck(lv);
+}
+/* 표의 배치(keep)를 먼저 보지 않고 0번 배치부터 보정한 결과 — 벽 검사가 앞 배치를 거르는 길을 calibrateLevel이 실제로 타는지 본다 */
+export function calNoKeep(L) {
+  const lv = C.calibrateLevel(L, C.CAL_TRIES, null);
+  return { attempt: lv.attempt, qa: !!lv.qa, failed: !!lv.failed, wall: lv.wall ? { ok: lv.wall.ok, on: lv.wall.on, sl3: lv.wall.sl3 } : null };
+}
 /* 표 밖 레벨을 게임처럼 그 자리에서 보정하는 데 걸린 ms(배치는 tries번까지 — 게임은 C.RUNTIME_TRIES). 표가 있는 레벨도 표를 쓰지 않고 잰다 */
 let calWarm = false;
 /* 기준 일감: 표의 L130을 기준 봇으로 REF_TICKS틱(기대 강화). 같은 워커·같은 때에 재서 보정 시간을 '이 기계 속도의 몇 배'로 본다 —
