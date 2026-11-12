@@ -1732,6 +1732,9 @@ function handleEvents(ev) {
         if (tipKey === 'heroReady' && !$('tip').hidden) { $('tip').hidden = true; tipUntil = 0; }
         break;
       case 'spitFire': tip('spit', '땅에 초록 표시가 보이면 옆으로 피하세요'); break;
+      case 'fork':
+        tip('fork', '갈림길! 벽 숫자를 보고 골라요. 들어가면 옆으로 못 넘어가요');
+        break;
       case 'surge':
         // 몰이(보스 앞 좀비 떼, 양옆 가장자리에서도 파고든다): 글자 + 경보음 + 진동. 화면 양옆 붉은 화살표는 renderer가 그린다
         sfx.surge();

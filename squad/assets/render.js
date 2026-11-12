@@ -2,7 +2,7 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, SQUAD_DEPTH, hitShapes, levelTag } from './core.js';
+import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, SQUAD_DEPTH, hitShapes, levelTag } from './core.js';
 import { HEROES, biomeOf, bossNameOf } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, biomeSheets, PET_ART } from './pix/art.js';
@@ -2483,6 +2483,7 @@ export function createRenderer(cvs) {
       groundQuad(-ROAD, ROAD, q.z - SQUAD_DEPTH * radius(q.n) - 0.4, b.z + 0.3, 0.025);
       ctx.globalAlpha = 1;
     }
+    if (s.divs) for (const d of s.divs) drawDivider(d);
     for (const c of scorches) {
       if (!c.on) continue;
       if (!project(view, c.x, 0.02, c.z)) continue;
@@ -2500,6 +2501,28 @@ export function createRenderer(cvs) {
       ctx.globalAlpha = u > 0.7 ? 0.5 : 1;
       ellRing(P.x, P.y, rr * P.s, rr * P.s * 0.36, r.thick);
       ctx.globalAlpha = 1;
+    }
+  }
+
+  /* 분리대(무한모드 갈림길): 코(z0)에서 FORK_TAPER m 동안 노란 빗금 쐐기(여기서 몸이 가운데에서 밀려난다), 그 뒤 끝(z1)까지 콘크리트 턱.
+     턱은 2m 토막으로 그려 노랑·검정 경고 띠가 번갈아 보인다 — 멀리서도 '여기부터 못 넘어간다'가 읽히게 */
+  function drawDivider(d) {
+    const zN = view.camZ + 1.5, zF = view.camZ + view.zFar;
+    if (d.z1 < zN || d.z0 > zF) return;
+    const zf = d.z0 + FORK_TAPER;
+    // 쐐기: 코에서 턱까지 점점 넓어지는 빗금
+    for (let k = 0; k < 4; k++) {
+      const a = d.z0 + (k * FORK_TAPER) / 4, b = a + FORK_TAPER / 8, w = 0.08 + 0.1 * k;
+      if (b < zN || a > zF) continue;
+      ctx.fillStyle = '#FFD84A';
+      groundQuad(-w, w, a, b, 0.02);
+    }
+    for (let z = zf, i = 0; z < d.z1; z += 2, i++) {
+      const z2 = Math.min(d.z1, z + 2);
+      if (z2 < zN || z > zF) continue;
+      ctx.fillStyle = '#2A2E3A'; groundQuad(-0.34, 0.34, z, z2, 0.02);            // 바닥 그림자
+      ctx.fillStyle = '#7C8494'; groundQuad(-0.26, 0.26, z, z2, 0.3);             // 옆면
+      ctx.fillStyle = i & 1 ? '#2A2E3A' : '#FFD84A'; groundQuad(-0.2, 0.2, z, z2, 0.6);   // 윗면 경고 띠
     }
   }
 

@@ -699,3 +699,74 @@ test('탄종 동등성(합격 기준): 집중한 사람의 첫 시도 승률이 
     assert.ok(Math.abs(d) <= 9, `${id}: 보통탄과 ${d.toFixed(1)}%p`);
   }
 });
+
+/* ---------- 갈림길(ARSENAL.md 5절 — 무한모드의 분리대) ---------- */
+test('갈림길: 무한모드 2구간부터 구간마다 하나 — 한쪽은 벽과 보상 상자, 다른 쪽은 약한 졸개. 갈린 구간에는 게이트·톱날이 없다. 캠페인에는 없다', () => {
+  assert.ok(!C.buildSegment(5, 1, 32, 0).divs, '1구간에는 없다');
+  for (const L of [7, 24, 60]) assert.ok(!('divs' in C.newGame(C.prepareLevel(L), C.expectLoadout(L))), `캠페인 L${L}`);
+  for (const k of [2, 3, 6, 9]) {
+    for (const seed of [5, 77]) {
+      const seg = C.buildSegment(seed, k, 200, 1);
+      assert.equal(seg.divs.length, 1, `구간 ${k}`);
+      const d = seg.divs[0];
+      const wall = seg.props.find((p) => p.id === d.wall);
+      assert.ok(wall && wall.kind === 'wall' && wall.z > d.z0 + C.FORK_TAPER && wall.z < d.z1);
+      assert.ok(d.risk > 0 ? wall.x0 > 0 && wall.x1 <= C.ROAD : wall.x1 < 0 && wall.x0 >= -C.ROAD, '벽은 위험한 쪽 차선만 막는다');
+      const crate = seg.props.find((p) => p.fork && p.kind !== 'wall');   // 지원병 상자는 특수병 배치가 철창으로 바꾸기도 한다
+      assert.ok(crate && crate.z > wall.z && crate.z < d.z1 && Math.sign((crate.x0 + crate.x1) / 2) === d.risk, '보상 상자는 벽 바로 뒤');
+      assert.ok(['gun', 'men', 'unit'].includes(crate.reward.type));
+      const inside = (z) => z >= d.z0 && z <= d.z1;
+      assert.ok(!seg.rows.some((r) => inside(r.z)) && !seg.saws.some((w) => inside(w.z)), '갈린 구간에 게이트·톱날 없음');
+      const foes = seg.foes.filter((f) => inside(f.z));
+      assert.ok(foes.length >= 5 && foes.every((f) => f.kind === 'grunt' && Math.sign(f.x) === -d.risk), '안전한 쪽에만 졸개');
+      // 가장 빠른 구간에서도 코 앞 빈 길에서 반대쪽 차선으로 옮길 시간이 있다(이동 + 반응 0.45초)
+      assert.ok(C.FORK.nose / seg.speed >= C.moveTime(C.ROAD) + C.REACT_FAR);
+    }
+  }
+});
+
+test('갈림길: 코를 지나면 옆 칸으로 못 넘어간다 — 몸이 차츰 밀려나 8m 뒤에는 통째로 제 쪽, 끝나면 풀린다', () => {
+  for (const side of [-1, 1]) {
+    const s = C.newEndless({ seed: 5, start: 60, fire: 10 });
+    const seg = C.buildSegment(5, 2, 60, 0);
+    // 2구간의 갈림길만 남긴 길에 세운다
+    const d = structuredClone(seg.divs[0]);
+    s.rows = []; s.foes = []; s.props = []; s.saws = []; s.marks = []; s.arenaZ = 1e6; s.stopZ = 1e6;
+    s.divs = [d];
+    s.squad.z = d.z0 - 0.05; s.squad.x = side * 0.2;   // 코 바로 앞, 가운데 가까이
+    C.step(s, { dir: 0 });
+    d.seen = 0;
+    const R = C.radius(s.squad.n);
+    let seen = false;
+    while (s.squad.z < d.z1 - 0.5) {
+      C.step(s, { dir: -side });   // 내내 반대쪽으로 민다
+      if (s.ev.some((e) => e.t === 'fork')) seen = true;
+      if (s.squad.z >= d.z0) {
+        assert.equal(Math.sign(s.squad.x), side, `z ${(s.squad.z - d.z0).toFixed(1)}m에서 넘어갔다`);
+        assert.ok(side * s.squad.x >= C.divPad(d, s.squad.z, R) - 1e-9);
+      }
+      if (s.squad.z >= d.z0 + C.FORK_TAPER) assert.ok(side * s.squad.x >= R - 1e-9, '몸이 통째로 제 쪽');
+    }
+    assert.ok(seen, '알림');
+    for (let i = 0; i < 90; i++) C.step(s, { dir: -side });
+    assert.equal(Math.sign(s.squad.x), -side, '끝나면 넘어갈 수 있다');
+  }
+});
+
+test('갈림길과 봇: 벽을 뚫을 만하면 위험한 쪽, 아니면 안전한 쪽으로 간다 — 위험한 쪽을 고른 판은 대부분 뚫는다', () => {
+  let risky = 0, broke = 0, forks = 0;
+  for (let i = 0; i < 10; i++) {
+    const s = C.newEndless({ seed: 77 + i * 13, ...UP10 });
+    const pol = makeBot('sloppy0.1', 1000 + i, { skill: true });
+    let cur = null;
+    while (s.phase !== 'lost' && s.endless.bosses < 5 && s.tick < 60 * 60 * 8) {
+      const dv = C.divAt(s);
+      if (dv && dv !== cur && s.squad.z > dv.z0 + C.FORK_TAPER) { cur = dv; forks++; cur.r = Math.sign(s.squad.x) === dv.risk; if (cur.r) risky++; }
+      C.step(s, pol(s));
+      if (cur && cur.r && s.ev.some((e) => e.t === 'wallBreak')) broke++;
+      if (cur && s.squad.z > cur.z1) cur = null;
+    }
+  }
+  assert.ok(forks >= 15 && risky >= 4 && risky < forks, `갈림길 ${forks}번 중 위험한 쪽 ${risky}번`);
+  assert.ok(broke >= 0.8 * risky, `위험한 쪽 ${risky}번 중 ${broke}번 뚫음`);
+});
