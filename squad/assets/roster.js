@@ -184,6 +184,32 @@ export function openEgg(pets, rnd = Math.random) {
   return { id, fresh: false, shards: EGG.shards };
 }
 
+/* 탄종(ARSENAL.md 3절 '별 무기고'): 모은 별(모든 회차 합)이 stars를 넘으면 열리고, 출격 전에 하나를 고른다. 별은 쓰지 않는다.
+   강화가 아니라 맞바꿈이다 — 어느 탄종이든 전체 승률은 보통탄과 비슷하고 잘 맞는 상황이 다르다(tools/ammobench.mjs).
+   dmg: 한 발 피해 배수, range: 사거리(m, 없으면 기본 30), pierce: 좀비를 맞힌 뒤 바로 뒤 좀비 하나에 주는 몫,
+   splash·r: 좀비에 맞으면 둘레 r(m)의 다른 좀비에 주는 몫, slow·T: 맞은 좀비가 T초 동안 느려지는 몫(보스는 안 느려진다) */
+export const AMMO = {
+  pierce: { name: '관통탄', stars: 45, dmg: 0.96, pierce: 0.6, color: '#F4F7FF' },
+  burst: { name: '작렬탄', stars: 90, range: 27, splash: 0.35, r: 1, color: '#FFB347' },
+  rapid: { name: '속사탄', stars: 135, dmg: 1.15, range: 24, color: '#FFE38A' },
+  frost: { name: '빙결탄', stars: 180, dmg: 0.97, slow: 0.25, T: 0.8, color: '#8FD3FF' },
+};
+/* 소개 글(좋은 점 · 대신 잃는 점)은 수치에서 만든다 — 수치를 고치면 글도 따라간다 */
+const apc = (x) => Math.round(x * 100);
+export function ammoText(id) {
+  const A = AMMO[id];
+  if (!A) return { good: '기본 총알', bad: '' };
+  const good = A.pierce ? `좀비를 뚫고 뒤의 좀비 하나에 ${apc(A.pierce)}% 더`
+    : A.splash ? `좀비에 맞으면 둘레 ${A.r}m에 ${apc(A.splash)}% 더`
+      : A.slow ? `맞은 좀비가 ${A.T}초 동안 ${apc(A.slow)}% 느려져요`
+        : `화력 +${apc(A.dmg - 1)}%`;
+  const bad = [A.dmg < 1 ? `한 발 피해 −${apc(1 - A.dmg)}%` : '', A.range ? `사거리 30 → ${A.range}m` : ''].filter(Boolean).join(', ');
+  return { good, bad };
+}
+export const AMMO_IDS = Object.keys(AMMO);
+/* 그 별 수로 열린 탄종 */
+export const ammoOpen = (id, stars) => !!AMMO[id] && stars >= AMMO[id].stars;
+
 /* 지역 */
 export const BIOMES = [
   { id: 'desert', name: '모래 고개', boss: { name: '우락이', kind: '모래 도깨비', title: '모래 고개의 골목대장', line: '내 방망이 맛 좀 볼래?' } },

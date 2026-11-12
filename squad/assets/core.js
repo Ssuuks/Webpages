@@ -1,4 +1,4 @@
-import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV } from './roster.js';
+import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -419,6 +419,8 @@ function planChunks(p, g) {
     if (THREAT_KINDS.includes(kind)) lastThreat = kind;
     plan.push(kind);
   }
+  // 무한모드 2구간부터 구간마다 갈림길 하나를 끼운다(다른 청크를 대신하지 않는다 — 구간의 성장·위협 흐름은 그대로)
+  if (p.endless && p.seg >= FORK_FROM) plan.splice(2, 0, 'fork');
   return plan;
 }
 
@@ -818,6 +820,22 @@ export const KEY_WIN = [0.45, 0.6];   // 3단계: 0.72~0.85 → 0.45~0.6(산만�
 export const GUARD_PUMP = [0.8, 1.0];
 export const RIVAL_WIN = [0.6, 0.75];
 
+/* 갈림길(분리대) 상수. nose: 청크 시작부터 코까지, FORK_TAPER: 코에서 완전히 갈릴 때까지(이 사이에 분대 몸이 가운데에서 밀려난다),
+   wall: 완전히 갈린 뒤 벽까지, after: 벽 뒤 분리대 끝까지(보상 상자는 벽 7m 뒤), men: 지원병 상자 크기(병력 몫) */
+export const FORK_FROM = 2;
+export const FORK_TAPER = 8;
+export const FORK = { nose: 22, wall: 26, after: 14, men: 0.15, safe: 0.3, tail: 16 };
+export const FORK_WALL = [0.85, 1.0];
+/* 분대가 지금 갇힌(또는 lead m 안에 들어설) 분리대 */
+export function divAt(s, lead = 0) {
+  if (!s.divs) return null;
+  const z = s.squad.z;
+  for (const d of s.divs) if (z + lead >= d.z0 && z <= d.z1) return d;
+  return null;
+}
+/* 분리대 안에서 분대 중심이 가운데에서 떨어져 있어야 하는 거리: 코에서 0, FORK_TAPER m 뒤부터 분대 반지름 R(몸이 통째로 제 쪽에) */
+export const divPad = (d, z, R) => R * clamp((z - d.z0) / FORK_TAPER, 0, 1);
+
 const CHUNK = {
   rest(lv, g, p, z, ng) {
     return { len: 30, ng };
@@ -1048,6 +1066,31 @@ const CHUNK = {
     return { len: 46, ng: Math.max(1, bestGolden(cells, ng)) };
   },
 
+  /* 갈림길(ARSENAL.md 5절 — 무한모드): 길 가운데 분리대. 코(z0)부터 좌우가 갈리고 끝(z1)까지 옆 칸으로 못 넘어간다.
+     위험한 쪽: 차선을 통째로 막은 벽(체력 숫자) → 뚫으면 바로 뒤 보상 상자(무기 강화 또는 큰 지원병). 못 뚫으면 벽 규칙대로 부딪혀 잃는다.
+     안전한 쪽: 약한 졸개 몇. 갈린 뒤에는 옆으로 피할 것이 없다(톱날·독침 없음, 독침 좀비도 그동안 쏘지 않는다).
+     벽 체력 = 그 차선을 달리며 쏟는 화력(위협 기준 — 구간이 오를수록 커진다)의 FORK_WALL배: 앞 구간은 넉넉히 뚫리고, 뒤로 갈수록
+     강화·무기 단계·스킬·특수병이 받쳐 줘야 뚫린다(들어가기 전에 벽 숫자를 보고 고른다). 골든 패스는 안전한 쪽(병력 그대로) */
+  fork(lv, g, p, z, ng) {
+    const D = threatD(lv, ng);
+    const risk = chance(g, 0.5) ? 1 : -1;
+    const z0 = z + FORK.nose, zf = z0 + FORK_TAPER, wz = zf + FORK.wall, z1 = wz + FORK.after;
+    const lane = (sd) => (sd > 0 ? { x0: 0, x1: ROAD } : { x0: -ROAD, x1: 0 });
+    const rl = lane(risk);
+    const hp = D * ((BULLET_RANGE - 2) / p.speed) * U(g, FORK_WALL[0], FORK_WALL[1]);
+    const w = wallProp(lv, rl.x0 + 0.15, rl.x1 - 0.15, wz, hp, { fork: true });
+    const cx = (rl.x0 + rl.x1) / 2;
+    const reward = chance(g, 0.6) ? { type: 'gun' } : { type: 'men', v: Math.max(6, nice(ng * FORK.men)) };
+    const ch = Math.max(1, Math.round(hp * 0.12));
+    lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.1, x1: cx + 1.1, z: wz + 7, hp: ch, max: ch, alive: true, hitT: -9, reward, fork: true });
+    const sl = lane(-risk);
+    // 안전한 쪽 졸개 다섯: 체력 합이 그 차선에서 다가오는 동안 쏟는 양의 FORK.safe배 — 서서 쏘기만 해도 다 잡힌다
+    const gh = (D * approachT(p, FOE_BASE.grunt.spd) * FORK.safe) / 5;
+    for (let i = 0; i < 5; i++) addFoe(lv, g, 'grunt', U(g, sl.x0 + 0.8, sl.x1 - 0.8), zf + 12 + i * 4 + U(g, -1, 1), gh);
+    (lv.divs || (lv.divs = [])).push({ id: lv.nextId++, z0, z1, risk, wall: w.id });
+    return { len: z1 - z + FORK.tail, ng };
+  },
+
   /* 열쇠(P10, 어려움·매우 어려움): 한 차선에 표시된 열쇠 상자(무기 강화), 다른 차선에 다른 보상(지원병 상자). 같은 거리라 둘 다는 못 깬다.
      열쇠는 그 레벨의 가장 센 무리(몰이) 두 청크 앞 */
   key(lv, g, p, z, ng) {
@@ -1227,7 +1270,8 @@ export function buildLevel(L, attempt = 0, bare = false, cycle = 1) {
    - 다음 구간은 '보스가 쓰러진 순간 들고 있는 병력·무기 단계'로 만든다(게이트 숫자·적 체력). 보정은 돌리지 않는다 — 식으로만 정한다.
      위협 = 그 병력의 화력(기준 화력 단계 ENDLESS.fire) × segMul(k). 구간마다 커져 언젠가는 무너진다.
      병력이 바닥선(segFloor — 무난한 진행의 병력)보다 적으면 위협은 바닥선 병력 기준이다: 뒤처지면 적이 그만큼 약해지지 않아 손실이 쌓인다.
-   - 속도·예고는 캠페인 L30+ 값 그대로(더 빨라지지 않는다 — 사람을 죽이는 것은 체력 배수에 밀려 쌓이는 손실).
+   - 예고는 캠페인 L30+ 값 그대로. 달리는 속도만 구간마다 조금씩 빨라진다(segSpeed — 상한 1.4배, ARSENAL.md 9절): 줄 사이에 고를 시간이 줄어든다.
+     함정 줄(18m 뒤 ÷2)은 가장 빠를 때도 옆 칸으로 비킬 시간(이동 + 0.45초)이 남는다(테스트).
    - 한 구간의 순성장: 보스 직전 줄의 ×2 하나 + 작은 덧셈(GK = ENDLESS.gk). 병력 상한은 캠페인과 같은 MAX_N(9999).
    - 상태는 평범한 JSON(s.endless) — 다음 구간은 상태와 시드만으로 정해진다. 캠페인 판에는 s.endless가 없다(stateHash 그대로) */
 export const ENDLESS = {
@@ -1244,6 +1288,7 @@ export const ENDLESS = {
   bossM: { '': 0.7, hard: 0.7, super: 0.75 },   // 보스 체력 = 골든 도착 병력 × m의 화력 × bossKill초 × 보스 배수
   bossKill: { '': 12, hard: 13, super: 14 },
   bossC: 1.05,              // 보스가 닿기까지 c × bossKill초
+  speedStep: 0.04, speedMax: 1.4,   // 달리는 속도: 구간마다 +4%, 1.4배(10 → 14m/s, 11구간)에서 멈춘다 — 예고·옆 이동 속도는 그대로라 고를 시간이 준다
   wait: 1.2,                // 보스가 쓰러진 뒤 다음 구간이 이어지기까지(초) — 쓰러지는 연출
   lead: 6,                  // 다음 구간의 첫 청크까지 더 두는 거리(m)
   coinBase: 10, coinStep: 20, coinTag: { '': 1, hard: 1.5, super: 2 }, coinLoop: 0.25,
@@ -1255,6 +1300,8 @@ export function segInfo(k) {
   const tag = n % 6 === 0 ? 'super' : n % 6 === 3 ? 'hard' : '';
   return { k: n, loop: Math.floor((n - 1) / 6), biome: bi, tag, L: 60 + 10 * bi + (tag === 'super' ? 10 : tag === 'hard' ? 5 : 2) };
 }
+/* 구간 k의 달리는 속도 배수: 구간마다 speedStep씩 빨라지고 speedMax에서 멈춘다(ARSENAL.md 9절) */
+export const segSpeed = (k) => Math.min(ENDLESS.speedMax, 1 + ENDLESS.speedStep * (Math.max(1, k) - 1));
 export const segMul = (k) => ENDLESS.mul0 * Math.pow(ENDLESS.mulStep, Math.max(1, k) - 1);
 /* 바닥선: 1구간에는 없다(누구나 제 병력 기준으로 출발한다), 2구간부터 floor0 × floorGrow^(k−1) */
 export const segFloor = (k) => (k <= 1 ? 0 : Math.min(MAX_N, Math.round(ENDLESS.floor0 * Math.pow(ENDLESS.floorGrow, k - 1))));
@@ -1270,6 +1317,7 @@ export function segParams(k) {
   const E = ENDLESS;
   p.endless = true;
   p.seg = i.k;
+  p.speed *= segSpeed(i.k);
   p.k = 1.3;
   p.pressure = 1.5;
   p.maxMul = 1;                 // 보스 직전 줄의 ×2 하나
@@ -1365,6 +1413,7 @@ function nextSegment(s) {
   for (const pr of seg.props) { pr.id += off; pr.z += dz; }
   for (const w of seg.saws) { w.id += off; w.z += dz; }
   for (const m of seg.marks) m.z += dz;
+  if (seg.divs && seg.divs.length) { for (const d of seg.divs) { d.id += off; d.wall += off; d.z0 += dz; d.z1 += dz; } s.divs = seg.divs; } else delete s.divs;
   s.nextId = off + seg.nextId + 1;
   s.rows = seg.rows; s.foes = seg.foes; s.props = seg.props; s.saws = seg.saws; s.marks = seg.marks;
   s.spits = []; s.rockets = [];
@@ -1421,6 +1470,9 @@ export function newGame(lv, opt = {}) {
   };
   // 펫(ENDGAME.md 6절): 데려간 판에만 s.pet이 있다 — 펫 전용 난수 흐름(rs)을 따로 써서 판의 난수(s.rs)를 건드리지 않는다.
   // avg(별 기준을 재는 기준 봇용): 확률 대신 기대값으로 고르게 — par가 한 판의 운에 흔들리지 않게
+  if (lv.divs && lv.divs.length) s.divs = structuredClone(lv.divs);   // 분리대(무한모드 갈림길 — 없는 판에는 필드도 없다)
+  // 탄종(ARSENAL.md 3절): 고른 판에만 s.ammo가 있다(보통탄이면 없다 — 해시 그대로)
+  if (opt.ammo && AMMO[opt.ammo]) s.ammo = opt.ammo;
   if (opt.pet && PETS[opt.pet.id]) {
     s.pet = { id: opt.pet.id, lv: Math.max(1, Math.min(PET_MAX_LV, opt.pet.lv | 0 || 1)), rs: hash(lv.seed, 'pet', opt.pet.id) >>> 0, procs: 0, acc: 0 };
     if (opt.petAvg) s.pet.avg = true;
@@ -1465,6 +1517,7 @@ export function restore(o) {
     else { num0(o.pet, ['rs', 'procs', 'acc']); o.pet.lv = Math.max(1, Math.min(PET_MAX_LV, o.pet.lv | 0 || 1)); }
   }
   if (o.pet == null) delete o.pet;
+  if (o.ammo != null && !AMMO[o.ammo]) delete o.ammo;   // 모르는 탄종이 든 스냅숏은 보통탄으로 이어진다
   if (o.endless) {
     if (typeof o.endless !== 'object') return null;
     num0(o.endless, ['seed', 'seg', 'bosses', 'bank', 'wait', 'z0']);
@@ -1613,6 +1666,16 @@ export function step(s, input) {
   }
   if (q.x < -EDGE) { q.x = -EDGE; if (q.vx < 0) q.vx = 0; }
   if (q.x > EDGE) { q.x = EDGE; if (q.vx > 0) q.vx = 0; }
+  // 분리대(갈림길): 코를 지나면 제 쪽에 갇힌다 — 몸이 가운데에서 차츰 밀려나 FORK_TAPER m 뒤에는 통째로 제 쪽에 있다
+  if (s.divs && s.phase === 'run') {
+    for (const d of s.divs) if (!d.seen && q.z + MARK_AHEAD >= d.z0) { d.seen = 1; emit(s, { t: 'fork', z: d.z0, risk: d.risk }); }   // 갈림길 45m 앞 알림(한 번)
+    const dv = divAt(s);
+    if (dv) {
+      const side = xPrev > 0 || (xPrev === 0 && q.vx > 0) ? 1 : -1;
+      const pad = Math.min(EDGE, divPad(dv, q.z + s.speed * DT, R));   // 이 틱에 나아간 자리 기준(전진은 바로 아래)
+      if (side * q.x < pad) { q.x = side * pad; if (side * q.vx < 0) q.vx = 0; }
+    }
+  }
 
   /* 전진 */
   if (s.phase === 'run') {
@@ -1782,7 +1845,7 @@ function foesUpdate(s, R) {
       else continue;
     }
     if (f.kind === 'spit') {
-      if (s.phase === 'run' && dz < 32 && dz > 6) {
+      if (s.phase === 'run' && dz < 32 && dz > 6 && !(s.divs && divAt(s, s.speed * (SPIT_T + 0.3)))) {   // 갈림길 안(과 떨어질 때 안에 있을 거리)에서는 쏘지 않는다 — 옆으로 못 피한다
         f.cd -= DT;
         // 공정성(P14, 3단계): 피할 쪽(가장자리·반대로 가던 속도·그 길을 막은 적·벽·톱날)이 없으면 쏘지 않고 잠깐 기다린다
         if (f.cd <= 0 && !spitEscape(s, R)) f.cd = SPIT_WAIT;
@@ -1794,7 +1857,7 @@ function foesUpdate(s, R) {
         }
       }
     } else {
-      f.z -= f.spd * DT;
+      f.z -= (f.slowT > s.t ? f.spd * (1 - AMMO.frost.slow) : f.spd) * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로)
       if (dz < f.homeDist) {
         const d = q.x - f.x;
         const m = f.home * DT;
@@ -1910,6 +1973,9 @@ function fire(s, R) {
     const b = volleySize(q.n);
     const hm = heroDmg(s);
     let dmg = (dps(q.n, q.tier, s.fireLv) * hm) / (VOLLEY_HZ * b);
+    const A = s.ammo ? AMMO[s.ammo] : null;
+    if (A && A.dmg) dmg *= A.dmg;
+    const rng = A && A.range ? A.range : 0;   // 탄종의 사거리(없으면 기본)
     const span = R + 0.3;
     // 펫의 확률 효과(크리티컬은 총알마다, 멀리·넓게 쏘기는 일제 사격마다 굴린다 — 펫 전용 난수). avg면 기대값만큼 피해를 고르게 올린다
     const pet = s.pet;
@@ -1926,7 +1992,7 @@ function fire(s, R) {
       const j = ((q.volley * 0.618034 + i * 0.381966) % 1) - 0.5;
       const x = q.x - span + ((i + 0.5 + j * 0.8) / b) * 2 * span;
       const bl = { x, z: q.z + 0.4 * R, d: 0, dmg, hm };
-      if (far) bl.r = BULLET_RANGE * PET_FAR;
+      if (far || rng) bl.r = (rng || BULLET_RANGE) * (far ? PET_FAR : 1);
       if (fx === 'crit' && !pet.avg && rand(pet) < pp) { bl.dmg = dmg * PET_CRIT; bl.c = 1; crits++; }
       s.bullets.push(bl);
     }
@@ -1936,7 +2002,9 @@ function fire(s, R) {
       for (let i = 0; i < ex; i++) {
         const sd = i % 2 ? 1 : -1;
         const u = (Math.floor(i / 2) + 0.5) / (ex / 2);
-        s.bullets.push({ x: q.x + sd * span * (1 + (PET_WIDE - 1) * u), z: q.z + 0.4 * R, d: 0, dmg, hm, w: 1 });
+        const wb = { x: q.x + sd * span * (1 + (PET_WIDE - 1) * u), z: q.z + 0.4 * R, d: 0, dmg, hm, w: 1 };
+        if (rng) wb.r = rng;
+        s.bullets.push(wb);
       }
     }
     if (far || wide || crits) { pet.procs += crits || 1; emit(s, { t: 'pet', fx, n: crits, x: q.x, z: q.z }); }
@@ -1998,7 +2066,7 @@ function bulletsUpdate(s) {
       continue;
     }
     if (hitKind === 2) { hitProp(s, hitObj, b.dmg); continue; }
-    if (hitKind === 3) { hitFoe(s, hitObj, b.dmg, 'gun'); continue; }
+    if (hitKind === 3) { hitFoe(s, hitObj, b.dmg, 'gun'); if (s.ammo) ammoHit(s, b, hitObj, near); continue; }
     if (hitKind === 4) {
       // 뭉치 스킬로 늘어난 몫은 특수병·영웅 보너스 예산에서만 들어간다(보스가 너무 빨리 녹지 않게)
       const base = b.hm > 1 ? b.dmg / b.hm : b.dmg;
@@ -2012,6 +2080,33 @@ function bulletsUpdate(s) {
     if (b.d < (b.r || BULLET_RANGE)) list[w++] = b;
   }
   list.length = w;
+}
+
+/* 탄종의 덧효과(총알이 좀비 f에 맞은 뒤): 관통 — 같은 줄 바로 뒤(남은 사거리 안) 좀비 하나에 몫, 작렬 — 둘레 r 안 다른 좀비에 몫,
+   빙결 — 맞은 좀비가 T초 느려진다. 게이트·벽·상자·보스에는 덧효과가 없다 */
+function ammoHit(s, b, f, near) {
+  const A = AMMO[s.ammo];
+  if (A.pierce) {
+    const left = (b.r || BULLET_RANGE) - b.d;
+    let g = null;
+    for (const o of near) {
+      if (!o.alive || o === f || o.z <= f.z || o.z - b.z > left) continue;
+      if (Math.abs(o.x - b.x) > o.r + 0.12) continue;
+      if (!g || o.z < g.z) g = o;
+    }
+    if (g) { emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: g.z }); hitFoe(s, g, b.dmg * A.pierce, 'gun'); }
+  } else if (A.splash) {
+    const r2 = A.r * A.r;
+    let n = 0;
+    for (const o of near) {
+      if (!o.alive || o === f) continue;
+      const dx = o.x - f.x, dz = o.z - f.z;
+      if (dx * dx + dz * dz > r2) continue;
+      hitFoe(s, o, b.dmg * A.splash, 'gun');
+      n++;
+    }
+    if (n) emit(s, { t: 'splash', x: f.x, z: f.z, r: A.r, n });
+  } else if (A.slow && f.alive) f.slowT = s.t + A.T;
 }
 
 /* 피해 공용 처리(총알·저격·로켓·영웅) */
@@ -2399,8 +2494,26 @@ function specialsUpdate(s, R) {
 
 /* ---------- 봇 ---------- */
 /* 목표 x → 좌우 누르기 입력. 봇도 좌우 누르기만으로 깰 수 있어야 한다. */
+/* 봇의 갈림길 판단: 분리대가 20m 안이면 한쪽을 고른다 — 벽이 지금 화력으로 뚫릴 만하면(다가오는 동안 쏟는 양의 0.9배 안) 위험한 쪽, 아니면 안전한 쪽.
+   이미 갈렸으면 제 쪽 그대로. 고른 쪽 차선 안(몸이 통째로 들어가는 자리)으로 목표를 옮긴다 */
+function divSteer(s, tx) {
+  const q = s.squad;
+  const dv = divAt(s, 20);
+  if (!dv) return tx;
+  const R = radius(q.n);
+  let side;
+  if (q.z >= dv.z0) side = q.x >= 0 ? 1 : -1;
+  else {
+    const w = s.props.find((p) => p.id === dv.wall);
+    const can = dps(q.n, q.tier, s.fireLv) * heroDmg(s) * 0.9 * ((BULLET_RANGE - 2) / Math.max(1, q.vz));
+    side = w && w.alive && w.hp > can ? -dv.risk : dv.risk;
+  }
+  const lo = Math.min(EDGE, R + 0.1);
+  return side * clamp(side * tx, lo, EDGE);
+}
 export function steer(s, tx, dead = 0.15) {
   const q = s.squad;
+  if (s.divs) tx = divSteer(s, tx);
   const d = tx - q.x;
   // 멈추는 데 걸리는 거리를 생각해 미리 놓는다
   const stopDist = (q.vx * q.vx) / (2 * 100);
@@ -2978,19 +3091,20 @@ export function calibrate(lv, opt = {}) {
    강화·영웅은 이기기 쉽게 해 주지만 별은 실력으로. */
 const parCache = new Map();
 const sameHero = (a, b) => (!a && !b) || (a && b && a.id === b.id && (a.lv | 0) === (b.lv | 0));
-export function parFor(lv, start = START_N, fire = 0, hero = null, pet = null) {
+export function parFor(lv, start = START_N, fire = 0, hero = null, pet = null, ammo = '') {
   const E = expectLoadout(lv.L, lv.cycle || 1);
   if (pet && !PETS[pet.id]) pet = null;
-  if (start === E.start && fire === E.fire && sameHero(hero, E.hero) && !pet) return lv.par;
-  const key = `${lv.cycle || 1}:${lv.L}:${lv.attempt}:${start}:${fire}:${hero ? hero.id + hero.lv : '-'}:${pet ? pet.id + pet.lv : '-'}`;
+  if (!AMMO[ammo]) ammo = '';
+  if (start === E.start && fire === E.fire && sameHero(hero, E.hero) && !pet && !ammo) return lv.par;
+  const key = `${lv.cycle || 1}:${lv.L}:${lv.attempt}:${start}:${fire}:${hero ? hero.id + hero.lv : '-'}:${pet ? pet.id + pet.lv : '-'}:${ammo}`;
   if (parCache.has(key)) return parCache.get(key);
   const maxTicks = maxTicksOf(lv);
   let par = lv.par;
   // 펫은 기대값으로(petAvg) — 펫 때문에 별이 쉬워지지 않게, 그렇다고 par가 한 판의 운에 흔들리지도 않게
-  const a = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true }), polStrong(false), maxTicks);
+  const a = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true, ammo }), polStrong(false), maxTicks);
   if (a.phase === 'won') par = a.squad.n;
   else if (hero) {
-    const b = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true }), polStrong(true), maxTicks);
+    const b = runTo(newGame(lv, { start, fire, hero, pet, petAvg: true, ammo }), polStrong(true), maxTicks);
     if (b.phase === 'won') par = b.squad.n;
   }
   par = Math.max(1, par);
@@ -3071,6 +3185,7 @@ export function hitShapes(s) {
   const H = hitHalf(R);
   const out = [];
   if (q.n > 0) out.push({ k: 'squad', x0: q.x - H, x1: q.x + H, z0: q.z - SQUAD_DEPTH * R, z1: q.z + SQUAD_DEPTH * R });
+  if (s.divs) for (const d of s.divs) out.push({ k: 'div', x0: 0, x1: 0, z0: d.z0 + FORK_TAPER, z1: d.z1 });
   for (const f of s.foes) if (f.alive) out.push({ k: 'foe', x0: f.x - FOE_HX * f.r, x1: f.x + FOE_HX * f.r, z0: f.z - f.r, z1: f.z + f.r, ell: true });
   for (const w of s.saws) out.push({ k: 'saw', x0: w.x - w.w / 2, x1: w.x + w.w / 2, z0: w.z - SAW_HD, z1: w.z + SAW_HD, ell: true });
   for (const p of s.props) if (p.alive && !p.passed) out.push({ k: p.kind, x0: p.x0, x1: p.x1, z0: p.z, z1: p.z });
@@ -3107,7 +3222,10 @@ export function stateHash(s) {
   if (s.boss) h = hash(h, s.boss.x.toFixed(4), s.boss.slam ? s.boss.slam.t.toFixed(4) : -1, s.boss.slamCd.toFixed(4), s.boss.summonCd.toFixed(4));
   // 펫(안 데려간 판에는 없다 — 해시 그대로)
   if (s.pet) h = hash(h, s.pet.id, s.pet.lv, s.pet.rs >>> 0, s.pet.procs, s.pet.acc.toFixed(4), s.pet.double ? 1 : 0);
+  // 탄종(보통탄 판에는 없다 — 해시 그대로)
+  if (s.ammo) { h = hash(h, s.ammo); for (const f of s.foes) if (f.alive && f.slowT > s.t) h = hash(h, f.id, f.slowT.toFixed(4)); }
   // 무한모드(캠페인 판에는 없다 — 해시 그대로)
+  if (s.divs) for (const d of s.divs) h = hash(h, d.id, d.z0.toFixed(3), d.z1.toFixed(3), d.risk);
   if (s.endless) { const e = s.endless; h = hash(h, e.seed, e.seg, e.bosses, e.bank, e.wait.toFixed(4), e.z0.toFixed(4), s.L, s.arenaZ.toFixed(4), (s.refMul || 1).toFixed(6)); }
   return h;
 }
