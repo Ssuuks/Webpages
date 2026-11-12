@@ -2,7 +2,7 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, SQUAD_DEPTH, hitShapes, levelTag } from './core.js';
+import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag } from './core.js';
 import { HEROES, biomeOf, bossNameOf } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, biomeSheets, PET_ART } from './pix/art.js';
@@ -119,6 +119,11 @@ const FX_COL = {
   blood: ['#FF8FA8', '#E8607A'], gold: ['#FFF09A', '#FFD84A', '#D08A12'], dust: ['#E6D2B0', '#B89A70'], snowDust: ['#FFFFFF', '#DCE0EA'],
   confetti: ['#FFD84A', '#6CC0FF', '#FF8FB8', '#8FD16A', '#FFFFFF'], good: ['#6CC0FF', '#DDF3FF', '#3E8BEA'], bad: ['#FF8A7A', '#FFC2B3', '#E8384F'],
   unit: ['#FFD84A', '#FFF09A', '#D08A12'], boom: ['#FFF4B0', '#FFB347', '#FF7A45', '#9AA2B0'], heal: ['#7CE07A', '#C9F5B8'],
+};
+/* 정예 좀비(무한모드) 표식 색: 오염 = 보라(독침의 연두와 다르게), 분열 = 주황 */
+const ELITE_COL = {
+  toxic: { ring: '#B26BFF', glow: 'rgba(178,107,255,.35)', hi: '#F1DCFF', burst: ['#B26BFF', '#6B2FB8', '#F1DCFF'] },
+  split: { ring: '#FF9A3D', glow: 'rgba(255,154,61,.32)', hi: '#FFE3B8', burst: ['#FF9A3D', '#FFD84A', '#E8607A'] },
 };
 const MAX_PARTS = 320;
 const FLAG_X = [0, -0.55, 0.55];
@@ -907,7 +912,7 @@ export function createRenderer(cvs) {
         case 'kill': {
           const big = e.kind === 'brute';
           fx('puff', e.x, big ? 0.9 : 0.5, e.z, big ? 0.4 : 0.3, { step: big ? 0 : 1 });
-          const kc = e.kind === 'spit' ? FX_COL.purple : FOE_BURST[curBid] || FX_COL.green;
+          const kc = e.elite ? ELITE_COL[e.elite].burst : e.kind === 'spit' ? FX_COL.purple : FOE_BURST[curBid] || FX_COL.green;
           if (e.by === 'sniper' || e.by === 'hero') {
             // 저격: 맞은 쪽 반대로(먼 쪽으로) 길게 튕겨 나간다
             for (let i = 0; i < (big ? 12 : 7); i++) part(e.x + (Math.random() - 0.5) * 0.3, (big ? 1.2 : 0.7) + Math.random() * 0.4, e.z, (Math.random() - 0.5) * 1.6, 1 + Math.random() * 2, 7 + Math.random() * 7, 0.5 + Math.random() * 0.25, kc[i % kc.length], Math.random() < 0.3 ? 2 : 1);
@@ -963,6 +968,17 @@ export function createRenderer(cvs) {
           fx('sadCaptive', e.x, 0, e.z, 1.3, { k: e.k || 'medic' });
           break;
         case 'spitFire': burst(e.x, 1.2, e.z, 4, FX_COL.purple, 1.2, 2); break;
+        case 'pool':   // 오염 좀비가 터졌다: 보라 물방울이 솟는다(웅덩이는 drawGround가 그린다)
+          burst(e.x, 0.6, e.z, 16, ELITE_COL.toxic.burst, 3, 4.5, 0.7);
+          break;
+        case 'poolHit':
+          burst(e.x, 0.3, e.z, 14, ELITE_COL.toxic.burst, 3.5, 3);
+          screenFlash(0.18, '190,120,255'); shake(0.25);
+          break;
+        case 'split':   // 분열 좀비가 갈라졌다: 주황 고리가 번진다
+          burst(e.x, 0.6, e.z, 10, ELITE_COL.split.burst, 4, 3);
+          ring(e.x, e.z, 0.3, 1.4, 0.3, ELITE_COL.split.ring);
+          break;
         case 'spitHit':
           burst(e.x, 0.3, e.z, 14, ['#B9F25B', '#7FC93A', '#F4FFB0'], 3.5, 3);
           if (e.hit) { screenFlash(0.18, '170,255,90'); shake(0.25); }
@@ -1757,7 +1773,29 @@ export function createRenderer(cvs) {
     const white = flashFoe.on(f.id, f.hitT, s.t, time, reduce);
     const tell = f.kind === 'spit' && (fr === FR.spit.tell[0] || fr === FR.spit.tell[1]);
     if (tell) { ctx.fillStyle = '#B9F25B'; ellRing(pxs, pys, Math.max(4, f.r * 1.6 * ps), Math.max(2, f.r * 0.6 * ps), 1); }
+    if (f.elite) {
+      // 정예 좀비: 발밑에 맥동하는 색 고리(오염 = 보라, 분열 = 주황) — 멀리서도 졸개와 가려 보이게
+      const ec = ELITE_COL[f.elite];
+      const pu = 1 + 0.18 * (((time * 4 + f.seed) | 0) & 1);
+      ctx.fillStyle = ec.glow; ellipse(pxs, pys, Math.max(3, f.r * 1.5 * ps * pu), Math.max(1.5, f.r * 0.55 * ps * pu));
+      ctx.fillStyle = ec.ring; ellRing(pxs, pys, Math.max(4, f.r * 1.7 * ps * pu), Math.max(2, f.r * 0.62 * ps * pu), 1);
+    }
     const rr = atlas.draw(ctx, sheet, fr, pxs, pys, st, white ? 'white' : ALT3[f.seed % 3]);
+    if (f.elite) {
+      // 머리 위 표식: 오염 = 보라 방울이 보글보글, 분열 = 주황 두 점이 벌어졌다 모인다
+      const ec = ELITE_COL[f.elite];
+      const hx = Math.round(pxs), hy = Math.round(pys) - rr.ay - 4, ph = ((time * 6 + f.seed) | 0) & 3;
+      if (f.elite === 'toxic') {
+        ctx.fillStyle = OUT; ctx.fillRect(hx - 2, hy - 2, 5, 5);
+        ctx.fillStyle = ec.ring; ctx.fillRect(hx - 1, hy - 1, 3, 3);
+        ctx.fillStyle = ec.hi; ctx.fillRect(hx - 1, hy - 1, 1, 1);
+        ctx.fillStyle = ec.ring; ctx.fillRect(hx - 3 + ph * 2, hy - 4 - (ph & 1), 1, 1);
+      } else {
+        const d = ph === 0 ? 1 : ph === 2 ? 3 : 2;
+        ctx.fillStyle = OUT; ctx.fillRect(hx - d - 2, hy - 2, 4, 4); ctx.fillRect(hx + d - 1, hy - 2, 4, 4);
+        ctx.fillStyle = ec.ring; ctx.fillRect(hx - d - 1, hy - 1, 2, 2); ctx.fillRect(hx + d, hy - 1, 2, 2);
+      }
+    }
     if (f.slowT > s.t) {
       // 빙결탄에 맞아 느려진 동안: 발밑 하늘빛 띠 + 머리 위 서리 두 점
       const fx0 = Math.round(pxs), fy0 = Math.round(pys);
@@ -1776,10 +1814,10 @@ export function createRenderer(cvs) {
       if (prev !== fr && (fr === 0 || fr === 2)) part(f.x + (fr ? 0.4 : -0.4), 0.05, z, 0, 0.6, 0, 0.35, '#E6D2B0', 2, 0, 'dust');
       bruteStep.set(f.id, fr);
     }
-    if ((f.kind === 'brute' || f.kind === 'spit') && f.hp < f.max) {
+    if ((f.kind === 'brute' || f.kind === 'spit' || f.elite) && f.hp < f.max) {
       const r = atlas.get(sheet, fr, st);
       const bw = Math.max(8, Math.round(r.w * 0.7));
-      const bx = Math.round(pxs - bw / 2), by = Math.round(pys) - r.ay - 4;
+      const bx = Math.round(pxs - bw / 2), by = Math.round(pys) - r.ay - (f.elite ? 9 : 4);
       ctx.fillStyle = OUT; ctx.fillRect(bx - 1, by, bw + 2, 3);
       ctx.fillStyle = '#FF5D5D'; ctx.fillRect(bx, by + 1, Math.max(1, Math.round((bw * Math.max(0, f.hp)) / f.max)), 1);
     }
@@ -2438,6 +2476,38 @@ export function createRenderer(cvs) {
       ctx.fillStyle = '#B9F25B';
       ellRing(P.x, P.y, SPIT_R * P.s, SPIT_R * P.s * 0.38, 1);
     }
+    if (s.pools) for (const pl of s.pools) {
+      if (!project(view, pl.x, 0.02, pl.z)) continue;
+      const rx = POOL_R * P.s, ry = POOL_R * P.s * 0.38;
+      if (pl.t > 0) {
+        // 예고: 테두리 = 해로워질 폭(±POOL_R), 안에서 보라 얼룩이 차오른다(다 차면 해롭다) — 밟고 지나가 버린 것은 흐리게
+        const k = clamp(1 - (pl.t - lag) / (pl.T || 1), 0, 1);
+        ctx.fillStyle = '#B26BFF';
+        ctx.globalAlpha = pl.hit ? 0.12 : 0.18 + 0.2 * k;
+        ellipse(P.x, P.y, Math.max(1, rx * k), Math.max(1, ry * k));
+        ctx.globalAlpha = pl.hit ? 0.35 : 1;
+        ctx.fillStyle = (((time * 10) | 0) & 1) ? '#F1DCFF' : '#B26BFF';
+        ellRing(P.x, P.y, rx, ry, 1);
+        ctx.globalAlpha = 1;
+      } else {
+        // 해로운 웅덩이: 짙은 보라 + 밝은 테두리 + 보글거리는 방울. 이미 밟았거나 곧 사라지면 흐려진다
+        const fade = pl.hit ? 0.3 : Math.min(1, pl.life / 0.6);
+        ctx.globalAlpha = 0.62 * fade;
+        ctx.fillStyle = '#6B2FB8'; ellipse(P.x, P.y, rx, ry);
+        ctx.globalAlpha = 0.8 * fade;
+        ctx.fillStyle = '#B26BFF'; ellipse(P.x, P.y, rx * 0.62, ry * 0.62);
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = '#E5C8FF'; ellRing(P.x, P.y, rx, ry, 1);
+        if (!pl.hit) {
+          ctx.fillStyle = '#F1DCFF';
+          for (let i = 0; i < 3; i++) {
+            const u = (time * 1.6 + i * 0.37 + (pl.id % 7) * 0.13) % 1;
+            ctx.fillRect(Math.round(P.x + (((pl.id * 5 + i * 11) % 9) / 4 - 1) * rx * 0.55), Math.round(P.y - u * 5), 1, 1);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
     const b = s.boss;
     if (b && b.slam && b.hp > 0) {   // 보스가 쓰러지면 예고를 그리지 않는다
       const k = clamp(1 - b.slam.t / b.slam.T, 0, 1);
@@ -2530,7 +2600,7 @@ export function createRenderer(cvs) {
      core.hitShapes(s)가 돌려주는, 시뮬레이션이 실제로 재는 모양을 땅 위에 1px 선으로 그린다(그림과 같은 시간축으로 보간).
      분대 몸(하늘색)과 겹치면 맞는다: 적·톱날(분홍 타원), 벽·상자·철창(주황 선 — 분대 앞 끝이 닿는 순간 옆으로 겹치면), 독침(연두 선 —
      떨어지는 순간), 보스 몸통(노랑 — 이 띠를 지나는 총알만 피해)·맞붙는 선(빨강). 분대 가운데 세로선 = 게이트 칸을 고르는 점 */
-  const HB_COL = { squad: '#4FF3FF', foe: '#FF4FD8', saw: '#FF4FD8', wall: '#FFB347', crate: '#FFB347', cage: '#FFB347', spit: '#C8FF5A', bossHit: '#FFE34F', bossReach: '#FF5D5D' };
+  const HB_COL = { squad: '#4FF3FF', foe: '#FF4FD8', saw: '#FF4FD8', wall: '#FFB347', crate: '#FFB347', cage: '#FFB347', spit: '#C8FF5A', pool: '#D9A6FF', bossHit: '#FFE34F', bossReach: '#FF5D5D' };
   function hbLine(x0, z0, x1, z1) {
     if (!project(view, x0, 0.03, z0)) return;
     const ax = P.x, ay = P.y;
