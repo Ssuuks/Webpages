@@ -2,13 +2,14 @@
 import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
+  CARD, WEAPON, pickCard, offerOf, cardInfo,
 } from './core.js';
 import { createRenderer } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
 import { createMusic } from './music.js';
 import {
   load, save, wipe, normalize, probe, storageMode, keepBackup, readBackup, UPGRADES, upgCost, totalStars, seen, SAVE_V,
-  prog, endedCycles, maxCycle, upgLv, addUpg, heroLvOf, addHeroLv, cycleStars, CYCLE_LEVELS,
+  prog, endedCycles, maxCycle, upgLv, addUpg, heroLvOf, addHeroLv, cycleStars, CYCLE_LEVELS, endlessStage,
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg , AMMO, AMMO_IDS, ammoOpen, ammoText } from './roster.js';
@@ -26,7 +27,7 @@ probe();
 let data = load();
 let lv = null;          // 지금 레벨(보정 끝난 것)
 let s = null;           // 시뮬레이션 상태
-let mode = 'boot';      // boot title levels hero upg set backup card play pause result
+let mode = 'boot';      // boot title levels hero upg set backup card play pick pause result (pick: 무한모드 보스 뒤 3택 1)
 let attract = false;    // 타이틀 뒤에서 봇이 플레이
 let prevZ = 0;
 let acc = 0;
@@ -184,6 +185,7 @@ const SKILL = (e) => e.key === ' ' || e.key === 'ArrowUp' || e.code === 'KeyW' |
 const FINE = typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches;
 window.addEventListener('keydown', (e) => {
   unlock();
+  if (mode === 'pick') { pickKey(e); return; }
   if (LEFT(e)) { keys.left = true; if (mode === 'play') { markInput(); e.preventDefault(); } }
   else if (RIGHT(e)) { keys.right = true; if (mode === 'play') { markInput(); e.preventDefault(); } }
   else if (SKILL(e) && mode === 'play') { pressSkill(); e.preventDefault(); }
@@ -201,9 +203,13 @@ window.addEventListener('blur', () => {
   keys.left = keys.right = false;
   pointers.clear();
   activeId = null;
+  pickArm = null;   // 3택 1은 그대로 둔다(판은 어차피 멈춰 있다) — 누르던 카드만 잊는다
   if (mode === 'play') pause();
 });
-window.addEventListener('focus', () => { blurred = false; });
+window.addEventListener('focus', () => {
+  blurred = false;
+  if (mode === 'pick') { pickAt = performance.now(); pickArm = null; }   // 창으로 돌아오는 클릭·알림창을 닫는 손가락이 카드를 고르지 않게(숨김에서 돌아올 때와 같이)
+});
 /* 승패가 정해진 뒤 결과 화면 전(1~2초 연출 중)에 페이지를 떠나면 그 자리에서 정산한다 */
 function settleIfOver() {
   if (mode === 'play' && s && !attract && (s.phase === 'won' || s.phase === 'lost')) { finish(); return true; }
@@ -213,11 +219,12 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     if (settleIfOver()) { /* 정산함 */ }
     else if (mode === 'play') pause();
-    else if (mode === 'pause') saveRunNow();
+    else if (mode === 'pause' || mode === 'pick') saveRunNow();
     suspend();
   } else if (mode === 'play') requestWake();
+  else if (mode === 'pick') { pickAt = performance.now(); pickArm = null; requestWake(); }   // 돌아오며 화면을 누른 손가락이 카드를 고르지 않게
 });
-window.addEventListener('pagehide', () => { if (!settleIfOver() && (mode === 'play' || mode === 'pause')) saveRunNow(); });
+window.addEventListener('pagehide', () => { if (!settleIfOver() && (mode === 'play' || mode === 'pause' || mode === 'pick')) saveRunNow(); });
 /* 다른 탭에서 진행이 바뀌면(같은 게임을 두 탭에 열었을 때) 어느 화면에서든 다시 읽는다.
    판 진행(run·par·지원)은 따로 있어서, 판 도중에 읽어도 그 판은 그대로 이어진다. */
 window.addEventListener('storage', (e) => {
@@ -237,7 +244,7 @@ window.addEventListener('popstate', () => {
   historyArmed = false;
   if (!$('scrJoin').hidden) { joinAfter = null; closeJoin(false); armHistory(); return; }
   if (!$('scrNotice').hidden) { $('scrNotice').hidden = true; armHistory(); return; }
-  if (mode === 'play') { pause(); armHistory(); return; }
+  if (mode === 'play' || mode === 'pick') { pause(); armHistory(); return; }
   if (mode === 'pause' || mode === 'card') { armHistory(); return; }
   if (mode === 'result') { goTitle(); return; }
   if (mode === 'title') return;
@@ -284,16 +291,17 @@ function notice(title, text, buttons) {
 }
 
 /* ---------- 화면 전환 ---------- */
-const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPause', 'scrResult', 'scrEnding', 'scrPet'];
+const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPick', 'scrPause', 'scrResult', 'scrEnding', 'scrPet'];
 function show(id) {
   for (const k of SCREENS) $(k).hidden = k !== id;
-  $('hud').hidden = !(mode === 'play' || mode === 'pause' || mode === 'card' || mode === 'result');
+  $('hud').hidden = !(mode === 'play' || mode === 'pause' || mode === 'card' || mode === 'pick' || mode === 'result');
   const touch = mode === 'play';
   $('touchL').hidden = !touch;
   $('touchR').hidden = !touch;
   $('skillBtn').hidden = !(touch && s && s.hero);
   if (!touch) $('tip').hidden = true;
-  if (renderer.setFrozen) renderer.setFrozen(mode === 'pause' || mode === 'result');
+  // 3택 1도 일시정지처럼 멈춘 그림으로: 판이 멈춰 시뮬레이션 시간이 안 가니 렌더러도 0.25초 뒤 스스로 멈춘다 — 바로 멈춰 같은 그림을 다시 그리지 않는다
+  if (renderer.setFrozen) renderer.setFrozen(mode === 'pause' || mode === 'result' || mode === 'pick');
   if (renderer.setCard) renderer.setCard(mode === 'card');   // 레벨 카드 뒤에는 병력 숫자·떠오르는 숫자를 그리지 않는다
   const focus = id && $(id).querySelector('[data-focus]');
   if (focus) setTimeout(() => focus.focus({ preventScroll: true }), 30);
@@ -359,7 +367,7 @@ function renderTitle() {
   $('resumeConfirm').hidden = true;
   if (r) {
     const st = r.state;
-    const where = st.boss ? '보스전' : `보스까지 ${Math.round(progress(st) * 100)}%`;
+    const where = st.endless && st.endless.offer ? '카드 고르는 중' : st.boss ? '보스전' : `보스까지 ${Math.round(progress(st) * 100)}%`;
     $('resumeInfo').textContent = `${runName(r)} · ${st.squad.n}명 · ${where} · ${ago(r.at)} 저장`;
     // 첫 게이트를 지난 판만 진 판으로 센다(무한모드는 진 판이 없다 — 모은 코인을 받고 끝난다)
     $('resumeConfirm').querySelector('.warn').textContent = r.mode === 'endless' ? '이 판을 여기서 끝낼까요? 지금까지 모은 코인은 받아요.'
@@ -827,7 +835,8 @@ function openEnding(c) {
   ];
   $('endStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
   $('endNextInfo').textContent = `${cycName(c + 1)}: 레벨 1부터 다시! 적이 더 세지고, 강화는 ${10 * (c + 1)}단계·영웅은 Lv${HERO_MAX_LV + HERO_LV_PER_CYCLE * c}까지 더 올릴 수 있어요. 지난 회차 레벨은 레벨 화면에서 다시 할 수 있어요.`;
-  $('endEndlessInfo').textContent = c > 1 ? '무한모드: 죽을 때까지 이어지는 한 판 — 강화가 오른 만큼 더 멀리 가요.' : '무한모드가 열렸어요: 보스를 잡으면 곧바로 다음 지역이 이어지는, 죽을 때까지 가는 한 판이에요. 펫도 이제 만날 수 있어요.';
+  $('endEndlessInfo').textContent = c > 1 ? '무한모드: 죽을 때까지 이어지는 한 판 — 보스마다 카드 셋 중 하나를 골라요. 강화가 오른 만큼 더 멀리 가요.'
+    : '무한모드가 열렸어요: 지역이 끝없이 이어지는, 죽을 때까지 가는 한 판이에요. 보스를 잡을 때마다 카드 셋 중 하나를 골라 부대를 키워요. 펫도 이제 만날 수 있어요.';
   $('endNext').textContent = `${cycName(c + 1)} 시작`;
   show('scrEnding');
   armHistory();
@@ -1283,8 +1292,12 @@ const endlessParam = (() => { try { return new URLSearchParams(location.search).
 function endlessOpen() { return endedCycles(data) >= 1 || endlessParam; }
 function endlessBest() { const e = data.endless || {}; return { best: e.best | 0, bestN: e.bestN | 0, runs: e.runs | 0 }; }
 const isEndless = () => !!(run && run.mode === 'endless');
+/* 이번 판에 여는 무한모드 빌드 단계(0이면 예전 그대로 — 카드 없음). 주소 시험 옵션으로 연 무한모드도 1단계로 친다 */
+const endlessUnl = () => (endlessOpen() ? Math.max(1, endlessStage(data, CARD.stageMax)) : 0);
 /* 구간 이름: '3구간 · 무너진 도시' */
 function segName(k) { const i = segInfo(k); return `${i.k}구간 · ${BIOMES[i.biome].name}`; }
+/* 구간이 시작될 때 알림: '정예 보스 · 3구간 · 무너진 도시' */
+function segToast(k) { const t = segInfo(k).tag; return `${t === 'super' ? '대왕이 기다려요 · ' : t === 'hard' ? '정예 보스 · ' : ''}${segName(k)}`; }
 function levelOfSeg() { return { L: s.L, attempt: 0, endless: true, params: s.params, tag: s.params.tag }; }
 function setHudLevel() {
   const e = isEndless() && s && s.endless;
@@ -1321,7 +1334,8 @@ function startEndless(opts = {}) {
   $('cardL').textContent = '∞';
   $('cardRegion').textContent = `${BIOMES[0].name}부터 차례로`;
   $('cardTag').hidden = true;
-  $('cardNew').textContent = '보스를 잡으면 곧바로 다음 지역! 병력·무기·특수병을 그대로 들고 가요';
+  $('cardNew').textContent = endlessUnl() ? '보스를 잡으면 카드 셋 중 하나를 골라 다음 지역으로! 병력·무기·특수병은 그대로 들고 가요'
+    : '보스를 잡으면 곧바로 다음 지역! 병력·무기·특수병을 그대로 들고 가요';
   const eb = endlessBest();
   $('cardBoss').textContent = eb.runs ? `최고 기록: 보스 ${eb.best} · 최대 병력 ${eb.bestN}명` : '죽을 때까지 몇 구간을 갈 수 있을까요?';
   $('cardUnit').hidden = true;
@@ -1365,7 +1379,10 @@ function prepareEndless() {
   const pet = petForRun();
   run.pet = pet;
   run.ammo = ammoForRun();
-  s = newEndless({ seed, start, fire: run.fire, hero, pet, ammo: run.ammo });
+  // 보스 뒤 3택 1: 연 단계와 별로 열린 탄종(탄종 바꾸기 카드의 후보). 이어하기는 모두 스냅숏에서 온다
+  const unl = endlessUnl();
+  const ammoList = AMMO_IDS.filter((id) => ammoOpen(id, totalStars(data)));
+  s = newEndless({ seed, start, fire: run.fire, hero, pet, ammo: run.ammo, unl, ammoOpen: ammoList });
   lv = levelOfSeg();
   run.L = s.L;
   par = 0;
@@ -1398,11 +1415,13 @@ function settleEndless(st, id) {
     out.coins = endlessCoins(st, 10 * upgOf('coin')) * petCoinMul(st);
     out.lucky = petCoinMul(st) > 1;
     data.coins += out.coins;
-    const rec = { ...endlessBest() };
+    const rec = { ...data.endless, ...endlessBest() };
     out.record = out.bosses > rec.best;
     rec.best = Math.max(rec.best, out.bosses);
     rec.bestN = Math.max(rec.bestN, st.squad.peak | 0);
     rec.runs++;
+    rec.unl = Math.max(rec.unl | 0, e.unl | 0);               // 화면이 알린 가장 높은 해금 단계
+    rec.kings = (rec.kings | 0) + Math.floor(out.bosses / 6);   // 대왕(6구간마다) 누적 처치
     data.endless = rec;
     data.stats.kills += st.stats.kills;
     data.stats.bossKills += out.bosses;
@@ -1434,6 +1453,7 @@ function finishEndless() {
     ['획득 코인', `+${got.coins}` + (got.lucky ? ' (줍줍! 두 배)' : '')],
   ];
   if (run && run.eggs) lines.push(['펫 알', `+${run.eggs}개`]);
+  if (e.picks && e.picks.length) lines.push(['고른 카드', pickSummary(e.picks)]);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
   $('resNear').hidden = true;
   const cause = CAUSE[s.cause] || CAUSE.foe;
@@ -1447,6 +1467,167 @@ function finishEndless() {
   $('hudCoins').textContent = compact(data.coins);
   hudCache = '';
   show('scrResult');
+}
+
+/* ---------- 무한모드 보스 뒤 3택 1(단계 해금 기획서 1단계) ----------
+   보스가 쓰러지고 연출이 끝나면 판이 멈추고(core: offer) 카드가 뜬다. 고르면 다음 구간이 이어진다(pickCard).
+   카드는 엄지가 닿는 화면 아래쪽에 세로로. 보스가 쓰러질 때 대개 손가락으로 길을 잡고 있으므로 그 손가락이 카드를 고르지 않게:
+   뜬 지 PICK_GRACE 안의 누름은 버리고, 카드 위에서 새로 눌러 같은 카드에서 뗐을 때만 고른다(누르고 있던 손가락은 캔버스에 붙잡혀 있다) */
+const PICK_GRACE = 500;   // ms
+const PICK_AUTO = 600;    // __squad.auto(봇)가 고르기까지 ms
+let pickAt = 0;           // 카드가 뜬 시각(performance.now)
+let pickArm = null;       // 카드 위에서 새로 누른 손가락 { id, i }
+let pickSel = -1;         // 키보드로 고른 카드(-1: 아직)
+const tierName = (t) => (t > 0 ? `${t}단계` : '기본');
+const ammoName = (a) => (a && AMMO[a] ? AMMO[a].name : '보통탄');
+/* 카드 한 장의 글(cardInfo → 화면): kind 종류, lead·from·to 바뀌는 값(숫자로), det 풀이, col 강조 색, icon */
+function cardText(c) {
+  if (c.k === 'men') return { kind: '증원', lead: '병력', from: `${c.from}`, to: `${c.to}`, det: `병사 ${c.to - c.from}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
+  if (c.k === 'gun') return { kind: '무기', lead: '무기', from: c.from ? `${c.from}` : '기본', to: tierName(c.to), det: `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 3단계`, col: '#FFC93C', icon: 'gun' };
+  if (c.k === 'unit') {
+    const U = UNITS[c.u];
+    return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}`, col: U.color, icon: c.u }
+      : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류`, det: U.desc, col: U.color, icon: c.u };
+  }
+  const A = ammoText(c.to);
+  return { kind: '탄종 바꾸기', lead: '', from: ammoName(c.from), to: ammoName(c.to), det: A.bad ? `${A.good} · 대신 ${A.bad}` : A.good, col: AMMO[c.to] ? AMMO[c.to].color : '#fff', icon: '' };
+}
+/* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
+function cardDone(c) {
+  if (c.k === 'men') return `병력 +${c.to - c.from}`;
+  if (c.k === 'gun') return `무기 ${tierName(c.to)}`;
+  if (c.k === 'unit') { const nm = UNITS[c.u] ? UNITS[c.u].name : '특수병'; return c.from ? `${nm} Lv${c.to}` : `${nm} 합류`; }
+  return `${ammoName(c.to)} 장전`;
+}
+/* 결과 화면 한 줄: '증원 2번 · 무기 · 저격수 · 관통탄'(종류 순서는 카드 순서). 횟수는 여러 번 고른 것만 '번'으로 —
+   '무기 1'처럼 쓰면 카드의 '무기 1 → 2단계'와 같은 꼴이라 단계로 읽힌다 */
+function pickSummary(picks) {
+  const n = new Map();
+  for (const p of picks) n.set(p, (n.get(p) | 0) + 1);
+  const name = (p) => (p === 'men' ? '증원' : p === 'gun' ? '무기' : p.startsWith('unit:') ? (UNITS[p.slice(5)] || { name: '특수병' }).name : ammoName(p.slice(5)));
+  const rank = (p) => CARD.kinds.indexOf(p.split(':')[0]);
+  return [...n.keys()].sort((a, b) => rank(a) - rank(b)).map((p) => (n.get(p) > 1 ? `${name(p)} ${n.get(p)}번` : name(p))).join(' · ');
+}
+function renderPick() {
+  const list = $('pickList');
+  list.textContent = '';
+  const offer = offerOf(s) || [];
+  offer.forEach((c, i) => {
+    const info = cardInfo(s, c);
+    if (!info) return;
+    const T = cardText(info);
+    const b = document.createElement('button');
+    b.className = 'pick-card';
+    b.dataset.i = i;
+    b.style.setProperty('--acc', T.col);
+    b.style.animationDelay = `${i * 70}ms`;
+    const ic = document.createElement('span');
+    ic.className = 'pick-ic';
+    if (T.icon) ic.appendChild(iconEl(T.icon, 3)); else { const d = document.createElement('i'); d.className = 'pick-bullet'; ic.appendChild(d); }
+    const body = document.createElement('span');
+    body.className = 'pick-body';
+    const kind = document.createElement('span');
+    kind.className = 'pick-kind';
+    kind.textContent = T.kind;
+    const chg = document.createElement('span');
+    chg.className = 'pick-chg';
+    if (T.lead) chg.append(T.lead + ' ');
+    if (T.from) chg.append(T.from, ' → ');
+    const to = document.createElement('em');
+    to.textContent = T.to;
+    chg.appendChild(to);
+    const det = document.createElement('span');
+    det.className = 'pick-det';
+    det.textContent = T.det;
+    body.append(kind, chg, det);
+    b.append(ic, body);
+    if (FINE) { const k = document.createElement('kbd'); k.className = 'pick-key'; k.textContent = i + 1; b.appendChild(k); }
+    b.setAttribute('aria-label', `${i + 1}번 ${T.kind}: ${chg.textContent}. ${T.det}`);
+    list.appendChild(b);
+  });
+  $('pickNext').textContent = `다음: ${segToast(s.endless.seg + 1)}`;
+}
+/* 카드를 띄운다('offer' 이벤트, 또는 이어하기·일시정지 뒤 아직 떠 있는 카드). 판은 이미 멈춰 있다 */
+function openPick() {
+  if (!s || attract || !offerOf(s)) return;
+  mode = 'pick';
+  acc = 0;
+  pointers.clear();
+  activeId = null;
+  keys.left = keys.right = false;
+  pickAt = performance.now();
+  pickArm = null;
+  pickSel = -1;
+  renderPick();
+  saveRunNow();   // phase는 'arena' 그대로라 저장된다 — 여기서 닫아도 같은 카드로 이어 한다
+  show('scrPick');
+  armHistory();
+}
+function markPickSel() {
+  const cards = $('pickList').children;
+  for (let i = 0; i < cards.length; i++) cards[i].classList.toggle('sel', i === pickSel);
+  if (cards[pickSel]) cards[pickSel].focus({ preventScroll: true });
+}
+/* 글쇠: 1·2·3 바로 고르기, ←/→(↑/↓) 옮기고 Enter·Space로 고르기, Esc는 일시정지. 누르고 있던 글쇠(반복)와 뜬 직후는 무시 */
+function pickKey(e) {
+  if (e.key === 'Escape' || e.code === 'KeyP') { pause(); return; }
+  const cards = $('pickList').children;
+  const n = cards.length;
+  const d = /^(?:Digit|Numpad)([1-9])$/.exec(e.code || '');
+  const k = d ? +d[1] : /^[1-9]$/.test(e.key) ? +e.key : 0;
+  const prev = LEFT(e) || e.key === 'ArrowUp' || e.code === 'KeyW';
+  const next = RIGHT(e) || e.key === 'ArrowDown' || e.code === 'KeyS';
+  const go = e.key === 'Enter' || e.key === ' ' || e.code === 'Space';
+  const f = [...cards].indexOf(document.activeElement);
+  if (go && f < 0 && document.activeElement === $('btnPause')) return;   // Tab으로 옮겨 간 HUD 일시정지 버튼은 제 할 일을(카드를 고르지 않게)
+  if (k || prev || next || go) e.preventDefault();
+  if (e.repeat || performance.now() - pickAt < PICK_GRACE || !n) return;
+  if (f >= 0 && f !== pickSel) { pickSel = f; markPickSel(); }   // Tab으로 옮긴 카드를 따른다(불 켜진 카드와 포커스가 어긋나 다른 카드를 고르지 않게)
+  if (k) { if (k <= n) choosePick(k - 1); return; }
+  if (prev || next) { pickSel = pickSel < 0 ? (prev ? n - 1 : 0) : (pickSel + (prev ? n - 1 : 1)) % n; markPickSel(); sfx.click(); return; }
+  if (go) {
+    const i = pickSel >= 0 ? pickSel : [...cards].indexOf(document.activeElement);
+    if (i >= 0) choosePick(i);
+    else { pickSel = 0; markPickSel(); }   // 아무것도 안 골랐으면 첫 카드에 불만 켠다(Space 연타로 바로 고르지 않게)
+  }
+}
+/* 카드 i를 고른다: 다음 구간을 잇고 효과를 준다 → 이벤트(구간 시작·증원·특수병·카드)는 평소대로 알림·소리 */
+function choosePick(i) {
+  if (mode !== 'pick' || !s || !offerOf(s)) return;
+  if (!pickCard(s, i)) return;   // 소리는 카드 이벤트가 낸다(무기·증원·탄종 power, 특수병 join·levelUp) — 딸깍과 겹치지 않게
+  mode = 'play';
+  pickArm = null;
+  pickSel = -1;
+  show(null);
+  handleEvents(s.ev);
+  // 멈춰 있던 시간만큼 한꺼번에 따라잡지 않게
+  acc = 0;
+  last = performance.now();
+  prevZ = s.squad.z;
+  saveRunNow();
+}
+{
+  const list = $('pickList');
+  list.addEventListener('pointerdown', (e) => {
+    const b = e.target.closest && e.target.closest('.pick-card');
+    if (!b || mode !== 'pick' || e.button > 0) return;   // 오른쪽·가운데 단추로는 고르지 않는다(되돌릴 수 없는 선택)
+    if (performance.now() - pickAt < PICK_GRACE) { pickArm = null; return; }
+    pickArm = { id: e.pointerId, i: Number(b.dataset.i) };
+    b.classList.add('press');
+  });
+  const release = (e, ok) => {
+    const arm = pickArm;
+    if (!arm || arm.id !== e.pointerId) return;
+    pickArm = null;
+    for (const c of list.children) c.classList.remove('press');
+    if (!ok || mode !== 'pick') return;
+    // 터치는 누른 카드에 붙잡혀(암묵적 캡처) 뗀 자리의 카드를 따로 찾는다 — 다른 카드로 미끄러져 뗐으면 고르지 않는다
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const b = el && el.closest && el.closest('.pick-card');
+    if (b && Number(b.dataset.i) === arm.i) choosePick(arm.i);
+  };
+  window.addEventListener('pointerup', (e) => release(e, true));
+  window.addEventListener('pointercancel', (e) => release(e, false));
 }
 
 function begin(L) {
@@ -1480,7 +1661,7 @@ function begin(L) {
 }
 
 function pause() {
-  if (mode !== 'play') return;
+  if (mode !== 'play' && mode !== 'pick') return;   // 3택 1에서 멈추면 계속하기 뒤 같은 카드가 다시 뜬다(offerOf)
   // 승리·패배가 정해진 뒤에는 멈추지 않고 결과로 간다(승리를 잃지 않게)
   if (s && (s.phase === 'won' || s.phase === 'lost')) return;
   mode = 'pause';
@@ -1542,6 +1723,8 @@ function resume() {
   last = performance.now();
   requestWake();
   armHistory();
+  // 카드가 떠 있던 판(3택 1에서 멈춤·이어하기)은 곧바로 그 카드로(조작 화면이 한 프레임 비치지 않게)
+  if (offerOf(s)) { openPick(); return; }
   show(null);
 }
 
@@ -1592,7 +1775,7 @@ function resumeRun() {
   setHudLevel();
   $('bossName').textContent = bossNameOf(lv.L, tagOf(lv.L).tag);
   prepBiome(lv.L);
-  $('bossBar').hidden = !s.boss;
+  $('bossBar').hidden = !(s.boss && !s.boss.dead);   // 무한모드: 쓰러진 보스(다음 구간·3택 1을 기다리는 중)의 빈 막대는 띄우지 않는다
   $('bossBar').classList.toggle('rage', !!(s.boss && s.boss.enraged));
   hideEta();
   spKey = 0;
@@ -1796,13 +1979,19 @@ function handleEvents(ev) {
         if (run) run.L = s.L;
         setHudLevel();
         const i = segInfo(e.seg);
-        const lead = i.tag === 'super' ? '대왕이 기다려요 · ' : i.tag === 'hard' ? '정예 보스 · ' : '';
-        toast(`${lead}${segName(e.seg)}`, 2200);
+        toast(segToast(e.seg), 2200);
         if (e.seg >= 2) tip('endlessSpeed', '구간을 넘길 때마다 조금씩 빨리 달려요. 게이트를 미리 보고 골라요');
         seen(data, 'biome', BIOMES[i.biome].id);
         prepBiome(segInfo(e.seg + 1).L);   // 다음 지역 그림은 이 구간을 달리는 동안 쉬는 틈에 굽는다
         saveRunNow();
         updateMusic();
+        break;
+      }
+      case 'offer': openPick(); break;   // 무한모드 보스 뒤 3택 1: 판이 멈췄다 — 고를 때까지
+      case 'card': {
+        // 고른 카드: 특수병은 spGet·spUp이 소리를 냈다. 알림은 하나로 — 효과 + 다음 구간(앞의 구간·레벨 업 알림을 덮어쓴다)
+        if (e.k !== 'unit') { sfx.power(); vibe(20); }
+        toast(`${cardDone(e)} · ${segToast(s.endless.seg)}`, 2600);
         break;
       }
       case 'lose': sfx.lose(); vibe([60, 40, 90]); break;
@@ -2063,7 +2252,7 @@ function updateMusic() {
   if (!music) return;
   // 일시정지에서 연 설정·백업 화면은 판 음악을 그대로, 카드는 늘 출발 곡(뒤의 시연 상태를 보지 않는다)
   const fromRun = (mode === 'set' && $('setBack').dataset.back === 'pause') || (mode === 'backup' && $('setBack').dataset.back === 'pause' && $('bkBack').dataset.back === 'set');
-  const inRun = mode === 'play' || mode === 'pause' || fromRun;
+  const inRun = mode === 'play' || mode === 'pause' || mode === 'pick' || fromRun;
   const want = mode === 'card' ? 'run' : inRun ? (s && s.boss && s.boss.hp > 0 ? 'boss' : 'run') : 'title';
   if (music.current !== want) music.play(want);
 }
@@ -2082,6 +2271,7 @@ function frame(now) {
     let scale = 1;
     if (now < slowUntil) scale = slowScale;
     if (tutorial && mode === 'play') scale = Math.min(scale, 0.35);
+    if (mode === 'play' && !attract && offerOf(s)) openPick();   // 떠 있는 카드(이어하기 등) — 고를 때까지 판은 멈춰 있다
     if (mode === 'play' || attract) {
       acc += dtReal * scale;
       let n = 0;
@@ -2093,6 +2283,7 @@ function frame(now) {
         handleEvents(s.ev);
         acc -= DT;
         n++;
+        if (mode === 'pick') break;   // 보스 뒤 3택 1이 떴다(남은 틱은 고른 뒤에)
       }
       if (n === 5) acc = 0;
       if (attract && (s.phase === 'won' || s.phase === 'lost') && s.endT > 3) {
@@ -2106,8 +2297,10 @@ function frame(now) {
         if ((s.phase === 'won' && s.endT > 1.6) || (s.phase === 'lost' && s.endT > 1.2)) finish();
       }
     }
+    // 봇(__squad.auto)도 판을 이어 가게: 카드가 뜨고 잠시 뒤 첫 카드
+    if (mode === 'pick' && window.__squad.auto && now - pickAt >= PICK_AUTO) choosePick(0);
     renderer.draw(s, Math.min(1, acc / DT), dtReal, prevZ);
-    if (mode === 'play' || mode === 'pause') { updateHud(); updateHeroUi(); updateSpChips(); }
+    if (mode === 'play' || mode === 'pause' || mode === 'pick') { updateHud(); updateHeroUi(); updateSpChips(); }
   } else {
     renderer.draw(idleState, 0, dtReal, 0);
   }
@@ -2230,7 +2423,7 @@ for (const b of document.querySelectorAll('[data-back]')) {
     goTitle();
   });
 }
-on('btnPause', () => { sfx.click(); pause(); });
+on('btnPause', () => { sfx.click(); pause(); });   // 3택 1 중에도 눌린다(카드 화면은 카드 밖을 눌러도 가로막지 않는다)
 on('skillBtn', () => pressSkill());
 function pressSkill() {
   if (mode !== 'play') return;
@@ -2402,7 +2595,7 @@ fontsReady.then(() => {
 /* 테스트·디버그용 */
 window.__squad = {
   auto: false, get state() { return s; }, set state(v) { s = v; }, get mode() { return mode; }, get data() { return data; },
-  startLevel, startEndless, radius, UNLOCK, skill() { skillPressed = true; },
+  startLevel, startEndless, radius, UNLOCK, skill() { skillPressed = true; }, pick(i) { choosePick(i); },
   // 충돌 크기 보기: 시뮬레이션이 재는 모양을 그림 위에 그린다(주소에 ?hitbox=1 을 붙여도 켜진다)
   get hitbox() { return renderer.hitbox; }, set hitbox(v) { renderer.setHitbox(v); },
   get info() { return renderer.info; },   // 렌더러 상태(그리는 시간·늦은 굽기 수 등)

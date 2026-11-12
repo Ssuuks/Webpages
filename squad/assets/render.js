@@ -1028,6 +1028,17 @@ export function createRenderer(cvs) {
           else if (e.fx === 'coin') burst(e.x, 2, e.z, 16, FX_COL.gold, 4, 4);
           else if (Math.random() < 0.5) fx('spark', q.x + (Math.random() - 0.5) * 2 * R, 1.3, q.z + R * 0.5, 0.09);
           break;
+        case 'card': {
+          // 무한모드 보스 뒤 3택 1에서 고른 카드: 분대 발밑에 금빛 고리와 작은 반짝임(글자는 DOM 알림). 특수병은 spGet·spUp이 숫자를 띄운다
+          const cx = e.x ?? q.x, cz = e.z ?? q.z;
+          const col = e.k === 'ammo' ? AMMO_COL[e.a] || '#FFFFFF' : e.k === 'men' ? '#6CC0FF' : '#FFD84A';
+          ring(cx, cz, 0.3, R + 1.2, 0.45, col, { follow: 'sq', thick: 2 });
+          burst(cx, 1.4, cz, 14, [col, '#FFFFFF', '#FFD84A'], 3, 4, 0.6);
+          if (e.k === 'men') float(cx, 2.4, cz, '+' + (e.to - e.from), '#DDF3FF', { icon: 'men', out: PANEL.good.out, life: 1.2, vz: q.vz });
+          else if (e.k === 'gun') float(cx, 2.6, cz, '+1', '#FFE38A', { icon: 'gun', life: 1.2, vz: q.vz });
+          screenFlash(0.12, '255,220,120');
+          break;
+        }
         case 'segClear':   // 무한모드: 보스를 잡고 다음 구간으로(승리 색종이만 — 판은 이어진다)
         case 'win':
           for (let i = 0; i < 60; i++) part(q.x + (Math.random() - 0.5) * 8, 5 + Math.random() * 3, q.z + 5 + Math.random() * 8, (Math.random() - 0.5) * 3, Math.random() * 2, (Math.random() - 0.5) * 2, 2.4, FX_COL.confetti[i % 5], 1, 2.5);
