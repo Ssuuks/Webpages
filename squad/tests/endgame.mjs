@@ -9,7 +9,7 @@ import { CYC } from '../assets/cyctable.js';
 import { BIOMES, biomeOf } from '../assets/roster.js';
 import { makeBot } from './bots.mjs';
 import { makePool } from '../tools/benchlib.mjs';
-import { runEndless, median } from '../tools/endless.mjs';
+import { runEndless, median, pickHist } from '../tools/endless.mjs';
 import { cycBench, rate, cycCampaign } from '../tools/cycbench.mjs';
 import { petBench } from '../tools/petbench.mjs';
 import { ammoBench } from '../tools/ammobench.mjs';
@@ -248,6 +248,321 @@ test('무한모드: 강화가 10단계 오를 때마다 더 멀리 간다(평균
   assert.ok(c - b >= 1 && c - b <= 3.5, `20 → 30단계: ${b.toFixed(2)} → ${c.toFixed(2)}`);
 });
 
+/* ---------- 무한모드 보스 뒤 3택 1(단계 해금 1단계) ---------- */
+const CARD1 = { ...UP10, unl: 1, ammoOpen: R.AMMO_IDS };
+const cardKey = (c) => (c.k === 'unit' ? 'unit:' + c.u : c.k === 'ammo' ? 'ammo:' + c.a : c.k);
+const PLAIN_KEYS = ['bank', 'bosses', 'seed', 'seg', 'wait', 'z0'];
+const PLAIN_FP = 3096457840;
+/* 기준 봇으로 첫 카드가 뜰 때까지: { s, clear: 보스가 쓰러진 틱, at: offer 이벤트 틱, ev: offer 이벤트, dead: 쓰러진 틱의 스냅숏 } */
+function toOffer(seed, co = CARD1) {
+  const s = C.newEndless({ seed, ...co });
+  let clear = -1, at = -1, ev = null, dead = null;
+  while (s.phase !== 'lost' && !C.offerOf(s) && s.tick < 20000) {
+    C.step(s, C.botInput(s));
+    for (const e of s.ev) {
+      if (e.t === 'segClear') { clear = s.tick; dead = C.snapshot(s); }
+      if (e.t === 'offer') { at = s.tick; ev = e; }
+    }
+  }
+  return { s, clear, at, ev, dead };
+}
+/* 카드가 떠 있는 판을 고쳐(mod) 카드를 그 자리에서 다시 만든다 — restore는 보스가 쓰러지고 연출이 끝난 자리에 카드가 없으면 다시 만든다.
+   e.seed를 바꿔 가며 여러 번(카드 순서·병과·탄종은 시드로 정해진다) */
+const regen = (s, mod, seeds = 40) => {
+  const out = [];
+  for (let x = 1; x <= seeds; x++) {
+    const o = C.snapshot(s);
+    o.endless.seed = x;
+    mod(o);
+    o.endless.offer = null;
+    const t = C.restore(o);
+    out.push({ t, of: C.offerOf(t) });
+  }
+  return out;
+};
+
+test('3택 1을 안 연 무한모드(opt.unl 없음·0·이상한 값)는 예전 그대로: s.endless에 카드 필드가 없고, 보스 뒤에 멈추지 않고 이어지며, 해시도 같다', () => {
+  const play = (extra) => {
+    const s = C.newEndless({ seed: 9, ...UP10, ...extra });
+    const hs = [];
+    let offers = 0, starts = 0;
+    while (s.phase !== 'lost' && s.endless.bosses < 2 && s.tick < 30000) {
+      const t0 = s.tick;
+      C.step(s, C.botInput(s));
+      assert.equal(s.tick, t0 + 1, '틱은 늘 센다');
+      for (const e of s.ev) { if (e.t === 'offer' || e.t === 'card') offers++; if (e.t === 'segStart') starts++; }
+      if (s.tick % 300 === 0) hs.push(C.stateHash(s));
+    }
+    hs.push(C.stateHash(s));
+    return { s, hs, offers, starts };
+  };
+  const a = play({});
+  assert.ok(a.s.endless.bosses >= 2 && a.starts >= 1, `보스 ${a.s.endless.bosses}`);
+  assert.deepEqual(Object.keys(a.s.endless).sort(), PLAIN_KEYS, '카드 필드가 없다');
+  assert.equal(a.offers, 0);
+  assert.equal(C.offerOf(a.s), null);
+  // '예전 그대로'는 안 연 판끼리 같다는 것만이 아니라 3택 1을 넣기 전 코드와 같다는 뜻 — 그 core.js(9f8499f)로 같은 식을 돌린 지문
+  // (무한모드 규칙을 일부러 바꾸면 이 값을 다시 잰다)
+  assert.equal(C.hash(...a.hs), PLAIN_FP, '3택 1을 넣기 전과 같은 판');
+  for (const extra of [{ unl: 0 }, { unl: 'x' }, { unl: -2 }, { unl: 0.6 }, { ammoOpen: R.AMMO_IDS }]) {
+    const b = play(extra);
+    assert.deepEqual(Object.keys(b.s.endless).sort(), PLAIN_KEYS, JSON.stringify(extra));
+    assert.deepEqual(b.hs, a.hs, `${JSON.stringify(extra)}: 같은 판`);
+  }
+  // 연 판에는 필드가 생기고(해금 단계는 CARD.stageMax까지), 탄종 목록은 아는 것만 한 번씩
+  const s = C.newEndless({ seed: 9, ...UP10, unl: 5, ammoOpen: ['frost', 'nope', 'frost', 'pierce'] });
+  assert.deepEqual({ unl: s.endless.unl, ammo: s.endless.ammo, picks: s.endless.picks, offer: s.endless.offer }, { unl: C.CARD.stageMax, ammo: ['frost', 'pierce'], picks: [], offer: null });
+  assert.deepEqual(C.newEndless({ seed: 9, ...UP10, unl: 1 }).endless.ammo, []);
+});
+
+test('3택 1(opt.unl 1): 첫 보스가 쓰러지고 연출(ENDLESS.wait)이 끝나면 카드가 뜨고 판이 멈춘다(step이 틱을 세지 않는다) — 서로 다른 종류 CARD.count장까지, CARD.kinds 순서, 같은 시드·같은 입력이면 같은 카드, 시드마다 다른 카드', () => {
+  assert.deepEqual(C.CARD.kinds, ['men', 'gun', 'unit', 'ammo']);
+  assert.equal(C.CARD.count, 3);
+  const sets = new Set();
+  const kinds = new Set();
+  for (let seed = 1; seed <= 20; seed++) {
+    const { s, clear, at, ev } = toOffer(seed);
+    const of = C.offerOf(s);
+    assert.ok(of, `시드 ${seed}: 카드가 떴다(${s.phase})`);
+    assert.ok(at - clear >= Math.round(C.ENDLESS.wait / C.DT) - 1, `쓰러지는 연출 뒤에(${at - clear}틱)`);
+    assert.deepEqual(ev, { t: 'offer', n: of.length, seg: 1 });
+    assert.ok(s.phase === 'arena' && s.boss && s.boss.dead && s.endless.bosses === 1 && s.endless.seg === 1, '다음 구간은 아직');
+    assert.ok(of.length >= 1 && of.length <= C.CARD.count, `${of.length}장`);
+    const ks = of.map((c) => c.k);
+    assert.equal(new Set(ks).size, ks.length, '서로 다른 종류');
+    assert.deepEqual(ks, C.CARD.kinds.filter((k) => ks.includes(k)), '보이는 순서는 CARD.kinds');
+    for (const c of of) {
+      if (c.k === 'unit') assert.ok(C.SP_KINDS.includes(c.u));
+      if (c.k === 'ammo') assert.ok(R.AMMO_IDS.includes(c.a) && c.a !== (s.ammo || ''), '지금 탄종이 아닌 열린 탄종');
+      assert.ok(C.cardInfo(s, c).to !== C.cardInfo(s, c).from, '쓸모없는 카드는 없다');
+    }
+    // 멈춤: 무엇을 눌러도 틱·상태가 그대로, 이벤트도 없다
+    const h = C.stateHash(s);
+    const tick = s.tick;
+    for (let i = 0; i < 30; i++) { C.step(s, { dir: i % 2 ? 1 : -1, tx: 3, skill: true }); assert.equal(s.ev.length, 0); }
+    assert.equal(s.tick, tick);
+    assert.equal(C.stateHash(s), h);
+    assert.deepEqual(C.offerOf(s), of);
+    // 같은 시드·같은 입력 → 같은 틱에 같은 카드
+    if (seed <= 3) {
+      const b = toOffer(seed);
+      assert.equal(b.s.tick, tick);
+      assert.deepEqual(C.offerOf(b.s), of);
+      assert.equal(C.stateHash(b.s), h);
+    }
+    sets.add(of.map(cardKey).join());
+    for (const k of ks) kinds.add(k);
+  }
+  assert.ok(sets.size >= 5, `시드 20개의 카드 묶음 ${sets.size}가지: ${[...sets].join(' / ')}`);
+  assert.deepEqual([...kinds].sort(), [...C.CARD.kinds].sort(), '네 종류가 다 나온다');
+});
+
+test('카드 고르기(pickCard): 다음 구간은 고르기 전의 병력·무기 단계로 만든 그 구간 그대로이고, 그 뒤에 카드가 듣는다 — 증원 ×1.3(상한 9999), 무기 +1단계, 특수병 합류(Lv1) 또는 Lv+1, 탄종 바꾸기. 고른 카드는 기록되고 card 이벤트(from → to)를 낸다', () => {
+  assert.equal(C.CARD.men, 1.3);
+  const seen = {};
+  // 구간을 지금 자리 앞에 이어 붙인 모양(nextSegment가 하는 id·z 옮기기) — 뭉치(영웅)가 바꾸는 덧셈 칸 step은 빼고 본다
+  const place = (seg, dz, off) => {
+    const g = structuredClone(seg);
+    for (const k of ['rows', 'foes', 'props', 'saws']) for (const x of g[k]) { x.id += off; x.z += dz; }
+    for (const m of g.marks) m.z += dz;
+    for (const d of g.divs || []) { d.id += off; if (d.wall) d.wall += off; d.z0 += dz; d.z1 += dz; }
+    return g;
+  };
+  const noStep = (rows) => rows.map((r) => ({ ...r, cells: r.cells.map(({ step, ...c }) => c) }));
+  const check = (s0, i, mod) => {
+    const s = structuredClone(s0);
+    if (mod) mod(s);
+    const q = s.squad;
+    const c = C.offerOf(s)[i];
+    const before = { n: q.n, tier: q.tier, z: q.z, seg: s.endless.seg, sp: structuredClone(q.sp), ammo: s.ammo || '', off: s.nextId, picks: s.endless.picks.slice(), tick: s.tick };
+    const info = C.cardInfo(s, c);
+    assert.equal(C.pickCard(s, i), true);
+    const lab = `${cardKey(c)} (병력 ${before.n}, 무기 ${before.tier})`;
+    // 다음 구간 = 고르기 전 병력·단계로 만든 구간
+    const seg = C.buildSegment(s.endless.seed, before.seg + 1, before.n, before.tier);
+    const g = place(seg, before.z + C.ENDLESS.lead, before.off);
+    assert.equal(s.endless.seg, before.seg + 1);
+    assert.deepEqual(noStep(s.rows), noStep(g.rows), `${lab}: 게이트 줄`);
+    assert.deepEqual([s.foes, s.props, s.saws, s.marks, s.divs], [g.foes, g.props, g.saws, g.marks, g.divs], `${lab}: 적·소품·톱날·갈림길`);
+    assert.deepEqual([s.bossHp, s.refMul, s.L, s.arenaZ, s.bossRef], [seg.bossHp, seg.refMul, seg.L, seg.arenaZ + before.z + C.ENDLESS.lead, seg.arrive], `${lab}: 보스·위협`);
+    assert.equal(s.rows[0].ng, before.n, '게이트 숫자는 고르기 전 병력 기준');
+    if (c.k === 'men' || c.k === 'gun') {
+      const alt = place(C.buildSegment(s.endless.seed, before.seg + 1, c.k === 'men' ? info.to : before.n, c.k === 'gun' ? info.to : before.tier), before.z + C.ENDLESS.lead, before.off);
+      assert.notDeepEqual([noStep(alt.rows), alt.foes], [noStep(s.rows), s.foes], `${lab}: 고른 뒤 값으로 만들면 다른 구간이다`);
+    }
+    // 그 뒤에 카드가 듣는다 — 고른 것만 바뀐다
+    if (c.k === 'men') {
+      assert.equal(q.n, Math.min(C.MAX_N, before.n + Math.max(1, Math.round(before.n * (C.CARD.men - 1)))), lab);
+      assert.ok(s.ev.some((e) => e.t === 'gain' && e.why === 'card' && e.n === q.n - before.n));
+    } else assert.equal(q.n, before.n, lab);
+    assert.equal(q.tier, c.k === 'gun' ? before.tier + 1 : before.tier, lab);
+    if (c.k === 'unit') {
+      const m0 = before.sp.find((m) => m.k === c.u);
+      const m1 = q.sp.find((m) => m.k === c.u);
+      assert.equal(info.from, m0 ? m0.lv : 0);
+      assert.equal(m1.lv, m0 ? m0.lv + 1 : 1, lab);
+      assert.equal(q.sp.length, before.sp.length + (m0 ? 0 : 1));
+      assert.ok(s.ev.some((e) => e.t === (m0 ? 'spUp' : 'spGet') && e.k === c.u && e.via === 'card'), `${lab}: ${m0 ? 'spUp' : 'spGet'} 이벤트`);
+      seen[m0 ? 'unitUp' : 'unitNew'] = 1;
+    } else assert.deepEqual(q.sp, before.sp, lab);
+    assert.equal(s.ammo || '', c.k === 'ammo' ? c.a : before.ammo, lab);
+    if (c.k === 'ammo') assert.notEqual(before.ammo, c.a);
+    assert.deepEqual(s.endless.picks, [...before.picks, cardKey(c)], '고른 카드 기록');
+    const ce = s.ev.filter((e) => e.t === 'card');
+    assert.equal(ce.length, 1);
+    assert.deepEqual({ k: ce[0].k, from: ce[0].from, to: ce[0].to, u: ce[0].u, a: ce[0].a }, { k: info.k, from: info.from, to: info.to, u: info.u, a: info.a }, `${lab}: card 이벤트`);
+    assert.ok(s.ev.some((e) => e.t === 'segStart' && e.seg === before.seg + 1));
+    assert.equal(C.offerOf(s), null);
+    assert.equal(s.phase, 'run');
+    assert.equal(s.boss, null);
+    // 판이 다시 흐른다
+    C.step(s, C.botInput(s));
+    assert.equal(s.tick, before.tick + 1);
+    seen[c.k] = (seen[c.k] | 0) + 1;
+    return s;
+  };
+  for (const seed of [1, 3, 4, 6, 10, 13, 16]) {
+    const { s } = toOffer(seed);
+    const of = C.offerOf(s);
+    for (let i = 0; i < of.length; i++) check(s, i);
+    // 가진 병과의 카드면 Lv+1, 증원은 9999에서 멈춘다
+    const iu = of.findIndex((c) => c.k === 'unit');
+    if (iu >= 0 && !s.squad.sp.some((m) => m.k === of[iu].u)) check(s, iu, (t) => { t.squad.sp = [{ id: t.nextId++, k: of[iu].u, cd: 0.6, lv: 2 }]; });
+    const im = of.findIndex((c) => c.k === 'men');
+    if (im >= 0) check(s, im, (t) => { t.squad.n = C.MAX_N - 9; });
+    // 범위 밖 번호는 가까운 끝 카드
+    const last = structuredClone(s);
+    C.pickCard(last, 99);
+    assert.equal(last.endless.picks[0], cardKey(of[of.length - 1]));
+  }
+  for (const k of [...C.CARD.kinds, 'unitNew', 'unitUp']) assert.ok(seen[k], `${k} 카드를 봤다 ${JSON.stringify(seen)}`);
+  // 떠 있는 카드가 없으면 아무것도 하지 않는다
+  const fresh = C.newEndless({ seed: 1, ...CARD1 });
+  const h = C.stateHash(fresh);
+  assert.equal(C.pickCard(fresh, 0), false);
+  assert.equal(C.pickCard(C.newEndless({ seed: 1, ...UP10 }), 0), false);
+  assert.equal(C.stateHash(fresh), h);
+});
+
+test('3택 1에 나오지 않는 카드: 병력 9999면 증원, 무기 3단계면 무기, 특수병 자리가 차고 모두 Lv3이거나 호위 병사가 모자라면 그 특수병, 바꿀 탄종이 없으면 탄종 — 빈 카드는 없다(아무것도 못 고르면 멈추지 않고 이어진다)', () => {
+  const { s, dead } = toOffer(1);
+  const sp3 = (lv) => C.SP_KINDS.map((k, i) => ({ id: 90000 + i, k, cd: 0.6, lv }));
+  // 기대하는 후보(규칙을 테스트 쪽에서 다시 적는다)
+  const pool = (o) => {
+    const q = o.squad;
+    const units = C.SP_KINDS.filter((k) => { const m = q.sp.find((x) => x.k === k); return m ? m.lv < 3 : q.sp.length < C.SP_MAX && q.n >= C.SP_ESCORT * (q.sp.length + 1); });
+    const ammo = o.endless.ammo.filter((a) => a !== (o.ammo || ''));
+    const kinds = [q.n < C.MAX_N && 'men', q.tier < 3 && 'gun', units.length && 'unit', ammo.length && 'ammo'].filter(Boolean);
+    return { kinds, units, ammo };
+  };
+  const cases = [
+    ['무기 3단계', (o) => { o.squad.tier = 3; }, ['gun']],
+    ['병력 9999', (o) => { o.squad.n = C.MAX_N; }, ['men']],
+    ['특수병 셋 모두 Lv3', (o) => { o.squad.sp = sp3(3); o.squad.n = 200; }, ['unit']],
+    ['특수병 셋, 하나만 Lv3 아래', (o) => { o.squad.sp = sp3(3); o.squad.sp[1].lv = 2; o.squad.n = 200; }, []],
+    ['호위 병사 모자람(의무병 하나, 병사 7)', (o) => { o.squad.sp = [{ id: 90009, k: 'medic', cd: 0.6, lv: 1 }]; o.squad.n = 7; }, []],
+    ['열린 탄종 없음', (o) => { o.endless.ammo = []; }, ['ammo']],
+    ['열린 탄종이 지금 탄종뿐', (o) => { o.endless.ammo = ['frost']; o.ammo = 'frost'; }, ['ammo']],
+    ['둘만 남음', (o) => { o.squad.tier = 3; o.endless.ammo = []; }, ['gun', 'ammo']],
+    ['하나만 남음', (o) => { o.squad.tier = 3; o.squad.n = C.MAX_N; o.squad.sp = sp3(3); o.endless.ammo = ['pierce']; }, ['men', 'gun', 'unit']],
+  ];
+  for (const [name, mod, out] of cases) {
+    for (const { t, of } of regen(s, mod)) {
+      const p = pool(t);
+      for (const k of out) assert.ok(!p.kinds.includes(k), `${name}: 규칙상 ${k} 후보가 없다`);
+      assert.ok(of && of.length === Math.min(C.CARD.count, p.kinds.length), `${name}: ${of ? of.length : 0}장(후보 ${p.kinds.join(',')})`);
+      for (const c of of) {
+        assert.ok(!out.includes(c.k), `${name}: ${cardKey(c)}`);
+        if (c.k === 'unit') assert.ok(p.units.includes(c.u), `${name}: ${c.u}는 후보가 아니다`);
+        if (c.k === 'ammo') assert.ok(p.ammo.includes(c.a), `${name}: ${c.a}는 후보가 아니다`);
+      }
+    }
+  }
+  // 특수병 후보가 하나뿐이면 늘 그 병과(가진 의무병 Lv+1 — 호위 병사가 모자라 새 병과는 못 온다)
+  const only = regen(s, cases[4][1]).map((r) => r.of.find((c) => c.k === 'unit')).filter(Boolean);
+  assert.ok(only.length >= 5 && only.every((c) => c.u === 'medic'), `의무병만 ${only.length}번`);
+  // 아무것도 못 고르는 판: 카드 없이(멈추지 않고) 다음 구간이 이어진다 — 쓰러지는 연출 중인 판을 고쳐 그대로 흘린다
+  const o = structuredClone(dead);
+  o.squad.tier = 3; o.squad.n = C.MAX_N; o.squad.sp = sp3(3); o.endless.ammo = [];
+  const t = C.restore(o);
+  let start = null;
+  while (!start && t.tick < dead.tick + 300) {
+    const t0 = t.tick;
+    C.step(t, { dir: 0 });
+    assert.equal(t.tick, t0 + 1, '멈추지 않는다');
+    assert.ok(!t.ev.some((e) => e.t === 'offer') && C.offerOf(t) === null, '빈 카드는 띄우지 않는다');
+    if (t.ev.some((e) => e.t === 'segStart')) start = t.tick;
+  }
+  assert.ok(start && start - dead.tick >= Math.round(C.ENDLESS.wait / C.DT) - 1, '연출 뒤에 다음 구간');
+  assert.equal(t.endless.seg, 2);
+  assert.deepEqual(t.endless.picks, []);
+});
+
+test('3택 1 이어하기: 카드가 떠 있는 판을 저장·복원하면 같은 카드·같은 해시, 같은 카드를 고르면 매 틱 같은 판. 깨진 카드는 버리고 그 자리에서 같은 카드를 다시 만든다', () => {
+  for (const seed of [4, 13]) {
+    const { s } = toOffer(seed);
+    const of = structuredClone(C.offerOf(s));
+    const h0 = C.stateHash(s);
+    const t = C.restore(JSON.parse(JSON.stringify(C.snapshot(s))));
+    assert.deepEqual(C.offerOf(t), of);
+    assert.equal(C.stateHash(t), h0);
+    C.step(t, C.botInput(t));
+    assert.equal(t.tick, s.tick, '복원한 판도 멈춰 있다');
+    // 해시는 떠 있는 카드를 본다
+    const other = C.snapshot(s);
+    other.endless.offer = of.length > 1 ? of.slice(1) : [{ k: of[0].k === 'men' ? 'gun' : 'men' }];
+    assert.notEqual(C.stateHash(C.restore(other)), h0);
+    // 깨진 카드: 버리고 다시 만든다(같은 시드 → 같은 카드)
+    for (const bad of [[{ k: 'bogus' }], [], 'x', 7, {}, [null], [{ k: 'unit', u: 'dragon' }], [{ k: 'ammo', a: 'nope' }], [{ k: 'men' }, { k: 'bogus' }], undefined]) {
+      const o = JSON.parse(JSON.stringify(C.snapshot(s)));
+      o.endless.offer = bad;
+      const u = C.restore(o);
+      assert.deepEqual(C.offerOf(u), of, `깨진 카드 ${JSON.stringify(bad)}`);
+      assert.equal(C.stateHash(u), h0);
+    }
+    // 같은 카드를 고르면 같은 판(고른 기록도 이어진다), 다른 카드를 고른 판은 다른 판
+    const i = of.length - 1;
+    const alt = structuredClone(s);
+    C.pickCard(alt, 0);
+    C.pickCard(s, i);
+    if (i > 0) assert.notEqual(C.stateHash(alt), C.stateHash(s));
+    C.pickCard(t, i);
+    assert.equal(C.stateHash(t), C.stateHash(s));
+    for (let k = 0; k < 400 && s.phase !== 'lost'; k++) {
+      const inp = C.botInput(s);
+      C.step(s, inp);
+      C.step(t, inp);
+      assert.equal(C.stateHash(t), C.stateHash(s), `${k}틱 뒤 갈라졌다`);
+      if (k === 200) { const u = C.restore(JSON.parse(JSON.stringify(C.snapshot(s)))); assert.deepEqual(u.endless.picks, [cardKey(of[i])]); assert.equal(C.stateHash(u), C.stateHash(s)); }
+    }
+  }
+});
+
+test('3택 1의 세기(봇 — 합격 기준): 기대 강화 10단계·집중한 사람(sloppy0.1) 24판, reach()와 같은 시드 — 생각해서 고르면(think) 카드 없는 판보다 평균 +0.5구간 넘게, 아무거나 고르기(random)보다 멀리. 가만히 서 있으면 카드가 있어도 첫 보스를 못 넘는다', async (t) => {
+  // 이 기준을 만들 때 잰 값(24판, 평균 잡은 보스): 카드 없음 3.83 · think 6.63 · random 5.13 · 늘 증원(men) 5.75 · 늘 첫 장(first) 5.75 —
+  // think는 카드 없는 판 +2.80, random +1.50, men +0.88. 늘 첫 장 = 늘 증원(증원이 나오면 늘 첫 장이다)
+  const url = new URL('../tools/endless.mjs', import.meta.url).href;
+  const runs = (bot, picker, maxSeg = 30) => Promise.all(Array.from({ length: 24 }, (_, i) => POOL.run({ kind: 'call', module: url, fn: 'cardRun', args: [i, bot, picker, CARD1, maxSeg] })));
+  const [none, think, rnd, men, idle] = await Promise.all([runs('sloppy0.1', null), runs('sloppy0.1', 'think'), runs('sloppy0.1', 'random'), runs('sloppy0.1', 'men'), runs('idle', 'think', 2)]);
+  const m = (rs) => mean(rs.map((r) => r.bosses));
+  const hist = (rs) => JSON.stringify(pickHist(rs.flatMap((r) => r.picks)));
+  const msg = `카드 없음 ${m(none).toFixed(2)} · think ${m(think).toFixed(2)} ${hist(think)} · random ${m(rnd).toFixed(2)} ${hist(rnd)} · men ${m(men).toFixed(2)} ${hist(men)}`;
+  assert.ok(none.every((r) => r.picks.length === 0), '카드 없는 판');
+  assert.ok(think.some((r) => r.picks.length >= 3), '카드를 고른다');
+  assert.ok(m(think) >= m(none) + 0.5, `think가 카드 없는 판보다 +${(m(think) - m(none)).toFixed(2)}구간 — ${msg}`);
+  assert.ok(m(think) >= m(rnd), `think가 random보다 ${(m(think) - m(rnd)).toFixed(2)}구간 — ${msg}`);
+  assert.equal(idle.filter((r) => r.bosses > 0).length, 0, `가만히 서서 카드와 함께 첫 보스를 넘은 판 ${idle.filter((r) => r.bosses > 0).length}/24`);
+  // 기획서의 기준(정직하게 잰 값 그대로 — 벗어나면 todo로 남긴다)
+  const d = m(think) - m(rnd);
+  const name1 = `생각해서 고르기가 아무거나보다 +0.5구간 넘게: ${d >= 0 ? '+' : ''}${d.toFixed(2)} (${msg})`;
+  if (d >= 0.5) await t.test(name1, () => {});
+  else await t.test(name1, { todo: '기획서 기준을 벗어났다 — 카드 세기 조정 필요' }, () => { assert.ok(d >= 0.5); });
+  const best = Math.max(m(think), m(rnd));
+  const name2 = `늘 증원이 가장 좋은 수는 아니다: men ${m(men).toFixed(2)} < 가장 좋은 고르기 ${best.toFixed(2)}`;
+  if (m(men) < best) await t.test(name2, () => {});
+  else await t.test(name2, { todo: '기획서 기준을 벗어났다 — 증원이 너무 세다' }, () => { assert.ok(m(men) < best); });
+});
+
 /* ---------- 엔딩 · 회차 ---------- */
 test('회차의 기대 강화: 1회차 EXPECT + 10·(c−1)단계, 영웅 +2·(c−1)레벨 — 강화·영웅 상한도 회차마다 풀린다', () => {
   for (const L of [1, 10, 30, 60]) {
@@ -416,7 +731,31 @@ test('저장: 엔드게임 필드는 더하기만 — 옛 저장(L60 이하·L60
   assert.equal(c.cycle, 1);
   assert.equal(S.upgLv(c, 'start'), 3);
   assert.deepEqual(c.heroX, {});
-  assert.deepEqual(c.endless, { best: 0, bestN: 0, runs: 0 });
+  assert.deepEqual(c.endless, { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0 });
+  // 무한모드 해금 단계(단계 해금 기획서 1절): 1회차 엔딩을 봤으면 1단계(보스 뒤 3택 1) — 새 진행 화폐 없이 이미 저장하는 것으로 센다
+  assert.equal(S.endlessStage(a), 0, '엔딩 전');
+  assert.equal(S.endlessStage(b), 1, '1회차 엔딩 뒤');
+  assert.equal(S.endlessStage(round, C.CARD.stageMax), 1);
+  assert.equal(S.endlessStage(b, 0), 0, '만든 단계(stageMax)를 넘지 않는다');
+  assert.equal(S.endlessStage(c), 0);
+});
+
+test('저장: 무한모드의 알린 해금 단계(unl)·대왕 누적 처치(kings)는 0 이상 정수 — 옛 저장·이상한 값은 0, 여러 번 normalize해도 같다', () => {
+  assert.deepEqual(S.defaults().endless, { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0 });
+  assert.deepEqual(S.normalize({}).endless, { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0 });
+  // 옛 저장(필드가 없다)
+  const old = S.normalize({ maxL: 75, endless: { best: 4, bestN: 900, runs: 7 } });
+  assert.deepEqual(old.endless, { best: 4, bestN: 900, runs: 7, unl: 0, kings: 0 });
+  assert.equal(S.endlessStage(old), 1, '옛 저장도 엔딩을 봤으면 1단계');
+  for (const [v, want] of [['x', 0], [-3, 0], [null, 0], [NaN, 0], [Infinity, 0], [{}, 0], [2.7, 2], ['3', 3], [5, 5]]) {
+    const d = S.normalize({ endless: { unl: v, kings: v } });
+    assert.equal(d.endless.unl, want, `unl ${String(v)}`);
+    assert.equal(d.endless.kings, want, `kings ${String(v)}`);
+  }
+  const d = S.normalize({ maxL: 75, endless: { best: 6, bestN: 3000, runs: 9, unl: 1, kings: 2 } });
+  assert.deepEqual(d.endless, { best: 6, bestN: 3000, runs: 9, unl: 1, kings: 2 });
+  assert.deepEqual(S.normalize(JSON.parse(JSON.stringify(d))), d, '여러 번 해도 같다');
+  assert.equal(S.normalize({ endless: 'x' }).endless.unl, 0);
 });
 
 /* ---------- 펫 ---------- */

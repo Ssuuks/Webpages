@@ -1684,7 +1684,8 @@ export function restore(o) {
     num0(o.endless, ['seed', 'seg', 'bosses', 'bank', 'wait', 'z0']);
     if (o.endless.seg < 1) return null;
     const e = o.endless;
-    if (e.unl != null) {
+    // 3택 1을 안 연 판에 카드가 들어 있으면(손댄 저장) 버린다 — 남기면 step이 멈춘 채로 풀리지 않는다
+    if (e.unl == null) { delete e.offer; delete e.picks; delete e.ammo; } else {
       e.unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(e.unl) || 0)));
       e.ammo = Array.isArray(e.ammo) ? e.ammo.filter((a) => AMMO[a]) : [];
       e.picks = Array.isArray(e.picks) ? e.picks.filter((x) => typeof x === 'string') : [];
