@@ -43,10 +43,10 @@ test('1회차 캠페인의 stateHash는 SIM 10 표를 만들 때 적어 둔 값 
       out.push(C.hash(x, C.stateHash(s), s.phase, s.squad.n));
     }
   }
-  // SIM 10(정예 좀비를 캠페인에 넣음) 보정 표를 만든 직후 같은 식을 돌린 값
+  // SIM 10(정예 좀비를 캠페인에 넣음 + 독침의 피할 길 판단이 반응 중 가속을 봄) 보정 표를 만든 직후 같은 식을 돌린 값
   assert.equal(C.hash(...out), BASE_HASH);
 });
-const BASE_HASH = 1053165989;
+const BASE_HASH = 3690720509;
 
 /* ---------- 무한모드 ---------- */
 test('무한모드 구간: 지역은 차례로 돌고, 3번째는 정예·6번째는 대왕 — 가상 레벨이 그 지역·등급을 가리킨다', () => {
@@ -1028,7 +1028,7 @@ test('캠페인 정예(SIM 10): 실제 판에서 웅덩이·분열이 일어난�
 
 test('캠페인 정예 공정성(SIM 10): 웅덩이의 예고는 늘 1초 이상이고, 생긴 순간 분대가 비켜서는 데 드는 시간(이동 + 반응 0.45초) 이상이다 — 예고 중에는 맞는 모양이 없다', () => {
   let checked = 0;
-  for (const L of [11, 13, 18, 22, 26, 31, 37, 42, 47, 53, 59]) {
+  for (const L of [11, 13, 15, 18, 20, 22, 24, 26, 29, 31, 34, 37, 39, 42, 45, 47, 50, 53, 56, 59]) {
     for (const mk of [() => (s) => C.botInput(s), () => C.humanBot(L * 11 + 3, 0.3, true), () => () => ({ dir: 0 })]) {
       const s = C.newGame(C.prepareLevel(L), C.expectLoadout(L));
       const pol = mk();
