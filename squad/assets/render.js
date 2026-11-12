@@ -2,7 +2,7 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag } from './core.js';
+import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan } from './core.js';
 import { HEROES, biomeOf, bossNameOf } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, biomeSheets, PET_ART } from './pix/art.js';
@@ -21,6 +21,15 @@ const STEPS4 = [1, 0.75, 0.5, 0.33];
 const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9'];   // 무기 단계 색
 const GOLD_BULLET = '#FFD84A';
 const AMMO_COL = { pierce: '#F4F7FF', burst: '#FFB347', rapid: '#FFF4B0', frost: '#8FD3FF' };   // 탄종 머리 색(roster.AMMO와 같은 id)
+/* 총알 모양을 고를 탄종: 출격 탄종(s.ammo — 대신 쪽까지 진 탄), 없으면 무한모드 2단계 판의 탄 효과 중 가장 높은 레벨(같으면 위 순서).
+   카드·상자로 얻은 효과도 모양으로 알린다(관통을 얻으면 바늘). 효과가 없는 판은 '' — 예전 그대로 */
+export function shotAmmo(s) {
+  if (AMMO_COL[s.ammo]) return s.ammo;
+  const fx = s.endless && s.endless.fx;
+  let best = '', lv = 0;
+  if (fx) for (const a in AMMO_COL) if ((fx[a] | 0) > lv) { lv = fx[a] | 0; best = a; }
+  return best;
+}
 const SKILL_LINE = { mungchi: '#FFD84A', bori: '#FF8FB8', nabi: '#7FF0E2' };   // 스킬 중 화면 가장자리 속도선
 const PANEL = {
   good: { hex: '#3E8BEA', line: '#BFE2FF', out: '#1D3F8A', arrow: '#DDF3FF' },
@@ -952,6 +961,14 @@ export function createRenderer(cvs) {
           burst(e.x, 1, e.z, 22, FX_COL.wood, 5, 5, 0.7);
           fx('puff', e.x, 0.8, e.z, 0.3);
           if (e.type === 'gun') { float(e.x, 2.6, e.z, '+1', '#FFE38A', { icon: 'gun', life: 1.2 }); screenFlash(0.16, '255,220,120'); }
+          else if (e.type === 'fx') {
+            // 탄종 상자: 그 탄 효과의 레벨('Lv2')과 탄종 색 불꽃(글자는 DOM 알림). 글자 색은 특수병 레벨 업과 같은 짝 — 미리 구운 글자만 쓴다
+            const col = AMMO_COL[e.a] || '#FFFFFF';
+            float(e.x, 2.6, e.z, 'Lv' + e.lv, '#FFF09A', { icon: AMMO_COL[e.a] ? 'fx_' + e.a : null, out: PANEL.unit.out, life: 1.3 });
+            burst(e.x, 1.2, e.z, 16, [col, '#FFFFFF', col], 3.5, 4, 0.6);
+            ring(e.x, e.z, 0.2, 1.6, 0.35, col);
+            screenFlash(0.14, '255,220,120');
+          }
           else if (e.type === 'men') { if (e.v) { /* 'gain' 이벤트가 숫자를 띄운다 */ } }
           else { float(e.x, 2.6, e.z, '+' + e.v, '#FFE38A', { icon: 'coin', life: 1.2 }); coinFly(e.x, 1.2, e.z, Math.ceil(e.v / 5)); }
           break;
@@ -1031,14 +1048,22 @@ export function createRenderer(cvs) {
         case 'card': {
           // 무한모드 보스 뒤 3택 1에서 고른 카드: 분대 발밑에 금빛 고리와 작은 반짝임(글자는 DOM 알림). 특수병은 spGet·spUp이 숫자를 띄운다
           const cx = e.x ?? q.x, cz = e.z ?? q.z;
-          const col = e.k === 'ammo' ? AMMO_COL[e.a] || '#FFFFFF' : e.k === 'men' ? '#6CC0FF' : '#FFD84A';
+          const col = e.k === 'ammo' || e.k === 'fx' ? AMMO_COL[e.a] || '#FFFFFF' : e.k === 'men' ? '#6CC0FF' : '#FFD84A';
           ring(cx, cz, 0.3, R + 1.2, 0.45, col, { follow: 'sq', thick: 2 });
           burst(cx, 1.4, cz, 14, [col, '#FFFFFF', '#FFD84A'], 3, 4, 0.6);
           if (e.k === 'men') float(cx, 2.4, cz, '+' + (e.to - e.from), '#DDF3FF', { icon: 'men', out: PANEL.good.out, life: 1.2, vz: q.vz });
           else if (e.k === 'gun') float(cx, 2.6, cz, '+1', '#FFE38A', { icon: 'gun', life: 1.2, vz: q.vz });
+          else if (e.k === 'fx' && AMMO_COL[e.a]) float(cx, 2.6, cz, 'Lv' + e.to, '#FFF09A', { icon: 'fx_' + e.a, out: PANEL.unit.out, life: 1.3, vz: q.vz });
           screenFlash(0.12, '255,220,120');
           break;
         }
+        case 'combo':
+          // 시너지가 켜졌다(무한모드 2단계): 분대를 따라가는 금빛 두 겹 고리와 별 — 이름·글은 DOM 알림
+          ring(e.x ?? q.x, e.z ?? q.z, 0.4, R + 2, 0.6, '#FFD84A', { follow: 'sq', thick: 2 });
+          ring(e.x ?? q.x, e.z ?? q.z, 0.2, R + 1, 0.45, '#FFFFFF', { follow: 'sq' });
+          for (let k = 0; k < 8; k++) part(q.x + (Math.random() - 0.5) * 2 * R, 1.2, q.z, (Math.random() - 0.5) * 2, 2 + Math.random() * 1.5, q.vz, 0.7, '#FFD84A', 1, 0, 'star');
+          screenFlash(0.16, '255,216,74');
+          break;
         case 'segClear':   // 무한모드: 보스를 잡고 다음 구간으로(승리 색종이만 — 판은 이어진다)
         case 'win':
           for (let i = 0; i < 60; i++) part(q.x + (Math.random() - 0.5) * 8, 5 + Math.random() * 3, q.z + 5 + Math.random() * 8, (Math.random() - 0.5) * 3, Math.random() * 2, (Math.random() - 0.5) * 2, 2.4, FX_COL.confetti[i % 5], 1, 2.5);
@@ -1089,6 +1114,14 @@ export function createRenderer(cvs) {
           let x0 = q.x, z0 = q.z, y0 = 1.1;
           if (e.src === 'hero') { x0 = q.x + 0.22; z0 = heroZ(q, R); y0 = 1.25; }   // 나비 총구(스킬 장: 머리 오른쪽 위 총열 끝)
           let lv = 1, big = 0;
+          // 꿰뚫는 저격(관통 + 저격수 시너지): 첫 표적에서 일직선 뒤 표적까지 이어진 선 — 총구 반짝임·굵은 첫 발은 앞 발이 이미 냈다
+          if (e.thru) {
+            const i = sp.findIndex((m) => m.k === 'sniper');
+            lv = i >= 0 ? sp[i].lv || 1 : 1;
+            tracer(e.x0, 0.7, e.z0, e.x1, 0.7, e.z1, lv >= 3 ? '#7FE8FF' : '#F4F7FF', 0.12, lv >= 2 ? 2 : 1, '#FFFFFF');
+            fx('spark', e.x1, 0.7, e.z1, 0.1);
+            break;
+          }
           if (e.src !== 'hero') {
             const i = sp.findIndex((m) => m.k === 'sniper');
             if (i >= 0) { const p = slotPos(q, i, R, q.x); x0 = p.x; z0 = p.z; y0 = 1.2; lv = sp[i].lv || 1; if (spBig.get(sp[i].id)) { spBig.delete(sp[i].id); big = 1; } }
@@ -1636,7 +1669,9 @@ export function createRenderer(cvs) {
     if (p.key === true) keyMark(mx, top.ty, w);
     ctx.globalAlpha = 1;
   }
-  function crateIcon(type) { return type === 'coin' ? 'coin' : type === 'men' ? 'men' : 'gun'; }
+  /* 탄종 상자(무한모드 2단계, reward { type: 'fx', a })는 무기 아이콘 대신 그 탄 효과의 총알 — 무기 상자로 읽히지 않게.
+     그새 얻을 수 없게 됐으면(앞 상자로 칸이 찼다 — core도 병사를 준다) 병사 아이콘: 그린 것이 받는 것 */
+  function crateIcon(r, fxOk) { const t = r && r.type; return t === 'coin' ? 'coin' : t === 'men' ? 'men' : t === 'fx' ? (fxOk && AMMO_COL[r.a] ? 'fx_' + r.a : 'men') : 'gun'; }
   function drawCrate(s, p) {
     const top = boxFaces(p, 1.7);
     if (!top) return;
@@ -1657,7 +1692,8 @@ export function createRenderer(cvs) {
     ctx.fillStyle = OUT;
     trapLine(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy, 1);
     const mx = (face.ax + face.bx) / 2, my = face.ay - h / 2;
-    const ic = atlas.icon(crateIcon(p.reward && p.reward.type));
+    const fxOk = !!(p.reward && p.reward.type === 'fx' && fxCan(s, p.reward.a));
+    const ic = atlas.icon(crateIcon(p.reward, fxOk));
     if (h >= ic.h + 4 && w >= ic.w + 4) {
       ctx.fillStyle = 'rgba(43,29,46,.35)';
       ctx.fillRect(Math.round(mx - ic.w / 2) - 1, Math.round(my - ic.h / 2) - 1, ic.w + 2, ic.h + 2);
@@ -1666,12 +1702,30 @@ export function createRenderer(cvs) {
     const t = String(Math.max(1, Math.ceil(p.hp)));
     const big = h > 16;
     font.draw(ctx, t, mx, top.ty - (big ? 6 : 4), { size: big ? 'big' : 'small', fill: '#FFE08A' });
-    if (p.key === true) keyMark(mx, top.ty - (big ? 6 : 4) - font.height(big ? 'big' : 'small') / 2, w);
+    let yTop = top.ty - (big ? 6 : 4) - font.height(big ? 'big' : 'small') / 2;
+    if (p.key === true) yTop = keyMark(mx, yTop, w);
+    // 탄종 상자: 내용물(탄 효과)이 상자 위에 떠 있다 — 부수기 전에 보고 고른다(숨은 난수 없음). 열쇠 상자면 열쇠 위에
+    if (fxOk) fxMark(mx, yTop, w, p.reward.a);
     ctx.globalAlpha = 1;
   }
-  /* 열쇠 상자 표시(prop.key): 체력 숫자 위에 금테 두른 열쇠가 살짝 통통 — 멀리서도 '이건 꼭 깨야 한다'가 보이게 */
+  /* 탄종 상자 내용물 표시: 탄종 색 테두리 안에 그 탄 효과의 총알(글자 없이), 열쇠 표시와 같은 통통 — 멀리서도 '무엇이 든 상자'인지 */
+  function fxMark(cx, yTop, w, a) {
+    const col = AMMO_COL[a];
+    if (w < 4 || !col) return;
+    const ic = atlas.icon('fx_' + a);
+    const bob = ((time * 3 + 1) | 0) & 1;   // 열쇠와 반 박자 어긋나게(겹쳐 있어도 따로 보이게)
+    const x = Math.round(cx - ic.w / 2), y = Math.round(yTop - ic.h - 4 - bob);
+    ctx.fillStyle = OUT; ctx.fillRect(x - 2, y - 2, ic.w + 4, ic.h + 4);
+    ctx.fillStyle = col; ctx.fillRect(x - 1, y - 1, ic.w + 2, ic.h + 2);
+    ctx.fillStyle = '#2B1D2E'; ctx.fillRect(x, y, ic.w, ic.h);
+    atlas.blit(ctx, ic, x, y);
+    ctx.fillStyle = OUT; ctx.fillRect(Math.round(cx) - 2, y + ic.h + 2, 5, 1); ctx.fillRect(Math.round(cx) - 1, y + ic.h + 3, 3, 1);
+    ctx.fillStyle = col; ctx.fillRect(Math.round(cx) - 1, y + ic.h + 2, 3, 1); ctx.fillRect(Math.round(cx), y + ic.h + 3, 1, 1);
+  }
+  /* 열쇠 상자 표시(prop.key): 체력 숫자 위에 금테 두른 열쇠가 살짝 통통 — 멀리서도 '이건 꼭 깨야 한다'가 보이게.
+     돌려주는 값: 표시 맨 위(그 위에 탄종 상자 내용물을 얹는다) */
   function keyMark(cx, yTop, w) {
-    if (w < 5) return;
+    if (w < 5) return yTop;
     const ic = atlas.icon('key');
     const bob = ((time * 3) | 0) & 1;
     const x = Math.round(cx - ic.w / 2), y = Math.round(yTop - ic.h - 4 - bob);
@@ -1682,6 +1736,7 @@ export function createRenderer(cvs) {
     // 아래로 뾰족한 꼬리(어느 상자인지)
     ctx.fillStyle = OUT; ctx.fillRect(Math.round(cx) - 2, y + ic.h + 2, 5, 1); ctx.fillRect(Math.round(cx) - 1, y + ic.h + 3, 3, 1);
     ctx.fillStyle = '#FFD84A'; ctx.fillRect(Math.round(cx) - 1, y + ic.h + 2, 3, 1); ctx.fillRect(Math.round(cx), y + ic.h + 3, 1, 1);
+    return y - 2;
   }
   function drawCage(s, p) {
     const k = (p.reward && p.reward.k) || 'medic';
@@ -2332,7 +2387,7 @@ export function createRenderer(cvs) {
     const lenK = tier >= 1 ? 1.3 : 1;
     const after = !low && tier >= 3;
     const plane = s.boss && s.boss.hp > 0 ? s.boss.z - 1 : Infinity;
-    const ammo = AMMO_COL[s.ammo] ? s.ammo : '', ac = AMMO_COL[ammo];
+    const ammo = shotAmmo(s), ac = AMMO_COL[ammo];
     for (const b of s.bullets) {
       if ((b.z + ext > plane) !== behind) continue;
       if (!project(view, b.x, 0.75, b.z + ext)) continue;

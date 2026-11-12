@@ -231,12 +231,15 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 #bossBar i { position: absolute; inset: 0; background: linear-gradient(90deg, #E8384F, #FF8A5C); transform-origin: left; }
 #bossBar.rage .bar { animation: rage 0.5s ease-in-out infinite alternate; }
 @keyframes rage { to { box-shadow: 0 0 10px 2px rgba(255, 70, 50, 0.8); } }
-#spChips { margin-top: 8px; display: flex; gap: 6px; }
+#spChips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
 .sp-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px 3px 3px; border-radius: 999px; background: rgba(14, 10, 26, 0.7); border: 2px solid var(--edge); font-family: var(--display); font-size: 13px; }
 .sp-chip canvas, .sp-chip .dot { width: 20px; height: 20px; border-radius: 50%; }
 /* SIM 9: 레벨 오른 특수병 — 노란 'Lv2', Lv3은 금빛 테두리 */
 .sp-chip b { color: #FFE27A; font-weight: normal; margin-left: 2px; }
 .sp-chip.lv3 { border-color: #FFD84A; box-shadow: 0 0 0 2px rgba(255, 216, 74, 0.35); }
+/* 탄 효과 칩(무한모드 2단계): 특수병 칩과 같은 모양, 테두리만 탄종 색 — 총알 아이콘은 네모(둥글게 자르지 않는다) */
+.fx-chip { border-color: var(--acc, var(--edge)); }
+.fx-chip canvas { border-radius: 0; }
 
 /* 터치 안내·스킬 버튼 */
 .touch-hint {
@@ -295,6 +298,7 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) { #rotate { display: grid; } }
 @keyframes tipIn { from { opacity: 0; transform: translate(-50%, -8px); } }
 body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
+body.has-sp.sp-wrap #toast { top: calc(max(12px, env(safe-area-inset-top)) + 136px); }
 #toast { position: fixed; left: 50%; top: calc(max(12px, env(safe-area-inset-top)) + 64px); transform: translateX(-50%); width: max-content; max-width: min(420px, 90vw); text-align: center; z-index: 40; pointer-events: none; padding: 10px 16px; border-radius: 14px; background: var(--amber); color: var(--amber-ink); font-family: var(--display); font-size: 16px; border: 3px solid var(--edge); box-shadow: 0 4px 0 var(--edge); }
 
 /* 결과 */
@@ -411,6 +415,11 @@ body.has-sp #toast { top: calc(max(12px, env(safe-area-inset-top)) + 100px); }
 .pick-chg { font-family: var(--display); font-size: 22px; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .pick-chg em { font-style: normal; color: #FFE27A; }
 .pick-det { font-size: 12px; line-height: 1.4; color: var(--muted); }
+/* 시너지를 켜는 카드(2단계): 금빛 테두리와 반짝임 + 켜지는 시너지 한 줄 */
+.pick-card.syn { border-color: #FFD84A; box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 0 0 2px rgba(255, 216, 74, 0.45), 0 0 14px rgba(255, 216, 74, 0.35), 0 4px 0 var(--edge); }
+.pick-card.syn.press, .pick-card.syn:active { box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 0 0 2px rgba(255, 216, 74, 0.45), 0 1px 0 var(--edge); }
+.pick-card.syn.sel { border-color: #FFF4B0; }
+.pick-syn { font-size: 12px; line-height: 1.35; font-weight: 700; color: #FFD84A; }
 .pick-key { position: absolute; top: 8px; right: 10px; min-width: 22px; padding: 1px 5px; border-radius: 6px; background: var(--edge); color: var(--muted); font: 12px/1.4 var(--body); font-weight: 700; text-align: center; }
 @keyframes pickIn { from { transform: translateY(28px); opacity: 0; } }
 @keyframes pickHead { from { transform: translateY(-8px); opacity: 0; } }

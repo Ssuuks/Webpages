@@ -527,6 +527,8 @@ const ICON_PAL = {
   t: '#2F9E95', T: '#DFFBF7', E: '#3E5126', o: '#FFA54A', O: '#FFE6C2', e: '#EE7A26', A: '#7FA040', f: '#FFD84A', F: '#FFF4B0',
   w: '#C98A4E', q: '#8E5A30', y: '#FFC93C', Y: '#FFF09A', d: '#D08A12', j: '#6CC0FF', J: '#DDF3FF', u: '#3E8BEA', U: '#2B5EB8',
   z: '#E8ECF2', Z: '#C9CED6', P: '#FF8FB8', Q: '#FFB0CC', r: '#D94A80', m: '#FFF1DE', M: '#E9B26B', l: '#4FD1C5', L: '#A6F0E6',
+  // 탄 효과 아이콘(무한모드 2단계): 탄종 색(roster.AMMO의 color) — 관통 n · 작렬 v · 속사 a · 빙결 i
+  n: '#F4F7FF', v: '#FFB347', a: '#FFE38A', i: '#8FD3FF',
 };
 
 const FX_PAL = {
@@ -639,6 +641,11 @@ export const ICONS = {
   fire: ['....e....', '...ee..e.', '..eoe..e.', '..eoee.ee', '.eoooeeoe', '.eofooooe', 'eoffFfooe', 'eofFFFfoe', '.eofFfoe.'],
   /* 열쇠 상자 표시(어려운 레벨의 꼭 필요한 보급, prop.key) */
   key: ['.yyy......', 'yYYYy.....', 'yY.Yyyyyyy', 'yY.YYYYYYy', 'yYYYdddydy', '.ddd...d.d'],
+  /* 탄 효과(무한모드 2단계 — 카드·탄종 상자 위·HUD 칩): 게임 속 총알 모양 그대로(ARSENAL.md 8절) 탄종 색으로. 9×9 정사각(DOM 칸이 정사각) */
+  fx_pierce: ['....H....', '...nHn...', '...nHn...', '...nHn...', '...nHZ...', '...nHZ...', '...nnZ...', '....n....', '....Z....'],
+  fx_burst: ['.........', '...vvv...', '..vOOvv..', '.vOOvvve.', '.vOvvvve.', '.vvvvvee.', '..vveee..', '...eee...', '.........'],
+  fx_rapid: ['..Y...Y..', '.aYa.aYa.', '.aaa.aaa.', '.aaa.aaa.', '.ddd.ddd.', '..y...y..', '..y...y..', '..y...y..', '.........'],
+  fx_frost: ['....J....', '...JJi...', '..JJiii..', '.JJiiiiu.', 'JJiiWiiuu', '.iiiiiuu.', '..iiiuu..', '...iuu...', '....u....'],
 };
 export const ICON_PAL_EXPORT = ICON_PAL;
 

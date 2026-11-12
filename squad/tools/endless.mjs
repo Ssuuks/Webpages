@@ -1,10 +1,11 @@
 /* 무한모드 측정: 봇마다 판을 돌려 잡은 보스 수(도달 구간)의 분포를 본다.
    node squad/tools/endless.mjs [--seeds 24] [--bots sloppy0.1,sloppy0.3,idle,random] [--up 10] [--hero mungchi] [--herolv 5] [--max 30] [--trace]
    보스 뒤 3택 1(단계 해금 1단계): [--cards think,random,men,first,look] [--unl 1] [--ammo pierce,burst,rapid,frost]
-   --cards가 없으면 예전 그대로(카드 없음). 있으면 (봇 × 카드 고르기)마다 한 줄 + 고른 카드 종류 분포. --unl은 --cards가 있으면 1이 기본,
+   --cards가 없으면 예전 그대로(카드 없음). 있으면 (봇 × 카드 고르기)마다 한 줄 + 고른 카드 종류 분포. --unl은 --cards가 있으면 1이 기본
+   (2: 탄 효과·탄종 상자·시너지 + 4구간부터 장애물(장갑문·폭발 드럼통·방패 정예) — core.CARD.stageMax까지. 장애물만 끄고 재려면 C.RUN_ORDER.obstacle = Infinity),
    --ammo는 별로 열린 탄종(기본 넷 다 — 탄종 카드 후보) */
 import * as C from '../assets/core.js';
-import { AMMO_IDS } from '../assets/roster.js';
+import { AMMO_IDS, FX_LV } from '../assets/roster.js';
 import { makeBot, rng } from '../tests/bots.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : process.argv[i + 1]; };
@@ -43,6 +44,10 @@ export const THINK = {
   H: 2,          // 오래 남는 효과가 남은 판에서 몇 구간 더 쓸모 있다고 보는가(잰 값: sloppy0.1 24판, H 0·1·2·3·5 → 평균 5.79·5.79·6.63·6.67·6.21)
   ammo: 0.01,    // 탄종 바꾸기의 구간당 몫(탄종끼리는 세기가 비슷하다 — 합격 기준 ±5%p)
   sp: { medic: 0.1, sniper: 0.09, rocket: 0.12 },   // 특수병 한 명 = 병력의 이만큼(core.js SP_WORTH — 봇이 상자·철창을 볼 때 쓰는 값)
+  // 2단계(탄 효과): 효과 Lv2(= 그 탄종의 좋은 점 100%)가 화력 몇 배 몫인가, 시너지 하나가 켜지는 몫 [초안 — 밸런스 때 재서 고칠 것.
+  // 속사만 식 그대로(화력 +15%), 나머지는 맞는 좀비가 늘 있지 않은 만큼 낮춰 어림했다]
+  fx: { pierce: 0.08, burst: 0.08, rapid: 0.15, frost: 0.04 },
+  combo: 0.05,
 };
 /* 'think'의 점수 = 다음 구간 하나의 화력 배수 몫 + 오래 남는 몫 × H.
    다음 구간은 고르기 전의 병력·무기 단계로 만들고(buildSegment: 위협 = WEAPON[tier] × segMul × 뒤처짐, 게이트는 그때 병력 기준),
@@ -51,7 +56,9 @@ export const THINK = {
            위협이 바닥선 기준이라 흡수되지 않는다 → d × (1 + H·u)
    - 무기: WEAPON[to]/WEAPON[from] − 1(한 구간만)
    - 특수병: w = sp[병과](레벨 올리기는 × SP_UP_WORTH), ((1 + w)^0.8 − 1) × (1 + H)
-   - 탄종: ammo × (1 + H) */
+   - 탄종: ammo × (1 + H)
+   - 탄 효과(2단계): fx[탄종] × (FX_LV[to] − FX_LV[from]) × (1 + H) — 위협에 안 들어가 오래 남는다
+   - 시너지를 켜는 카드(특수병·탄 효과 — cardInfo의 combos): + combo × 켜지는 수 × (1 + H). 1단계 판의 카드에는 combos가 없다(점수 그대로) */
 export function thinkScore(s, c, K = THINK) {
   const f = C.cardInfo(s, c);
   if (!f) return -1;
@@ -61,8 +68,17 @@ export function thinkScore(s, c, K = THINK) {
     return d * (1 + K.H * u);
   }
   if (c.k === 'gun') return C.WEAPON[f.to] / C.WEAPON[f.from] - 1;
-  if (c.k === 'unit') { const w = (K.sp[c.u] || 0.1) * (f.from ? C.SP_UP_WORTH : 1); return (Math.pow(1 + w, 0.8) - 1) * (1 + K.H); }
+  if (c.k === 'unit') {
+    const w = (K.sp[c.u] || 0.1) * (f.from ? C.SP_UP_WORTH : 1);
+    const v = (Math.pow(1 + w, 0.8) - 1) * (1 + K.H);
+    return f.combos ? v + (K.combo ?? THINK.combo) * f.combos.length * (1 + K.H) : v;
+  }
   if (c.k === 'ammo') return K.ammo * (1 + K.H);
+  if (c.k === 'fx') {
+    const lvK = (lv) => (lv > 0 ? FX_LV[lv - 1] : 0);
+    const v = ((K.fx || THINK.fx)[c.a] || 0) * (lvK(f.to) - lvK(f.from)) * (1 + K.H);
+    return f.combos ? v + (K.combo ?? THINK.combo) * f.combos.length * (1 + K.H) : v;
+  }
   return -1;
 }
 const argMax = (xs) => xs.reduce((bi, v, i) => (v > xs[bi] ? i : bi), 0);

@@ -9,7 +9,7 @@ import { CYC } from '../assets/cyctable.js';
 import { BIOMES, biomeOf } from '../assets/roster.js';
 import { makeBot } from './bots.mjs';
 import { makePool } from '../tools/benchlib.mjs';
-import { runEndless, median, pickHist, makePicker } from '../tools/endless.mjs';
+import { runEndless, median, pickHist, makePicker, thinkScore } from '../tools/endless.mjs';
 import { cycBench, rate, cycCampaign } from '../tools/cycbench.mjs';
 import { petBench } from '../tools/petbench.mjs';
 import { ammoBench } from '../tools/ammobench.mjs';
@@ -338,8 +338,15 @@ function stageFP(unl, extra = {}) {
 const STAGE1_FP = 1831468219;
 test('1단계만 연 판(unl 1)은 2단계를 넣기 전과 바이트 하나까지 같다 — STAGE1_FP(시드 × 탄종 × 카드 고르기 × 7구간의 stateHash 묶음)', () => {
   assert.equal(stageFP(1), STAGE1_FP);
-  // 앞으로 열 줄의 옵션(화염병)을 받아도 아직 그 단계가 없으면 1단계 판 그대로
-  assert.equal(stageFP(1, { flame: false }), STAGE1_FP);
+  // 앞으로 열 줄의 옵션(화염병 false, 유물 — 3단계가 아니면 뜻이 없다)을 받아도 1단계 판 그대로
+  assert.equal(stageFP(1, { flame: false, relicsOpen: R.RELIC_IDS }), STAGE1_FP);
+});
+/* 2단계(탄 효과·탄종 상자·시너지·장애물)까지 연 판의 지문 — 장애물(기획서 4절)을 넣은 직후 코드로 잰 값. 3단계(유물)를 더해도 2단계 판은 그대로여야 한다
+   (밸런스 조정으로 2단계 수치를 일부러 바꾸면 다시 잰다). 표본 열두 판 중 여덟 판이 4구간(장애물)에 닿는다 */
+const STAGE2_FP = 1312263951;
+test('2단계까지 연 판(unl 2)의 지문 — STAGE2_FP(장애물까지, 1단계와 같은 식). 앞으로 열 줄의 옵션(화염병 false·유물)을 받아도 그대로', () => {
+  assert.equal(stageFP(2), STAGE2_FP);
+  assert.equal(stageFP(2, { flame: false, relicsOpen: R.RELIC_IDS }), STAGE2_FP);
 });
 
 test('3택 1(opt.unl 1): 첫 보스가 쓰러지고 연출(ENDLESS.wait)이 끝나면 카드가 뜨고 판이 멈춘다(step이 틱을 세지 않는다) — 서로 다른 종류 CARD.count장까지, CARD.kinds 순서, 같은 시드·같은 입력이면 같은 카드, 시드마다 다른 카드', () => {
@@ -562,6 +569,979 @@ test('3택 1 이어하기: 카드가 떠 있는 판을 저장·복원하면 같�
       assert.equal(C.stateHash(t), C.stateHash(s), `${k}틱 뒤 갈라졌다`);
       if (k === 200) { const u = C.restore(JSON.parse(JSON.stringify(C.snapshot(s)))); assert.deepEqual(u.endless.picks, [cardKey(of[i])]); assert.equal(C.stateHash(u), C.stateHash(s)); }
     }
+  }
+});
+
+/* ---------- 단계 해금 2단계: 탄 효과·탄종 상자·시너지(단계 해금 기획서 1·2·3절) ---------- */
+const CARD2 = { ...UP10, unl: 2, ammoOpen: R.AMMO_IDS };
+const fxKey = (c) => (c.k === 'fx' ? 'fx:' + c.a : cardKey(c));
+/* 그 판의 2단계 카드 후보(규칙을 테스트 쪽에서 다시 적는다): up = 3구간 보스 뒤, completes(id) = 그것을 얻으면 새로 켜지는 시너지가 있다 */
+const pool2 = (o) => {
+  const q = o.squad, e = o.endless, fx = e.fx;
+  const up = e.bosses >= 3;
+  const has = (id) => (R.AMMO[id] ? (fx[id] | 0) > 0 : C.SP_KINDS.includes(id) ? q.sp.some((m) => m.k === id) : !!(o.hero && o.hero.id === id));
+  const completes = (id) => !has(id) && R.COMBO_IDS.some((c) => R.COMBOS[c].need.includes(id) && R.COMBOS[c].need.every((x) => x === id || has(x)));
+  const units = C.SP_KINDS.filter((k) => { const m = q.sp.find((x) => x.k === k); return (m ? m.lv < 3 : q.sp.length < C.SP_MAX && q.n >= C.SP_ESCORT * (q.sp.length + 1)) && (up || !completes(k)); });
+  const nFx = R.AMMO_IDS.filter((a) => fx[a]).length;
+  const fxs = R.AMMO_IDS.filter((a) => (e.ammo.includes(a) || o.ammo === a) && (fx[a] ? up && fx[a] < 3 : nFx < 2) && (up || !completes(a)));
+  const kinds = [q.n < C.MAX_N && 'men', q.tier < 3 && 'gun', units.length && 'unit', fxs.length && 'fx'].filter(Boolean);
+  return { up, units, fxs, kinds, completes };
+};
+const ORDER2 = ['men', 'gun', 'unit', ...R.AMMO_IDS.map((a) => 'fx:' + a)];
+const ordKey = (c) => (c.k === 'fx' ? 'fx:' + c.a : c.k);
+/* 카드 묶음 하나가 규칙대로인가 */
+function checkOffer2(o, of, name) {
+  const p = pool2(o);
+  const lab = `${name}: ${of ? of.map(fxKey).join(',') : '없음'} (후보 ${p.kinds.join(',')} / 특수병 ${p.units.join(',')} / 효과 ${p.fxs.join(',')})`;
+  if (!p.kinds.length) { assert.equal(of, null, lab); return p; }
+  assert.ok(of && of.length, lab);
+  const cats = [...new Set(of.map((c) => c.k))];
+  for (const k of cats) assert.ok(p.kinds.includes(k), `${lab}: ${k}는 후보가 아니다`);
+  for (const k of ['men', 'gun', 'unit']) assert.ok(of.filter((c) => c.k === k).length <= 1, `${lab}: ${k} 두 장`);
+  const fxCards = of.filter((c) => c.k === 'fx');
+  assert.equal(new Set(fxCards.map((c) => c.a)).size, fxCards.length, `${lab}: 같은 효과 두 장`);
+  if (p.kinds.length >= C.CARD.count) {
+    assert.equal(cats.length, C.CARD.count, `${lab}: 서로 다른 범주 ${C.CARD.count}개`);
+    assert.equal(of.length, C.CARD.count, lab);
+  } else {
+    assert.deepEqual(cats.sort(), p.kinds.slice().sort(), `${lab}: 범주가 모자라면 다 나온다`);
+    const nfx = p.kinds.includes('fx') ? Math.min(p.fxs.length, 1 + C.CARD.count - p.kinds.length) : 0;
+    assert.equal(fxCards.length, nfx, `${lab}: 모자란 만큼 다른 탄 효과로 채운다`);
+  }
+  assert.deepEqual(of.map(ordKey), of.map(ordKey).sort((x, y) => ORDER2.indexOf(x) - ORDER2.indexOf(y)), `${lab}: 보이는 순서(CARD.kinds2, 탄 효과는 AMMO_IDS 순)`);
+  for (const c of of) {
+    const id = c.k === 'unit' ? c.u : c.k === 'fx' ? c.a : '';
+    if (c.k === 'unit') assert.ok(p.units.includes(c.u), `${lab}: ${c.u}는 후보가 아니다`);
+    if (c.k === 'fx') assert.ok(p.fxs.includes(c.a), `${lab}: ${c.a}는 후보가 아니다`);
+    assert.equal(c.syn === true, !!id && p.up && p.completes(id), `${lab}: ${fxKey(c)}의 syn 표시`);
+    if (c.syn !== undefined) assert.equal(c.syn, true);
+    if (!p.up && id) assert.ok(!p.completes(id), `${lab}: 3구간 보스 전에는 시너지를 완성하는 카드가 없다`);
+    const f = C.cardInfo(o, c);
+    assert.ok(f.to !== f.from, `${lab}: 쓸모없는 카드`);
+  }
+  // 3구간 보스 뒤: 시너지를 완성하는 대상을 먼저 고른다
+  if (p.up) {
+    const u = of.find((c) => c.k === 'unit');
+    if (u && p.units.some(p.completes)) assert.ok(p.completes(u.u), `${lab}: 시너지를 완성하는 특수병을 먼저`);
+    const synFx = p.fxs.filter(p.completes).length;
+    assert.equal(fxCards.filter((c) => c.syn).length, Math.min(fxCards.length, synFx), `${lab}: 시너지를 완성하는 효과를 먼저`);
+  }
+  return p;
+}
+const sp3 = (lv) => C.SP_KINDS.map((k, i) => ({ id: 90000 + i, k, cd: 0.6, lv }));
+const setFx = (o, fx, ammo) => { o.endless.fx = { ...fx }; if (ammo) o.ammo = ammo; else delete o.ammo; };
+
+test('단계 해금(store.endlessUnlocks): 1회차 엔딩 → 1, + 무한모드 3구간(best ≥ 2) → 2, + 첫 대왕(best ≥ 6) → 3(만든 단계까지). 화염병은 2회차 엔딩, 유물은 3단계의 넷 + 대왕 누적 2·3·4·5번에 하나씩. endlessStage는 그 unl', () => {
+  const base4 = ['compass', 'banner', 'megaphone', 'coil'];
+  assert.deepEqual(R.RELIC_IDS, [...base4, 'fourth', 'heart', 'bag', 'pouch']);
+  assert.deepEqual(R.RELIC_IDS.map((id) => R.RELICS[id].kings), [0, 0, 0, 0, 2, 3, 4, 5]);
+  const sv = (o) => S.normalize(o);
+  const ended1 = { maxL: 61 }, ended2 = { maxL: 75, cyc: { 2: { maxL: 61 } } };
+  assert.equal(S.endedCycles(sv(ended2)), 2);
+  const cases = [
+    // [저장, stageMax, { unl, flame, relics, next }]
+    [{ maxL: 40, endless: { best: 9, kings: 4 } }, 3, { unl: 0, flame: false, relics: [], next: null }],
+    [{ ...ended1 }, 1, { unl: 1, flame: false, relics: [], next: null }],
+    [{ ...ended1 }, 2, { unl: 1, flame: false, relics: [], next: { unl: 2, best: 2 } }],
+    [{ ...ended1, endless: { best: 1 } }, 3, { unl: 1, flame: false, relics: [], next: { unl: 2, best: 2 } }],
+    [{ ...ended1, endless: { best: 2 } }, 1, { unl: 1, flame: false, relics: [], next: null }],
+    [{ ...ended1, endless: { best: 2 } }, 2, { unl: 2, flame: false, relics: [], next: null }],
+    [{ ...ended1, endless: { best: 5, kings: 3 } }, 3, { unl: 2, flame: false, relics: [], next: { unl: 3, best: 6 } }],
+    [{ ...ended1, endless: { best: 6 } }, 2, { unl: 2, flame: false, relics: [], next: null }],
+    // kings는 1단계 뒤부터 셌다 — 첫 대왕 기록(best ≥ 6)이 있으면 적어도 1
+    [{ ...ended1, endless: { best: 6, kings: 0 } }, 3, { unl: 3, flame: false, relics: base4, next: { relic: 'fourth', kings: 2 } }],
+    [{ ...ended1, endless: { best: 7, kings: 2 } }, 3, { unl: 3, flame: false, relics: [...base4, 'fourth'], next: { relic: 'heart', kings: 3 } }],
+    [{ ...ended1, endless: { best: 12, kings: 3 } }, 3, { unl: 3, flame: false, relics: [...base4, 'fourth', 'heart'], next: { relic: 'bag', kings: 4 } }],
+    [{ ...ended1, endless: { best: 12, kings: 4 } }, 3, { unl: 3, flame: false, relics: R.RELIC_IDS.slice(0, 7), next: { relic: 'pouch', kings: 5 } }],
+    [{ ...ended1, endless: { best: 30, kings: 9 } }, 3, { unl: 3, flame: false, relics: R.RELIC_IDS, next: null }],
+    // 2회차 엔딩: 화염병(무한모드 기록과 상관없이)
+    [{ ...ended2 }, 2, { unl: 1, flame: true, relics: [], next: { unl: 2, best: 2 } }],
+    [{ ...ended2, endless: { best: 6, kings: 5 } }, 5, { unl: 3, flame: true, relics: R.RELIC_IDS, next: null }],
+  ];
+  for (const [o, m, want] of cases) {
+    const d = sv(o);
+    assert.deepEqual(S.endlessUnlocks(d, m), want, `${JSON.stringify(o)} · stageMax ${m}`);
+    assert.equal(S.endlessStage(d, m), want.unl, 'endlessStage = endlessUnlocks().unl');
+  }
+  // 기본 stageMax는 1(예전 endlessStage 그대로), 지금 만든 단계는 CARD.stageMax
+  assert.equal(C.CARD.stageMax, 2);
+  assert.equal(S.endlessStage(sv({ ...ended1, endless: { best: 9 } })), 1);
+  assert.equal(S.endlessUnlocks(sv({ ...ended1, endless: { best: 9 } }), C.CARD.stageMax).unl, 2);
+});
+
+test('2단계 옵션: s.endless에는 그 단계가 열려 뜻이 있을 때만 싣는다 — fx(unl ≥ 2, 출격 탄종 Lv2), flame(카드가 있는 판에 true일 때만), relicsOpen(unl ≥ 3 — 아직 안 만든 단계라 지금은 없다). 이어하기는 이상한 값을 고친다', () => {
+  const keys = (s) => Object.keys(s.endless).sort();
+  const K1 = ['ammo', 'bank', 'bosses', 'offer', 'picks', 'seed', 'seg', 'unl', 'wait', 'z0'];
+  assert.deepEqual(keys(C.newEndless({ seed: 9, ...UP10, unl: 1, flame: false, relicsOpen: R.RELIC_IDS })), K1);
+  assert.deepEqual(keys(C.newEndless({ seed: 9, ...UP10, unl: 1, flame: true })), [...K1, 'flame'].sort());
+  for (const flame of [false, 1, 'yes', null]) assert.ok(!('flame' in C.newEndless({ seed: 9, ...UP10, unl: 2, flame }).endless), `flame ${String(flame)}`);
+  assert.deepEqual(keys(C.newEndless({ seed: 9, ...UP10, flame: true, relicsOpen: R.RELIC_IDS })), PLAIN_KEYS, '카드 없는 판에는 아무것도');
+  const a = C.newEndless({ seed: 9, ...CARD2, relicsOpen: R.RELIC_IDS });
+  assert.deepEqual(keys(a), [...K1, 'fx', 'obsSeen'].sort(), '2단계: 탄 효과 + 알린 장애물 종류(4절)');
+  assert.deepEqual(a.endless.obsSeen, []);
+  assert.deepEqual(a.endless.fx, {}, '보통탄 출격: 빈 슬롯 둘');
+  assert.equal(a.endless.unl, 2);
+  for (const id of R.AMMO_IDS) assert.deepEqual(C.newEndless({ seed: 9, ...CARD2, ammo: id }).endless.fx, { [id]: R.FX_BASE_LV }, `${id} 출격: 한 칸을 Lv2로`);
+  assert.equal(R.FX_BASE_LV, 2);
+  assert.equal(C.fxSlots(a), 2);
+  assert.equal(C.newEndless({ seed: 9, ...UP10, unl: 7 }).endless.unl, C.CARD.stageMax);
+  // 해시: 화염병·탄 효과는 상태다
+  const h = (o) => C.stateHash(C.newEndless({ seed: 9, ...o }));
+  assert.notEqual(h({ ...CARD2, flame: true }), h(CARD2));
+  assert.notEqual(h({ ...UP10, unl: 1, flame: true }), h({ ...UP10, unl: 1 }));
+  assert.notEqual(h(CARD2), h({ ...UP10, unl: 1, ammoOpen: R.AMMO_IDS }));
+  // 3단계(유물)를 만든 것처럼 해 보면: 열린 유물 중 아는 것만 한 번씩, 주지 않으면 빈 목록 — 해시·이어하기에 실린다
+  const was = C.CARD.stageMax;
+  try {
+    C.CARD.stageMax = 3;
+    const r = C.newEndless({ seed: 9, ...CARD2, unl: 3, relicsOpen: ['coil', 'nope', 'coil', 'compass', 5] });
+    assert.deepEqual(r.endless.relicsOpen, ['coil', 'compass']);
+    assert.deepEqual(C.newEndless({ seed: 9, ...CARD2, unl: 3 }).endless.relicsOpen, []);
+    assert.notEqual(C.stateHash(r), C.stateHash(C.newEndless({ seed: 9, ...CARD2, unl: 3, relicsOpen: ['coil'] })));
+    const o = C.snapshot(r);
+    o.endless.relicsOpen = ['heart', 'x', 'heart', 'pouch'];
+    assert.deepEqual(C.restore(o).endless.relicsOpen, ['heart', 'pouch']);
+    const o2 = C.snapshot(r); o2.endless.relicsOpen = 'x';
+    assert.deepEqual(C.restore(o2).endless.relicsOpen, []);
+  } finally { C.CARD.stageMax = was; }
+  // 이어하기: 3단계 아래 판의 유물, 카드 없는 판의 화염병·탄 효과, 1단계 판의 탄 효과는 버린다. 화염병은 true만
+  const snap = (o, mod) => { const x = JSON.parse(JSON.stringify(C.snapshot(C.newEndless({ seed: 9, ...o })))); mod(x.endless, x); return C.restore(x); };
+  assert.ok(!('relicsOpen' in snap(CARD2, (e) => { e.relicsOpen = ['coil']; }).endless));
+  assert.ok(!('fx' in snap({ ...UP10, unl: 1 }, (e) => { e.fx = { pierce: 2 }; }).endless));
+  assert.deepEqual(keys(snap(UP10, (e) => { e.fx = { pierce: 2 }; e.flame = true; e.relicsOpen = []; })), PLAIN_KEYS);
+  assert.ok(!('flame' in snap(CARD2, (e) => { e.flame = 'yes'; }).endless));
+  assert.equal(snap(CARD2, (e) => { e.flame = true; }).endless.flame, true);
+  // 탄 효과: 아는 탄종만 Lv1..3, 슬롯 수까지(출격 탄종 먼저, 그다음 AMMO_IDS 순서), 깨졌으면 출격 탄종 Lv2에서 다시
+  assert.deepEqual(snap({ ...CARD2, ammo: 'rapid' }, (e) => { e.fx = { pierce: 7, nope: 2, burst: 'x', frost: 1, rapid: 2 }; }).endless.fx, { rapid: 2, pierce: 3 });
+  assert.deepEqual(snap(CARD2, (e) => { e.fx = { frost: 1.8, burst: 0, pierce: -1 }; }).endless.fx, { frost: 1 });
+  for (const bad of [undefined, null, 'x', [], 7]) {
+    assert.deepEqual(snap({ ...CARD2, ammo: 'burst' }, (e) => { e.fx = bad; }).endless.fx, { burst: 2 }, `깨진 fx ${JSON.stringify(bad)}`);
+    assert.deepEqual(snap(CARD2, (e) => { e.fx = bad; }).endless.fx, {});
+  }
+});
+
+test('탄 효과 수치(roster.fxVal·fxText): Lv1·2·3 = 그 탄종의 좋은 점 50·100·150% — 관통 30·60·90%, 작렬 둘레 1m 18·35·53%, 속사 화력 +8·15·23%, 빙결 0.8초 13·25·38% 느림. 대신 쪽은 없다', () => {
+  assert.deepEqual(R.FX_LV, [0.5, 1, 1.5]);
+  assert.equal(R.FX_LV_MAX, 3);
+  assert.equal(R.FX_SLOTS, 2);
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  const want = { pierce: ['pierce', [0.3, 0.6, 0.9]], burst: ['splash', [0.175, 0.35, 0.525]], rapid: ['dmg', [1.075, 1.15, 1.225]], frost: ['slow', [0.125, 0.25, 0.375]] };
+  for (const [id, [k, vs]] of Object.entries(want)) {
+    for (let lv = 1; lv <= 3; lv++) {
+      const v = R.fxVal(id, lv);
+      assert.ok(near(v[k], vs[lv - 1]), `${id} Lv${lv} ${k} ${v[k]}`);
+      assert.deepEqual(Object.keys(v).sort(), (id === 'burst' ? ['r', 'splash'] : id === 'frost' ? ['T', 'slow'] : [k]).sort(), `${id}: 좋은 점만(피해·사거리 없음)`);
+    }
+    // 레벨은 1..3으로 자른다
+    assert.deepEqual(R.fxVal(id, 0), R.fxVal(id, 1));
+    assert.deepEqual(R.fxVal(id, 9), R.fxVal(id, 3));
+  }
+  assert.equal(R.fxVal('burst', 2).r, 1);
+  assert.equal(R.fxVal('frost', 3).T, 0.8);
+  assert.deepEqual(R.fxVal('nope', 2), {});
+  assert.deepEqual([1, 2, 3].map((l) => R.fxText('pierce', l)), ['뒤의 좀비 하나에 30%', '뒤의 좀비 하나에 60%', '뒤의 좀비 하나에 90%']);
+  assert.deepEqual([1, 2, 3].map((l) => R.fxText('burst', l)), ['둘레 1m에 18%', '둘레 1m에 35%', '둘레 1m에 53%']);
+  assert.deepEqual([1, 2, 3].map((l) => R.fxText('rapid', l)), ['화력 +8%', '화력 +15%', '화력 +23%']);
+  assert.deepEqual([1, 2, 3].map((l) => R.fxText('frost', l)), ['0.8초 동안 13% 느리게', '0.8초 동안 25% 느리게', '0.8초 동안 38% 느리게']);
+  // 시너지 다섯(이름·글은 roster.COMBOS — 영웅 짝 배수 SYNERGY와 다른 이름)
+  assert.deepEqual(R.COMBO_IDS, ['pierceBurst', 'frostSniper', 'burstRocket', 'pierceSniper', 'rapidMungchi']);
+  assert.deepEqual(R.COMBO_IDS.map((id) => R.COMBOS[id].need), [['pierce', 'burst'], ['frost', 'sniper'], ['burst', 'rocket'], ['pierce', 'sniper'], ['rapid', 'mungchi']]);
+  assert.deepEqual([R.COMBOS.frostSniper.v, R.COMBOS.burstRocket.v, R.COMBOS.rapidMungchi.v, R.HEROES.mungchi.skill.dur], [0.5, 0.4, 7, 5]);
+  for (const id of R.COMBO_IDS) assert.ok(R.COMBOS[id].name && R.COMBOS[id].text(), id);
+  assert.equal(R.COMBOS.rapidMungchi.text(), '돌격 나팔 5 → 7초');
+  assert.ok(Array.isArray(R.SYNERGY), 'SYNERGY는 그대로(영웅 짝 배수)');
+});
+
+test('2단계 카드(판 안 순서 포함): 증원·무기·특수병·탄 효과 넷 중 서로 다른 범주 3개(모자라면 다른 탄 효과로 채움), 별로 열린 탄종만, 슬롯이 차면 가진 효과만. 1~2구간 보스 뒤에는 새 효과·기본 카드만, 3구간 보스 뒤부터 레벨 업과 시너지를 완성하는 카드(syn 표시, 먼저 고름)', () => {
+  assert.deepEqual(C.CARD.kinds2, ['men', 'gun', 'unit', 'fx']);
+  assert.deepEqual([C.RUN_ORDER.up, C.RUN_ORDER.obstacle, C.RUN_ORDER.relic, C.FX_UP_FROM], [3, 4, 6, 3]);
+  const { s } = toOffer(4, CARD2);
+  assert.equal(s.endless.bosses, 1);
+  checkOffer2(s, C.offerOf(s), '첫 보스 뒤(그대로)');
+  assert.ok(C.offerOf(s).every((c) => c.k !== 'ammo'), '탄종 바꾸기 카드는 2단계에서 탄 효과로 바뀐다');
+  const seen = {};
+  const cases = [
+    // 1~2구간 보스 뒤: 출격 작렬탄(Lv2) — 관통(관통+작렬)·속사(속사+뭉치)·로켓병(작렬+로켓병)은 시너지를 완성하므로 아직, 작렬 레벨 업도 아직
+    ['보스 1, 출격 작렬탄', (o) => { setFx(o, { burst: 2 }, 'burst'); o.squad.sp = []; o.endless.bosses = 1; }, (p, of) => { assert.deepEqual(p.fxs, ['frost']); assert.deepEqual(p.units, ['medic', 'sniper']); assert.ok(of.every((c) => !c.syn)); }],
+    ['보스 2, 출격 작렬탄', (o) => { setFx(o, { burst: 2 }, 'burst'); o.squad.sp = []; o.endless.bosses = 2; }, (p) => { assert.deepEqual(p.fxs, ['frost']); }],
+    ['보스 3, 출격 작렬탄', (o) => { setFx(o, { burst: 2 }, 'burst'); o.squad.sp = []; o.endless.bosses = 3; }, (p) => { assert.deepEqual(p.fxs, R.AMMO_IDS); assert.deepEqual(p.units, C.SP_KINDS); }],
+    ['보스 7, 저격수와 빙결 Lv1', (o) => { setFx(o, { frost: 1 }); o.squad.sp = [{ id: 90020, k: 'sniper', cd: 0.6, lv: 1 }]; o.endless.bosses = 7; }, (p) => { assert.ok(p.completes('pierce') && !p.completes('frost')); }],
+    ['보스 2, 저격수와 빙결 Lv1(슬롯 하나 남음)', (o) => { setFx(o, { frost: 1 }); o.squad.sp = [{ id: 90020, k: 'sniper', cd: 0.6, lv: 1 }]; o.endless.bosses = 2; }, (p) => { assert.deepEqual(p.fxs, ['burst']); }],
+    ['보스 2, 슬롯이 참', (o) => { setFx(o, { burst: 2, frost: 1 }, 'burst'); o.endless.bosses = 2; }, (p) => { assert.deepEqual(p.fxs, []); }],
+    ['보스 4, 슬롯이 참(빙결 Lv3)', (o) => { setFx(o, { pierce: 1, frost: 3 }); o.endless.bosses = 4; }, (p) => { assert.deepEqual(p.fxs, ['pierce']); }],
+    ['보스 4, 슬롯이 참(둘 다 Lv3)', (o) => { setFx(o, { pierce: 3, frost: 3 }); o.endless.bosses = 4; }, (p) => { assert.deepEqual(p.fxs, []); }],
+    ['열린 탄종 없음', (o) => { setFx(o, {}); o.endless.ammo = []; o.endless.bosses = 5; }, (p) => { assert.deepEqual(p.fxs, []); }],
+    ['열린 탄종이 빙결뿐', (o) => { setFx(o, {}); o.endless.ammo = ['frost']; o.endless.bosses = 5; }, (p) => { assert.deepEqual(p.fxs, ['frost']); }],
+    ['출격 탄종은 별 목록에 없어도 레벨 업', (o) => { setFx(o, { rapid: 2 }, 'rapid'); o.endless.ammo = []; o.endless.bosses = 3; }, (p) => { assert.deepEqual(p.fxs, ['rapid']); }],
+    ['범주 하나(탄 효과뿐) — 세 장 다 탄 효과', (o) => { setFx(o, {}); o.squad.tier = 3; o.squad.n = C.MAX_N; o.squad.sp = sp3(3); o.endless.bosses = 3; }, (p, of) => { assert.equal(of.length, 3); assert.ok(of.every((c) => c.k === 'fx')); }],
+    ['범주 둘(특수병·탄 효과) — 탄 효과 두 장', (o) => { setFx(o, {}); o.squad.tier = 3; o.squad.n = C.MAX_N; o.endless.bosses = 3; }, (p, of) => { assert.deepEqual(of.map((c) => c.k), ['unit', 'fx', 'fx']); }],
+    ['범주 둘, 효과 하나뿐', (o) => { setFx(o, { pierce: 2, burst: 3 }); o.squad.tier = 3; o.squad.n = C.MAX_N; o.endless.bosses = 3; }, (p, of) => { assert.deepEqual(of.map(fxKey), ['unit:' + of[0].u, 'fx:pierce']); }],
+  ];
+  for (const [name, mod, more] of cases) {
+    for (const { t, of } of regen(s, mod)) {
+      const p = checkOffer2(t, of, name);
+      if (more) more(p, of || []);
+      for (const c of of || []) { seen[fxKey(c)] = 1; if (c.syn) seen['syn:' + fxKey(c)] = 1; }
+    }
+  }
+  for (const k of ['men', 'gun', ...R.AMMO_IDS.map((a) => 'fx:' + a), 'unit:medic', 'unit:sniper', 'unit:rocket', 'syn:unit:rocket', 'syn:fx:pierce', 'syn:fx:rapid']) assert.ok(seen[k], `${k}를 봤다: ${Object.keys(seen).join(' ')}`);
+});
+
+test('2단계 카드 고르기: 탄 효과 카드는 레벨 +1(새 효과는 Lv1, Lv3까지) — fxUp·card 이벤트(from → to), 고른 기록 fx:탄종. 시너지를 완성하는 카드(특수병·탄 효과)를 고르면 그 시너지가 켜지고 combo 이벤트', () => {
+  const { s } = toOffer(4, CARD2);
+  let n = 0;
+  const combos = new Set();
+  const states = [
+    ...regen(s, (o) => { setFx(o, { burst: 2 }, 'burst'); o.squad.sp = []; o.endless.bosses = 3; }, 20),
+    ...regen(s, (o) => { setFx(o, { pierce: 2 }); o.squad.tier = 3; o.squad.n = C.MAX_N; o.squad.sp = []; o.endless.bosses = 4; }, 20),
+  ];
+  for (const { t, of } of states) {
+    for (let i = 0; i < of.length; i++) {
+      const c = of[i];
+      if (c.k !== 'fx' && !c.syn) continue;
+      const u = structuredClone(t);
+      const info = C.cardInfo(u, c);
+      const lv0 = C.fxLv(u, c.a);
+      const on0 = C.combosOn(u);
+      assert.equal(C.pickCard(u, i), true);
+      const lab = fxKey(c);
+      if (c.k === 'fx') {
+        assert.deepEqual([info.from, info.to], [lv0, lv0 + 1], lab);
+        assert.equal(C.fxLv(u, c.a), lv0 + 1, `${lab}: 레벨 +1`);
+        assert.deepEqual(u.endless.picks.at(-1), 'fx:' + c.a);
+        const up = u.ev.filter((e) => e.t === 'fxUp');
+        assert.deepEqual(up.map((e) => [e.a, e.lv, e.via]), [[c.a, lv0 + 1, 'card']], lab);
+        const ce = u.ev.find((e) => e.t === 'card');
+        assert.deepEqual([ce.k, ce.a, ce.from, ce.to], ['fx', c.a, lv0, lv0 + 1]);
+        n++;
+      }
+      // 켜진 시너지 = 카드가 알린 것(cardInfo.combos), 이벤트도 그만큼
+      const on = C.combosOn(u).filter((x) => !on0.includes(x));
+      assert.deepEqual(on, info.combos || [], `${lab}: 새로 켜진 시너지`);
+      assert.equal(!!c.syn, on.length > 0, `${lab}: syn 표시 = 시너지를 완성한다`);
+      assert.deepEqual(u.ev.filter((e) => e.t === 'combo').map((e) => e.id), on, `${lab}: combo 이벤트`);
+      for (const x of on) { combos.add(x); assert.ok(C.comboOn(u, x)); }
+    }
+  }
+  assert.ok(n >= 10, `탄 효과 카드 ${n}번`);
+  for (const id of ['pierceBurst', 'burstRocket', 'rapidMungchi', 'pierceSniper']) assert.ok(combos.has(id), `${id}가 켜졌다: ${[...combos]}`);
+  // Lv3에서 멈춘다: 가진 효과가 Lv3이면 그 효과 카드는 나오지 않는다(위 후보 규칙) — 억지로 고르게 해도 넘지 않는다
+  const t = regen(s, (o) => { setFx(o, { pierce: 2 }); o.endless.bosses = 4; }, 1)[0].t;
+  t.endless.offer = [{ k: 'fx', a: 'pierce' }];
+  t.endless.fx.pierce = 3;
+  C.pickCard(t, 0);
+  assert.equal(t.endless.fx.pierce, 3);
+  assert.ok(!t.ev.some((e) => e.t === 'fxUp'));
+});
+
+/* 탄 효과의 세기를 정해진 판에서: 무한모드 2단계 판을 비우고 좀비·총알을 손으로 놓는다 */
+const G0 = structuredClone(C.newEndless({ seed: 7, ...UP10 }).foes.find((f) => f.kind === 'grunt'));
+const mkFoe = (i, x, z) => ({ ...structuredClone(G0), id: 9000 + i, x, z, hp: 1e6, max: 1e6, alive: true, awake: true, spd: 1, home: 0 });
+const bare2 = (fx, extra = {}) => {
+  const s = C.newEndless({ seed: 7, ...CARD2, ...extra });
+  if (fx) s.endless.fx = { ...fx };
+  s.rows = []; s.props = []; s.saws = []; s.foes = []; s.bullets = []; delete s.divs;
+  s.squad.fireAcc = -9;   // 이 틱에는 새로 쏘지 않는다
+  return s;
+};
+
+test('탄 효과의 세기(정해진 판): 관통 Lv1·2·3은 뒤의 좀비 하나에 30·60·90%, 작렬은 둘레 1m에 17.5·35·52.5%, 빙결은 0.8초 동안 12.5·25·37.5% 느리게, 속사는 화력 ×1.075·1.15·1.225. 출격 탄종은 대신 쪽(피해·사거리)을 그대로 진다', () => {
+  // 한 줄로 선 좀비 A(10m)·B(12m), B 옆 C, A 옆 D에 100짜리 총알 한 발
+  const shot = (fx, extra) => {
+    const s = bare2(fx, extra);
+    const z = s.squad.z;
+    s.foes = [mkFoe(0, 0, z + 10), mkFoe(1, 0, z + 12), mkFoe(2, 0.8, z + 12.2), mkFoe(3, 0.8, z + 10.2)];
+    s.bullets = [{ x: 0, z: z + 9.5, d: 5, dmg: 100, hm: 1 }];
+    C.step(s, { dir: 0 });
+    return { hp: s.foes.map((f) => +(1e6 - f.hp).toFixed(6)), slow: s.foes.map((f) => (f.slowT > s.t ? +(f.slowT - s.t).toFixed(4) : 0)), ev: s.ev.map((e) => e.t) };
+  };
+  assert.deepEqual(shot({}).hp, [100, 0, 0, 0], '효과 없음');
+  for (const [lv, k] of [[1, 30], [2, 60], [3, 90]]) assert.deepEqual(shot({ pierce: lv }).hp, [100, k, 0, 0], `관통 Lv${lv}`);
+  for (const [lv, k] of [[1, 17.5], [2, 35], [3, 52.5]]) assert.deepEqual(shot({ burst: lv }).hp, [100, 0, 0, k], `작렬 Lv${lv}`);
+  // 관통 + 작렬(연쇄 폭발): 뚫고 지난 B 둘레에서도 터진다
+  assert.deepEqual(shot({ pierce: 2, burst: 2 }).hp, [100, 60, 35, 35], '연쇄 폭발');
+  assert.deepEqual(shot({ pierce: 3, burst: 1 }).hp, [100, 90, 17.5, 17.5]);
+  assert.ok(shot({ pierce: 1, burst: 1 }).ev.filter((e) => e === 'splash').length === 2 && shot({ pierce: 1 }).ev.includes('pierce'));
+  for (const lv of [1, 2, 3]) assert.deepEqual(shot({ frost: lv }).slow, [0.8, 0, 0, 0], `빙결 Lv${lv}: 맞은 좀비만 0.8초`);
+  // 출격 탄종(Lv2)은 1단계와 같은 몫, Lv3이면 좋은 점만 150%
+  assert.deepEqual(shot(null, { ammo: 'pierce' }).hp, [100, 60, 0, 0]);
+  assert.deepEqual(shot({ pierce: 3 }, { ammo: 'pierce' }).hp, [100, 90, 0, 0]);
+  assert.deepEqual(shot({ burst: 3 }, { ammo: 'burst' }).hp, [100, 0, 0, 52.5]);
+  // 느려지는 몫: 레벨마다(효과가 없으면 slowT가 있어도 그대로)
+  const slowK = (fx, extra) => {
+    const s = bare2(fx, extra);
+    const g = mkFoe(0, 0, s.squad.z + 40);
+    s.foes = [g];
+    const z1 = g.z; C.step(s, { dir: 0 }); const plain = z1 - g.z;
+    g.slowT = s.t + 1; const z2 = g.z; C.step(s, { dir: 0 });
+    return (z2 - g.z) / plain;
+  };
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-6, `${m}: ${a} ≠ ${b}`);
+  for (const [lv, k] of [[1, 0.125], [2, 0.25], [3, 0.375]]) near(slowK({ frost: lv }), 1 - k, `빙결 Lv${lv}`);
+  near(slowK({}), 1, '빙결이 없으면 안 느려진다');
+  near(slowK(null, { ammo: 'frost' }), 1 - R.AMMO.frost.slow, '출격 빙결탄(Lv2) = 1단계와 같은 몫');
+  near(slowK({ frost: 3 }, { ammo: 'frost' }), 1 - 0.375, '출격 빙결탄 Lv3');
+  // 총알 한 발의 피해·사거리
+  const first = (fx, extra) => {
+    const s = C.newEndless({ seed: 7, ...CARD2, ...extra });
+    if (fx) s.endless.fx = { ...fx };
+    for (let i = 0; i < 30 && !s.bullets.length; i++) C.step(s, { dir: 0 });
+    return s.bullets[s.bullets.length - 1];
+  };
+  const d0 = first({}).dmg;
+  const ratio = (fx, extra) => first(fx, extra).dmg / d0;
+  for (const [lv, k] of [[1, 1.075], [2, 1.15], [3, 1.225]]) near(ratio({ rapid: lv }), k, `속사 Lv${lv}`);
+  for (const id of ['pierce', 'burst', 'frost']) { near(ratio({ [id]: 3 }), 1, `${id} 효과는 피해를 깎지 않는다`); assert.equal(first({ [id]: 3 }).r, undefined, `${id} 효과는 사거리를 깎지 않는다`); }
+  near(ratio({ rapid: 2, pierce: 1 }), 1.15, '속사 + 관통');
+  // 출격 탄종: 대신 쪽 그대로 — 관통 −4%, 빙결 −3%, 작렬 사거리 27m, 속사 사거리 24m(Lv3이어도)
+  near(ratio(null, { ammo: 'pierce' }), R.AMMO.pierce.dmg, '출격 관통탄');
+  near(ratio({ pierce: 3 }, { ammo: 'pierce' }), R.AMMO.pierce.dmg, '출격 관통탄 Lv3');
+  near(ratio(null, { ammo: 'frost' }), R.AMMO.frost.dmg, '출격 빙결탄');
+  near(ratio(null, { ammo: 'rapid' }), R.AMMO.rapid.dmg, '출격 속사탄(Lv2 = 1단계와 같은 화력)');
+  near(ratio({ rapid: 3 }, { ammo: 'rapid' }), 1.225, '출격 속사탄 Lv3');
+  near(ratio({ burst: 2, rapid: 1 }, { ammo: 'burst' }), 1.075, '출격 작렬탄 + 속사 Lv1');
+  assert.equal(first(null, { ammo: 'burst' }).r, R.AMMO.burst.range);
+  assert.equal(first({ burst: 3 }, { ammo: 'burst' }).r, R.AMMO.burst.range);
+  assert.equal(first({ rapid: 3 }, { ammo: 'rapid' }).r, R.AMMO.rapid.range);
+  // 1단계 판은 탄종 그대로(효과 없이): 같은 출격 탄종이면 같은 피해
+  const s1 = C.newEndless({ seed: 7, ...UP10, unl: 1, ammo: 'rapid' });
+  for (let i = 0; i < 30 && !s1.bullets.length; i++) C.step(s1, { dir: 0 });
+  near(s1.bullets.at(-1).dmg / d0, R.AMMO.rapid.dmg, '1단계 판의 속사탄');
+});
+
+test('시너지 다섯(정해진 판): 얼음 조준(빙결 + 저격수) 느려진 적에게 저격 +50%, 꿰뚫는 저격(관통 + 저격수) 일직선 뒤 하나 더, 대폭발(작렬 + 로켓병) 반경 +0.4m, 긴 나팔(속사 + 뭉치) 5 → 7초 — 짝이 없거나 1단계 판이면 그대로', () => {
+  const snipe = (fx, { slowed = [], extra = {}, foes = [[0, 10], [0, 20], [2, 20]] } = {}) => {
+    const s = bare2(fx, extra);
+    s.squad.sp = [{ id: 99001, k: 'sniper', cd: 0, lv: 1 }];
+    const z = s.squad.z;
+    s.foes = foes.map(([x, dz], i) => mkFoe(i, x, z + dz));
+    for (const i of slowed) s.foes[i].slowT = 99;
+    C.step(s, { dir: 0 });
+    return { hp: s.foes.map((f) => 1e6 - f.hp), ev: s.ev.filter((e) => e.t === 'snipe'), s };
+  };
+  const base = snipe({}).hp[0];
+  assert.ok(base > 0);
+  assert.deepEqual(snipe({}).hp.map((v) => v / base), [1, 0, 0], '짝 없음: 첫 표적 하나');
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m}: ${a} ≠ ${b}`);
+  near(snipe({ frost: 1 }, { slowed: [0] }).hp[0] / base, 1.5, '얼음 조준: 느려진 적 +50%');
+  near(snipe({ frost: 3 }).hp[0] / base, 1, '얼음 조준: 안 느려진 적은 그대로');
+  near(snipe({}, { slowed: [0] }).hp[0] / base, 1, '빙결 효과가 없으면 느려져 있어도 그대로');
+  const th = snipe({ pierce: 1 });
+  assert.deepEqual(th.hp.map((v) => +(v / base).toFixed(9)), [1, 1, 0], '꿰뚫는 저격: 일직선 뒤 하나 더(옆 좀비는 아니다)');
+  assert.deepEqual(th.ev.map((e) => !!e.thru), [false, true]);
+  assert.deepEqual(snipe({ pierce: 1 }, { foes: [[0, 10], [0, 30], [0, 20]] }).hp.map((v) => +(v / base).toFixed(9)), [1, 0, 1], '가장 가까운 뒤 표적');
+  assert.deepEqual(snipe({ pierce: 1 }, { foes: [[0, 10], [0, 40]] }).hp.map((v) => +(v / base).toFixed(9)), [1, 0], '저격 사거리 밖은 아니다');
+  assert.deepEqual(snipe({ pierce: 1, frost: 1 }, { slowed: [1] }).hp.map((v) => +(v / base).toFixed(9)), [1, 1.5, 0], '둘 다: 뒤 표적이 느려져 있으면 +50%');
+  // 1단계 판(출격 빙결탄·관통탄 + 저격수): 시너지 없음
+  for (const ammo of ['frost', 'pierce']) {
+    const s = C.newEndless({ seed: 7, ...UP10, unl: 1, ammo, ammoOpen: R.AMMO_IDS });
+    s.rows = []; s.props = []; s.saws = []; s.bullets = []; delete s.divs; s.squad.fireAcc = -9;
+    s.squad.sp = [{ id: 99001, k: 'sniper', cd: 0, lv: 1 }];
+    s.foes = [mkFoe(0, 0, s.squad.z + 10), mkFoe(1, 0, s.squad.z + 20)];
+    s.foes[0].slowT = 99;
+    C.step(s, { dir: 0 });
+    assert.deepEqual(s.foes.map((f) => +((1e6 - f.hp) / base).toFixed(9)), [1, 0], `1단계 ${ammo}탄 + 저격수`);
+    assert.deepEqual(C.combosOn(s), []);
+  }
+  // 대폭발: 로켓 반경(레벨 반경 + 0.4m) — 쏘는 순간 정해져 로켓에 실린다(그림도 이 반경)
+  const rocket = (fx, lv = 1) => {
+    const s = bare2(fx);
+    s.squad.sp = [{ id: 99002, k: 'rocket', cd: 0, lv }];
+    s.foes = [mkFoe(0, 0, s.squad.z + 15)];
+    C.step(s, { dir: 0 });
+    return s.rockets[0].r;
+  };
+  near(rocket({}), R.unitVal('rocket', 'r', 1), '로켓 Lv1');
+  near(rocket({ burst: 1 }), R.unitVal('rocket', 'r', 1) + 0.4, '대폭발 Lv1');
+  near(rocket({ burst: 3 }, 3), R.unitVal('rocket', 'r', 3) + 0.4, '대폭발 Lv3');
+  // 긴 나팔: 뭉치 스킬 길이
+  const horn = (fx, extra = {}) => {
+    const s = fx === 'stage1' ? C.newEndless({ seed: 7, ...UP10, unl: 1, ammo: 'rapid' }) : bare2(fx, extra);
+    s.hero.charge = 1;
+    C.step(s, { dir: 0, skill: true });
+    return [s.hero.T, +s.hero.act.toFixed(6)];
+  };
+  assert.deepEqual(horn({}), [5, 5]);
+  assert.deepEqual(horn({ rapid: 1 }), [7, 7], '속사 + 뭉치');
+  assert.deepEqual(horn(null, { ammo: 'rapid' }), [7, 7], '출격 속사탄도 효과다');
+  assert.deepEqual(horn('stage1'), [5, 5], '1단계 판의 속사탄 + 뭉치는 그대로');
+  assert.deepEqual(horn({ rapid: 1 }, { hero: { id: 'bori', lv: 5 } }), [R.HEROES.bori.skill.dur, R.HEROES.bori.skill.dur], '다른 영웅은 그대로');
+  // 켜진 시너지 목록
+  const s = bare2({ pierce: 1, burst: 2 });
+  s.squad.sp = [{ id: 1, k: 'rocket', cd: 1, lv: 1 }, { id: 2, k: 'sniper', cd: 1, lv: 3 }];
+  assert.deepEqual(C.combosOn(s), ['pierceBurst', 'burstRocket', 'pierceSniper']);
+  s.endless.fx = { rapid: 1, frost: 1 };
+  assert.deepEqual(C.combosOn(s), ['frostSniper', 'rapidMungchi']);
+});
+
+test('탄종 상자: 무기 단계가 이미 3이면 구간의 무기 강화 상자(갈림길 보상·열쇠 상자 포함)가 탄종 상자로 — 내용물은 구간이 시작될 때 시드로 정해 상자에 실리고(카드와 같은 후보·판 안 순서), 얻을 수 없으면 병사로', () => {
+  const place = (seg, dz, off) => seg.props.map((p) => ({ ...p, id: p.id + off, z: p.z + dz }));
+  let conv = 0;
+  const seenA = new Set();
+  const fork = { fork: 0, key: 0 };
+  for (const seed of [1, 2, 3, 4, 5, 6, 8, 10]) {
+    const { s } = toOffer(seed, CARD2);
+    for (const [name, mod] of [
+      ['무기 3단계', (o) => { o.squad.tier = 3; o.endless.bosses = 3; }],
+      ['무기 2단계', (o) => { o.squad.tier = 2; o.endless.bosses = 3; }],
+      ['무기 3단계, 출격 작렬탄 · 보스 1', (o) => { o.squad.tier = 3; setFx(o, { burst: 2 }, 'burst'); o.squad.sp = []; o.endless.bosses = 1; }],
+      ['무기 3단계, 얻을 효과 없음', (o) => { o.squad.tier = 3; setFx(o, {}); o.endless.ammo = []; }],
+    ]) {
+      const o = C.snapshot(s);
+      mod(o);
+      o.endless.seg = 2;   // 다음은 3구간(정예 — 열쇠 상자가 있는 구간)
+      o.endless.offer = null;
+      const t = C.restore(o);
+      const q = t.squad;
+      const before = { n: q.n, tier: q.tier, z: q.z, seg: t.endless.seg, off: t.nextId };
+      const im = Math.max(0, C.offerOf(t).findIndex((c) => c.k === 'men'));
+      const twin = structuredClone(t);
+      C.pickCard(t, im);
+      C.pickCard(twin, im);
+      assert.deepEqual(t.props, twin.props, `${name}: 같은 판이면 같은 내용물`);
+      const built = place(C.buildSegment(t.endless.seed, before.seg + 1, before.n, before.tier), before.z + C.ENDLESS.lead, before.off);
+      // 내용물은 카드를 고른 뒤(구간이 시작되는 순간)의 무기 단계·후보로 정한다
+      const p = pool2(t);
+      const on = t.squad.tier >= 3 && p.fxs.length > 0;
+      if (name.includes('2단계')) assert.equal(on, t.squad.tier >= 3, '무기 2단계면 그대로(무기 카드로 3단계가 되면 바뀐다)');
+      if (name.includes('없음')) assert.equal(on, false);
+      for (let i = 0; i < built.length; i++) {
+        const a = built[i], b = t.props[i];
+        if (on && a.kind === 'crate' && a.reward.type === 'gun') {
+          assert.equal(b.reward.type, 'fx', `${name}: 무기 상자 → 탄종 상자`);
+          assert.ok(p.fxs.includes(b.reward.a), `${name}: 내용물 ${b.reward.a}는 후보(${p.fxs})`);
+          assert.deepEqual({ ...b, reward: a.reward }, a, `${name}: 내용물만 바뀐다`);
+          if (name.includes('보스 1')) assert.equal(b.reward.a, 'frost', '1~2구간 보스 뒤에는 새 효과·시너지를 완성하지 않는 것만');
+          conv++;
+          seenA.add(b.reward.a);
+          if (a.fork) fork.fork++;
+          if (a.key) fork.key++;
+        } else assert.deepEqual(b, a, `${name}: 다른 상자·소품은 그대로`);
+      }
+    }
+  }
+  assert.ok(conv >= 8 && fork.fork >= 1 && fork.key >= 1, `탄종 상자 ${conv}개(갈림길 ${fork.fork}, 열쇠 ${fork.key})`);
+  assert.ok(seenA.size >= 3, `내용물 ${[...seenA]}`);
+  // 부수면: 얻을 수 있으면 레벨 +1(fxUp via crate, crate 이벤트 type fx), 아니면 무기 상자처럼 병사로
+  const open = (fx, a, key = false) => {
+    const s = bare2(fx);
+    const z = s.squad.z;
+    const crate = { id: 9100, kind: 'crate', x0: -1.1, x1: 1.1, z: z + 10, hp: 1, max: 1, alive: true, hitT: -9, reward: { type: 'fx', a }, ...(key ? { key: true } : {}) };
+    s.props = [crate];
+    const worth = C.crateWorth(s, crate);
+    const n0 = s.squad.n;
+    s.bullets = [{ x: 0, z: z + 9.5, d: 5, dmg: 1e9, hm: 1 }];
+    C.step(s, { dir: 0 });
+    assert.equal(crate.alive, false);
+    return { s, fx: { ...s.endless.fx }, gain: s.squad.n - n0, ev: s.ev.filter((e) => e.t === 'crate' || e.t === 'fxUp' || e.t === 'combo'), worth };
+  };
+  const a = open({}, 'pierce');
+  assert.deepEqual(a.fx, { pierce: 1 });
+  assert.deepEqual(a.ev.map((e) => [e.t, e.type || e.via, e.a, e.lv]), [['fxUp', 'crate', 'pierce', 1], ['crate', 'fx', 'pierce', 1]]);
+  assert.equal(a.gain, 0);
+  assert.equal(a.worth, 3 + a.s.squad.n * C.FX_WORTH);
+  assert.deepEqual(open({ pierce: 2 }, 'pierce').fx, { pierce: 3 });
+  const c = open({ pierce: 1 }, 'burst');
+  assert.deepEqual(c.fx, { pierce: 1, burst: 1 });
+  assert.deepEqual(c.ev.filter((e) => e.t === 'combo').map((e) => e.id), ['pierceBurst'], '상자로 켜진 시너지도 combo');
+  for (const [fx, ax, why] of [[{ pierce: 3 }, 'pierce', 'Lv3'], [{ pierce: 1, frost: 2 }, 'burst', '슬롯이 참']]) {
+    const r = open(fx, ax);
+    assert.deepEqual(r.fx, fx, `${why}: 그대로`);
+    assert.ok(r.gain >= 5 && r.ev.some((e) => e.t === 'crate' && e.type === 'men'), `${why}: 병사로(+${r.gain})`);
+    assert.equal(r.worth, 2, `${why}: 봇이 보는 값`);
+  }
+  assert.equal(open({}, 'frost', true).worth, 3 + 32 * C.FX_WORTH + C.KEY_WORTH * 32, '열쇠 상자');
+  // 이어하기: 내용물이 실린다(모르는 탄종은 무기 상자로), 해시는 내용물을 본다
+  const s = bare2({});
+  s.props = [{ id: 9100, kind: 'crate', x0: -1.1, x1: 1.1, z: s.squad.z + 20, hp: 50, max: 50, alive: true, hitT: -9, reward: { type: 'fx', a: 'frost' } }];
+  const h = C.stateHash(s);
+  const r1 = C.restore(JSON.parse(JSON.stringify(C.snapshot(s))));
+  assert.deepEqual(r1.props[0].reward, { type: 'fx', a: 'frost' });
+  assert.equal(C.stateHash(r1), h);
+  const o = JSON.parse(JSON.stringify(C.snapshot(s)));
+  o.props[0].reward.a = 'rapid';
+  assert.notEqual(C.stateHash(C.restore(o)), h, '해시가 내용물을 본다');
+  o.props[0].reward.a = 'nope';
+  assert.deepEqual(C.restore(o).props[0].reward, { type: 'gun' });
+});
+
+test('2단계 판의 결정성·이어하기: 같은 시드·같은 입력이면 같은 판(카드·탄종 상자·시너지까지), 아무 틱에서나 저장·복원해도 매 틱 같다. 해시는 탄 효과 레벨·상자 내용물·카드의 syn 표시를 본다', () => {
+  const turn = (t, of) => (t.endless.bosses + of.findIndex((c) => c.k === 'fx' || c.syn) + 1) % of.length;
+  const play = (seed, co, snapAt = []) => {
+    const s = C.newEndless({ seed, ...co });
+    const hs = [];
+    const got = { fx: 0, crate: 0, combo: 0, syn: 0, fxPick: 0 };
+    let t = null;
+    while (s.phase !== 'lost' && s.endless.bosses < 6 && s.tick < 30000) {
+      const of = C.offerOf(s);
+      if (of) {
+        if (of.some((c) => c.syn)) got.syn++;
+        const i = turn(s, of);
+        if (of[i].k === 'fx') got.fxPick++;
+        C.pickCard(s, i);
+        if (t) { assert.deepEqual(C.offerOf(t), of); C.pickCard(t, i); }
+        hs.push(C.stateHash(s));
+      } else {
+        const inp = C.botInput(s);
+        C.step(s, inp);
+        if (t) C.step(t, inp);
+        if (s.tick % 100 === 0) hs.push(C.stateHash(s));
+      }
+      for (const e of s.ev) { if (e.t === 'fxUp') got[e.via === 'crate' ? 'crate' : 'fx']++; if (e.t === 'combo') got.combo++; }
+      if (t) assert.equal(C.stateHash(t), C.stateHash(s), `${seed}: ${s.tick}틱에 복원한 판이 갈라졌다`);
+      if (snapAt.includes(s.tick) || (snapAt.includes('fxcrate') && !t && s.props.some((p) => p.alive && p.reward && p.reward.type === 'fx'))) {
+        t = C.restore(JSON.parse(JSON.stringify(C.snapshot(s))));
+        assert.equal(C.stateHash(t), C.stateHash(s));
+        assert.deepEqual(t.endless.fx, s.endless.fx);
+      }
+    }
+    return { s, hs, got };
+  };
+  const all = { fx: 0, crate: 0, combo: 0, syn: 0, fxPick: 0 };
+  for (const [seed, ammo] of [[2, 'burst'], [5, ''], [11, 'pierce']]) {
+    const co = { ...CARD2, ...(ammo ? { ammo } : {}) };
+    const a = play(seed, co);
+    assert.deepEqual(play(seed, co).hs, a.hs, `${seed}: 같은 판`);
+    for (const at of [[900], ['fxcrate']]) assert.deepEqual(play(seed, co, at).hs, a.hs, `${seed}: ${at} 저장·복원`);
+    for (const k of Object.keys(all)) all[k] += a.got[k];
+    assert.notDeepEqual(play(seed + 1, co).hs.slice(0, 5), a.hs.slice(0, 5));
+  }
+  assert.ok(all.fxPick >= 2 && all.fx >= 2 && all.syn >= 1 && all.crate >= 1 && all.combo >= 1, `탄 효과 카드·탄종 상자·시너지를 실제로 거쳤다 ${JSON.stringify(all)}`);
+  // 해시: 탄 효과 레벨·떠 있는 카드의 syn 표시
+  const { s } = toOffer(4, CARD2);
+  const h0 = C.stateHash(s);
+  const alt = (mod) => { const o = C.snapshot(s); mod(o); return C.stateHash(C.restore(o)); };
+  assert.equal(alt(() => {}), h0);
+  assert.notEqual(alt((o) => { o.endless.fx = { frost: 1 }; }), h0);
+  assert.notEqual(alt((o) => { o.endless.fx = { frost: 1 }; }), alt((o) => { o.endless.fx = { frost: 2 }; }));
+  assert.notEqual(alt((o) => { o.endless.fx = { frost: 1 }; }), alt((o) => { o.endless.fx = { pierce: 1 }; }));
+  assert.notEqual(alt((o) => { o.endless.offer = [{ k: 'unit', u: 'rocket', syn: true }]; }), alt((o) => { o.endless.offer = [{ k: 'unit', u: 'rocket' }]; }));
+  // 깨진 카드(1단계 카드·이상한 syn)는 버리고 같은 카드를 다시 만든다
+  for (const bad of [[{ k: 'ammo', a: 'pierce' }], [{ k: 'fx', a: 'nope' }], [{ k: 'fx', a: 'frost', syn: 'yes' }], [{ k: 'fx' }]]) {
+    const o = C.snapshot(s);
+    o.endless.offer = bad;
+    assert.deepEqual(C.offerOf(C.restore(o)), C.offerOf(s), JSON.stringify(bad));
+  }
+  // 1단계 판에 탄 효과 카드가 들어 있으면 버린다
+  const s1 = toOffer(4, CARD1).s;
+  const o1 = C.snapshot(s1);
+  o1.endless.offer = [{ k: 'fx', a: 'frost' }];
+  assert.deepEqual(C.offerOf(C.restore(o1)), C.offerOf(s1));
+  // think는 탄 효과 카드에도 점수를 매긴다(1단계 카드의 점수는 그대로 — STAGE1_FP)
+  const ts = regen(s, (o) => { setFx(o, {}); o.endless.bosses = 3; }, 10).flatMap(({ t, of }) => of.filter((c) => c.k === 'fx').map((c) => thinkScore(t, c)));
+  assert.ok(ts.length && ts.every((v) => v > 0), `탄 효과 점수 ${ts}`);
+});
+
+/* ---------- 2단계 장애물(단계 해금 기획서 4절): 장갑문 · 폭발 드럼통 · 방패 정예 — 2단계를 연 판의 4구간부터(RUN_ORDER.obstacle) ---------- */
+const OBS = { obs: true };
+test('장애물 배치(buildSegment opt.obs — 2단계 판의 4구간부터): 갈림길 위험한 쪽의 셋째 패턴 장갑문(벽 식 × 0.6), 무리마다 방패 정예 하나, 구간마다 드럼통 1~2개(무리 가운데 앞이나 상자·철창 바깥 옆). 장애물 전용 난수라 나머지 배치는 그대로, 3구간까지·opt 없이·캠페인에는 없다', () => {
+  assert.equal(C.RUN_ORDER.obstacle, 4);
+  assert.deepEqual(R.OBSTACLE_IDS, ['door', 'drum', 'shield']);
+  for (const id of R.OBSTACLE_IDS) assert.ok(R.OBSTACLES[id].name && R.OBSTACLES[id].text().length > 5, id);
+  assert.equal(R.OBSTACLES.door.text(), '보통 총알은 50%만 들어가요. 관통·작렬·로켓이 잘 뚫어요');
+  assert.equal(R.OBSTACLES.shield.text(), '정면 총알을 70% 막아요. 관통·작렬·저격·로켓은 그대로 들어가요');
+  const kinds = { wall: 0, horde: 0, door: 0 };
+  let boxDrums = 0, waveDrums = 0, shields = 0, segs = 0;
+  for (const k of [2, 3, 4, 5, 6, 7, 9, 12]) for (const seed of [5, 77, 91, 130, 207, 311, 400, 512]) {
+    const a = C.buildSegment(seed, k, 200, 1), b = C.buildSegment(seed, k, 200, 1, 0, OBS);
+    if (k < C.RUN_ORDER.obstacle) { assert.deepEqual(b, a, `${k}구간: 장애물 없음`); continue; }
+    segs++;
+    const lab = `${seed}/${k}구간`;
+    assert.deepEqual(b.rows, a.rows, `${lab}: 게이트 그대로`);
+    assert.deepEqual(b.saws, a.saws);
+    assert.deepEqual([b.bossHp, b.arenaZ, b.arrive, b.refMul, b.L, b.golden], [a.bossHp, a.arenaZ, a.arrive, a.refMul, a.L, a.golden], `${lab}: 보스·위협·골든 패스 그대로`);
+    const da = a.divs[0], d = b.divs[0];
+    assert.deepEqual([d.id, d.z0, d.z1, d.risk], [da.id, da.z0, da.z1, da.risk]);
+    kinds[d.kind || 'wall']++;
+    // 드럼통은 맨 뒤 id로 더해진다 — 그 밖의 소품은 같은 id·같은 자리(장갑문으로 바뀐 벽만 종류·체력이 다르다)
+    const dr = b.props.filter((p) => p.kind === 'drum');
+    assert.ok(dr.length >= 1 && dr.length <= 2, `${lab}: 드럼통 ${dr.length}개`);
+    assert.equal(b.nextId, a.nextId + dr.length);
+    assert.deepEqual(dr.map((p) => p.id), dr.map((_, i) => a.nextId + i));
+    assert.deepEqual(b.props.filter((p) => p.kind !== 'drum' && p.kind !== 'door'), a.props.filter((p) => !(d.kind === 'door' && p.id === da.wall)), `${lab}: 다른 소품 그대로`);
+    const wallZ = d.z0 + C.FORK_TAPER + C.FORK.wall;
+    let gone = [];
+    if (d.kind === 'door') {
+      const door = b.props.find((p) => p.id === d.wall);
+      assert.ok(door && door.kind === 'door' && door.fork && Math.abs(door.z - wallZ) < 1e-6 && Math.sign((door.x0 + door.x1) / 2) === d.risk, `${lab}: 장갑문은 위험한 쪽 벽 자리`);
+      assert.equal(b.props.filter((p) => p.kind === 'door').length, 1);
+      if (da.kind === 'horde') {
+        // 좀비 떼 자리를 장갑문으로: 떼를 거두고 그 첫 id(거구)를 문에. 떼 체력 = 벽 식 × FORK_HORDE 범위라 문(벽 식 × 0.6)은 그 사이
+        gone = a.foes.filter((f) => f.fork && Math.sign(f.x) === da.risk);
+        assert.ok(gone.some((f) => f.id === door.id && f.kind === 'brute') && gone.length >= 12);
+        assert.ok(door.hp >= (0.6 * da.hp) / C.FORK_HORDE[1] - 1 && door.hp <= (0.6 * da.hp) / C.FORK_HORDE[0] + 1, `${lab}: 문 ${door.hp} / 떼 ${da.hp}`);
+      } else {
+        const w = a.props.find((p) => p.id === da.wall);
+        assert.deepEqual({ ...door, kind: 'wall', hp: w.hp, max: w.max }, w, `${lab}: 벽이 장갑문으로 — 종류·체력만`);
+        assert.ok(Math.abs(door.hp - R.OBSTACLES.door.hp * w.hp) <= 1 && door.max === door.hp, `${lab}: 문 ${door.hp} = 벽 ${w.hp} × 0.6`);
+      }
+    } else assert.deepEqual(d, da, `${lab}: 벽·떼 그대로`);
+    // 적: 장갑문으로 거둔 떼 말고는 같은 좀비 — 몇의 표식만 방패 정예로(무리의 졸개, 갈림길·가장자리 줄이 아닌)
+    const foesA = a.foes.filter((f) => !gone.includes(f));
+    assert.equal(b.foes.length, foesA.length);
+    let sh = 0;
+    b.foes.forEach((f, i) => {
+      const g = foesA[i];
+      if (f.elite === 'shield') { sh++; assert.ok(g.kind === 'grunt' && !g.elite && !g.fork && !g.flank, `${lab}: 방패 정예는 무리의 졸개`); assert.deepEqual({ ...f, elite: 0 }, { ...g, elite: 0 }, '표식만'); }
+      else assert.deepEqual(f, g);
+    });
+    shields += sh;
+    // 드럼통: 갈림길 밖, 상자·철창 바깥 옆(같은 줄 — 반경 안)이거나 좀비 무리 가까이
+    for (const p of dr) {
+      const x = (p.x0 + p.x1) / 2;
+      assert.ok(p.z < d.z0 - 6 || p.z > d.z1 + 2, `${lab}: 갈림길 밖`);
+      assert.ok(p.x0 >= -C.ROAD && p.x1 <= C.ROAD && p.hp >= 1 && p.max === p.hp && Math.abs(p.x1 - p.x0 - 2 * C.OBST.drum.w) < 1e-9);
+      const box = b.props.find((o) => (o.kind === 'crate' || o.kind === 'cage') && o.z === p.z && C.blastReach(p, o));
+      if (box) { boxDrums++; assert.ok(Math.abs(x) > Math.abs((box.x0 + box.x1) / 2) && !box.fork, `${lab}: 상자 바깥 옆`); }
+      else { waveDrums++; assert.ok(b.foes.filter((f) => Math.abs(f.z - p.z) < 8 && Math.abs(f.x - x) < 4).length >= 3, `${lab}: 무리 가까이`); }
+    }
+    // 처음 보는 장애물 알림 자리: 종류마다 가장 앞의 것(장갑문은 그 갈림길의 코 — 고르는 자리)
+    assert.deepEqual(b.marks.filter((m) => m.t !== 'obstacle'), a.marks);
+    const want = [];
+    if (d.kind === 'door') want.push({ t: 'obstacle', kind: 'door', z: d.z0 });
+    want.push({ t: 'obstacle', kind: 'drum', z: Math.min(...dr.map((p) => p.z)) });
+    if (sh) want.push({ t: 'obstacle', kind: 'shield', z: Math.min(...b.foes.filter((f) => f.elite === 'shield').map((f) => f.z)) });
+    assert.deepEqual(b.marks.filter((m) => m.t === 'obstacle'), want, lab);
+  }
+  assert.ok(kinds.wall >= 6 && kinds.horde >= 6 && kinds.door >= 8 && kinds.door <= 0.5 * segs, `갈림길 패턴 ${JSON.stringify(kinds)}`);
+  assert.ok(boxDrums >= 5 && waveDrums >= 20 && shields >= segs, `드럼통 상자 옆 ${boxDrums}·무리 ${waveDrums}, 방패 정예 ${shields} / ${segs}구간`);
+  // 캠페인 레벨에는 없다
+  for (const L of [7, 24, 60]) { const lv = C.prepareLevel(L); assert.ok(!lv.props.some((p) => p.kind === 'door' || p.kind === 'drum') && !lv.foes.some((f) => f.elite === 'shield') && !lv.marks.some((m) => m.t === 'obstacle'), `캠페인 L${L}`); }
+});
+
+const propAt = (s, kind, z, hp = 1e6, o = {}) => ({ id: 9500, kind, x0: -1.5, x1: 1.5, z: s.squad.z + z, hp, max: hp, alive: true, hitT: -9, ...o });
+test('장갑문(정해진 판): 받는 피해 — 보통 총알 ×0.5, 관통 효과 ×1(레벨 상관없이), 작렬 효과 Lv1·2·3 ×1·1.5·1.5(가진 것 중 큰 값), 로켓 ×1.5. 부딪히면 벽과 같은 손실, 부서지면 wallBreak(kind door). 로켓병이 노리고, 봇의 갈림길 판단이 이 배수를 안다', () => {
+  const D = R.OBSTACLES.door;
+  assert.deepEqual([D.hp, D.gun, D.pierce, D.burst, D.rocket], [0.6, 0.5, 1, 1.5, 1.5]);
+  const shot = (fx, kind = 'door', extra) => {
+    const s = bare2(fx, extra);
+    const p = propAt(s, kind, 10);
+    s.props = [p];
+    s.bullets = [{ x: 0, z: p.z - 0.5, d: 5, dmg: 100, hm: 1 }];
+    C.step(s, { dir: 0 });
+    return { dmg: +(1e6 - p.hp).toFixed(9), mul: C.doorMul(s) };
+  };
+  for (const [fx, k] of [[{}, 50], [{ pierce: 1 }, 100], [{ pierce: 3 }, 100], [{ burst: 1 }, 100], [{ burst: 2 }, 150], [{ burst: 3 }, 150], [{ pierce: 1, burst: 1 }, 100], [{ pierce: 2, burst: 2 }, 150], [{ rapid: 3 }, 50], [{ frost: 2, rapid: 1 }, 50]]) {
+    assert.deepEqual(shot(fx), { dmg: k, mul: k / 100 }, JSON.stringify(fx));
+    assert.equal(shot(fx, 'wall').dmg, 100, '벽은 그대로');
+  }
+  assert.equal(shot(null, 'door', { ammo: 'burst' }).dmg, 150, '출격 작렬탄(Lv2)도 효과');
+  assert.equal(shot(null, 'door', { ammo: 'pierce' }).dmg, 100, '출격 관통탄');
+  assert.equal(C.doorMul(C.newEndless({ seed: 3, ...CARD1, ammo: 'burst' })), D.gun, '1단계 판에는 탄 효과가 없다');
+  // 로켓 폭발: 장갑문 ×1.5, 벽 그대로
+  const boom = (kind) => {
+    const s = bare2({});
+    const p = propAt(s, kind, 10);
+    s.props = [p];
+    s.rockets = [{ id: 9600, x0: 0, z0: s.squad.z, x: 0, z: p.z, t: C.DT / 2, T: 1, r: 1, dmg: 100, fid: -1 }];
+    C.step(s, { dir: 0 });
+    return +(1e6 - p.hp).toFixed(9);
+  };
+  assert.deepEqual([boom('door'), boom('wall')], [150, 100]);
+  // 부서지면 wallBreak(kind door), 부딪히면 벽과 같은 손실(남은 체력 10마다 1명) — wallCrash(kind door)
+  {
+    const s = bare2({});
+    const p = propAt(s, 'door', 10, 40);
+    s.props = [p];
+    s.bullets = [{ x: 0, z: p.z - 0.5, d: 5, dmg: 100, hm: 1 }];
+    C.step(s, { dir: 0 });
+    assert.deepEqual(s.ev.filter((e) => e.t === 'wallBreak'), [{ t: 'wallBreak', x: 0, z: p.z, kind: 'door' }]);
+    assert.equal(p.alive, false);
+  }
+  const crash = (kind) => {
+    const s = bare2({});
+    s.props = [propAt(s, kind, 0.6, 55)];
+    const n0 = s.squad.n;
+    C.step(s, { dir: 0 });
+    return { lost: n0 - s.squad.n, ev: s.ev.filter((e) => e.t === 'wallCrash').map(({ x, z, ...e }) => e) };
+  };
+  assert.deepEqual(crash('door'), { lost: 6, ev: [{ t: 'wallCrash', n: 6, kind: 'door' }] });
+  assert.deepEqual(crash('wall'), { lost: 6, ev: [{ t: 'wallCrash', n: 6 }] });
+  // 로켓병은 분대 통로의 장갑문도 노린다(드럼통은 노리지 않는다)
+  for (const [kind, n] of [['door', 1], ['wall', 1], ['drum', 0]]) {
+    const s = bare2({});
+    s.squad.sp = [{ id: 99002, k: 'rocket', cd: 0, lv: 1 }];
+    const p = propAt(s, kind, 15);
+    s.props = [p];
+    C.step(s, { dir: 0 });
+    assert.equal(s.rockets.length, n, kind);
+    if (n) assert.equal(s.rockets[0].z, p.z);
+  }
+  // 봇의 갈림길 판단: 문 체력이 '다가오는 동안 쏟는 총알 × 0.9'의 몇 배인가에 문에 들어가는 배수를 곱해 견준다
+  const side = (fx, kind, hpK) => {
+    const s = bare2(fx);
+    const q = s.squad;
+    const can = C.dps(q.n, q.tier, s.fireLv) * C.heroDmg(s) * 0.9 * ((C.BULLET_RANGE - 2) / Math.max(1, q.vz));
+    const p = propAt(s, kind, 40, Math.round(can * hpK), { x0: 0.15, x1: 4.85, fork: true });
+    s.props = [p];
+    s.divs = [{ id: 9700, z0: q.z + 10, z1: q.z + 60, risk: 1, wall: p.id, ...(kind === 'door' ? { kind: 'door' } : {}) }];
+    return C.steer(s, 0).dir;
+  };
+  assert.deepEqual([side({}, 'wall', 1.2), side({}, 'door', 1.2), side({ pierce: 1 }, 'door', 1.2), side({ burst: 2 }, 'door', 1.2), side({ burst: 1 }, 'door', 1.2)], [-1, -1, -1, 1, -1], '벽 식의 1.2배: 작렬 Lv2만 문 쪽');
+  assert.deepEqual([side({}, 'wall', 0.8), side({}, 'door', 0.8), side({ pierce: 1 }, 'door', 0.8), side({ burst: 1 }, 'door', 0.8)], [1, -1, 1, 1], '0.8배: 보통 총알만 안전한 쪽');
+});
+
+test('폭발 드럼통(정해진 판): 쏘거나 닿거나 로켓·옆 드럼통에 터지면 반경 2.5m 안(가운데 거리) 좀비에게 지금 분대 화력 1초 × 1.5(방패 정예도 제 피해), 반경에 닿는 상자·철창은 내용물째 부서지고(보상 없음), 분대는 안 다친다', () => {
+  const O = R.OBSTACLES.drum;
+  assert.deepEqual([O.r, O.dmg], [2.5, 1.5]);
+  const drumAt = (s, x, dz, id = 9800) => ({ id, kind: 'drum', x0: x - 0.45, x1: x + 0.45, z: s.squad.z + dz, hp: 5, max: 5, alive: true, hitT: -9 });
+  const setup = (dz = 12) => {
+    const s = bare2({});
+    const drum = drumAt(s, 0, dz);
+    const z = drum.z;
+    // 가운데에서 1.41m · 2.55m(밖) · 2.38m · 2.43m(방패 정예) — 좀비는 이 틱에 1/60m 다가온다
+    s.foes = [mkFoe(0, 1, z + 1), mkFoe(1, 2.0, z + 1.6), mkFoe(2, 0, z + 2.4), mkFoe(3, -1.5, z - 1.9)];
+    s.foes[3].elite = 'shield';
+    const box = (id, kind, x0, x1, dz2, reward) => ({ id, kind, x0, x1, z: z + dz2, hp: 50, max: 50, alive: true, hitT: -9, reward });
+    s.props = [drum, box(9801, 'crate', 2.2, 4.4, 0, { type: 'gun' }), box(9802, 'cage', -4.4, -2.45, 0.3, { type: 'unit', k: 'sniper' }), box(9803, 'crate', -1.1, 1.1, 3.6, { type: 'men', v: 30 })];
+    return s;
+  };
+  const expectD = (s) => O.dmg * C.dps(s.squad.n, s.squad.tier, s.fireLv) * C.heroDmg(s);
+  const check = (s, by, lab) => {
+    const n0 = s.squad.n, tier = s.squad.tier;
+    const dmg = expectD(s);
+    return (ev) => {
+      const hit = s.foes.map((f) => +(1e6 - f.hp).toFixed(6));
+      assert.deepEqual(hit, [dmg, 0, dmg, dmg].map((v) => +v.toFixed(6)), `${lab}: 반경 안 좀비만(방패 정예도 제 피해)`);
+      assert.deepEqual(s.props.map((p) => p.alive), [false, false, false, true], `${lab}: 드럼통·반경에 닿는 상자·철창이 부서진다`);
+      assert.deepEqual(ev.filter((e) => e.t === 'blast'), [{ t: 'blast', x: 0, z: s.props[0].z, r: 2.5, by, n: 3, lost: 2 }], lab);
+      assert.deepEqual(ev.filter((e) => e.t === 'crateLost').map((e) => [e.kind, e.reward.type]), [['crate', 'gun'], ['cage', 'unit']]);
+      assert.ok(!ev.some((e) => ['crate', 'cageOpen', 'spGet', 'gain', 'loss', 'crateMiss', 'cageMiss'].includes(e.t)), `${lab}: 보상도 손실도 없다`);
+      assert.deepEqual([s.squad.n, s.squad.tier, s.squad.sp.length, s.stats.crates], [n0, tier, 0, 0], `${lab}: 분대는 그대로`);
+    };
+  };
+  // 쏴서
+  {
+    const s = setup();
+    s.bullets = [{ x: 0, z: s.props[0].z - 0.5, d: 5, dmg: 1e9, hm: 1 }];
+    const ok = check(s, 'shot', '쏴서');
+    C.step(s, { dir: 0 });
+    ok(s.ev);
+  }
+  // 분대가 닿아서(총알 없이 — 분대 앞이 드럼통 줄에 닿는 틱)
+  {
+    const s = setup(0.6);
+    s.foes = [mkFoe(0, 2.0, s.squad.z + 0.6)];
+    s.props = [s.props[0], { ...s.props[1], z: s.props[0].z }];
+    const n0 = s.squad.n;
+    const dmg = expectD(s);
+    C.step(s, { dir: 0 });
+    assert.deepEqual(s.ev.filter((e) => e.t === 'blast').map((e) => [e.by, e.n, e.lost]), [['touch', 1, 1]]);
+    assert.ok(Math.abs(1e6 - s.foes[0].hp - dmg) < 1e-6 && s.squad.n === n0 && !s.props[1].alive, '닿아도 안 다친다');
+  }
+  // 로켓에 터진다
+  {
+    const s = setup();
+    s.rockets = [{ id: 9600, x0: 0, z0: s.squad.z, x: 0, z: s.props[0].z, t: C.DT / 2, T: 1, r: 0.6, dmg: 100, fid: -1 }];
+    C.step(s, { dir: 0 });
+    assert.deepEqual(s.ev.filter((e) => e.t === 'blast').map((e) => e.by), ['shot']);
+    assert.equal(s.props[0].alive, false);
+  }
+  // 옆 드럼통은 따라 터진다(반경에 닿으면), 멀면 그대로
+  {
+    const s = bare2({});
+    s.props = [drumAt(s, 0, 12, 1), drumAt(s, 2.0, 13, 2), drumAt(s, -3.5, 12, 3)];
+    s.bullets = [{ x: 0, z: s.props[0].z - 0.5, d: 5, dmg: 1e9, hm: 1 }];
+    C.step(s, { dir: 0 });
+    assert.deepEqual(s.ev.filter((e) => e.t === 'blast').map((e) => [e.by, +e.x.toFixed(9)]), [['shot', 0], ['chain', 2]]);
+    assert.deepEqual(s.props.map((p) => p.alive), [false, false, true]);
+  }
+  // 영웅 스킬로 오른 화력(뭉치)도 지금 분대 화력이다. 잡으면 kill.by 'drum'
+  {
+    const s = setup();
+    s.hero.act = 1;
+    s.foes[0].hp = 1;
+    s.bullets = [{ x: 0, z: s.props[0].z - 0.5, d: 5, dmg: 1e9, hm: 1 }];
+    const dmg = expectD(s);
+    assert.ok(C.heroDmg(s) > 1);
+    C.step(s, { dir: 0 });
+    assert.ok(Math.abs(1e6 - s.foes[2].hp - dmg) < 1e-6);
+    assert.deepEqual(s.ev.filter((e) => e.t === 'kill').map((e) => [e.by, e.kind]), [['drum', 'grunt']]);
+  }
+});
+
+test('방패 정예(정해진 판): 정면 총알 ×0.3 — 관통 효과가 있으면 제 피해(뒤로 뚫는 몫도), 작렬 둘레 피해는 제 피해, 저격·로켓은 그대로. 잡혀도 덧일이 없다', () => {
+  assert.equal(R.OBSTACLES.shield.gun, 0.3);
+  const shot = (fx, layout, extra) => {
+    const s = bare2(fx, extra);
+    const z = s.squad.z;
+    s.foes = layout.map(([x, dz, el], i) => { const f = mkFoe(i, x, z + dz); if (el) f.elite = el; return f; });
+    s.bullets = [{ x: 0, z: z + 9.5, d: 5, dmg: 100, hm: 1 }];
+    C.step(s, { dir: 0 });
+    return s.foes.map((f) => +(1e6 - f.hp).toFixed(6));
+  };
+  const A = [[0, 10, 'shield'], [0, 12], [0.8, 10.2]];   // 방패 정예가 맞고, 뒤·옆에 보통 좀비
+  assert.deepEqual(shot({}, A), [30, 0, 0]);
+  assert.deepEqual(shot({ rapid: 3, frost: 1 }, A), [30, 0, 0]);
+  assert.deepEqual(shot({ pierce: 1 }, A), [100, 30, 0], '관통: 방패를 무시');
+  assert.deepEqual(shot({ pierce: 3 }, A), [100, 90, 0]);
+  assert.deepEqual(shot(null, A, { ammo: 'pierce' }), [100, 60, 0], '출격 관통탄도');
+  assert.deepEqual(shot({ burst: 2 }, A), [30, 0, 35], '작렬: 맞은 방패는 ×0.3, 둘레는 그대로');
+  const B = [[0, 10], [0, 12, 'shield'], [0.8, 10.2, 'shield']];   // 보통 좀비가 맞고, 뒤·옆이 방패 정예
+  assert.deepEqual(shot({}, B), [100, 0, 0]);
+  assert.deepEqual(shot({ pierce: 2 }, B), [100, 60, 0], '뒤로 뚫는 몫은 방패에도 제 피해');
+  assert.deepEqual(shot({ burst: 2 }, B), [100, 0, 35], '작렬 둘레는 방패 뒤로 들어간다');
+  assert.deepEqual(shot({ pierce: 2, burst: 2 }, B), [100, 60, 35]);
+  const sm = (fx) => { const s = bare2(fx); return C.shieldMul(s); };
+  assert.deepEqual([sm({}), sm({ burst: 3 }), sm({ pierce: 1 })], [0.3, 0.3, 1]);
+  // 저격·로켓은 그대로(보통 좀비와 같은 피해)
+  const snipe = (el) => {
+    const s = bare2({});
+    s.squad.sp = [{ id: 99001, k: 'sniper', cd: 0, lv: 2 }];
+    s.foes = [mkFoe(0, 0, s.squad.z + 10)];
+    if (el) s.foes[0].elite = el;
+    C.step(s, { dir: 0 });
+    return 1e6 - s.foes[0].hp;
+  };
+  assert.ok(snipe('') > 0);
+  assert.equal(snipe('shield'), snipe(''));
+  const rocket = (el) => {
+    const s = bare2({});
+    s.foes = [mkFoe(0, 0, s.squad.z + 10)];
+    if (el) s.foes[0].elite = el;
+    s.rockets = [{ id: 9600, x0: 0, z0: s.squad.z, x: 0, z: s.squad.z + 10, t: C.DT / 2, T: 1, r: 1, dmg: 100, fid: -1 }];
+    C.step(s, { dir: 0 });
+    return 1e6 - s.foes[0].hp;
+  };
+  assert.deepEqual([rocket('shield'), rocket('')], [100, 100]);
+  // 잡히면 kill.elite 'shield' — 웅덩이·분열 같은 덧일은 없다
+  const s = bare2({});
+  s.foes = [mkFoe(0, 0, s.squad.z + 10)];
+  s.foes[0].elite = 'shield';
+  s.foes[0].hp = 20;
+  s.bullets = [{ x: 0, z: s.squad.z + 9.5, d: 5, dmg: 100, hm: 1 }];
+  C.step(s, { dir: 0 });
+  assert.deepEqual(s.ev.filter((e) => e.t === 'kill').map((e) => [e.by, e.elite]), [['gun', 'shield']]);
+  assert.ok(!s.pools && !s.ev.some((e) => e.t === 'split' || e.t === 'pool') && s.foes.length === 1);
+});
+
+test('충돌 크기 보기(hitShapes): 장갑문은 벽처럼 줄(door), 드럼통은 상자처럼 줄(drum) + 폭발 반경 원(blast — 가운데가 이 안인 좀비가 맞는다)', () => {
+  const s = bare2({});
+  s.props = [
+    { id: 1, kind: 'door', x0: 0.15, x1: 4.85, z: 20, hp: 9, max: 9, alive: true, hitT: -9 },
+    { id: 2, kind: 'drum', x0: -2.45, x1: -1.55, z: 15, hp: 3, max: 3, alive: true, hitT: -9 },
+    { id: 3, kind: 'drum', x0: 1, x1: 1.9, z: 9, hp: 3, max: 3, alive: false, hitT: -9 },
+  ];
+  assert.equal(s.squad.z, 0);
+  assert.deepEqual(C.hitShapes(s).filter((h) => ['door', 'drum', 'blast'].includes(h.k)), [
+    { k: 'door', x0: 0.15, x1: 4.85, z0: 20, z1: 20 },
+    { k: 'drum', x0: -2.45, x1: -1.55, z0: 15, z1: 15 },
+    { k: 'blast', x0: -4.5, x1: 0.5, z0: 12.5, z1: 17.5, ell: true },
+  ]);
+});
+
+test('봇과 장애물: 드럼통은 닿아도 안 다쳐 피하지 않고(벽·상자처럼 셈하지 않는다), 옆 드럼통까지 쏘게 되는 자리에서는 그 상자 보상을 치지 않는다', () => {
+  const at = (props) => {
+    const s = bare2({});
+    s.squad.n = 12;
+    s.props = props.map((p, i) => ({ id: 100 + i, alive: true, hitT: -9, max: p.hp, ...p, z: s.squad.z + p.z }));
+    return C.botTarget(s);
+  };
+  const crate = { kind: 'crate', x0: 2.2, x1: 4.4, z: 25, hp: 10, reward: { type: 'men', v: 300 } };
+  const drum = { kind: 'drum', x0: 0.85, x1: 1.75, z: 25, hp: 3 };
+  assert.equal(at([]), 0);
+  assert.equal(at([{ ...drum, x0: -0.45, x1: 0.45 }]), 0, '드럼통은 피하지 않는다');
+  const span = C.radius(12) + 0.3;
+  const x1 = at([crate]), x2 = at([crate, drum]);
+  assert.ok(x1 + span > crate.x0 && x1 - span < drum.x1, `드럼통이 없으면 가까운 자리에서 상자를 쏜다(${x1})`);
+  assert.ok(x2 + span > crate.x0 && x2 - span >= drum.x1, `드럼통이 있으면 드럼통을 안 쏘는 자리에서(${x2})`);
+});
+
+test('2단계 장애물이 있는 판: 처음 보는 장애물은 45m 앞에서 종류마다 한 번(obstacle { kind, z } — 4구간부터, obsSeen에 쌓인다). 같은 시드·입력이면 같은 판, 아무 틱에서나 저장·복원해도 매 틱 같다. 해시는 장갑문·드럼통·방패 정예·알린 종류를 본다', () => {
+  const play = (seed, co, snap = null) => {
+    const s = C.newEndless({ seed, ...co });
+    const pol = makeBot('sloppy0.1', seed * 3 + 1, { skill: true });
+    const pick = makePicker('think', seed);
+    const hs = [], obs = [], got = { doorFork: 0, blast: 0, shieldKill: 0 };
+    let t = null;
+    while (s.phase !== 'lost' && s.endless.bosses < 8 && s.tick < 60 * 60 * 12) {
+      const of = C.offerOf(s);
+      if (of) { const i = pick(s, of, pol); C.pickCard(s, i); if (t) C.pickCard(t, i); hs.push(C.stateHash(s)); }
+      else { const inp = pol(s); C.step(s, inp); if (t) C.step(t, inp); if (s.tick % 100 === 0) hs.push(C.stateHash(s)); }
+      for (const e of s.ev) {
+        if (e.t === 'obstacle') {
+          obs.push(e.kind);
+          const dz = e.z - s.squad.z;
+          assert.ok(s.endless.seg >= C.RUN_ORDER.obstacle && dz <= C.MARK_AHEAD + 1e-9 && dz > C.MARK_AHEAD - s.speed * C.DT - 1e-9, `${seed}: ${e.kind} ${dz}m 앞(${s.endless.seg}구간)`);
+        }
+        if (e.t === 'fork' && e.kind === 'door') got.doorFork++;
+        if (e.t === 'blast') got.blast++;
+        if (e.t === 'kill' && e.elite === 'shield') got.shieldKill++;
+      }
+      if (t) {
+        assert.equal(C.stateHash(t), C.stateHash(s), `${seed}: ${s.tick}틱에 복원한 판이 갈라졌다`);
+        assert.deepEqual(t.ev.map((e) => e.t + (e.kind || '')), s.ev.map((e) => e.t + (e.kind || '')));
+      } else if (snap && snap(s, obs)) {
+        t = C.restore(JSON.parse(JSON.stringify(C.snapshot(s))));
+        assert.equal(C.stateHash(t), C.stateHash(s));
+        assert.deepEqual(t.endless.obsSeen, s.endless.obsSeen);
+      }
+    }
+    assert.deepEqual(s.endless.obsSeen, obs, '알린 차례 그대로 쌓인다');
+    assert.equal(new Set(obs).size, obs.length, '종류마다 한 번');
+    return { s, hs, obs, got, restored: !!t };
+  };
+  const live = (s) => s.props.some((p) => p.alive && !p.passed && p.kind === 'drum') && s.foes.some((f) => f.alive && f.elite === 'shield');
+  const seen = new Set();
+  const all = { doorFork: 0, blast: 0, shieldKill: 0 };
+  for (const [seed, ammo] of [[3, ''], [8, 'burst'], [14, 'pierce'], [20, '']]) {
+    const co = { ...CARD2, ...(ammo ? { ammo } : {}) };
+    const a = play(seed, co);
+    for (const k of a.obs) seen.add(k);
+    for (const k of Object.keys(all)) all[k] += a.got[k];
+    assert.deepEqual(play(seed, co).hs, a.hs, `${seed}: 같은 판`);
+    // 드럼통·방패 정예가 떠 있는 4구간의 틱, 첫 알림 바로 뒤에서 저장·복원(다시 알리지 않는다)
+    for (const snap of [(s) => s.endless.seg >= 4 && live(s), (s, obs) => obs.length >= 1]) {
+      const b = play(seed, co, snap);
+      if (a.obs.length) assert.ok(b.restored, `${seed}: 복원한 틱이 있다`);
+      assert.deepEqual(b.hs, a.hs, `${seed}: 저장·복원`);
+    }
+  }
+  assert.deepEqual([...seen].sort(), ['door', 'drum', 'shield'], '세 장애물을 다 만났다');
+  assert.ok(all.doorFork >= 2 && all.blast >= 2 && all.shieldKill >= 3, JSON.stringify(all));
+  // 해시: 소품 종류(장갑문·드럼통), 방패 표식, 알린 종류
+  const s = C.newEndless({ seed: 8, ...CARD2 });
+  const pol = makeBot('sloppy0.1', 25, { skill: true });
+  const pick = makePicker('think', 8);
+  while (s.phase !== 'lost' && !(s.endless.seg >= 4 && live(s)) && s.tick < 60 * 60 * 10) { const of = C.offerOf(s); if (of) C.pickCard(s, pick(s, of, pol)); else C.step(s, pol(s)); }
+  assert.ok(live(s), '드럼통·방패 정예가 있는 4구간');
+  const h0 = C.stateHash(s);
+  const alt = (mod) => { const o = C.snapshot(s); mod(o); return C.stateHash(C.restore(o)); };
+  assert.equal(alt(() => {}), h0);
+  assert.notEqual(alt((o) => { o.props.find((p) => p.kind === 'drum' && p.alive).kind = 'wall'; }), h0, '드럼통');
+  assert.notEqual(alt((o) => { delete o.foes.find((f) => f.alive && f.elite === 'shield').elite; }), h0, '방패 정예');
+  assert.notEqual(alt((o) => { o.endless.obsSeen = ['door']; }), alt((o) => { o.endless.obsSeen = ['drum']; }), '알린 종류');
+  const d1 = bare2({}), d2 = bare2({});
+  d1.props = [propAt(d1, 'door', 20)]; d2.props = [propAt(d2, 'wall', 20)];
+  assert.notEqual(C.stateHash(d1), C.stateHash(d2), '장갑문');
+  // 이어하기가 고치는 값: 아는 종류만 한 번씩, 없거나 이상하면 빈 목록. 2단계 아래 판에는 없다
+  for (const [v, want] of [[['door', 'nope', 'door', 'shield'], ['door', 'shield']], ['door', []], [undefined, []], [null, []]]) {
+    const o = C.snapshot(s);
+    o.endless.obsSeen = v;
+    assert.deepEqual(C.restore(o).endless.obsSeen, want, JSON.stringify(v));
+  }
+  for (const co of [CARD1, UP10]) {
+    const o = C.snapshot(C.newEndless({ seed: 8, ...co }));
+    o.endless.obsSeen = ['door'];
+    assert.equal('obsSeen' in C.restore(o).endless, false);
+  }
+});
+
+test('1단계·카드 없는 판에는 장애물이 없다 — 4구간 넘어서도 장갑문·드럼통·방패 정예·알림 없음(obsSeen 필드도 없다). 2단계 판은 3구간까지 없다', () => {
+  for (const co of [UP10, CARD1, CARD2]) {
+    const s = C.newEndless({ seed: 31, ...co, ammoOpen: R.AMMO_IDS, start: C.START_N + 40, fire: 20 });
+    const pol = makeBot('sloppy0.1', 93, { skill: true });
+    const pick = makePicker('think', 31);
+    let segs = 0, obs = 0;
+    const none = (lab) => assert.ok(!s.props.some((p) => p.kind === 'door' || p.kind === 'drum') && !s.foes.some((f) => f.elite === 'shield') && !(s.divs || []).some((d) => d.kind === 'door'), lab);
+    while (s.phase !== 'lost' && s.endless.bosses < 6 && s.tick < 60 * 60 * 10) {
+      const of = C.offerOf(s);
+      if (of) C.pickCard(s, pick(s, of, pol)); else C.step(s, pol(s));
+      for (const e of s.ev) { if (e.t === 'segStart') { segs = e.seg; if (co !== CARD2 || e.seg < C.RUN_ORDER.obstacle) none(`${co.unl || 0}단계 ${e.seg}구간`); } if (e.t === 'obstacle' || e.t === 'blast') obs++; }
+    }
+    assert.ok(segs >= 5, `${segs}구간까지`);
+    if (co === CARD2) assert.ok(obs > 0 && Array.isArray(s.endless.obsSeen));
+    else { assert.equal(obs, 0); assert.equal('obsSeen' in s.endless, false); }
   }
 });
 

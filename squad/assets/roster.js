@@ -228,10 +228,12 @@ export function fxVal(id, lv) {
   if (A.slow) return { slow: A.slow * k, T: A.T };
   return { dmg: 1 + (A.dmg - 1) * k };
 }
-/* 소개 글(카드·일시정지 판) — '뒤의 좀비 하나에 30%'처럼 수치에서 */
+/* 소개 글(카드·일시정지 판) — '뒤의 좀비 하나에 30%'처럼 수치에서. 반올림은 소수 넷째 자리에서 먼저 끊는다
+   (0.15 × 0.5 = 0.0749999…라 그냥 반올림하면 +8%가 아니라 +7%가 된다 — 기획서 표의 값과 맞게) */
+const fpc = (x) => Math.round(Math.round(x * 1e6) / 1e4);
 export function fxText(id, lv) {
   const v = fxVal(id, lv);
-  return v.pierce ? `뒤의 좀비 하나에 ${apc(v.pierce)}%` : v.splash ? `둘레 ${v.r}m에 ${apc(v.splash)}%` : v.slow ? `${v.T}초 동안 ${apc(v.slow)}% 느리게` : v.dmg ? `화력 +${apc(v.dmg - 1)}%` : '';
+  return v.pierce ? `뒤의 좀비 하나에 ${fpc(v.pierce)}%` : v.splash ? `둘레 ${v.r}m에 ${fpc(v.splash)}%` : v.slow ? `${v.T}초 동안 ${fpc(v.slow)}% 느리게` : v.dmg ? `화력 +${fpc(v.dmg - 1)}%` : '';
 }
 
 /* 시너지(탄 효과 × 탄 효과 · 특수병 · 영웅 — 둘이 함께 있을 때만 켜지는 추가 규칙, 단계 해금 2단계) [수치는 초안].
@@ -245,6 +247,34 @@ export const COMBOS = {
   rapidMungchi: { need: ['rapid', 'mungchi'], name: '긴 나팔', v: 7, text: () => `돌격 나팔 ${HEROES.mungchi.skill.dur} → ${COMBOS.rapidMungchi.v}초` },
 };
 export const COMBO_IDS = Object.keys(COMBOS);
+
+/* 장애물(단계 해금 2단계 — 2단계를 연 무한모드 판의 4구간부터, core.js RUN_ORDER.obstacle) [수치는 초안]. 보통탄만으로도 넘을 길은 늘 있고,
+   탄 효과는 '더 쉬운 길'을 연다. 화면에 보이는 수치는 여기에 두고 core.js가 읽는다(글도 이 값에서 — 수치를 고치면 글도 따라간다). 자리·개수는 core.js OBST.
+   - door 장갑문: 갈림길 위험한 쪽의 셋째 패턴(벽 · 좀비 떼 · 장갑문). 체력 = 벽 식 × hp. 받는 피해 배수 — gun 보통 총알, pierce 관통 효과(레벨 상관없이),
+     burst 작렬 효과(Lv2 = 탄종 값 100%에서 이 값, Lv1은 gun과의 사이 값, Lv3도 이 값까지), rocket 로켓. 가진 효과 중 가장 큰 배수
+   - drum 폭발 드럼통: 부서지거나 분대가 닿으면 반경 r m 안의 좀비에게 지금 분대 화력 dmg초 몫, 반경 안의 상자·철창은 내용물째 부서진다. 분대는 안 다친다
+   - shield 방패 정예(셋째 정예, 청록): 정면 총알 피해 gun배 — 관통 효과가 있으면 제 피해. 작렬 둘레·저격·로켓·영웅 스킬·드럼통은 제 피해 */
+export const OBSTACLES = {
+  door: { name: '장갑문', hp: 0.6, gun: 0.5, pierce: 1, burst: 1.5, rocket: 1.5, text: () => `보통 총알은 ${apc(OBSTACLES.door.gun)}%만 들어가요. 관통·작렬·로켓이 잘 뚫어요` },
+  drum: { name: '폭발 드럼통', r: 2.5, dmg: 1.5, text: () => `쏘면 터져서 둘레 ${OBSTACLES.drum.r}m 좀비를 날려요. 옆 상자도 같이 부서져요` },
+  shield: { name: '방패 정예', gun: 0.3, color: '#3FE0D0', text: () => `정면 총알을 ${apc(1 - OBSTACLES.shield.gun)}% 막아요. 관통·작렬·저격·로켓은 그대로 들어가요` },
+};
+export const OBSTACLE_IDS = Object.keys(OBSTACLES);
+
+/* 유물(단계 해금 3단계·5단계 — 무한모드에서만, 대왕 보스 뒤 3개 중 1개). 수치가 아니라 규칙을 바꾼다. 여기에는 이름·글·열리는 때만 둔다 —
+   효과는 그 단계를 만들 때 core.js에(지금은 store.endlessUnlocks가 '열린 유물' 목록을 세는 데만 쓴다).
+   kings: 열리는 때 — 0이면 3단계(첫 대왕)와 함께, n이면 대왕 누적 n번째 처치에(5단계). 순서는 열리는 순서 */
+export const RELICS = {
+  compass: { name: '나침반', kings: 0, good: '갈림길 보상 상자의 내용물이 45m 앞에서 보이고, 위험한 쪽 보상 ×1.5', bad: '' },
+  banner: { name: '전장의 휘장', kings: 0, good: '병력이 그 판 최고치의 40% 아래면 화력 +40%', bad: '' },
+  megaphone: { name: '빨간 확성기', kings: 0, good: '빨간 덧셈 칸이 1.5배 빨리 올라요', bad: '파란 칸은 0.8배' },
+  coil: { name: '과부하 코일', kings: 0, good: '무기 단계 상한 3 → 4', bad: '지원병 상자 병력 −30%' },
+  fourth: { name: '넷째 자리', kings: 2, good: '특수병 자리 3 → 4', bad: '특수병마다 호위 병사 4 → 6명' },
+  heart: { name: '불굴의 심장', kings: 3, good: '한 번 전멸해도 그 구간 바닥선의 절반으로 돌아와요', bad: '쓰면 사라져요' },
+  bag: { name: '수집가의 가방', kings: 4, good: '보스의 알 확률 15 → 35%', bad: '카드 3장 → 2장' },
+  pouch: { name: '넓은 탄낭', kings: 5, good: '탄 효과 슬롯 2 → 3', bad: '증원 카드가 나오지 않아요' },
+};
+export const RELIC_IDS = Object.keys(RELICS);
 
 /* 지역 */
 export const BIOMES = [

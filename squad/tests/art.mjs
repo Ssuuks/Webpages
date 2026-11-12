@@ -894,3 +894,37 @@ test('충돌 크기: 물체마다 맞는 폭 ≤ 그린 폭(좀비 접촉·톱�
   // 충돌 크기 보기는 시뮬레이션의 hitShapes만 그린다
   assert.match(src, /const sh = hitShapes\(s\);/);
 });
+
+/* 무한모드 2단계(탄 효과): 카드·탄종 상자 위·HUD 칩의 총알 아이콘과, 효과를 얻은 판의 총알 모양 */
+test('탄 효과 아이콘: 탄종마다 fx_<id>(9×9 정사각), 가장 많은 색이 그 탄종 색, 모양이 서로 다르다 · 상자 위 표시·총알 모양', async () => {
+  const fs = await import('node:fs');
+  const { AMMO, AMMO_IDS } = await import('../assets/roster.js');
+  const { shotAmmo } = await import('../assets/render.js');
+  const masks = [];
+  for (const id of AMMO_IDS) {
+    const rows = ICONS['fx_' + id];
+    assert.ok(rows, `아이콘 fx_${id}`);
+    assert.equal(rows.length, 9, `fx_${id} 높이 9`);
+    assert.equal(rows[0].length, 9, `fx_${id} 폭 9(DOM 칸이 정사각이라 늘어나지 않게)`);
+    const R = frameRaster(rows, ICON_PAL_EXPORT);
+    const n = new Map();
+    for (const c of R.a) if (c) n.set(c, (n.get(c) | 0) + 1);
+    const top = [...n.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    assert.ok(deltaE(top, AMMO[id].color) < 8, `fx_${id}: 가장 많은 색 ${top}이 탄종 색 ${AMMO[id].color}과 같은 계열`);
+    masks.push(R.a.map((c) => (c ? 1 : 0)).join(''));
+  }
+  assert.equal(new Set(masks).size, masks.length, '탄 효과 아이콘 실루엣이 서로 다르다');
+  // 렌더러: 탄종 상자({ type: 'fx', a })는 무기 아이콘 대신 그 효과의 총알, 상자 위에 내용물 표시(열쇠 상자면 열쇠 위)
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  assert.match(src, /t === 'fx' \? \(fxOk && AMMO_COL\[r\.a\] \? 'fx_' \+ r\.a : 'men'\)/, '상자 몸 아이콘이 탄 효과 총알(얻을 수 없게 됐으면 병사 — core도 병사를 준다)');
+  assert.match(src, /const fxOk = !!\(p\.reward && p\.reward\.type === 'fx' && fxCan\(s, p\.reward\.a\)\)/, '얻을 수 있는지는 core.fxCan으로');
+  assert.match(src, /if \(fxOk\) fxMark\(mx, yTop, w, p\.reward\.a\)/, '상자 위에 내용물 표시');
+  // 떠오르는 'Lv2'는 미리 구운 글자 짝(특수병 레벨 업과 같은 색)만 쓴다 — 그리는 중 굽기 0
+  for (const m of src.matchAll(/'Lv' \+ e\.(?:lv|to), '(#[0-9A-F]+)', \{[^}]*out: PANEL\.unit\.out/g)) assert.ok(GLYPH_PAIRS.some(([f, o]) => f === m[1] && o === GLYPH_PAIRS[4][1]), m[0]);
+  // 총알 모양: 출격 탄종이 먼저(대신 쪽까지 진 탄), 없으면 가장 높은 탄 효과(같으면 탄종 순서), 효과가 없는 판(1단계·캠페인)은 예전 그대로
+  assert.equal(shotAmmo({ ammo: 'frost', endless: { fx: { frost: 2, pierce: 3 } } }), 'frost');
+  assert.equal(shotAmmo({ endless: { fx: { burst: 1, rapid: 2 } } }), 'rapid');
+  assert.equal(shotAmmo({ endless: { fx: { burst: 2, rapid: 2 } } }), 'burst');
+  assert.equal(shotAmmo({ endless: { unl: 1 } }), '');
+  assert.equal(shotAmmo({}), '');
+});
