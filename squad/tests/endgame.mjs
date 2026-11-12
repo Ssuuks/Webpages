@@ -201,7 +201,7 @@ test('무한모드 이어하기: 구간을 넘긴 뒤 저장·복원한 판은 �
 
 test('무한모드 공정성: 구간이 올라가도 모든 내려찍기 예고는 fairWarn·slamFairWarn 이상', () => {
   let checked = 0;
-  for (const [seed, name] of [[3, 'strong'], [4, 'sloppy0.1'], [5, 'sloppy0.3'], [6, 'hold4.4'], [7, 'expert']]) {
+  for (const [seed, name] of [[3, 'strong'], [4, 'sloppy0.1'], [5, 'sloppy0.3'], [6, 'hold4.4'], [7, 'expert'], [8, 'sloppy0.1'], [9, 'expert']]) {
     const s = C.newEndless({ seed, start: C.START_N + 60, fire: 30, hero: { id: 'nabi', lv: 5 } });
     const pol = makeBot(name, seed, { skill: true });
     while (s.phase !== 'lost' && s.endless.bosses < 10 && s.tick < 50000) {
@@ -223,8 +223,9 @@ test('무한모드 공정성: 구간이 올라가도 모든 내려찍기 예고�
 });
 
 test('무한모드 난이도(봇): 기대 강화 10단계·영웅 Lv5 — 집중한 사람은 중앙값 4~8구간, 산만한 사람은 2~4구간, 가만히·마구는 첫 보스를 못 넘는다', () => {
-  const on = reach('sloppy0.1', 24);
-  const sl = reach('sloppy0.3', 24);
+  // 48판: 정예 좀비가 들어온 뒤 판마다 편차가 커서 24판으로는 평균 차가 흔들린다
+  const on = reach('sloppy0.1', 48);
+  const sl = reach('sloppy0.3', 48);
   assert.ok(median(on) >= 4 && median(on) <= 8, `집중한 사람 중앙값 ${median(on)} (${on.join(',')})`);
   assert.ok(median(sl) >= 2 && median(sl) <= 4, `산만한 사람 중앙값 ${median(sl)} (${sl.join(',')})`);
   assert.ok(mean(on) > mean(sl) + 1, '집중할수록 멀리 간다');
@@ -701,28 +702,43 @@ test('탄종 동등성(합격 기준): 집중한 사람의 첫 시도 승률이 
 });
 
 /* ---------- 갈림길(ARSENAL.md 5절 — 무한모드의 분리대) ---------- */
-test('갈림길: 무한모드 2구간부터 구간마다 하나 — 한쪽은 벽과 보상 상자, 다른 쪽은 약한 졸개. 갈린 구간에는 게이트·톱날이 없다. 캠페인에는 없다', () => {
+test('갈림길: 무한모드 2구간부터 구간마다 하나 — 한쪽은 벽(또는 3구간부터 좀비 떼)과 보상 상자, 다른 쪽은 약한 졸개. 갈린 구간에는 게이트·톱날이 없다. 캠페인에는 없다', () => {
   assert.ok(!C.buildSegment(5, 1, 32, 0).divs, '1구간에는 없다');
   for (const L of [7, 24, 60]) assert.ok(!('divs' in C.newGame(C.prepareLevel(L), C.expectLoadout(L))), `캠페인 L${L}`);
-  for (const k of [2, 3, 6, 9]) {
-    for (const seed of [5, 77]) {
+  const kinds = { wall: 0, horde: 0 };
+  for (const k of [2, 3, 4, 6, 9]) {
+    for (const seed of [5, 77, 91, 130, 207, 311]) {
       const seg = C.buildSegment(seed, k, 200, 1);
       assert.equal(seg.divs.length, 1, `구간 ${k}`);
       const d = seg.divs[0];
-      const wall = seg.props.find((p) => p.id === d.wall);
-      assert.ok(wall && wall.kind === 'wall' && wall.z > d.z0 + C.FORK_TAPER && wall.z < d.z1);
-      assert.ok(d.risk > 0 ? wall.x0 > 0 && wall.x1 <= C.ROAD : wall.x1 < 0 && wall.x0 >= -C.ROAD, '벽은 위험한 쪽 차선만 막는다');
-      const crate = seg.props.find((p) => p.fork && p.kind !== 'wall');   // 지원병 상자는 특수병 배치가 철창으로 바꾸기도 한다
-      assert.ok(crate && crate.z > wall.z && crate.z < d.z1 && Math.sign((crate.x0 + crate.x1) / 2) === d.risk, '보상 상자는 벽 바로 뒤');
-      assert.ok(['gun', 'men', 'unit'].includes(crate.reward.type));
       const inside = (z) => z >= d.z0 && z <= d.z1;
+      const wallZ = d.z0 + C.FORK_TAPER + C.FORK.wall;
+      const riskFoes = seg.foes.filter((f) => inside(f.z) && Math.sign(f.x) === d.risk);
+      kinds[d.kind || 'wall']++;
+      if (d.kind === 'horde') {
+        assert.ok(k >= C.FORK_HORDE_FROM, '첫 갈림길(2구간)은 벽');
+        assert.ok(!d.wall && !seg.props.some((p) => p.kind === 'wall' && p.fork), '좀비 떼 갈림길에는 벽이 없다');
+        assert.ok(riskFoes.length >= 12 && riskFoes.some((f) => f.kind === 'brute') && riskFoes.filter((f) => f.elite === 'split').length === 2, '거구 + 분열 좀비 둘 + 졸개');
+        assert.ok(riskFoes.every((f) => f.elite !== 'toxic' && f.kind !== 'spit' && f.z > d.z0 + C.FORK_TAPER), '갈린 뒤에만, 옆으로 피해야 하는 것은 없다');
+        const H = riskFoes.reduce((a, f) => a + f.hp, 0);
+        assert.ok(H > 0.5 * d.hp && H <= 1.05 * d.hp, `떼의 체력 합 ${H} / ${d.hp}`);
+      } else {
+        const wall = seg.props.find((p) => p.id === d.wall);
+        assert.ok(wall && wall.kind === 'wall' && Math.abs(wall.z - wallZ) < 1e-6);
+        assert.ok(d.risk > 0 ? wall.x0 > 0 && wall.x1 <= C.ROAD : wall.x1 < 0 && wall.x0 >= -C.ROAD, '벽은 위험한 쪽 차선만 막는다');
+        assert.equal(riskFoes.length, 0, '벽 쪽에는 좀비가 없다');
+      }
+      const crate = seg.props.find((p) => p.fork && p.kind !== 'wall');   // 지원병 상자는 특수병 배치가 철창으로 바꾸기도 한다
+      assert.ok(crate && crate.z > wallZ && crate.z < d.z1 && Math.sign((crate.x0 + crate.x1) / 2) === d.risk, '보상 상자는 벽(떼) 바로 뒤');
+      assert.ok(['gun', 'men', 'unit'].includes(crate.reward.type));
       assert.ok(!seg.rows.some((r) => inside(r.z)) && !seg.saws.some((w) => inside(w.z)), '갈린 구간에 게이트·톱날 없음');
-      const foes = seg.foes.filter((f) => inside(f.z));
-      assert.ok(foes.length >= 5 && foes.every((f) => f.kind === 'grunt' && Math.sign(f.x) === -d.risk), '안전한 쪽에만 졸개');
+      const foes = seg.foes.filter((f) => inside(f.z) && Math.sign(f.x) === -d.risk);
+      assert.ok(foes.length >= 5 && foes.every((f) => f.kind === 'grunt' && !f.elite), '안전한 쪽에는 약한 졸개만');
       // 가장 빠른 구간에서도 코 앞 빈 길에서 반대쪽 차선으로 옮길 시간이 있다(이동 + 반응 0.45초)
       assert.ok(C.FORK.nose / seg.speed >= C.moveTime(C.ROAD) + C.REACT_FAR);
     }
   }
+  assert.ok(kinds.wall >= 8 && kinds.horde >= 5, `두 패턴이 다 나온다(벽 ${kinds.wall}, 떼 ${kinds.horde})`);
 });
 
 test('갈림길: 코를 지나면 옆 칸으로 못 넘어간다 — 몸이 차츰 밀려나 8m 뒤에는 통째로 제 쪽, 끝나면 풀린다', () => {
@@ -754,19 +770,161 @@ test('갈림길: 코를 지나면 옆 칸으로 못 넘어간다 — 몸이 차�
 });
 
 test('갈림길과 봇: 벽을 뚫을 만하면 위험한 쪽, 아니면 안전한 쪽으로 간다 — 위험한 쪽을 고른 판은 대부분 뚫는다', () => {
-  let risky = 0, broke = 0, forks = 0;
+  let risky = 0, broke = 0, forks = 0, hordeRisky = 0, hordeKept = 0;
   for (let i = 0; i < 10; i++) {
     const s = C.newEndless({ seed: 77 + i * 13, ...UP10 });
     const pol = makeBot('sloppy0.1', 1000 + i, { skill: true });
     let cur = null;
     while (s.phase !== 'lost' && s.endless.bosses < 5 && s.tick < 60 * 60 * 8) {
       const dv = C.divAt(s);
-      if (dv && dv !== cur && s.squad.z > dv.z0 + C.FORK_TAPER) { cur = dv; forks++; cur.r = Math.sign(s.squad.x) === dv.risk; if (cur.r) risky++; }
+      if (dv && dv !== cur && s.squad.z > dv.z0 + C.FORK_TAPER) {
+        cur = dv; forks++; cur.r = Math.sign(s.squad.x) === dv.risk; cur.n0 = s.squad.n;
+        if (cur.r) { if (dv.kind === 'horde') hordeRisky++; else risky++; }
+      }
       C.step(s, pol(s));
       if (cur && cur.r && s.ev.some((e) => e.t === 'wallBreak')) broke++;
-      if (cur && s.squad.z > cur.z1) cur = null;
+      if (cur && s.squad.z > cur.z1) { if (cur.r && cur.kind === 'horde' && s.squad.n >= 0.85 * cur.n0) hordeKept++; cur = null; }
     }
   }
   assert.ok(forks >= 15 && risky >= 4 && risky < forks, `갈림길 ${forks}번 중 위험한 쪽 ${risky}번`);
   assert.ok(broke >= 0.8 * risky, `위험한 쪽 ${risky}번 중 ${broke}번 뚫음`);
+  assert.ok(hordeRisky >= 2 && hordeKept >= 0.7 * hordeRisky, `좀비 떼 쪽 ${hordeRisky}번 중 ${hordeKept}번 병력을 지킴`);
+});
+
+/* ---------- 정예 좀비(무한모드): 잡히면 오염 웅덩이를 남기는 좀비 · 갈라지는 좀비 ---------- */
+const eliteStage = (n = 60) => {
+  const s = C.newEndless({ seed: 5, start: n, fire: 10 });
+  s.rows = []; s.foes = []; s.props = []; s.saws = []; s.marks = []; s.arenaZ = 1e6; s.stopZ = 1e6;
+  delete s.divs;
+  return s;
+};
+const foeAt = (s, x, dz, o = {}) => {
+  const f = { id: s.nextId++, kind: 'grunt', x, z: s.squad.z + dz, hp: 5, max: 5, alive: true, awake: true, hitT: -9, cd: 0, seed: 1, ...C.FOE_BASE.grunt, ...o };
+  s.foes.push(f);
+  return f;
+};
+
+test('정예 좀비: 무한모드 무리에만 섞인다(오염 2구간부터, 분열 3구간부터) — 캠페인 레벨에는 없다', () => {
+  for (const L of [7, 24, 45, 60]) assert.ok(!C.prepareLevel(L).foes.some((f) => f.elite), `캠페인 L${L}`);
+  const count = (k, e) => { let n = 0; for (const seed of [5, 77, 91]) n += C.buildSegment(seed, k, 200, 1).foes.filter((f) => f.elite === e).length; return n; };
+  assert.equal(count(1, 'toxic') + count(1, 'split'), 0, '1구간에는 없다');
+  assert.ok(count(2, 'toxic') >= 3 && count(2, 'split') === 0, '2구간: 오염만');
+  assert.ok(count(4, 'toxic') >= 3 && count(4, 'split') >= 3, '4구간: 둘 다');
+  for (const seed of [5, 77]) {
+    const seg = C.buildSegment(seed, 6, 500, 1);
+    for (const f of seg.foes.filter((x) => x.elite)) {
+      assert.equal(f.kind, 'grunt');
+      assert.ok(C.contactCost(f.hp) <= Math.ceil(0.3 * 500 * 1.7) + 1, '부딪혀도 병력의 한 몫만(상한)');
+    }
+    const d = seg.divs[0];
+    assert.ok(!seg.foes.some((f) => f.elite === 'toxic' && f.z >= d.z0 && f.z <= d.z1), '갈림길 안에는 오염 좀비가 없다');
+  }
+});
+
+test('오염 좀비: 잡힌 자리에 웅덩이 — 예고가 끝난 뒤 밟으면 한 번만 잃고, 비켜서면 안 잃는다. 코앞에서 잡으면 해 없이 지나간다', () => {
+  // 멀리서 잡고 그대로 달린다 → 밟는다(한 번만)
+  let s = eliteStage(60);
+  foeAt(s, 0, 24, { elite: 'toxic' });
+  let made = 0, on = 0, hits = 0;
+  const n0 = s.squad.n;
+  for (let i = 0; i < 240; i++) { C.step(s, { dir: 0 }); for (const e of s.ev) { if (e.t === 'pool') made++; if (e.t === 'poolOn') on++; if (e.t === 'poolHit') hits++; } }
+  assert.deepEqual([made, on, hits], [1, 1, 1]);
+  assert.ok(s.squad.n < n0 && s.squad.n >= Math.floor(n0 * (1 - C.POOL_HIT)) - 1, `${n0} → ${s.squad.n}`);
+  assert.equal(s.cause || 'pool', 'pool');
+  assert.ok(!s.pools, '지나간 웅덩이는 치운다');
+  // 같은 상황에서 옆으로 비켜선다 → 안 잃는다(예고 시간 = 비켜서는 시간 + 반응 이상)
+  for (const n of [12, 60, 400, 3000]) {
+    for (const x0 of [0, -2, 3.5]) {
+      s = eliteStage(n);
+      s.squad.x = x0;
+      foeAt(s, x0, 24, { elite: 'toxic' });
+      let pool = null, hit = 0, t0 = 0;
+      for (let i = 0; i < 300; i++) {
+        let dir = 0;
+        if (pool) {
+          if (s.t - t0 >= C.REACT_FAR) {   // 사람처럼 0.45초 뒤에 움직이기 시작한다
+            const need = C.hitHalf(C.radius(s.squad.n)) + C.POOL_R + 0.05;
+            const side = Math.abs(pool.x + need) <= C.EDGE ? 1 : -1;
+            dir = C.steer(s, pool.x + side * need, 0.05).dir;
+          }
+        }
+        C.step(s, { dir });
+        for (const e of s.ev) { if (e.t === 'pool') { pool = { x: e.x }; t0 = s.t; assert.ok(s.pools[0].t >= C.POOL_T - 1e-9); } if (e.t === 'poolHit') hit++; }
+      }
+      assert.ok(pool, '웅덩이가 생겼다');
+      assert.equal(hit, 0, `병력 ${n}, x ${x0}: 비켜섰는데 밟았다`);
+      assert.equal(s.squad.n, n);
+    }
+  }
+  // 코앞에서 잡으면(예고가 끝나기 전에 지나간다) 해가 없다 — 지나는 동안 발밑에서 해로워지지도 않는다
+  s = eliteStage(60);
+  const f = foeAt(s, 0, 7, { elite: 'toxic', hp: 1, max: 1, spd: 0, home: 0 });
+  void f;
+  hits = 0; made = 0;
+  for (let i = 0; i < 200; i++) { C.step(s, { dir: 0 }); for (const e of s.ev) { if (e.t === 'pool') made++; if (e.t === 'poolHit') hits++; } }
+  assert.deepEqual([made, hits, s.squad.n], [1, 0, 60]);
+});
+
+test('오염 좀비: 갈림길 안에서는 웅덩이를 남기지 않고, 물려서 사라진 좀비도 남기지 않는다. 웅덩이는 저장·복원에 실린다', () => {
+  let s = eliteStage(60);
+  s.divs = [{ id: s.nextId++, z0: s.squad.z + 10, z1: s.squad.z + 60, risk: 1, wall: 0 }];
+  s.squad.x = 2;
+  foeAt(s, 2, 24, { elite: 'toxic' });
+  let made = 0, kills = 0;
+  for (let i = 0; i < 200; i++) { C.step(s, { dir: 0 }); for (const e of s.ev) { if (e.t === 'pool') made++; if (e.t === 'kill') kills++; } }
+  assert.deepEqual([made, kills, s.squad.n], [0, 1, 60]);
+  // 총알이 안 닿는 옆에서 물린 좀비: 웅덩이 없음
+  s = eliteStage(200);
+  foeAt(s, 0, 0.5, { elite: 'toxic', hp: 5000, max: 5000 });
+  made = 0;
+  for (let i = 0; i < 60; i++) { C.step(s, { dir: 0 }); for (const e of s.ev) if (e.t === 'pool') made++; }
+  assert.equal(made, 0);
+  assert.ok(s.squad.n < 200);
+  // 저장·복원: 웅덩이가 있는 틱에서 갈라 돌려도 같은 해시
+  s = eliteStage(60);
+  foeAt(s, 0, 26, { elite: 'toxic' });
+  while (!s.pools) C.step(s, { dir: 0 });
+  const h0 = C.stateHash(s);
+  const t = C.restore(C.snapshot(s));
+  assert.equal(C.stateHash(t), h0);
+  assert.ok(C.hitShapes(s).every((x) => x.k !== 'pool'), '예고 중에는 맞는 모양이 없다');
+  for (let i = 0; i < 90; i++) { C.step(s, { dir: 0 }); C.step(t, { dir: 0 }); }
+  assert.equal(C.stateHash(t), C.stateHash(s));
+});
+
+test('분열 좀비: 잡히면 질주 좀비 둘로 갈라진다 — 갈림길 안에서는 제 차선에 남는다', () => {
+  let s = eliteStage(60);
+  foeAt(s, 0, 26, { elite: 'split', hp: 40, max: 40 });
+  let split = 0;
+  while (!split && s.tick < 300) { C.step(s, { dir: 0 }); for (const e of s.ev) if (e.t === 'split') split = e.n; }
+  assert.equal(split, C.ELITE.split.kids);
+  const kids = s.foes.filter((f) => f.alive && f.kid);
+  assert.equal(kids.length, 2);
+  assert.ok(kids.every((f) => f.kind === 'runner' && f.hp === Math.round(40 * C.ELITE.split.kidHp) && f.awake));
+  assert.ok(kids[0].x < 0 && kids[1].x > 0, '양옆으로 갈라진다');
+  // 갈림길 안
+  s = eliteStage(60);
+  s.divs = [{ id: s.nextId++, z0: s.squad.z - 20, z1: s.squad.z + 80, risk: 1, wall: 0 }];
+  s.squad.x = 2.4;
+  foeAt(s, 2.4, 26, { elite: 'split', hp: 40, max: 40, home: 0 }).x = 0.3;
+  s.foes[0].x = 0.6;
+  split = 0;
+  for (let i = 0; i < 400 && !split; i++) { C.step(s, C.steer(s, 0.6 + C.radius(60), 0.05)); for (const e of s.ev) if (e.t === 'split') split = 1; }
+  assert.ok(split);
+  assert.ok(s.foes.filter((f) => f.kid).every((f) => f.x >= 0.5), '분리대를 넘지 않는다');
+});
+
+test('봇과 오염 웅덩이: 기준 봇은 웅덩이를 보고 비켜 간다 — 그대로 달리는 것보다 덜 밟는다', () => {
+  let hitBot = 0, hitIdle = 0, n = 0;
+  for (const x0 of [-3, -1, 0, 1.5, 3]) {
+    for (const who of ['bot', 'idle']) {
+      const s = eliteStage(300);
+      s.squad.x = x0;
+      foeAt(s, x0, 26, { elite: 'toxic' });
+      for (let i = 0; i < 300; i++) { C.step(s, who === 'bot' ? C.botInput(s, {}) : { dir: 0 }); for (const e of s.ev) if (e.t === 'poolHit') { if (who === 'bot') hitBot++; else hitIdle++; } }
+    }
+    n++;
+  }
+  assert.equal(hitIdle, n);
+  assert.equal(hitBot, 0);
 });

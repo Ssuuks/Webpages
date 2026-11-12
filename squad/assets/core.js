@@ -597,8 +597,26 @@ function spawnWave(lv, g, p, z, ng, scale, opt = {}) {
   let k = Math.max(2, budget);
   const room = Math.max(2, foeRoom(lv, z, z + 9) - placed.length);
   if (k > room) { hp *= k / room; k = room; }
-  for (let i = 0; i < k; i++) placed.push(addFoe(lv, g, 'grunt', U(g, x0, x1), z + U(g, 0, 9), hp));
+  const grunts = [];
+  for (let i = 0; i < k; i++) grunts.push(addFoe(lv, g, 'grunt', U(g, x0, x1), z + U(g, 0, 9), hp));
+  for (const f of grunts) placed.push(f);
+  if (p.endless && !opt.noElite) makeElites(g, p, grunts, ng);
   return placed;
+}
+/* 무한모드: 무리의 졸개 몇을 정예로 바꾼다(체력 × ELITE.hp — 무리가 그만큼 단단해진다). 뒤쪽(먼) 졸개부터 — 앞줄 졸개를 잡는 동안 보인다 */
+function makeElites(g, p, grunts, ng) {
+  const pool = grunts.slice().sort((a, b) => b.z - a.z || a.id - b.id);
+  for (const k of ['toxic', 'split']) {
+    const E = ELITE[k];
+    if (p.seg < E.from) continue;
+    for (let i = E.n(p.seg); i > 0 && pool.length > 2; i--) setElite(pool.splice((rand(g) * Math.min(4, pool.length)) | 0, 1)[0], k, ng);
+  }
+}
+function setElite(f, k, ng) {
+  const E = ELITE[k];
+  f.elite = k;
+  f.hp = f.max = Math.max(1, Math.round(Math.min(f.hp * E.hp, Math.max(f.hp, E.cap * ng * SOLDIER_HP))));
+  return f;
 }
 
 /* 무리가 기준 화력에 얼마나 새어 들어오나(손실 병력 추정). 기준 봇과 같은 모형(foeLeftover): 몇 자리 중 가장 덜 잃는 자리에 선
@@ -826,6 +844,25 @@ export const FORK_FROM = 2;
 export const FORK_TAPER = 8;
 export const FORK = { nose: 22, wall: 26, after: 14, men: 0.15, safe: 0.3, tail: 16 };
 export const FORK_WALL = [0.85, 1.0];
+/* 갈림길의 위험한 쪽 패턴: 'wall'(벽) · 'horde'(차선을 메운 좀비 떼 — 거구 하나 + 분열 좀비 + 졸개). FORK_HORDE_P: 떼가 나올 몫(3구간부터 — 첫 갈림길은 벽),
+   FORK_HORDE: 떼의 체력 합 = 벽 체력 식 × 이 범위(다가오는 적은 벽보다 쏠 시간이 짧다) */
+export const FORK_HORDE_FROM = 3;
+export const FORK_HORDE_P = 0.5;
+export const FORK_HORDE = [0.6, 0.75];
+
+/* 정예 좀비(무한모드 — 캠페인 레벨에는 없다: 배치·난수·해시 그대로). 졸개 몸에 f.elite가 붙는다. 총·저격·로켓·스킬로 '잡았을 때'만 일이 난다(물려서 사라지면 아무 일 없다)
+   - toxic(오염 좀비): 잡힌 자리에 오염 웅덩이. POOL_T초 동안은 예고(해 없음 — 바로 앞에서 잡았으면 그대로 지나간다), 그 뒤 POOL_LIFE초 동안 밟으면 한 번
+     병력의 POOL_HIT × 겹친 몫을 잃는다. 폭·예고 시간은 독침과 같다(±POOL_R, 1초 — 같은 '옆 칸으로 비켜서기'). 갈림길 안에는 생기지 않는다(옆으로 못 피한다)
+   - split(분열 좀비): 잡히면 질주 좀비 kids마리로 갈라진다(한 마리 체력 = 제 체력 × kidHp). 멀리서 잡으면 다가오는 동안 마저 잡히고, 코앞에서 잡으면 문다
+   from: 나오기 시작하는 구간, hp: 졸개 체력 배수, cap: 체력 상한(병력 몫 — 부딪히면 그만큼 잃는다), n(k): 무리 하나에 섞이는 수 */
+export const ELITE = {
+  toxic: { from: 2, hp: 2, cap: 0.3, n: (k) => 1 + (k >= 6) },
+  split: { from: 3, hp: 1.6, cap: 0.25, kids: 2, kidHp: 0.3, n: (k) => 1 + (k >= 9) },
+};
+export const POOL_T = 1.0;
+export const POOL_R = 1.2;
+export const POOL_LIFE = 4;
+export const POOL_HIT = 0.2;
 /* 분대가 지금 갇힌(또는 lead m 안에 들어설) 분리대 */
 export function divAt(s, lead = 0) {
   if (!s.divs) return null;
@@ -1078,16 +1115,35 @@ const CHUNK = {
     const lane = (sd) => (sd > 0 ? { x0: 0, x1: ROAD } : { x0: -ROAD, x1: 0 });
     const rl = lane(risk);
     const hp = D * ((BULLET_RANGE - 2) / p.speed) * U(g, FORK_WALL[0], FORK_WALL[1]);
-    const w = wallProp(lv, rl.x0 + 0.15, rl.x1 - 0.15, wz, hp, { fork: true });
     const cx = (rl.x0 + rl.x1) / 2;
     const reward = chance(g, 0.6) ? { type: 'gun' } : { type: 'men', v: Math.max(6, nice(ng * FORK.men)) };
     const ch = Math.max(1, Math.round(hp * 0.12));
+    const horde = p.seg >= FORK_HORDE_FROM && chance(g, FORK_HORDE_P);
+    const div = { id: 0, z0, z1, risk, wall: 0 };
+    if (horde) {
+      // 좀비 떼: 벽 대신 차선을 메운 무리(거구 하나 + 분열 좀비 둘 + 졸개). 체력 합 H — 못 잡은 만큼 물린다(벽과 같은 '남은 체력 10마다 1명')
+      const H = hp * U(g, FORK_HORDE[0], FORK_HORDE[1]);
+      const xr = () => U(g, rl.x0 + 0.8, rl.x1 - 0.8);
+      addFoe(lv, g, 'brute', cx + U(g, -0.6, 0.6), wz - 2, H * 0.3, { fork: true });
+      const K = ELITE.split;
+      for (let i = 0; i < 2; i++) {
+        const f = addFoe(lv, g, 'grunt', xr(), zf + 16 + i * 6 + U(g, -1, 1), (H * 0.1) / (1 + K.kids * K.kidHp), { fork: true });
+        f.elite = 'split';
+      }
+      const m = 10;
+      for (let i = 0; i < m; i++) addFoe(lv, g, 'grunt', xr(), zf + 6 + (i * (FORK.wall - 8)) / m + U(g, -0.8, 0.8), (H * 0.5) / m, { fork: true });
+      div.kind = 'horde';
+      div.hp = Math.round(H);
+    } else {
+      div.wall = wallProp(lv, rl.x0 + 0.15, rl.x1 - 0.15, wz, hp, { fork: true }).id;
+    }
     lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.1, x1: cx + 1.1, z: wz + 7, hp: ch, max: ch, alive: true, hitT: -9, reward, fork: true });
     const sl = lane(-risk);
     // 안전한 쪽 졸개 다섯: 체력 합이 그 차선에서 다가오는 동안 쏟는 양의 FORK.safe배 — 서서 쏘기만 해도 다 잡힌다
     const gh = (D * approachT(p, FOE_BASE.grunt.spd) * FORK.safe) / 5;
     for (let i = 0; i < 5; i++) addFoe(lv, g, 'grunt', U(g, sl.x0 + 0.8, sl.x1 - 0.8), zf + 12 + i * 4 + U(g, -1, 1), gh);
-    (lv.divs || (lv.divs = [])).push({ id: lv.nextId++, z0, z1, risk, wall: w.id });
+    div.id = lv.nextId++;
+    (lv.divs || (lv.divs = [])).push(div);
     return { len: z1 - z + FORK.tail, ng };
   },
 
@@ -1413,10 +1469,11 @@ function nextSegment(s) {
   for (const pr of seg.props) { pr.id += off; pr.z += dz; }
   for (const w of seg.saws) { w.id += off; w.z += dz; }
   for (const m of seg.marks) m.z += dz;
-  if (seg.divs && seg.divs.length) { for (const d of seg.divs) { d.id += off; d.wall += off; d.z0 += dz; d.z1 += dz; } s.divs = seg.divs; } else delete s.divs;
+  if (seg.divs && seg.divs.length) { for (const d of seg.divs) { d.id += off; if (d.wall) d.wall += off; d.z0 += dz; d.z1 += dz; } s.divs = seg.divs; } else delete s.divs;
   s.nextId = off + seg.nextId + 1;
   s.rows = seg.rows; s.foes = seg.foes; s.props = seg.props; s.saws = seg.saws; s.marks = seg.marks;
   s.spits = []; s.rockets = [];
+  delete s.pools;
   s.L = seg.L; s.params = seg.params; s.speed = seg.speed;
   s.arenaZ = seg.arenaZ + dz; s.stopZ = s.arenaZ + 6;
   s.bossHp = seg.bossHp; s.bossRef = seg.arrive; s.refFire = ENDLESS.fire; s.refMul = seg.refMul;
@@ -1668,7 +1725,7 @@ export function step(s, input) {
   if (q.x > EDGE) { q.x = EDGE; if (q.vx > 0) q.vx = 0; }
   // 분리대(갈림길): 코를 지나면 제 쪽에 갇힌다 — 몸이 가운데에서 차츰 밀려나 FORK_TAPER m 뒤에는 통째로 제 쪽에 있다
   if (s.divs && s.phase === 'run') {
-    for (const d of s.divs) if (!d.seen && q.z + MARK_AHEAD >= d.z0) { d.seen = 1; emit(s, { t: 'fork', z: d.z0, risk: d.risk }); }   // 갈림길 45m 앞 알림(한 번)
+    for (const d of s.divs) if (!d.seen && q.z + MARK_AHEAD >= d.z0) { d.seen = 1; emit(s, { t: 'fork', z: d.z0, risk: d.risk, kind: d.kind || 'wall' }); }   // 갈림길 45m 앞 알림(한 번)
     const dv = divAt(s);
     if (dv) {
       const side = xPrev > 0 || (xPrev === 0 && q.vx > 0) ? 1 : -1;
@@ -1694,6 +1751,7 @@ export function step(s, input) {
   sawsUpdate(s, R);
   foesUpdate(s, R);
   spitsUpdate(s, R);
+  if (s.pools) poolsUpdate(s, R);
   if (wiped(s)) return s;
   if (s.hero) heroUpdate(s, input);
   if (s.boss) {
@@ -1955,6 +2013,60 @@ function spitsUpdate(s, R) {
   if (s.spits.length) s.spits = s.spits.filter((sp) => sp.t > 0);
 }
 
+/* 오염 웅덩이(오염 좀비가 잡힌 자리): t초 뒤부터 해롭고(그 전은 예고), life초 뒤 사라진다. 밟으면 웅덩이마다 한 번만 잃는다 */
+function poolsUpdate(s, R) {
+  const q = s.squad;
+  const H = hitHalf(R);
+  let gone = false;
+  for (const p of s.pools) {
+    if (p.t > 0) { p.t -= DT; if (p.t <= 0) emit(s, { t: 'poolOn', x: p.x, z: p.z }); }
+    else p.life -= DT;
+    if (p.life <= 0 || p.z < q.z - 6) { gone = true; continue; }
+    if (p.hit || s.phase === 'lost') continue;
+    if (!touches(p.x - q.x, p.z - q.z, H, SQUAD_DEPTH * R, POOL_R, POOL_R)) continue;
+    p.hit = 1;
+    if (p.t > 0) continue;   // 예고 중에 밟았다(코앞에서 잡았다) — 해 없이 지나간다. 지나는 동안 발밑에서 해로워지지 않는다
+    const ov = overlap(q.x - H, q.x + H, p.x - POOL_R, p.x + POOL_R) / (2 * H);
+    emit(s, { t: 'poolHit', x: p.x, z: p.z });
+    lose(s, Math.max(1, Math.ceil(POOL_HIT * ov * q.n)), 'pool', p.x, p.z);
+  }
+  if (gone) { s.pools = s.pools.filter((p) => p.life > 0 && p.z >= q.z - 6); if (!s.pools.length) delete s.pools; }
+}
+/* 정예 좀비가 잡혔을 때 */
+function eliteDeath(s, f) {
+  const q = s.squad;
+  if (f.elite === 'toxic') {
+    if (s.phase !== 'run') return;
+    // 갈림길 안(과 해로워질 때 분대가 안에 있을 거리)에는 남기지 않는다 — 옆으로 못 피한다
+    if (s.divs) for (const d of s.divs) if (f.z >= d.z0 - s.speed * (POOL_T + 0.3) && f.z <= d.z1 + 2) return;
+    // 예고 = POOL_T초, 큰 분대가 멀리 비켜서야 하면 그만큼 더(공정성 P14: 이동 시간 + 반응 0.45초 — 반대로 가던 중이면 돌아서는 시간까지)
+    const need = hitHalf(radius(q.n)) + POOL_R;
+    const dx = f.x - q.x;
+    // side 쪽으로 비켜서는 데 드는 초(웅덩이 옆 f.x ± need까지 — 길 밖이면 못 간다, 이미 비켜서 있으면 0)
+    const go = (side) => {
+      if (Math.abs(f.x + side * need) > EDGE) return Infinity;
+      const d = need + side * dx;
+      return d <= 0 ? 0 : moveTimeFrom(side * d, q.vx) + REACT_FAR;
+    };
+    const tl = go(-1), tr = go(1);
+    const T = Math.max(POOL_T, Math.min(tl, tr, 3));
+    (s.pools || (s.pools = [])).push({ id: s.nextId++, x: f.x, z: f.z, t: T, T, life: POOL_LIFE, hit: 0 });
+    emit(s, { t: 'pool', x: f.x, z: f.z });
+  } else if (f.elite === 'split') {
+    const K = ELITE.split;
+    const hp = Math.max(1, Math.round(f.max * K.kidHp));
+    // 갈림길 안이면 제 차선에 남는다
+    let side = 0;
+    if (s.divs) for (const d of s.divs) if (f.z >= d.z0 && f.z <= d.z1) side = f.x >= 0 ? 1 : -1;
+    for (let i = 0; i < K.kids; i++) {
+      let x = clamp(f.x + (i - (K.kids - 1) / 2) * 1.6, -4.6, 4.6);
+      if (side) x = side * clamp(side * x, 0.5, 4.6);
+      s.foes.push({ id: s.nextId++, kind: 'runner', x, z: f.z + 0.4 * i, hp, max: hp, alive: true, awake: true, hitT: -9, cd: 0, seed: (f.seed + 7 * (i + 1)) % 1000, ...FOE_BASE.runner, kid: 1 });
+    }
+    emit(s, { t: 'split', x: f.x, z: f.z, n: K.kids });
+  }
+}
+
 /* 펫 효과의 크기(고정 — 레벨은 확률만 올린다). *_AVG: 기대값 모드(별 기준)에서 확률 1당 피해로 치는 몫(ENDGAME.md 6절의 어림) */
 export const PET_CRIT = 2;
 export const PET_FAR = 1.5;
@@ -2125,7 +2237,8 @@ function hitFoe(s, f, dmg, by) {
   f.alive = false;
   s.stats.kills++;
   s.stats.killHp += f.max;
-  emit(s, { t: 'kill', kind: f.kind, x: f.x, z: f.z, by });
+  emit(s, { t: 'kill', kind: f.kind, x: f.x, z: f.z, by, elite: f.elite });
+  if (f.elite) eliteDeath(s, f);
   chargeHero(s, 0.01);
   // 펫 '기운 내': 처치마다 확률로 영웅 게이지 +PET_CHEER
   if (s.hero && petFx(s) === 'cheer') {
@@ -2504,9 +2617,16 @@ function divSteer(s, tx) {
   let side;
   if (q.z >= dv.z0) side = q.x >= 0 ? 1 : -1;
   else {
-    const w = s.props.find((p) => p.id === dv.wall);
     const can = dps(q.n, q.tier, s.fireLv) * heroDmg(s) * 0.9 * ((BULLET_RANGE - 2) / Math.max(1, q.vz));
-    side = w && w.alive && w.hp > can ? -dv.risk : dv.risk;
+    if (dv.kind === 'horde') {
+      // 좀비 떼: 위험한 쪽 차선에 남은 체력 합을 벽처럼 견준다(다가오는 적이라 쏠 시간이 짧다 — FORK_HORDE의 위쪽 끝이 벽 한 장 몫)
+      let H = 0;
+      for (const f of s.foes) if (f.alive && f.z >= dv.z0 && f.z <= dv.z1 && Math.sign(f.x) === dv.risk) H += f.hp * (f.elite === 'split' ? 1 + ELITE.split.kids * ELITE.split.kidHp : 1);
+      side = H > can * FORK_HORDE[1] ? -dv.risk : dv.risk;
+    } else {
+      const w = s.props.find((p) => p.id === dv.wall);
+      side = w && w.alive && w.hp > can ? -dv.risk : dv.risk;
+    }
   }
   const lo = Math.min(EDGE, R + 0.1);
   return side * clamp(side * tx, lo, EDGE);
@@ -2555,6 +2675,12 @@ export function botTarget(s, opt = {}) {
     if (sp.t > 0.95) continue;
     const gap = R + 1.2 + 0.3;
     cands.push(clamp(sp.x - gap, -EDGE, EDGE), clamp(sp.x + gap, -EDGE, EDGE));
+  }
+  const pools = s.pools || null;
+  if (pools) for (const pl of pools) {
+    if (pl.hit || pl.z < q.z - 1 || pl.z - q.z > 34) continue;
+    const gap = R + POOL_R + 0.3;
+    cands.push(clamp(pl.x - gap, -EDGE, EDGE), clamp(pl.x + gap, -EDGE, EDGE));
   }
   // 톱날 한 번 스치는 손실(띠를 지나는 시간 동안 초당 4 + 0.35n의 대부분)
   const sawCost = (4 + 0.35 * q.n) * ((2 * (0.55 * R + 0.35)) / vz) * 0.8 + 1;
@@ -2616,6 +2742,15 @@ export function botTarget(s, opt = {}) {
       const at = moveTime(x - q.x) + 0.05 < sp.t ? x : q.x;
       const ov = overlap(at - R, at + R, sp.x - 1.2, sp.x + 1.2) / (2 * R);
       if (ov > 0) val -= Math.ceil(0.3 * ov * q.n) + 1;
+    }
+    // 오염 웅덩이: 닿을 때 해로운(예고가 끝났고 아직 남아 있는) 웅덩이를 그 자리에서 밟게 되나
+    if (pools) for (const pl of pools) {
+      if (pl.hit || pl.z < q.z - 1 || pl.z - q.z > 34) continue;
+      const ta = Math.max(0, (pl.z - q.z - R) / vz);
+      if (ta < pl.t - 0.05 || ta > Math.max(0, pl.t) + pl.life) continue;
+      const at = moveTime(x - q.x) + 0.05 < ta ? x : q.x;
+      const ov = overlap(at - R, at + R, pl.x - POOL_R, pl.x + POOL_R) / (2 * R);
+      if (ov > 0) val -= Math.ceil(POOL_HIT * ov * q.n) + 1;
     }
     // 무리: 이 자리에 닿을 적(다가오는 동안 옆으로 따라붙는 만큼 포함) 중 쏴서 못 잡는 만큼.
     // 총알은 분대 폭(±span) 앞으로만 나가므로, 옆에서 파고드는 적은 폭 안에 들어온 뒤에야 맞는다
@@ -3190,6 +3325,7 @@ export function hitShapes(s) {
   for (const w of s.saws) out.push({ k: 'saw', x0: w.x - w.w / 2, x1: w.x + w.w / 2, z0: w.z - SAW_HD, z1: w.z + SAW_HD, ell: true });
   for (const p of s.props) if (p.alive && !p.passed) out.push({ k: p.kind, x0: p.x0, x1: p.x1, z0: p.z, z1: p.z });
   for (const sp of s.spits) out.push({ k: 'spit', x0: sp.x - SPIT_R, x1: sp.x + SPIT_R, z0: sp.z, z1: sp.z });
+  if (s.pools) for (const p of s.pools) if (p.t <= 0 && !p.hit) out.push({ k: 'pool', x0: p.x - POOL_R, x1: p.x + POOL_R, z0: p.z - POOL_R, z1: p.z + POOL_R, ell: true });
   const b = s.boss;
   if (b && b.hp > 0) {
     out.push({ k: 'bossHit', x0: b.x - BOSS_HIT, x1: b.x + BOSS_HIT, z0: b.z - 1, z1: b.z - 1 });
@@ -3226,6 +3362,7 @@ export function stateHash(s) {
   if (s.ammo) { h = hash(h, s.ammo); for (const f of s.foes) if (f.alive && f.slowT > s.t) h = hash(h, f.id, f.slowT.toFixed(4)); }
   // 무한모드(캠페인 판에는 없다 — 해시 그대로)
   if (s.divs) for (const d of s.divs) h = hash(h, d.id, d.z0.toFixed(3), d.z1.toFixed(3), d.risk);
+  if (s.pools) for (const p of s.pools) h = hash(h, p.id, p.x.toFixed(4), p.z.toFixed(4), p.t.toFixed(4), p.life.toFixed(4), p.hit);
   if (s.endless) { const e = s.endless; h = hash(h, e.seed, e.seg, e.bosses, e.bank, e.wait.toFixed(4), e.z0.toFixed(4), s.L, s.arenaZ.toFixed(4), (s.refMul || 1).toFixed(6)); }
   return h;
 }
