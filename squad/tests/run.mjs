@@ -515,6 +515,56 @@ test(`배치 검사: 판 내내 한 자리(${C.QA_XS.join('·')})에 서 있으�
   assert.ok(range(1, 60).some((L) => C.prepareLevel(L).rows.some((r) => r.cells.some((c) => c.cap0 != null))), '높인 빨간 칸이 남아 있다');
 });
 
+const BENCHLIB = new URL('../tools/benchlib.mjs', import.meta.url).href;
+const CURVE = new URL('../tools/curve.mjs', import.meta.url).href;
+/* SIM 10 표가 쓰던 배치 중 tools/curve.mjs가 '벽'으로 잡은 것 [레벨, 배치] — 집중한 사람(sloppy0.1)의 경기장 도달률이 20~73%였다
+   (L51은 쉼 레벨의 산만한 사람 67%). 같은 판을 기준 봇은 늘 넘고 보스 체력으로는 못 고쳐서 묶음 평균에 가려져 있었다 */
+const OLD_WALLS = [[27, 1], [43, 0], [44, 2], [47, 0], [49, 2], [51, 1], [58, 0]];
+test('배치의 벽 검사(SIM 11): 일반·쉼 레벨은 사람 흉내 봇이 경기장까지 가야 한다 — 옛 표의 벽 배치는 걸러지고 지금 표의 배치는 통과한다', async () => {
+  // 대상은 1회차 L5~POP_MAX의 일반·쉼 레벨뿐: 첫 레벨들, 어려움·매우 어려움(경기장 전 실패가 목표), 회차, 그 자리 보정(fast), 표 밖은 안 본다
+  assert.equal(C.wallCheck(C.buildLevel(3, 0)), null, 'L1~4');
+  for (const L of [15, 20, 45, 50]) assert.equal(C.wallCheck(C.buildLevel(L, 0)), null, `L${L} 어려움·매우 어려움`);
+  assert.equal(C.wallCheck(C.buildLevel(12, 0, false, 2)), null, '2회차');
+  const fast = C.buildLevel(12, 0);
+  fast.fast = true;
+  assert.equal(C.wallCheck(fast), null, '그 자리 보정(fast)');
+  assert.equal(C.wallCheck(C.buildLevel(C.POP_MAX + 10, 0)), null, `L${C.POP_MAX + 1}~`);
+  const job = (L, a) => POOL.run({ kind: 'call', module: BENCHLIB, fn: 'wallOf', args: [L, a] });
+  // 옛 표의 벽 배치는 걸러진다
+  const old = await Promise.all(OLD_WALLS.map(([L, a]) => job(L, a)));
+  OLD_WALLS.forEach(([L, a], i) => assert.equal(old[i].ok, false, `L${L} 배치 ${a}가 벽 검사를 넘었다: on ${old[i].on} sl3 ${old[i].sl3}`));
+  // 지금 표는 그 레벨들의 배치를 바꿨고, 바뀐 배치는 통과한다
+  const now = await Promise.all(OLD_WALLS.map(([L]) => job(L, null)));
+  OLD_WALLS.forEach(([L, a], i) => {
+    assert.notEqual(CAL.levels[L].attempt, a, `L${L}의 표 배치가 그대로 벽이다`);
+    assert.equal(now[i].ok, true, `L${L}: on ${now[i].on} sl3 ${now[i].sl3}`);
+  });
+  // 보정이 정말 그 길을 탄다: 표의 배치를 먼저 보지 않고(keep 없음) 0번 배치부터 보정해도 지금 표와 같은 배치가 골라진다(앞의 벽 배치는 걸러진다)
+  const cal = await Promise.all(OLD_WALLS.map(([L]) => POOL.run({ kind: 'call', module: BENCHLIB, fn: 'calNoKeep', args: [L] })));
+  OLD_WALLS.forEach(([L], i) => {
+    assert.ok(!cal[i].failed, `L${L} 보정 실패`);
+    assert.equal(cal[i].attempt, CAL.levels[L].attempt, `L${L}: keep 없이 보정하면 배치 ${cal[i].attempt}(표 ${CAL.levels[L].attempt})`);
+  });
+  // 표의 나머지 일반·쉼 레벨도 통과한다(표본 — 한 레벨의 검사가 판 96개라 워커로 나눠도 몇십 초)
+  const sample = [7, 13, 22, 29, 36, 39, 52, 66, 89, 92, 119].filter((L) => !OLD_WALLS.some(([x]) => x === L));
+  const out = await Promise.all(sample.map((L) => job(L, null)));
+  sample.forEach((L, i) => { assert.ok(out[i], `L${L}은 벽 검사 대상이다`); assert.ok(out[i].ok, `L${L}: on ${out[i].on} sl3 ${out[i].sl3}`); });
+});
+
+test('벽 레벨이 없다(SIM 11): 일반·쉼 레벨 L5~60을 보정과 다른 시드로 돌려도 집중한 사람(sloppy0.1)이 경기장에 거의 늘 가고 대부분 이긴다', async () => {
+  // tools/curve.mjs와 같은 판(레벨마다 24판). 측정(64판): 도달률 최저 88%(L13)·승률 최저 75%(SIM 10에는 L43이 20%·19%였다) — 표본이 작아 도달 75%·승 55%까지 본다
+  const Ls = range(5, 60).filter((L) => ['normal', 'rest'].includes(tagClass(L)));
+  const out = await Promise.all(Ls.map((L) => POOL.run({ kind: 'call', module: CURVE, fn: 'curveLevel', args: [L, { seeds: 24, bots: ['sloppy0.1'] }] })));
+  const bad = [];
+  out.forEach((r, i) => {
+    const a = r.bots['sloppy0.1'];
+    const reach = 1 - a.pre / a.n;
+    const win = a.wins / a.n;
+    if (reach < 0.75 || win < 0.55) bad.push(`L${Ls[i]} 도달 ${(100 * reach).toFixed(0)}% 승 ${(100 * win).toFixed(0)}%`);
+  });
+  assert.deepEqual(bad, [], `벽 레벨: ${bad.join(', ')}`);
+});
+
 test('측정용 봇(tests/bots.mjs)은 시드가 같으면 같은 판을 돌고, 복제하면 그 자리부터 똑같이 이어 간다', () => {
   const lv = C.prepareLevel(9);
   for (const name of ['strong', 'expert', 'sloppy0.1', 'sloppy0.1-pump', 'sloppy0.1-hold', 'misjudge', 'naive', 'random', 'hold2.5', 'faceworst', 'trueworst']) {
