@@ -131,13 +131,19 @@ ENDLESS                                  // 상수(위협의 기준 화력 10단
 segInfo(k) → { k, loop, biome, tag, L }  // 구간 k(1부터)의 지역·등급·가상 레벨(61~120 — 렌더러·화면은 s.L만 보고 지역 그림·왕관·이름을 고른다)
 segMul(k), segFloor(k), segCoins(k), segParams(k)
 buildSegment(seed, k, n, tier, attempt)  // 그 순간 병력 n·무기 단계로 만든 구간(레벨 한 판과 같은 모양, z는 0부터). 보정 없음 — 식으로만
-newEndless({ seed, start, fire, hero, pet })
+newEndless({ seed, start, fire, hero, pet, ammo, unl, ammoOpen })   // unl ≥ 1: 보스 뒤 3택 1(단계 해금 1단계), ammoOpen: 별로 열린 탄종
 s.endless = { seed, seg, bosses, bank, wait, z0 }   // 평범한 JSON. 캠페인 판에는 없다
+s.endless.unl, .ammo, .picks, .offer      // 3택 1을 연 판에만(없으면 해시·동작 예전 그대로): 연 단계, 열린 탄종, 고른 카드('men'|'gun'|'unit:<병과>'|'ammo:<탄종>'),
+                                         // 떠 있는 카드 null | [{ k:'men'|'gun' } | { k:'unit', u } | { k:'ammo', a }] — 떠 있으면 step()은 틱을 세지 않는다
+CARD = { stageMax, count, men, kinds }   // 지금 만든 단계(1), 장 수(3), 증원 배수(1.3), 보이는 순서(men·gun·unit·ammo)
+offerOf(s), pickCard(s, i), cardInfo(s, c) → { k, from, to, u?, a? }   // pickCard: 다음 구간을 고르기 전 병력·무기로 이어 붙인 뒤 카드 적용
+segKings(bosses)                         // 그 판에서 쓰러뜨린 대왕 수(6구간마다)
 s.refMul                                 // 보스가 부르는 졸개 체력 배수(무한모드만)
 s.boss.dead                              // 무한모드: 쓰러지는 연출 중(ENDLESS.wait초 뒤 nextSegment — 지나간 줄·적·소품을 버리고 이어 붙인다)
 endlessCoins(s, bonusPct)                // 적립한 보스 코인 + 처치 10마리당 1(보급 %) + 상자 코인
 progress(s)                              // 무한모드는 이번 구간의 출발 자리(z0)부터
 // 이벤트: segClear { seg, coins, tag }(보스를 잡음 — 코인 적립), segStart { seg, L }(다음 구간이 이어짐). 'win'은 나오지 않는다
+// 3택 1: offer { n, seg }(카드가 떴다 — 화면은 'pick' 모드로), card { k, from, to, u?, a?, x, z }(고른 카드 — 그 앞에 segStart, 효과의 gain·spGet·spUp)
 
 // 회차
 expectAt(L, c), expectLoadout(L, c), upgCap(maxL, c), capLoadout(L, c)   // c = 회차(기본 1 — 1회차는 예전 그대로)
@@ -167,7 +173,7 @@ bullet.c(크리티컬) · bullet.r(사거리) · bullet.w(넓게 쏘기로 더�
 ## 5. 저장
 
 - 진행: 키 `squad.v1` 그대로, v2는 **필드 추가만**(옛 탭이 써도 깨지지 않게). 추가 필드: `v, updated, lastRunId, backupAt, nagged, heroes{sel, lv{}}, codex{foe,unit,hero,biome}, stats{wins,kills,bossKills,maxN,spGot,heroUses,resumes}, set.music, set.autoSkill`. 불러올 때 normalize(값 범위 고치기, 영웅 합류 소급).
-- 엔드게임 필드(더하기만): `cycle`(지금 회차), `endSeen`(엔딩 화면을 본 가장 높은 회차), `cyc{ c: { maxL, cur, stars, best, fails } }`(2회차부터의 진행 — 1회차는 옛 필드 그대로, `prog(d, c)`), `upgX{start,fire,coin}`(10단계 위 강화 — 옛 탭이 `upg`를 0~10으로 자르므로 따로 둔다, `upgLv`·`addUpg`), `heroX{id}`(Lv5 위, `heroLvOf`·`addHeroLv`), `endless{best,bestN,runs}`, `pets{own{id:{lv,sh}},sel,eggs,pity,got}`, `tips.endgame`. 끝낸 회차는 저장에서 셈한다(`endedCycles`: 그 회차의 maxL > 60 — 예전에 L60을 넘긴 저장은 1회차를 끝낸 것). 백업 코드는 저장을 통째로 싣기 때문에 새 필드도 그대로 간다(가져오기 비교 표의 '진행'에 회차가 나온다).
+- 엔드게임 필드(더하기만): `cycle`(지금 회차), `endSeen`(엔딩 화면을 본 가장 높은 회차), `cyc{ c: { maxL, cur, stars, best, fails } }`(2회차부터의 진행 — 1회차는 옛 필드 그대로, `prog(d, c)`), `upgX{start,fire,coin}`(10단계 위 강화 — 옛 탭이 `upg`를 0~10으로 자르므로 따로 둔다, `upgLv`·`addUpg`), `heroX{id}`(Lv5 위, `heroLvOf`·`addHeroLv`), `endless{best,bestN,runs,unl,kings}`(unl: 화면이 알린 해금 단계, kings: 대왕 누적 처치 — 3택 1을 넣은 뒤부터 센다; 해금 단계는 `endlessStage(d)`가 저장에서 셈한다), `pets{own{id:{lv,sh}},sel,eggs,pity,got}`, `tips.endgame`. 끝낸 회차는 저장에서 셈한다(`endedCycles`: 그 회차의 maxL > 60 — 예전에 L60을 넘긴 저장은 1회차를 끝낸 것). 백업 코드는 저장을 통째로 싣기 때문에 새 필드도 그대로 간다(가져오기 비교 표의 '진행'에 회차가 나온다).
 - 이어하기: `squad.run.v1` = `{ v:1, sim:SIM, id, at, L, attempt, start, fire, support, hero, par, state }`. 3초마다·일시정지·화면 내릴 때·경기장 입장 때 저장. 결과 정산 뒤 `lastRunId`를 기록하고 지운다(이중 보상 방지). 다시 열면 멈춘 상태로 시작.
 - 백업 코드: `save.js`의 `SQD1.` 코드(압축 + 검사값). 넣기 전 비교 표, 덮어쓰기 전 `squad.bak`에 보관해 되돌리기.
 - 저장이 막히면 "저장 꺼짐" 표시, 첫 승리 뒤 `navigator.storage.persist()`, 레벨 10 이후 백업 한 번 권하기.
@@ -186,4 +192,4 @@ bullet.c(크리티컬) · bullet.r(사거리) · bullet.w(넓게 쏘기로 더�
 
 ## 7. 미룬 것
 
-방패병·화염병, 영웅 쾅이·철순이·딸깍, 도감 화면·업적·오늘의 작전(하지 않기로 했다 — ENDGAME.md), 정면 승리 포즈, 무한모드 보스 뒤 3택 1 보상(구간 사이 `nextSegment`가 끼울 자리), 펫 등급·펫 레벨 상한의 회차 해제, 무한모드 병력 숫자 줄여 쓰기(상한이 9999라 필요 없었다), 오래 안 간 지역 그림을 아틀라스에서 비우기(지금은 지역을 다 돌면 페이지가 8장까지 는다).
+방패병·화염병, 영웅 쾅이·철순이·딸깍, 도감 화면·업적·오늘의 작전(하지 않기로 했다 — ENDGAME.md), 정면 승리 포즈, 무한모드 빌드 단계 해금 2~5단계(탄 효과·시너지·장애물, 유물, 화염병 — `ENDGAME.md` 13절, `CARD.stageMax`·`endlessStage`에 조건을 더한다), 펫 등급·펫 레벨 상한의 회차 해제, 무한모드 병력 숫자 줄여 쓰기(상한이 9999라 필요 없었다), 오래 안 간 지역 그림을 아틀라스에서 비우기(지금은 지역을 다 돌면 페이지가 8장까지 는다).

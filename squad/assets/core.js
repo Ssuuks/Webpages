@@ -1384,6 +1384,8 @@ export function segInfo(k) {
   const tag = n % 6 === 0 ? 'super' : n % 6 === 3 ? 'hard' : '';
   return { k: n, loop: Math.floor((n - 1) / 6), biome: bi, tag, L: 60 + 10 * bi + (tag === 'super' ? 10 : tag === 'hard' ? 5 : 2) };
 }
+/* 보스 b마리를 잡은 판에서 쓰러뜨린 대왕 수(6구간마다 대왕 — segInfo와 같은 규칙) */
+export const segKings = (bosses) => Math.floor(Math.max(0, bosses | 0) / 6);
 /* 구간 k의 달리는 속도 배수: 구간마다 speedStep씩 빨라지고 speedMax에서 멈춘다(ARSENAL.md 9절) */
 export const segSpeed = (k) => Math.min(ENDLESS.speedMax, 1 + ENDLESS.speedStep * (Math.max(1, k) - 1));
 export const segMul = (k) => ENDLESS.mul0 * Math.pow(ENDLESS.mulStep, Math.max(1, k) - 1);

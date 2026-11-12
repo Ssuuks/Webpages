@@ -2,7 +2,7 @@
 import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
-  CARD, WEAPON, pickCard, offerOf, cardInfo,
+  CARD, WEAPON, pickCard, offerOf, segKings, cardInfo,
 } from './core.js';
 import { createRenderer } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -1421,7 +1421,7 @@ function settleEndless(st, id) {
     rec.bestN = Math.max(rec.bestN, st.squad.peak | 0);
     rec.runs++;
     rec.unl = Math.max(rec.unl | 0, e.unl | 0);               // 화면이 알린 가장 높은 해금 단계
-    rec.kings = (rec.kings | 0) + Math.floor(out.bosses / 6);   // 대왕(6구간마다) 누적 처치
+    rec.kings = (rec.kings | 0) + segKings(out.bosses);   // 대왕(6구간마다) 누적 처치
     data.endless = rec;
     data.stats.kills += st.stats.kills;
     data.stats.bossKills += out.bosses;
