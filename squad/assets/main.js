@@ -1789,6 +1789,7 @@ function handleEvents(ev) {
         const i = segInfo(e.seg);
         const lead = i.tag === 'super' ? '대왕이 기다려요 · ' : i.tag === 'hard' ? '정예 보스 · ' : '';
         toast(`${lead}${segName(e.seg)}`, 2200);
+        if (e.seg >= 2) tip('endlessSpeed', '구간을 넘길 때마다 조금씩 빨리 달려요. 게이트를 미리 보고 골라요');
         seen(data, 'biome', BIOMES[i.biome].id);
         prepBiome(segInfo(e.seg + 1).L);   // 다음 지역 그림은 이 구간을 달리는 동안 쉬는 틈에 굽는다
         saveRunNow();

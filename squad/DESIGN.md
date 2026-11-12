@@ -158,6 +158,9 @@ bullet.c(크리티컬) · bullet.r(사거리) · bullet.w(넓게 쏘기로 더�
 
 - 화면(main.js): `run.mode === 'endless'`·`run.cycle`·`run.pet`. 이어하기 스냅숏에 `mode`·`cycle`. 무한모드 정산은 `settleEndless`(전멸·포기·다시 시작 — `lastRunId`로 한 번만). 렌더러: `petFace(id, scale)`, 정렬 항목 13(펫), 'boss' 이벤트에 앞 보스의 쓰러지는 연출을 지운다. 다음 지역 그림은 구간이 시작될 때 그다음 구간 것을 쉬는 틈에 굽는다(`prepBiome`).
 - 빨간 칸의 'MAX+끝' 표(`maxTag`)는 그리지 않는다(사용자 판단) — 규칙·이벤트는 그대로.
+- 탄종(ARSENAL.md — `SIM` 9 그대로, 선택 필드): `AMMO[id] = { name, stars, dmg?, range?, pierce?, splash?, r?, slow?, T? }`·`ammoOpen(id, stars)`·`ammoText(id)`(roster.js), `newGame(lv, { ammo })` → `s.ammo`(보통탄이면 없다), `bullet.r`(사거리), `foe.slowT`(이 시각까지 느리다), `parFor(lv, start, fire, hero, pet, ammo)`, 이벤트 `pierce { x, z0, z1 }`·`splash { x, z, r, n }`. 저장 `ammo: { sel, seen }`(열림은 `totalStars`로 센다).
+- 무한모드 속도: `segSpeed(k)` = min(`ENDLESS.speedMax` 1.4, 1 + `speedStep` 0.04·(k−1)) — `segParams(k).speed`에 곱한다.
+- 렌더러(그리기만): 총알 모양 몫 `shotCum`(합친 병사 구성), 보스 피해 숫자·체력 75·25% 파편(`bossFeedback`), 특수병 레벨별 선·꼬리·방울, `kill.by`별 처치 연출. `__squad.info` = `renderer.info`.
 
 ## 5. 저장
 

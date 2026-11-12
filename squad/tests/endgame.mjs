@@ -63,16 +63,20 @@ test('무한모드 구간: 지역은 차례로 돌고, 3번째는 정예·6번�
   assert.equal(C.segCoins(1), 30);
 });
 
-test('무한모드 구간은 그 순간의 병력으로 만든다: 속도·예고는 캠페인 L30+ 값 그대로, 구간이 오를수록 위협 배수가 커진다', () => {
+test('무한모드 구간은 그 순간의 병력으로 만든다: 예고는 캠페인 L30+ 값 그대로, 달리는 속도는 구간마다 +4%(상한 1.4배), 구간이 오를수록 위협 배수가 커진다', () => {
   const p30 = C.levelParams(30);
   for (const k of [1, 2, 3, 6, 9, 14]) {
     const p = C.segParams(k);
-    assert.equal(p.speed, p30.speed, '이동 속도');
+    assert.ok(Math.abs(p.speed - p30.speed * Math.min(1.4, 1 + 0.04 * (k - 1))) < 1e-9, '달리는 속도');
     assert.equal(p.slamWarn, p30.slamWarn, '내려찍기 예고');
     assert.equal(p.slamEvery, p30.slamEvery, '내려찍기 간격');
     assert.ok(p.slamWarn >= C.WARN_MIN);
   }
   assert.ok(C.segMul(8) > C.segMul(4) && C.segMul(4) > C.segMul(1));
+  // 속도 상한에서도 함정 줄(×3 뒤 18m의 ÷2)은 옆 칸으로 비킬 시간이 남는다: 두 칸 길의 칸 폭(도로 반폭)만큼 옮기는 시간 + 반응 0.45초
+  assert.equal(C.segSpeed(1), 1);
+  assert.equal(C.segSpeed(99), C.ENDLESS.speedMax);
+  assert.ok(18 / (p30.speed * C.ENDLESS.speedMax) >= C.moveTime(C.ROAD) + C.REACT_FAR, `함정 줄 ${(18 / (p30.speed * C.ENDLESS.speedMax)).toFixed(2)}초 ≥ ${(C.moveTime(C.ROAD) + C.REACT_FAR).toFixed(2)}초`);
   // 같은 입력 → 같은 구간, 병력이 다르면 숫자가 다르다
   const a = C.buildSegment(9, 2, 100, 1);
   const b = C.buildSegment(9, 2, 100, 1);
@@ -212,7 +216,7 @@ test('무한모드 공정성: 구간이 올라가도 모든 내려찍기 예고�
         assert.ok(e.warn >= C.slamFairWarn(s.squad.x, s.squad.vx, R, e.x0, e.x1, laneW) - 1e-9, `구간 ${s.endless.seg} 움직이는 분대 예고`);
         checked++;
       }
-      assert.ok(s.speed <= C.levelParams(30).speed + 1e-9);
+      assert.ok(s.speed <= C.levelParams(30).speed * C.ENDLESS.speedMax + 1e-9);
     }
   }
   assert.ok(checked >= 60, `예고 ${checked}번`);

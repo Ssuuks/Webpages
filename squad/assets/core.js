@@ -1227,7 +1227,8 @@ export function buildLevel(L, attempt = 0, bare = false, cycle = 1) {
    - 다음 구간은 '보스가 쓰러진 순간 들고 있는 병력·무기 단계'로 만든다(게이트 숫자·적 체력). 보정은 돌리지 않는다 — 식으로만 정한다.
      위협 = 그 병력의 화력(기준 화력 단계 ENDLESS.fire) × segMul(k). 구간마다 커져 언젠가는 무너진다.
      병력이 바닥선(segFloor — 무난한 진행의 병력)보다 적으면 위협은 바닥선 병력 기준이다: 뒤처지면 적이 그만큼 약해지지 않아 손실이 쌓인다.
-   - 속도·예고는 캠페인 L30+ 값 그대로(더 빨라지지 않는다 — 사람을 죽이는 것은 체력 배수에 밀려 쌓이는 손실).
+   - 예고는 캠페인 L30+ 값 그대로. 달리는 속도만 구간마다 조금씩 빨라진다(segSpeed — 상한 1.4배, ARSENAL.md 9절): 줄 사이에 고를 시간이 줄어든다.
+     함정 줄(18m 뒤 ÷2)은 가장 빠를 때도 옆 칸으로 비킬 시간(이동 + 0.45초)이 남는다(테스트).
    - 한 구간의 순성장: 보스 직전 줄의 ×2 하나 + 작은 덧셈(GK = ENDLESS.gk). 병력 상한은 캠페인과 같은 MAX_N(9999).
    - 상태는 평범한 JSON(s.endless) — 다음 구간은 상태와 시드만으로 정해진다. 캠페인 판에는 s.endless가 없다(stateHash 그대로) */
 export const ENDLESS = {
@@ -1244,6 +1245,7 @@ export const ENDLESS = {
   bossM: { '': 0.7, hard: 0.7, super: 0.75 },   // 보스 체력 = 골든 도착 병력 × m의 화력 × bossKill초 × 보스 배수
   bossKill: { '': 12, hard: 13, super: 14 },
   bossC: 1.05,              // 보스가 닿기까지 c × bossKill초
+  speedStep: 0.04, speedMax: 1.4,   // 달리는 속도: 구간마다 +4%, 1.4배(10 → 14m/s, 11구간)에서 멈춘다 — 예고·옆 이동 속도는 그대로라 고를 시간이 준다
   wait: 1.2,                // 보스가 쓰러진 뒤 다음 구간이 이어지기까지(초) — 쓰러지는 연출
   lead: 6,                  // 다음 구간의 첫 청크까지 더 두는 거리(m)
   coinBase: 10, coinStep: 20, coinTag: { '': 1, hard: 1.5, super: 2 }, coinLoop: 0.25,
@@ -1255,6 +1257,8 @@ export function segInfo(k) {
   const tag = n % 6 === 0 ? 'super' : n % 6 === 3 ? 'hard' : '';
   return { k: n, loop: Math.floor((n - 1) / 6), biome: bi, tag, L: 60 + 10 * bi + (tag === 'super' ? 10 : tag === 'hard' ? 5 : 2) };
 }
+/* 구간 k의 달리는 속도 배수: 구간마다 speedStep씩 빨라지고 speedMax에서 멈춘다(ARSENAL.md 9절) */
+export const segSpeed = (k) => Math.min(ENDLESS.speedMax, 1 + ENDLESS.speedStep * (Math.max(1, k) - 1));
 export const segMul = (k) => ENDLESS.mul0 * Math.pow(ENDLESS.mulStep, Math.max(1, k) - 1);
 /* 바닥선: 1구간에는 없다(누구나 제 병력 기준으로 출발한다), 2구간부터 floor0 × floorGrow^(k−1) */
 export const segFloor = (k) => (k <= 1 ? 0 : Math.min(MAX_N, Math.round(ENDLESS.floor0 * Math.pow(ENDLESS.floorGrow, k - 1))));
@@ -1270,6 +1274,7 @@ export function segParams(k) {
   const E = ENDLESS;
   p.endless = true;
   p.seg = i.k;
+  p.speed *= segSpeed(i.k);
   p.k = 1.3;
   p.pressure = 1.5;
   p.maxMul = 1;                 // 보스 직전 줄의 ×2 하나
