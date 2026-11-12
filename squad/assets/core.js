@@ -1978,9 +1978,17 @@ function spitEscape(s, R) {
   const span = R + 0.3;
   const here = foeLeftover(s.foes, q.x, R, span, D, vz, q.z);
   const slack = Math.max(2, 0.05 * q.n) * SOLDIER_HP;
-  // 반응하는 동안(REACT_FAR초)은 지금 속도 그대로 밀려 간다(길 끝에서 멈춘다)
+  // 반응하는 동안(REACT_FAR초)은 하던 쪽을 계속 누른다고 본다(공정성 갈라 보기와 같은 가정): 0.5m/s 넘게 가던 쪽으로 ACCEL로 빨라져 VMAX까지, 길 끝에서 멈춘다
   let xr = q.x + q.vx * REACT_FAR;
   let vr = q.vx;
+  if (Math.abs(q.vx) > 0.5) {
+    const sg = Math.sign(q.vx);
+    const v0 = Math.abs(q.vx);
+    const tAcc = Math.max(0, Math.min(REACT_FAR, (VMAX - v0) / ACCEL));
+    const vEnd = Math.max(v0, Math.min(VMAX, v0 + ACCEL * REACT_FAR));
+    xr = q.x + sg * (v0 * tAcc + 0.5 * ACCEL * tAcc * tAcc + vEnd * (REACT_FAR - tAcc));
+    vr = sg * vEnd;
+  }
   if (xr < -EDGE) { xr = -EDGE; vr = 0; } else if (xr > EDGE) { xr = EDGE; vr = 0; }
   for (const dir of [-1, 1]) {
     const xt = q.x + dir * d;
