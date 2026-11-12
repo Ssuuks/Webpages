@@ -23,7 +23,7 @@ export const WEAPON = [1, 1.35, 1.7, 2.1];
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
 export const VERSION = 'squad-v1';   // 레벨 배치의 소금 — 바꾸지 않는다(바꾸면 모든 레벨이 달라진다)
-export const SIM = 9;                // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
+export const SIM = 10;               // 규칙이 바뀌면 올린다(이어하기 스냅숏·보정 표는 같은 SIM에서만 쓴다)
 /* SIM 9(파고들기): 빨간(−) 덧셈 칸의 끝(cap)이 같은 줄 파랑 칸의 끝보다 높다(RED_OVER) — 오르는 빠르기는 그대로라 기대 강화로는 끝까지 못 올리고,
    화력 강화·뭉치(쏘아 올리기·스킬)·그 칸 앞에 서서 몰아 쏘기가 있어야 닿는다. 같은 특수병을 또 구하면 그 특수병의 레벨이 오른다(Lv3까지) */
 /* 보스: 피하기에 대가가 있게 — 좌우로 천천히 따라오고(초당 m), 총알은 가운데 ±BOSS_HIT m 안만 맞고, 첫 내려찍기는 빨리 온다 */
@@ -113,6 +113,7 @@ export function slamFairWarn(x, vx, R, x0, x1, laneW) {
 export const UNLOCK = {
   mul: 2, shoot: 2, wall: 3, summon: 3, hero: 3, crate: 4, runner: 4, spit: 5, cage: 5, medic: 5, saw: 6, brute: 7, div: 8,
   recruit: 9, sniper: 9, triple: 10, mul3: 10, rocket: 13,
+  toxic: 11, split: 21,   // 정예 좀비(SIM 10): 둘째·셋째 지역의 첫 레벨
 };
 
 /* 특수병과 수치(이름·소개·레벨별 수치는 roster.js — 여기 SP의 share·every·dmg·r은 Lv1 값) */
@@ -612,6 +613,26 @@ function makeElites(g, p, grunts, ng) {
     for (let i = E.n(p.seg); i > 0 && pool.length > 2; i--) setElite(pool.splice((rand(g) * Math.min(4, pool.length)) | 0, 1)[0], k, ng);
   }
 }
+function placeElites(lv, p) {
+  if (p.endless || p.L < UNLOCK.toxic) return;
+  const g = { rs: hash(VERSION, 'elite', p.L, lv.attempt) };
+  // 그 레벨에서 처음 나오는 정예를 먼저 고른다(작은 무리에서도 빠지지 않게)
+  const kinds = ['toxic', 'split'].filter((k) => p.L >= UNLOCK[k]).sort((x, y) => (UNLOCK[y] === p.L) - (UNLOCK[x] === p.L));
+  const got = {};
+  const pass = (min, only) => {
+    for (const ch of lv.chunks) {
+      const pool = lv.foes.filter((f) => f.kind === 'grunt' && !f.elite && !f.flank && f.z >= ch.z && f.z < ch.z + ch.len).sort((a, b) => b.z - a.z || a.id - b.id);
+      if (pool.length < min) continue;
+      for (const k of kinds) {
+        if (only && k !== only) continue;
+        for (let i = ELITE[k].nL(p.L, pool.length); i > 0 && pool.length > 2; i--) { setElite(pool.splice((rand(g) * Math.min(4, pool.length)) | 0, 1)[0], k, ch.ng); got[k] = 1; }
+      }
+      if (only && got[only]) return;
+    }
+  };
+  pass(ELITE_WAVE);
+  for (const k of kinds) if (!got[k]) pass(3, k);   // 무리가 작은 레벨(쉼 따위)에도 하나는 나오게
+}
 function setElite(f, k, ng) {
   const E = ELITE[k];
   f.elite = k;
@@ -856,9 +877,13 @@ export const FORK_HORDE = [0.6, 0.75];
    - split(분열 좀비): 잡히면 질주 좀비 kids마리로 갈라진다(한 마리 체력 = 제 체력 × kidHp). 멀리서 잡으면 다가오는 동안 마저 잡히고, 코앞에서 잡으면 문다
    from: 나오기 시작하는 구간, hp: 졸개 체력 배수, cap: 체력 상한(병력 몫 — 부딪히면 그만큼 잃는다), n(k): 무리 하나에 섞이는 수 */
 export const ELITE = {
-  toxic: { from: 2, hp: 2, cap: 0.3, n: (k) => 1 + (k >= 6) },
-  split: { from: 3, hp: 1.6, cap: 0.25, kids: 2, kidHp: 0.3, n: (k) => 1 + (k >= 9) },
+  toxic: { from: 2, hp: 2, cap: 0.3, n: (k) => 1 + (k >= 6), nL: (L, m) => 1 + (L >= 41 && m >= 12) },
+  split: { from: 3, hp: 1.6, cap: 0.25, kids: 2, kidHp: 0.3, n: (k) => 1 + (k >= 9), nL: (L, m) => 1 + (L >= 51 && m >= 12) },
 };
+/* 캠페인(SIM 10): 오염 좀비 L11(UNLOCK.toxic)부터, 분열 좀비 L21(UNLOCK.split)부터 — 무리(졸개 ELITE_WAVE마리 이상인 청크)마다 한 마리씩(오염 L41·분열 L51부터, 졸개 12마리 이상인 큰 무리에는 둘씩 — nL).
+   레벨 생성이 끝난 뒤 따로 난수 흐름으로 고른다(placeElites) — 게이트·적·상자의 자리와 숫자는 SIM 9 그대로이고 졸개 몇의 체력과 표식만 달라진다.
+   늘어난 위협은 보정(보스 체력·별 기준)이 다시 재서 맞춘다 */
+export const ELITE_WAVE = 6;
 export const POOL_T = 1.0;
 export const POOL_R = 1.2;
 export const POOL_LIFE = 4;
@@ -1306,6 +1331,7 @@ export function buildLevel(L, attempt = 0, bare = false, cycle = 1) {
   }
   lv.arenaZ = z + 12;
   placeSpecials(lv, p, bare);
+  placeElites(lv, p);
   // 높인 끝은 레벨 생성(골든 패스·고정 위치 할당량)에 쓰이지 않으므로(tests/run.mjs) 되돌리면 SIM 8의 칸과 같다
   if (bare) for (const r of lv.rows) for (const c of r.cells) if (c.cap0 != null) { c.cap = c.cap0; delete c.cap0; }
   lv.foes.sort((a, b) => a.z - b.z || a.id - b.id);
