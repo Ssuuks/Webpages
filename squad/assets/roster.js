@@ -210,6 +210,42 @@ export const AMMO_IDS = Object.keys(AMMO);
 /* 그 별 수로 열린 탄종 */
 export const ammoOpen = (id, stars) => !!AMMO[id] && stars >= AMMO[id].stars;
 
+/* 탄 효과(무한모드 빌드 단계 해금 2단계 — 무한모드에서만): 탄종의 '좋은 점'만 떼어 낸 것. 보스 뒤 카드·탄종 상자로 얻고, 같은 효과를 또 얻으면 레벨 +1(Lv3까지).
+   Lv1·2·3 = 그 탄종 값의 FX_LV배(50·100·150%) [초안]. 대신 쪽(피해·사거리)은 없다 — 출격 때 고른 탄종(s.ammo)만 Lv2로 한 칸을 차지하고 대신 쪽을 그대로 진다.
+   슬롯 FX_SLOTS칸(같은 효과는 한 칸). 수치는 AMMO에서 — 탄종 수치를 고치면 효과도 따라간다 */
+export const FX_LV = [0.5, 1, 1.5];
+export const FX_LV_MAX = 3;
+export const FX_SLOTS = 2;
+export const FX_BASE_LV = 2;   // 출격 탄종이 차지하는 레벨
+const fxK = (lv) => FX_LV[Math.max(1, Math.min(FX_LV_MAX, lv | 0 || 1)) - 1];
+/* 그 레벨의 좋은 점: { pierce } | { splash, r } | { dmg }(화력 배수) | { slow, T } */
+export function fxVal(id, lv) {
+  const A = AMMO[id];
+  const k = fxK(lv);
+  if (!A) return {};
+  if (A.pierce) return { pierce: A.pierce * k };
+  if (A.splash) return { splash: A.splash * k, r: A.r };
+  if (A.slow) return { slow: A.slow * k, T: A.T };
+  return { dmg: 1 + (A.dmg - 1) * k };
+}
+/* 소개 글(카드·일시정지 판) — '뒤의 좀비 하나에 30%'처럼 수치에서 */
+export function fxText(id, lv) {
+  const v = fxVal(id, lv);
+  return v.pierce ? `뒤의 좀비 하나에 ${apc(v.pierce)}%` : v.splash ? `둘레 ${v.r}m에 ${apc(v.splash)}%` : v.slow ? `${v.T}초 동안 ${apc(v.slow)}% 느리게` : v.dmg ? `화력 +${apc(v.dmg - 1)}%` : '';
+}
+
+/* 시너지(탄 효과 × 탄 효과 · 특수병 · 영웅 — 둘이 함께 있을 때만 켜지는 추가 규칙, 단계 해금 2단계) [수치는 초안].
+   need: 함께 있어야 하는 것(탄종 id = 그 탄 효과(출격 탄종이든 카드든), 병과 id = 그 특수병(레벨 상관없이), 영웅 id = 출격 영웅).
+   v: 수치(frostSniper 위력 배수 덧셈, burstRocket 반경 덧셈 m, rapidMungchi 스킬 길이 초). SYNERGY는 영웅 짝 배수의 이름이라 다른 이름 */
+export const COMBOS = {
+  pierceBurst: { need: ['pierce', 'burst'], name: '연쇄 폭발', text: () => '뚫고 지난 뒤 좀비에서도 터져요' },
+  frostSniper: { need: ['frost', 'sniper'], name: '얼음 조준', v: 0.5, text: () => `느려진 적에게 저격 위력 +${apc(COMBOS.frostSniper.v)}%` },
+  burstRocket: { need: ['burst', 'rocket'], name: '대폭발', v: 0.4, text: () => `로켓 폭발 반경 +${COMBOS.burstRocket.v}m` },
+  pierceSniper: { need: ['pierce', 'sniper'], name: '꿰뚫는 저격', text: () => '저격이 일직선 뒤 표적 하나를 더 뚫어요' },
+  rapidMungchi: { need: ['rapid', 'mungchi'], name: '긴 나팔', v: 7, text: () => `돌격 나팔 ${HEROES.mungchi.skill.dur} → ${COMBOS.rapidMungchi.v}초` },
+};
+export const COMBO_IDS = Object.keys(COMBOS);
+
 /* 지역 */
 export const BIOMES = [
   { id: 'desert', name: '모래 고개', boss: { name: '우락이', kind: '모래 도깨비', title: '모래 고개의 골목대장', line: '내 방망이 맛 좀 볼래?' } },

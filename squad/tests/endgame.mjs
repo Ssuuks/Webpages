@@ -9,7 +9,7 @@ import { CYC } from '../assets/cyctable.js';
 import { BIOMES, biomeOf } from '../assets/roster.js';
 import { makeBot } from './bots.mjs';
 import { makePool } from '../tools/benchlib.mjs';
-import { runEndless, median, pickHist } from '../tools/endless.mjs';
+import { runEndless, median, pickHist, makePicker } from '../tools/endless.mjs';
 import { cycBench, rate, cycCampaign } from '../tools/cycbench.mjs';
 import { petBench } from '../tools/petbench.mjs';
 import { ammoBench } from '../tools/ammobench.mjs';
@@ -314,6 +314,32 @@ test('3택 1을 안 연 무한모드(opt.unl 없음·0·이상한 값)는 예전
   const s = C.newEndless({ seed: 9, ...UP10, unl: 5, ammoOpen: ['frost', 'nope', 'frost', 'pierce'] });
   assert.deepEqual({ unl: s.endless.unl, ammo: s.endless.ammo, picks: s.endless.picks, offer: s.endless.offer }, { unl: C.CARD.stageMax, ammo: ['frost', 'pierce'], picks: [], offer: null });
   assert.deepEqual(C.newEndless({ seed: 9, ...UP10, unl: 1 }).endless.ammo, []);
+});
+
+/* 단계 지문: 시드 셋 × (보통탄·작렬탄 출격) × (think·돌려 고르기 — 보스 수 % 장 수, 탄종 카드도 고른다) × 7구간까지, 250틱마다·카드 앞뒤의 stateHash 묶음.
+   그 단계를 다 만든 직후의 코드로 잰 값을 박아 두고, 다음 단계를 더해도 앞 단계를 연 판은 바이트 하나까지 같아야 한다 */
+function stageFP(unl, extra = {}) {
+  const out = [];
+  for (const seed of [5, 21, 40]) for (const ammo of ['', 'burst']) for (const pk of ['think', 'turn']) {
+    const s = C.newEndless({ seed, ...UP10, unl, ammoOpen: R.AMMO_IDS, ...(ammo ? { ammo } : {}), ...extra });
+    const pol = makeBot('sloppy0.1', seed * 7 + 1, { skill: true });
+    const pick = pk === 'think' ? makePicker('think', seed) : (t, of) => t.endless.bosses % of.length;
+    let x = 0;
+    while (s.phase !== 'lost' && s.endless.bosses < 7 && s.tick < 40000) {
+      const of = C.offerOf(s);
+      if (of) { x = C.hash(x, C.stateHash(s)); C.pickCard(s, pick(s, of, pol)); x = C.hash(x, C.stateHash(s)); }
+      else { C.step(s, pol(s)); if (s.tick % 250 === 0) x = C.hash(x, C.stateHash(s)); }
+    }
+    out.push(C.hash(x, C.stateHash(s), s.endless.bosses, s.endless.picks.join(',')));
+  }
+  return C.hash(...out);
+}
+/* 1단계(3택 1 기본 카드)만 연 판의 지문 — 2단계(탄 효과·시너지)를 시작하기 직전 코드(f3b7b85)로 잰 값 */
+const STAGE1_FP = 1831468219;
+test('1단계만 연 판(unl 1)은 2단계를 넣기 전과 바이트 하나까지 같다 — STAGE1_FP(시드 × 탄종 × 카드 고르기 × 7구간의 stateHash 묶음)', () => {
+  assert.equal(stageFP(1), STAGE1_FP);
+  // 앞으로 열 줄의 옵션(화염병)을 받아도 아직 그 단계가 없으면 1단계 판 그대로
+  assert.equal(stageFP(1, { flame: false }), STAGE1_FP);
 });
 
 test('3택 1(opt.unl 1): 첫 보스가 쓰러지고 연출(ENDLESS.wait)이 끝나면 카드가 뜨고 판이 멈춘다(step이 틱을 세지 않는다) — 서로 다른 종류 CARD.count장까지, CARD.kinds 순서, 같은 시드·같은 입력이면 같은 카드, 시드마다 다른 카드', () => {
