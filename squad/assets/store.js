@@ -34,7 +34,7 @@ export function defaults() {
     cyc: {},                         // 2회차부터의 진행: { '2': { maxL, cur, stars, best, fails } }
     upgX: { start: 0, fire: 0, coin: 0 },   // 10단계 위로 산 강화(upg는 옛 탭이 0~10으로 자르므로 따로 둔다)
     heroX: {},                       // 영웅마다 Lv5 위로 올린 레벨(heroes.lv는 옛 탭이 5로 자른다)
-    endless: { best: 0, bestN: 0, runs: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수
+    endless: { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수, 알린 해금 단계, 대왕 누적 처치
     pets: { own: {}, sel: '', eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
     ammo: { sel: '', seen: 0 },      // 탄종(ARSENAL.md 3절): 고른 탄종('' = 보통탄), 열림 안내를 본 별 문턱. 열림은 저장하지 않고 모은 별로 센다
   };
@@ -57,6 +57,13 @@ export function endedCycles(d) {
 }
 /* 열린 가장 높은 회차 */
 export const maxCycle = (d) => endedCycles(d) + 1;
+/* 무한모드 빌드의 해금 단계(단계 해금 기획서 1절). 여는 조건은 모두 이미 저장하는 것(엔딩·무한모드 기록·회차)이라 새 진행 화폐는 없다.
+   1: 1회차 엔딩(무한모드와 함께) → 보스 뒤 3택 1. 2단계부터는 아직 만들지 않았다 — 만들면 여기에 조건을 더한다
+   (2: 무한모드 3구간에 처음 닿기 = best ≥ 2, 3: 첫 대왕 = best ≥ 6, 4: 2회차 엔딩, 5: 대왕 누적 kings). stageMax = core.CARD.stageMax */
+export function endlessStage(d, stageMax = 1) {
+  const st = endedCycles(d) >= 1 ? 1 : 0;
+  return Math.min(stageMax, st);
+}
 /* 강화 단계(10단계 위 포함)와 영웅 레벨(Lv5 위 포함) */
 export const upgLv = (d, id) => (d.upg[id] | 0) + (d.upgX ? d.upgX[id] | 0 : 0);
 export function addUpg(d, id) { if ((d.upg[id] | 0) < 10) d.upg[id] = (d.upg[id] | 0) + 1; else d.upgX[id] = (d.upgX[id] | 0) + 1; }
@@ -136,7 +143,7 @@ export function normalize(o) {
   }
   out.cycle = clampInt(out.cycle, 1, maxCycle(out));
   out.endSeen = clampInt(out.endSeen, 0, endedCycles(out));
-  for (const k of ['best', 'bestN', 'runs']) out.endless[k] = Math.max(0, Math.floor(num(out.endless[k])));
+  for (const k of ['best', 'bestN', 'runs', 'unl', 'kings']) out.endless[k] = Math.max(0, Math.floor(num(out.endless[k])));
   // 펫: 모르는 id는 버리고, 레벨 1..PET_MAX_LV, 조각·알은 0 이상
   const ps = o.pets && typeof o.pets === 'object' ? o.pets : {};
   const pets = { own: {}, sel: '', eggs: Math.max(0, Math.floor(num(ps.eggs))), pity: clampInt(ps.pity, 0, 99), got: num(ps.got) ? 1 : 0 };

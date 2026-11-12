@@ -1479,8 +1479,86 @@ export function newEndless(opt = {}) {
   const seg = buildSegment(seed, 1, opt.start ?? START_N, 0);
   const s = newGame(seg, opt);
   s.endless = { seed, seg: 1, bosses: 0, bank: 0, wait: 0, z0: 0 };
+  // 보스 뒤 3택 1(opt.unl ≥ 1): 연 단계·별로 열린 탄종·고른 카드·지금 떠 있는 카드. 안 연 판에는 필드가 없다(해시 그대로)
+  const unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(opt.unl) || 0)));
+  if (unl >= 1) {
+    s.endless.unl = unl;
+    s.endless.ammo = (Array.isArray(opt.ammoOpen) ? opt.ammoOpen : []).filter((a, i, l) => AMMO[a] && l.indexOf(a) === i);
+    s.endless.picks = [];
+    s.endless.offer = null;
+  }
   s.refMul = seg.refMul;
   return s;
+}
+
+/* ---------- 무한모드 보스 뒤 3택 1(단계 해금 기획서 1단계) ----------
+   보스가 쓰러지고 연출(ENDLESS.wait)이 끝나면 다음 구간이 시작되기 전에 카드가 뜬다. 고를 때까지 판은 멈춘다(step이 틱을 세지 않는다).
+   - 카드는 모두 이미 게임에 있는 효과: 증원(병력 ×CARD.men) · 무기(+1단계) · 특수병(열린 병과 합류 또는 가진 병과 Lv+1, 철창 규칙 그대로) ·
+     탄종 바꾸기(별로 열린 탄종 중 지금 것 빼고 하나).
+   - 서로 다른 종류 CARD.count장. 어떤 카드(와 어느 병과·탄종)가 나올지는 시드와 구간 번호로 정해진다 — 다시 뽑기 없음, 숨은 난수 없음.
+     그 순간 쓸모없는 카드는 나오지 않는다(병력 상한, 무기 3단계, 특수병 자리가 차고 모두 Lv3이거나 호위 병사가 모자람, 바꿀 탄종 없음).
+   - 다음 구간은 고르기 전의 병력·무기 단계로 만든 뒤 카드를 적용한다 — 그래야 다음 구간의 게이트·적 숫자가 카드만큼 같이 부풀지 않는다.
+   - 떠 있는 카드는 상태(s.endless.offer)에 있어 이어하기로 다시 열어도 같은 카드가 뜬다 */
+export const CARD = {
+  stageMax: 1,      // 지금 만든 해금 단계(1: 보스 뒤 3택 1 기본 카드)
+  count: 3,
+  men: 1.3,         // 증원: 병력 × 1.3
+  kinds: ['men', 'gun', 'unit', 'ammo'],
+};
+/* 지금 상태에서 나올 수 있는 카드 종류와 그 대상(특수병 병과·탄종 후보) */
+function cardPool(s) {
+  const q = s.squad;
+  const e = s.endless;
+  const units = SP_KINDS.filter((k) => {
+    const m = q.sp.find((o) => o.k === k);
+    return m ? (m.lv || 1) < SP_LV_MAX : q.sp.length < SP_MAX && q.n >= SP_ESCORT * (q.sp.length + 1);
+  });
+  const ammo = (e.ammo || []).filter((a) => a !== (s.ammo || ''));
+  const kinds = CARD.kinds.filter((k) => (k === 'men' ? q.n < MAX_N : k === 'gun' ? q.tier < 3 : k === 'unit' ? units.length > 0 : ammo.length > 0));
+  return { kinds, units, ammo };
+}
+/* 카드 고르기: 시드·구간 번호로 정한 순서에서 앞의 CARD.count장(보이는 순서는 CARD.kinds 순) */
+function makeOffer(s) {
+  const e = s.endless;
+  const g = { rs: hash(VERSION, 'card', e.seed >>> 0, e.seg) };
+  const pool = cardPool(s);
+  const order = pool.kinds.slice();
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rand(g) * (i + 1)); const t = order[i]; order[i] = order[j]; order[j] = t; }
+  const u = pool.units.length ? pool.units[Math.floor(rand(g) * pool.units.length)] : '';
+  const a = pool.ammo.length ? pool.ammo[Math.floor(rand(g) * pool.ammo.length)] : '';
+  const pick = order.slice(0, CARD.count).sort((x, y) => CARD.kinds.indexOf(x) - CARD.kinds.indexOf(y));
+  return pick.map((k) => (k === 'unit' ? { k, u } : k === 'ammo' ? { k, a } : { k }));
+}
+/* 카드 한 장이 바꾸는 값(화면이 '병력 142 → 185'처럼 적는다): { k, from, to, u?, a? } */
+export function cardInfo(s, c) {
+  const q = s.squad;
+  if (!c) return null;
+  if (c.k === 'men') return { k: 'men', from: q.n, to: Math.min(MAX_N, q.n + cardMen(q.n)) };
+  if (c.k === 'gun') return { k: 'gun', from: q.tier, to: Math.min(3, q.tier + 1) };
+  if (c.k === 'unit') { const m = q.sp.find((o) => o.k === c.u); return { k: 'unit', u: c.u, from: m ? m.lv || 1 : 0, to: m ? Math.min(SP_LV_MAX, (m.lv || 1) + 1) : 1 }; }
+  if (c.k === 'ammo') return { k: 'ammo', a: c.a, from: s.ammo || '', to: c.a };
+  return null;
+}
+const cardMen = (n) => Math.max(1, Math.round(n * (CARD.men - 1)));
+/* 지금 떠 있는 카드(없으면 null) */
+export const offerOf = (s) => (s && s.endless && s.endless.offer) || null;
+/* 카드 i를 고른다: 다음 구간을 만들어 이어 붙이고(고르기 전의 병력·무기 단계로) 카드를 적용한다. 고른 것이 없으면 false */
+export function pickCard(s, i) {
+  const e = s.endless;
+  if (!e || !e.offer || !e.offer.length) return false;
+  const c = e.offer[clamp(Math.floor(Number(i) || 0), 0, e.offer.length - 1)];
+  s.ev.length = 0;
+  e.offer = null;
+  nextSegment(s);
+  const q = s.squad;
+  const info = cardInfo(s, c);
+  if (c.k === 'men') gain(s, cardMen(q.n), q.x, q.z, 'card');
+  else if (c.k === 'gun') q.tier = Math.min(3, q.tier + 1);
+  else if (c.k === 'unit') addSpecial(s, c.u, 'card', q.x, q.z);
+  else if (c.k === 'ammo') s.ammo = c.a;
+  e.picks.push(c.k === 'unit' ? 'unit:' + c.u : c.k === 'ammo' ? 'ammo:' + c.a : c.k);
+  emit(s, { t: 'card', ...info, x: q.x, z: q.z });
+  return true;
 }
 /* 보스가 쓰러진 뒤: 지나간 것을 버리고 다음 구간을 지금 자리 앞에 이어 붙인다(상태가 커지지 않는다) */
 function nextSegment(s) {
@@ -1605,6 +1683,19 @@ export function restore(o) {
     if (typeof o.endless !== 'object') return null;
     num0(o.endless, ['seed', 'seg', 'bosses', 'bank', 'wait', 'z0']);
     if (o.endless.seg < 1) return null;
+    const e = o.endless;
+    if (e.unl != null) {
+      e.unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(e.unl) || 0)));
+      e.ammo = Array.isArray(e.ammo) ? e.ammo.filter((a) => AMMO[a]) : [];
+      e.picks = Array.isArray(e.picks) ? e.picks.filter((x) => typeof x === 'string') : [];
+      const okCard = (c) => c && typeof c === 'object' && CARD.kinds.includes(c.k) && (c.k !== 'unit' || SP_KINDS.includes(c.u)) && (c.k !== 'ammo' || !!AMMO[c.a]);
+      if (e.offer != null && !(Array.isArray(e.offer) && e.offer.length && e.offer.every(okCard))) e.offer = null;
+      if (e.offer == null) {
+        e.offer = null;
+        // 카드가 떠 있어야 할 자리(보스가 쓰러지고 연출이 끝남)인데 카드가 깨졌으면 그 자리에서 다시 만든다(같은 시드 → 같은 카드)
+        if (e.unl >= 1 && o.boss && o.boss.dead && e.wait <= 0) { const of = makeOffer(o); e.offer = of.length ? of : null; }
+      }
+    }
   }
   for (const b of o.bullets) if (typeof b.hm !== 'number') b.hm = 1;
   return o;
@@ -1722,6 +1813,7 @@ function gain(s, k, x, z, why) {
 export function step(s, input) {
   s.ev.length = 0;
   if (s.phase === 'won' || s.phase === 'lost') { s.endT += DT; s.tick++; s.t += DT; return s; }
+  if (s.endless && s.endless.offer) return s;   // 보스 뒤 3택 1: 고를 때까지(pickCard) 판이 멈춘다 — 틱도 세지 않는다
   s.tick++;
   s.t += DT;
   const q = s.squad;
@@ -2344,7 +2436,14 @@ function bossUpdate(s, R) {
       emit(s, { t: 'segClear', seg: e.seg, coins, tag: p.tag });
     } else {
       e.wait -= DT;
-      if (e.wait <= 0) nextSegment(s);
+      if (e.wait <= 0) {
+        // 3택 1을 연 판: 카드를 띄우고 고를 때까지 멈춘다(다음 구간은 pickCard가 잇는다)
+        if (e.unl >= 1) {
+          const offer = makeOffer(s);
+          if (offer.length) { e.offer = offer; emit(s, { t: 'offer', n: offer.length, seg: e.seg }); return; }
+        }
+        nextSegment(s);
+      }
     }
     return;
   }
@@ -3398,5 +3497,7 @@ export function stateHash(s) {
   if (s.divs) for (const d of s.divs) h = hash(h, d.id, d.z0.toFixed(3), d.z1.toFixed(3), d.risk);
   if (s.pools) for (const p of s.pools) h = hash(h, p.id, p.x.toFixed(4), p.z.toFixed(4), p.t.toFixed(4), p.life.toFixed(4), p.hit);
   if (s.endless) { const e = s.endless; h = hash(h, e.seed, e.seg, e.bosses, e.bank, e.wait.toFixed(4), e.z0.toFixed(4), s.L, s.arenaZ.toFixed(4), (s.refMul || 1).toFixed(6)); }
+  // 보스 뒤 3택 1(연 판에만 필드가 있다 — 안 연 판은 해시 그대로)
+  if (s.endless && s.endless.unl != null) { const e = s.endless; h = hash(h, e.unl, e.ammo.join(','), e.picks.join(','), e.offer ? e.offer.map((c) => c.k + (c.u || c.a || '')).join(',') : '-'); }
   return h;
 }
