@@ -222,7 +222,10 @@ function printCauses(S, bots, levels) {
   }
 }
 
-if (isMainThread && process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (isMainThread && process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url && (process.argv.includes('--help') || process.argv.includes('-h'))) {
+  // 옵션을 모르는 채로 돌리면 레벨 60개 × 봇 3 × 48판 전체 측정이 시작되므로 도움말은 따로 처리한다
+  console.log('node squad/tools/curve.mjs [--levels 1-60] [--seeds 48] [--bots sloppy0.1,sloppy0.3,expert] [--z 2.6] [--workers 4] [--json out.json] [--compare base.json]\n자세한 설명은 이 파일 맨 위 주석과 README \'레벨 하나씩 보기\'.');
+} else if (isMainThread && process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const o = cliArgs(process.argv.slice(2), { levels: '1-60', seeds: 48, bots: 'sloppy0.1,sloppy0.3,expert', z: 2.6 });
   const bots = String(o.bots).split(',');
   const { res, sec } = await mapLevels(import.meta.url, 'curveLevel', o.levels, { seeds: o.seeds, bots }, o.workers);
