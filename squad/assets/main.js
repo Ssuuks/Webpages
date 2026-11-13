@@ -2061,7 +2061,7 @@ function handleEvents(ev) {
   let lost = null;   // 이번 묶음에서 폭발에 부서진 상자·철창(한 폭발에 둘이 나가도 알림은 한 줄)
   for (const e of ev) {
     switch (e.t) {
-      case 'shot': sfx.shot(); break;
+      case 'shot': sfx.shot(s.squad.tier | 0); break;
       case 'tick': sfx.gateTick(); tip('pump', '게이트를 쏘면 숫자가 올라가요!'); break;
       case 'gate':
         if (e.after >= e.before) { sfx.gateGood(e.op === 'mul'); vibe(12); } else { sfx.gateBad(); vibe(35); }
@@ -2079,11 +2079,12 @@ function handleEvents(ev) {
       case 'crate':
         if (e.type === 'fx') {
           // 탄종 상자(무기가 이미 3단계): 떠 있던 탄 효과를 얻었다 — 레벨과 켜진 시너지까지 한 줄
-          sfx.levelUp();
+          sfx.fxUp();
+          if (music) music.boost(3);
           vibe([15, 30, 15]);
           toast(`탄종 상자 · ${fxName(e.a)} 효과 Lv${e.lv}${combos ? ` · 시너지 ${comboNames(combos)}!` : ''}`, 2200);
           combosShown = true;
-        } else if (e.type === 'gun') sfx.power(); else if (e.type === 'coin') sfx.coin(); else sfx.crate();
+        } else if (e.type === 'gun') { sfx.power(e.tier | 0); if (music) music.boost(4); vibe(25); } else if (e.type === 'coin') sfx.coin(); else sfx.crate();
         break;
       case 'fxUp':
         // 탄 효과를 얻었다(카드·탄종 상자 — 소리·알림은 그쪽 이벤트가 낸다)
@@ -2145,7 +2146,7 @@ function handleEvents(ev) {
         }
         break;
       case 'heroCast':
-        sfx.cast(); vibe([20, 30, 20]); seen(data, 'hero', e.id); slow(0.35, 300);
+        sfx.cast(e.id); if (music) music.boost(Math.max(2.5, (s.hero && s.hero.act) || 0)); vibe([20, 30, 20]); seen(data, 'hero', e.id); slow(0.35, 300);
         if (tipKey === 'heroReady' && !$('tip').hidden) { $('tip').hidden = true; tipUntil = 0; }
         break;
       case 'spitFire': tip('spit', '땅에 초록 표시가 보이면 옆으로 피하세요'); break;
@@ -2197,7 +2198,8 @@ function handleEvents(ev) {
         break;
       case 'spitHit': if (e.hit) { sfx.hurt(); vibe(30); } break;
       case 'boss':
-        sfx.bossIn();
+        sfx.bossIn(tagOf(lv.L).tag === 'super');
+        bossQ = 4;
         $('bossName').textContent = bossNameOf(lv.L, tagOf(lv.L).tag);
         showBossBarLater();
         if (run) run.arenaN = s.squad.n;
@@ -2208,11 +2210,16 @@ function handleEvents(ev) {
         saveRunNow();
         updateMusic();
         break;
-      case 'slamWarn': sfx.gateTick(); break;
-      case 'slam': sfx.stomp(); vibe(60); break;
+      case 'slamWarn': sfx.slamWarn(e.warn); break;
+      case 'slam': sfx.slam(); vibe(60); break;
+      case 'summon': sfx.roar(); vibe(20); break;
       case 'stomp': sfx.stomp(); vibe(30); break;
-      case 'enrage': $('bossBar').classList.add('rage'); break;
-      case 'bossDead': sfx.win(); vibe([40, 60, 80]); slow(0.25, 1200); break;
+      case 'enrage': $('bossBar').classList.add('rage'); sfx.enrage(); vibe([30, 40, 30, 40, 60]); if (music) music.setMood(1, true); break;
+      case 'bossDead':
+        // 격파: 연쇄 폭발 → 큰 폭발 → 팡파르(sfx.bossDead, 3초 남짓). 보스 곡은 그동안 낮췄다가, 무한모드는 다음 구간 곡으로·캠페인은 결과 화면 곡으로 넘어간다
+        sfx.bossDead(); vibe([40, 60, 80, 60, 160]); slow(0.25, 1200);
+        if (music) { music.setMood(0.3, false); music.duck(3.2, 0.12); }
+        break;
       case 'segClear':
         // 무한모드: 보스를 잡았다 — 결과 화면 없이 곧 다음 구간(코인은 판 안에 적립)
         $('bossBar').hidden = true;
@@ -2254,7 +2261,8 @@ function handleEvents(ev) {
       case 'relicUse':
         // 불굴의 심장(유물)이 전멸을 무효로 했다 — 판이 끝날 뻔한 순간이라 가장 크게: 소리 둘·긴 진동·잠깐 느리게(그림은 renderer, HUD의 심장은 흐려진다)
         if (e.id === 'heart') {
-          sfx.heal(); sfx.levelUp();
+          sfx.revive();
+          if (music) music.duck(1.6, 0.3);
           vibe([80, 40, 80, 40, 160]);
           slow(0.3, 1100);
           toast(`불굴의 심장! 병력 ${e.n}명으로 다시 일어났어요 · 심장은 사라졌어요`, 3000);
@@ -2262,8 +2270,11 @@ function handleEvents(ev) {
         break;
       case 'card': {
         // 고른 카드: 특수병은 spGet·spUp이 소리를 냈다. 알림은 하나로 — 효과 + 다음 구간(앞의 구간·레벨 업 알림을 덮어쓴다). 유물은 레벨 업 소리
-        if (e.k === 'relic') { sfx.levelUp(); vibe([15, 30, 15]); }
-        else if (e.k !== 'unit') { sfx.power(); vibe(20); }
+        if (e.k === 'relic') { sfx.relic(); vibe([15, 30, 15, 30, 40]); }
+        else if (e.k === 'gun') { sfx.power(s.squad.tier | 0); vibe(25); }
+        else if (e.k === 'fx' || e.k === 'ammo') { sfx.fxUp(); vibe(20); }
+        else if (e.k !== 'unit') { sfx.levelUp(); vibe(20); }
+        if (music) music.boost(4);
         const cb = combos || e.combos;
         toast(`${cardDone(e)}${cb && cb.length ? ` · 시너지 ${comboNames(cb)}!` : ''} · ${segToast(s.endless.seg)}`, 2600);
         combosShown = true;
@@ -2273,7 +2284,8 @@ function handleEvents(ev) {
       default:
     }
   }
-  if (combos && !combosShown) { sfx.levelUp(); vibe([15, 30, 15]); toast(`시너지 켜짐! ${comboNames(combos)}`, 2000); }
+  if (combos) sfx.combo();
+  if (combos && !combosShown) { vibe([15, 30, 15]); toast(`시너지 켜짐! ${comboNames(combos)}`, 2000); }
   if (lost) { const w = lost.join('·'); toast(`폭발에 ${w}${ga(w)} 부서졌어요`, 1400); }
 }
 
@@ -2579,8 +2591,33 @@ function updateMusic() {
   // 일시정지에서 연 설정·백업 화면은 판 음악을 그대로, 카드는 늘 출발 곡(뒤의 시연 상태를 보지 않는다)
   const fromRun = (mode === 'set' && $('setBack').dataset.back === 'pause') || (mode === 'backup' && $('setBack').dataset.back === 'pause' && $('bkBack').dataset.back === 'set');
   const inRun = mode === 'play' || mode === 'pause' || mode === 'pick' || fromRun;
-  const want = mode === 'card' ? 'run' : inRun ? (s && s.boss && s.boss.hp > 0 ? 'boss' : 'run') : 'title';
+  // 곡 이름: 'run:지역' · 'boss:지역:등급'(music.js tuneOf) — 지역마다 다른 달리기 곡·조, 정예·대왕 보스는 더 낮고 무겁게
+  const L = mode === 'card' ? (lv ? lv.L : 1) : s ? s.L || 1 : 1;
+  const bi = Math.max(0, BIOMES.indexOf(biomeOf(L)));
+  const bossOn = mode !== 'card' && s && s.boss && s.boss.hp > 0;
+  const want = mode === 'card' || inRun ? (bossOn ? `boss:${bi}:${tagOf(L).tag}` : `run:${bi}`) : 'title';
   if (music.current !== want) music.play(want);
+  music.setMuffled(mode === 'pause' || mode === 'pick' || fromRun);   // 멈춘 동안은 먹먹하게(끊지 않는다)
+}
+/* 음악의 세기를 판에 맞춘다(프레임마다 — 음악은 마디마다 따라온다): 달리기는 무기 단계·병력·가까운 좀비 수, 보스전은 등급·남은 체력·분노.
+   보스 체력이 75·50·25%를 지날 때의 깨지는 소리도 여기서(시뮬레이션에는 그 이벤트가 없다 — 소리만) */
+let bossQ = 4;
+function musicMood() {
+  if (!s || attract) return;
+  const b = s.boss, q = s.squad;
+  if (b && b.hp > 0) {
+    const k = b.hp / (b.max || 1);
+    const qn = Math.ceil(k * 4);
+    if (qn < bossQ) { if (bossQ <= 4 && (qn === 3 || qn === 1)) sfx.crack(); bossQ = qn; }
+    else if (qn > bossQ) bossQ = qn;
+    if (music) music.setMood((tagOf(s.L || 1).tag === 'super' ? 0.85 : 0.65) + (k < 0.25 ? 0.2 : 0), !!b.enraged);
+    return;
+  }
+  bossQ = 4;
+  if (!music) return;
+  let near = 0;
+  for (const f of s.foes) if (f.alive && f.z > q.z && f.z - q.z < 30) near++;
+  music.setMood(0.2 + 0.2 * Math.min(1, (q.tier | 0) / 3) + 0.25 * Math.min(1, Math.log10(Math.max(1, q.n)) / 3) + 0.35 * Math.min(1, near / 14), false);
 }
 whenAudio((ctx, bus) => {
   music = createMusic(ctx, bus);
@@ -2651,7 +2688,8 @@ function updateHud() {
   $('hudBar').style.transform = `scaleX(${p})`;
   const key = `${data.coins + s.stats.coins + (s.endless ? s.endless.bank : 0)}`;
   if (key !== hudCache) { hudCache = key; $('hudCoins').textContent = key; }
-  if (s.boss) $('bossFill').style.transform = `scaleX(${Math.max(0, s.boss.hp) / s.boss.max})`;
+  if (s.boss) { const k = `scaleX(${Math.max(0, s.boss.hp) / s.boss.max})`; $('bossFill').style.transform = k; $('bossGhost').style.transform = k; }
+  if (mode === 'play') musicMood();
   updateEta();
 }
 

@@ -24,3 +24,5 @@ jobs:
         run: node --test squad/tests/art.mjs
       - name: 영웅·지역 좀비 옷·지역 보스 그림 테스트
         run: node --test squad/tests/heroines.mjs squad/tests/skins.mjs squad/tests/bosses.mjs
+      - name: 음악 자료·소리·빛 배선 테스트
+        run: node --test squad/tests/sound.mjs
