@@ -1779,10 +1779,12 @@ function fxCrates(s) {
 /* ---------- 3단계·5단계: 유물(단계 해금 기획서 5절 — s.endless.relics가 있는 판(unl ≥ 3)에만) ----------
    - 대왕 구간(segInfo tag 'super' — 6·12·18…, RUN_ORDER.relic부터) 보스 뒤에 카드 대신 유물 카드 RELIC.show장 중 1장: 열린 유물 중 이 판에 아직 없는 것을
      시드·구간 번호로 정한 순서에서 앞의 것(보이는 순서는 RELIC_IDS 순). 남은 게 모자라면 그만큼, 없거나 이미 RELIC.max개면 보통 카드.
+     그 판에서 좋은 점이 들 수 없는 유물(relicFits — 대신 쪽만 남는다)은 내지 않는다.
    - 유물은 수치가 아니라 규칙을 바꾼다(roster.js RELICS — 보이는 수치·글). 규칙은 relicOn(s, id)를 보는 곳들:
      나침반 relicSeg·forkPeek·openCrate, 휘장 fire(bannerOn), 확성기 relicSeg, 코일 tierMax·relicSeg, 넷째 자리 spMax·spEscort,
-     심장 wiped(heartRevive), 가방 cardCount·eggP(화면), 탄낭 fxSlots·cardPool2.
-   - 구간을 바꾸는 유물(확성기·코일·나침반)은 구간이 시작될 때 한 번 건다(relicSeg — 고른 카드·유물이 든 뒤, 탄종 상자를 정한 뒤) */
+     심장 lose(heartRevive), 가방 cardCount·eggP(화면), 탄낭 fxSlots·cardPool2.
+   - 구간을 바꾸는 유물(확성기·코일·나침반)은 구간이 시작될 때 한 번 건다(relicSeg — 고른 카드·유물이 든 뒤, 탄종 상자를 정한 뒤).
+     바뀐 숫자는 상태(덧셈 칸 step, 상자 reward)에 실려 이어하기로 다시 걸리지 않는다 */
 export const RELIC = { max: 3, show: 3 };
 export const relicsOf = (s) => (s && s.endless && s.endless.relics) || null;
 /* 유물 id가 이 판에 켜져 있나(얻었고 아직 쓰지 않았다) */
@@ -1808,23 +1810,36 @@ export function forkCrate(s, d) {
   for (const p of s.props) if (p.fork && (p.kind === 'crate' || p.kind === 'cage') && p.z > d.z0 && p.z < d.z1 && Math.sign(p.x0 + p.x1) === d.risk) return p;
   return null;
 }
-/* 나침반: 지금 속이 보이는 갈림길 보상 상자(갈림길 알림 'fork'가 뜬 뒤 — 코 RELICS.compass.ahead(= MARK_AHEAD) m 앞부터, 아직 부서지지 않았으면).
-   화면이 벽 위에 내용물을 띄운다. 없으면 null */
+/* 나침반: 지금 속이 보이는 갈림길 보상 상자(갈림길 알림 'fork'가 뜬 틱부터 — 코 MARK_AHEAD(= RELICS.compass.ahead, 테스트가 본다) m 앞, 아직 부서지지·지나치지 않았으면).
+   알림과 같은 틱이게 d.seen을 본다. 보통은 벽에 가려 가까이 가야 보인다(ARSENAL.md 8절) — 화면이 벽 위에 내용물을 띄운다. 없으면 null */
 export function forkPeek(s, d) {
   if (!relicOn(s, 'compass') || !d || !d.seen) return null;
   const p = forkCrate(s, d);
   return p && p.alive && !p.passed ? p : null;
 }
+/* 이 판에서 나올 수 있는 병과(화염병 줄(4단계)을 만들면 여기에 더한다 — 넷째 자리가 이것을 본다) */
+export const spKindsOf = (s) => SP_KINDS;
+/* 유물의 좋은 점이 이 판에서 들 수 있나(구현 판단 — 대신 쪽만 남는 유물은 카드로 내지 않는다):
+   넷째 자리는 병과가 자리(SP_MAX)보다 많을 때만(같은 병과는 레벨이 오를 뿐이라 세 병과로는 넷째 자리가 늘 빈다),
+   넓은 탄낭은 얻을 수 있는 탄 효과 종류(별로 열린 탄종 + 출격 탄종)가 슬롯(FX_SLOTS)보다 많을 때만 */
+export function relicFits(s, id) {
+  const e = s.endless;
+  if (id === 'fourth') return spKindsOf(s).length > SP_MAX;
+  if (id === 'pouch') return AMMO_IDS.filter((a) => (e.ammo || []).includes(a) || s.ammo === a).length > FX_SLOTS;
+  return !!RELICS[id];
+}
 /* 대왕 보스 뒤의 유물 카드(아니면 null — 보통 카드) */
 function relicOffer(s) {
   const e = s.endless;
   if (!e.relics || e.seg < RUN_ORDER.relic || segInfo(e.seg).tag !== 'super' || e.relics.length >= RELIC.max) return null;
-  const left = e.relicsOpen.filter((id) => !e.relics.includes(id));
+  const left = e.relicsOpen.filter((id) => !e.relics.includes(id) && relicFits(s, id));
   if (!left.length) return null;
   const g = { rs: hash(VERSION, 'relic', e.seed >>> 0, e.seg) };
   const show = shuffle(g, left).slice(0, RELIC.show);
   return RELIC_IDS.filter((id) => show.includes(id)).map((r) => ({ k: 'relic', r }));
 }
+/* 유물 카드 r을 지금 얻을 수 있나(열렸고, 이 판에 없고, RELIC.max개 아래) */
+const relicCan = (e, r) => !!(e.relics && RELICS[r] && e.relicsOpen.includes(r) && !e.relics.includes(r) && e.relics.length < RELIC.max);
 /* 유물 id를 얻는다: 'relic' 이벤트. 넷째 자리는 바로 호위 병사 규칙(4 → 6명)이 든다 — 모자라면 가장 늦게 온 특수병이 떠난다 */
 function relicAdd(s, id) {
   const q = s.squad;
@@ -1833,9 +1848,10 @@ function relicAdd(s, id) {
   if (id === 'fourth') escort(s);
 }
 /* 구간이 시작될 때 유물이 구간에 거는 규칙(한 구간에 한 번 — 고른 카드·유물이 든 뒤):
-   확성기 — 덧셈 칸의 오르는 빠르기(−로 시작한 빨간 칸은 red배 빨리, 파란 칸은 blue배. 역전한 칸도 처음 색대로),
-   코일 — 지원병 상자(reward 'men')의 병력 × men, 나침반 — 갈림길 위험한 쪽 보상 상자의 병사 × v(지원병은 v에 곱하고, 무기·탄종 상자는 mul — 병사로 바뀔 때).
-   병력 수는 상자에 실어 둔다(화면·봇이 보는 숫자 = 받는 숫자) */
+   확성기 — 덧셈 칸의 오르는 빠르기(−로 시작한 빨간 칸은 red배 빨리, 파란 칸은 blue배 — step을 나눈다. 역전한 칸도 처음 색대로),
+   코일 — 지원병 상자(reward 'men')의 병력 × men,
+   나침반 — 갈림길 위험한 쪽 보상 상자의 병사 × v(지원병 상자는 병력에 곱하고, 무기·탄종 상자와 철창은 mul — 얻을 수 없어 병사로 바뀔 때.
+   무기 단계·탄 효과 레벨·특수병 합류는 한 칸이라 그대로). 병력 수는 상자에 실어 둔다(화면·봇이 보는 숫자 = 받는 숫자) */
 function relicSeg(s) {
   const M = RELICS.megaphone;
   if (relicOn(s, 'megaphone')) for (const row of s.rows) for (const c of row.cells) if (c.op === 'add') c.step /= c.v0 < 0 ? M.red : M.blue;
@@ -1848,20 +1864,19 @@ function relicSeg(s) {
     if (!r || !p.alive) continue;
     const k = (coil && r.type === 'men' ? RELICS.coil.men : 1) * (risky.has(p.id) ? RELICS.compass.v : 1);
     if (r.type === 'men' && k !== 1) r.v = Math.max(1, Math.round(r.v * k));
-    else if (risky.has(p.id) && (r.type === 'gun' || r.type === 'fx')) r.mul = RELICS.compass.v;
+    else if (risky.has(p.id) && (r.type === 'gun' || r.type === 'fx' || r.type === 'unit')) r.mul = RELICS.compass.v;
   }
 }
-/* 불굴의 심장: 전멸한 순간 병력이 그 구간 바닥선(segFloor)의 v로 돌아오고 유물은 사라진다(spent). 바닥선이 없는 1구간은 바닥선의 밑(ENDLESS.floor0)을 쓴다 —
-   유물은 대왕(6구간) 뒤에 얻으므로 판에서는 늘 바닥선이 있다(처음부터 쥐여 주는 시험·측정용). 'relicUse' { id, n, cause }. 호위 병사가 모자라면 특수병이 떠난다 */
-function heartRevive(s) {
+/* 불굴의 심장: 전멸한 순간(lose가 병력을 0으로 만든 그 자리) 병력이 그 구간 바닥선(segFloor)의 v로 돌아오고 유물은 사라진다(spent — 얻은 수에는 그대로 든다).
+   바닥선이 없는 1구간은 바닥선의 밑(ENDLESS.floor0 — 시작 병력 강화 10단계의 출발 병력)을 쓴다(구현 판단 — 유물은 대왕(6구간) 뒤에 얻으므로 판에서는 늘 바닥선이 있고,
+   1구간은 처음부터 쥐여 주는 시험·측정에서만). 'relicUse' { id, n, cause }. 호위 병사가 모자라면 가장 늦게 온 특수병이 떠난다 */
+function heartRevive(s, cause) {
   const q = s.squad, e = s.endless;
   const n = clamp(Math.round(RELICS.heart.v * (segFloor(e.seg) || ENDLESS.floor0)), 1, MAX_N);
   e.spent.push('heart');
   q.n = n;
   q.peak = Math.max(q.peak, n);
-  q.hurtT = s.t;
-  emit(s, { t: 'relicUse', id: 'heart', n, cause: s.cause || 'foe', x: q.x, z: q.z });
-  s.cause = '';
+  emit(s, { t: 'relicUse', id: 'heart', n, cause, x: q.x, z: q.z });
   escort(s);
 }
 
@@ -1882,7 +1897,7 @@ export function pickCard(s, i) {
   else if (c.k === 'unit') addSpecial(s, c.u, 'card', q.x, q.z);
   else if (c.k === 'ammo') s.ammo = c.a;
   else if (c.k === 'fx' && fxCan(s, c.a)) fxAdd(s, c.a, 'card', q.x, q.z);
-  else if (c.k === 'relic' && e.relics && !e.relics.includes(c.r)) relicAdd(s, c.r);
+  else if (c.k === 'relic' && relicCan(e, c.r)) relicAdd(s, c.r);
   e.picks.push(c.k === 'unit' ? 'unit:' + c.u : c.k === 'ammo' ? 'ammo:' + c.a : c.k === 'fx' ? 'fx:' + c.a : c.k === 'relic' ? 'relic:' + c.r : c.k);
   emit(s, { t: 'card', ...info, x: q.x, z: q.z });
   if (e.fx) fxCrates(s);
@@ -2041,7 +2056,7 @@ export function restore(o) {
         e.obsSeen = Array.isArray(e.obsSeen) ? e.obsSeen.filter((k, i, l) => OBSTACLE_IDS.includes(k) && l.indexOf(k) === i) : [];
       } else { delete e.fx; delete e.obsSeen; }
       const kinds = e.fx ? CARD.kinds2 : CARD.kinds;
-      const okRelic = (c) => !!e.relics && e.relicsOpen.includes(c.r) && !e.relics.includes(c.r);   // 유물 카드: 열린 것 중 아직 없는 것
+      const okRelic = (c) => relicCan(e, c.r);   // 유물 카드: 열린 것 중 아직 없는 것(RELIC.max개 아래)
       const okCard = (c) => c && typeof c === 'object' && (c.k === 'relic' ? okRelic(c) : kinds.includes(c.k) && (c.k !== 'unit' || SP_KINDS.includes(c.u)) && ((c.k !== 'ammo' && c.k !== 'fx') || !!AMMO[c.a]) && (c.syn === undefined || c.syn === true));
       if (e.offer != null && !(Array.isArray(e.offer) && e.offer.length && e.offer.every(okCard))) e.offer = null;
       if (e.offer == null) {
@@ -2089,7 +2104,11 @@ function lose(s, k, cause, x, z, sub) {
   q.hurtT = s.t;
   s.stats.lost += real;
   emit(s, { t: 'loss', n: real, cause, x: x ?? q.x, z: z ?? q.z });
-  if (q.n <= 0) { s.cause = cause; return; }
+  if (q.n <= 0) {
+    if (relicOn(s, 'heart')) heartRevive(s, cause);   // 불굴의 심장(유물): 한 번은 전멸하지 않는다 — 같은 틱의 나머지도 되살아난 병력으로 흐른다
+    else s.cause = cause;
+    return;
+  }
   if (cause !== 'gate') {
     q.recent += real;
     // 짓밟기(보스가 닿은 뒤)로 잃은 병사는 회복 풀로 가지 않는다 — 닿기 전에 잡는 것이 보스전의 목표
@@ -2131,7 +2150,7 @@ function escort(s) {
 
 /* 특수병 합류. 같은 병과가 이미 있으면 그 특수병의 레벨이 오른다(SIM 9, Lv3까지 — 새 자리·호위 병사는 필요 없다).
    Lv3인 같은 병과·자리 초과·호위 병사 부족이면 병사로 바꿔 준다(spFull.why: 'max' | 'full' | 'escort') */
-function addSpecial(s, k, via, x, z) {
+function addSpecial(s, k, via, x, z, mul = 0) {
   const q = s.squad;
   const h = s.hero;
   const m = q.sp.find((o) => o.k === k);
@@ -2144,7 +2163,8 @@ function addSpecial(s, k, via, x, z) {
   }
   const cap = spMax(s);   // 넷째 자리(유물)면 4자리·호위 병사 6명
   if (m || q.sp.length >= cap || q.n < spEscort(s) * (q.sp.length + 1)) {
-    const n = Math.max(5, nice(0.12 * q.n));
+    const n0 = Math.max(5, nice(0.12 * q.n));
+    const n = mul ? Math.max(1, Math.round(n0 * mul)) : n0;   // mul: 나침반(유물)이 실은 갈림길 위험한 쪽 철창의 병사 배수
     gain(s, n, x, z, 'spFull');
     emit(s, { t: 'spFull', k, n, why: m ? 'max' : q.sp.length >= cap ? 'full' : 'escort', x: x ?? q.x, z: z ?? q.z });
     return;
@@ -2256,7 +2276,6 @@ export function step(s, input) {
 function wiped(s) {
   const q = s.squad;
   if (q.n > 0 || s.phase === 'lost') return false;
-  if (relicOn(s, 'heart')) { heartRevive(s); return false; }   // 불굴의 심장(유물): 한 번은 전멸하지 않는다
   q.n = 0;
   s.phase = 'lost';
   s.endT = 0;
@@ -2833,7 +2852,7 @@ function hitBossBonus(s, dmg) {
   return d;
 }
 
-/* 무기·탄종 상자를 얻을 수 없을 때 대신 주는 병사(나침반 유물이 실은 r.mul이면 그만큼 — 갈림길 위험한 쪽) */
+/* 무기·탄종 상자를 얻을 수 없을 때 대신 주는 병사(나침반 유물이 실은 r.mul이면 그만큼 — 갈림길 위험한 쪽. 없는 판은 예전 식 그대로) */
 const crateMen = (n, r) => { const v = Math.max(5, nice(n * 0.2)); return r.mul ? Math.max(1, Math.round(v * r.mul)) : v; };
 function openCrate(s, p) {
   const q = s.squad;
@@ -2842,7 +2861,7 @@ function openCrate(s, p) {
   const x = (p.x0 + p.x1) / 2;
   if (r.type === 'unit') {
     emit(s, { t: 'cageOpen', k: r.k, x, z: p.z });
-    addSpecial(s, r.k, 'cage', x, p.z);
+    addSpecial(s, r.k, 'cage', x, p.z, r.mul);
     return;
   }
   if (r.type === 'fx') {
@@ -2895,7 +2914,7 @@ function bossUpdate(s, R) {
         // 3택 1을 연 판: 카드를 띄우고 고를 때까지 멈춘다(다음 구간은 pickCard가 잇는다)
         if (e.unl >= 1) {
           const offer = makeOffer(s);
-          if (offer.length) { e.offer = offer; emit(s, { t: 'offer', n: offer.length, seg: e.seg }); return; }
+          if (offer.length) { e.offer = offer; emit(s, offer[0].k === 'relic' ? { t: 'offer', n: offer.length, seg: e.seg, relic: true } : { t: 'offer', n: offer.length, seg: e.seg }); return; }   // relic: 유물 카드(대왕 보스 뒤)
         }
         nextSegment(s);
         if (e.fx) fxCrates(s);

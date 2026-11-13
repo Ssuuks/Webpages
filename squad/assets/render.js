@@ -46,6 +46,15 @@ export function blastRing(p, n = 24, out = []) {
   for (let i = 0; i < n; i++) { const a = (i / n) * 2 * Math.PI; out.push(x + r * Math.cos(a), p.z + r * Math.sin(a)); }
   return out;
 }
+/* 방패 정예의 방패 자리(원래 크기 픽셀, 좀비 발끝 닻에서): 졸개 프레임마다 — 걷기 1·3, 달려듦 5는 몸이 1px 위(5는 왼쪽으로도 1px).
+   아래로 1px(dy 1) = 방패가 몸보다 카메라 쪽(앞)이라 땅에 닿는 자리가 조금 아래 — 턱까지만 가려 눈·볼이 방패 위로 보인다(tests/art.mjs) */
+const SHIELD_DX = [-1, -1, -1, -1, -1, -2], SHIELD_DY = [1, 0, 1, 0, 1, 0];
+export function shieldAt(fr, k = 1) {
+  const i = fr >= 0 && fr < SHIELD_DX.length ? fr : 0;
+  return { dx: Math.round(SHIELD_DX[i] * k), dy: Math.round(SHIELD_DY[i] * k) };
+}
+/* 벽·장갑문의 그린 높이·두께(m — 폭은 둘 다 x0~x1 그대로). 장갑문은 벽보다 높고 두껍다(같은 자리의 셋째 패턴이 더 단단해 보이게, tests/art.mjs) */
+export const WALL_H = 1.45, DOOR_H = 1.75, DOOR_D = 0.5;
 const PANEL = {
   good: { hex: '#3E8BEA', line: '#BFE2FF', out: '#1D3F8A', arrow: '#DDF3FF' },
   bad: { hex: '#E8384F', line: '#FFC2B3', out: '#6E1A33', arrow: '#FFD0C4' },
@@ -133,7 +142,8 @@ export const FRAMES = {
   boss: { sheets: Object.values(BOSS_SKIN), walk: [0, 1, 2, 3], windup: [4], slam: [5], roar: [6, 7], stomp: [8, 9], dead: [10] },
   fx2: { sheets: ['flash', 'spark', 'glint', 'boomfx', 'flag', 'rocketShot', 'smoke'], f: [0, 1] },
   fx4: { sheets: ['saw', 'puff', 'coin'], f: [0, 1, 2, 3] },
-  one: { sheets: ['bubble', 'tear', 'helmetBit', 'plus', 'heart', 'dust'], f: [0] },
+  one: { sheets: ['bubble', 'tear', 'helmetBit', 'plus', 'heart', 'dust', 'riotShield'], f: [0] },
+  drum: { sheets: ['drum'], lit: [0, 1] },
   star: { sheets: ['star'], f: [1] },
 };
 const FR = FRAMES;
@@ -827,7 +837,7 @@ export function createRenderer(cvs) {
     for (const f of fxs) if (!f.on) { slot = f; break; }
     if (!slot) return null;
     slot.on = true; slot.kind = kind; slot.x = x; slot.y = y; slot.z = z; slot.t = 0; slot.dur = dur;
-    slot.k = null; slot.n = 0; slot.vx = 0; slot.vz = 0; slot.sheet = null; slot.step = 0; slot.col = null; slot.x0 = 0; slot.x1 = 0;
+    slot.k = null; slot.n = 0; slot.vx = 0; slot.vz = 0; slot.sheet = null; slot.step = 0; slot.col = null; slot.x0 = 0; slot.x1 = 0; slot.shield = false;
     if (o) Object.assign(slot, o);
     return slot;
   }
@@ -968,9 +978,9 @@ export function createRenderer(cvs) {
           const fk = e.kind === 'runner' ? 'runner' : e.kind === 'brute' ? 'brute' : 'grunt';
           const sk = skinOf(fk, curBid);
           // 문 좀비의 무리 변형(a·b)을 이어 쓴다 — 방금 죽은 그 좀비(같은 종류·자리)를 찾는다, 없으면 기본 색
-          let alt = '';
-          for (const g of s.foes) if (g.kind === e.kind && g.x === e.x && g.z === e.z) { alt = ALT3[g.seed % 3]; break; }
-          fx('lunge', e.x, 0, e.z, 0.14, { sheet: atlas.has(sk) ? sk : fk, foe: fk, alt });
+          let alt = '', shield = false;
+          for (const g of s.foes) if (g.kind === e.kind && g.x === e.x && g.z === e.z) { alt = ALT3[g.seed % 3]; shield = g.elite === 'shield'; break; }
+          fx('lunge', e.x, 0, e.z, 0.14, { sheet: atlas.has(sk) ? sk : fk, foe: fk, alt, shield });
           burst(e.x, 0.7, e.z, 5, FX_COL.blood, 2, 2.5);
           break;
         }
@@ -1706,7 +1716,7 @@ export function createRenderer(cvs) {
     }
   }
   function drawWall(s, p) {
-    const top = boxFaces(p, 1.45);
+    const top = boxFaces(p, WALL_H);
     if (!top) return;
     const a = fadeIn(face.d);
     if (!a) return;
@@ -1855,7 +1865,6 @@ export function createRenderer(cvs) {
   /* 장갑문(prop.kind 'door' — 갈림길 위험한 쪽의 셋째 패턴): 벽보다 높고 두꺼운 쇳빛 문. 리벳 박힌 문틀·가운데 이음매·아래 경고 띠, 숫자는 벽처럼 체력(p.hp).
      폭은 벽처럼 x0~x1 그대로(boxFaces — 그린 폭 = 맞는 폭). 이 판의 총알이 덜 들면(doorMul < 1 — 보통 총알) 맞을 때 하얀 불똥이 카메라 쪽으로 튕기고,
      잘 들면(관통·작렬 효과) 주황 불꽃이 튄다 — 숫자가 천천히 주는 까닭이 보이게(배수 숫자는 글꼴에 '.'이 없어 DOM 안내가 맡는다) */
-  const DOOR_H = 1.75, DOOR_D = 0.5;
   function doorSparks(s, p) {
     const prev = hitSeen.get(p.id);
     if (prev === p.hitT) return;
@@ -1976,7 +1985,7 @@ export function createRenderer(cvs) {
     if (!a) return;
     let hot = false;
     for (const f of s.foes) if (f.alive && (f.x - cx) * (f.x - cx) + (f.z - p.z) * (f.z - p.z) <= r * r) { hot = true; break; }
-    const blink = hot && (((time * 5) | 0) & 1);
+    const blink = hot && !reduce && (((time * 5) | 0) & 1);   // 움직임 줄이기면 깜박이지 않고 진하게만
     // 안: 깊이 띠(가까운 변·먼 변에서 원의 반폭)로 채운다
     ctx.fillStyle = '#FF7A45';
     ctx.globalAlpha = a * (hot ? (blink ? 0.24 : 0.17) : 0.1);
@@ -1997,7 +2006,7 @@ export function createRenderer(cvs) {
     // 테두리: 점선(두 색이 번갈아 돈다)
     ctx.globalAlpha = a;
     blastRing(p, RING_N, ringPts);
-    const off = (time * 3) | 0;
+    const off = reduce ? 0 : (time * 3) | 0;
     for (let i = 0; i < RING_N; i++) {
       const j = (i + 1) % RING_N;
       const z0 = ringPts[2 * i + 1], z1 = ringPts[2 * j + 1];
@@ -2103,9 +2112,9 @@ export function createRenderer(cvs) {
     }
     const rr = atlas.draw(ctx, sheet, fr, pxs, pys, st, white ? 'white' : ALT3[f.seed % 3]);
     if (f.elite === 'shield') {
-      // 방패: 몸 앞(카메라 쪽)에 든 철판 — 머리는 위로 보인다. 걸음에 맞춰 1px 흔들리고, 막힌 총알은 방패에서 하얀 불똥으로 튄다
-      const k = STEPS3[st], bob = moving && (fr & 1) ? 1 : 0;
-      atlas.draw(ctx, 'riotShield', 0, pxs - Math.round(k), pys - Math.round((1 + bob) * k), st, shieldWhite ? 'white' : '');
+      // 방패: 몸 앞(카메라 쪽)에 든 철판 — 눈·볼은 방패 위로 보인다. 걸음에 맞춰 몸과 함께 1px 흔들리고(shieldAt), 막힌 총알은 방패에서 하얀 불똥으로 튄다
+      const at = shieldAt(fr, STEPS3[st]);
+      atlas.draw(ctx, 'riotShield', 0, pxs + at.dx, pys + at.dy, st, shieldWhite ? 'white' : '');
       const prev = shieldSeen.get(f.id);
       if (prev !== f.hitT) {
         shieldSeen.set(f.id, f.hitT);
@@ -3043,6 +3052,7 @@ export function createRenderer(cvs) {
           const sh = f.sheet;
           const fr = f.foe === 'brute' ? FR.brute.lunge[0] : FR.foe.lunge[u > 0.5 ? 1 : 0];
           atlas.draw(ctx, sh, fr, P.x, P.y, 0, f.alt || '');
+          if (f.shield) { const at = shieldAt(fr); atlas.draw(ctx, 'riotShield', 0, P.x + at.dx, P.y + at.dy); }   // 방패 정예가 물었다
           break;
         }
         case 'doorDrop': doorDrop(f, u); break;

@@ -928,3 +928,96 @@ test('탄 효과 아이콘: 탄종마다 fx_<id>(9×9 정사각), 가장 많은 
   assert.equal(shotAmmo({ endless: { unl: 1 } }), '');
   assert.equal(shotAmmo({}), '');
 });
+
+/* 무한모드 2단계 장애물(단계 해금 기획서 4절): 폭발 드럼통·방패 정예의 방패 도트, 장갑문·폭발 반경의 그린 크기 = 맞는 크기, 충돌 크기 보기의 새 모양, 처음 보는 장애물 안내 */
+test('장애물 그림: 드럼통(빨강, 길가 통과 다르게, 총알 받는 폭 = 그린 폭)·방패(청록 테두리, 눈은 방패 위)·장갑문(벽보다 높고 두껍다)·폭발 반경·충돌 크기 보기', async () => {
+  const fs = await import('node:fs');
+  const { OBSTACLES } = await import('../assets/roster.js');
+  const R_ = await import('../assets/render.js');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  const top = (R) => { const n = new Map(); for (const c of R.a) if (c && c !== OUT) n.set(c, (n.get(c) | 0) + 1); return [...n.entries()].sort((a, b) => b[1] - a[1])[0][0]; };
+  // 드럼통: 두 장(보통·밝은 마름모)이 같은 격자, 가장 많은 색이 빨강(나쁨 색 계열) — 길가 소품 통(주황)·상자(나무)와 ΔE 20 이상
+  const dr = SHEETS.drum;
+  assert.equal(dr.frames.length, 2, '드럼통 두 장');
+  assert.deepEqual(dr.frames[1].map((r) => r.length), dr.frames[0].map((r) => r.length), '두 장의 격자가 같다(깜박여도 자리가 그대로)');
+  const drumTop = top(frameRaster(dr.frames[0], palOf(dr.pal)));
+  assert.ok(deltaE(drumTop, '#E8384F') < 8, `드럼통 몸 색 ${drumTop}은 빨강`);
+  const barrelTop = top(frameRaster(SHEETS.barrel.frames[0], palOf(SHEETS.barrel.pal)));
+  for (const c of [barrelTop, '#C98A4E']) assert.ok(deltaE(drumTop, c) >= 20, `드럼통 ${drumTop} vs ${c}: ΔE ${deltaE(drumTop, c).toFixed(1)}`);
+  // 총알 받는 폭(core OBST.drum.w — x0~x1의 반)은 쏘는 거리(6~25m, 축소 단계 포함)에서 그린 반폭 범위 안(좀비 검사와 같은 규칙)
+  const STEPS3 = [1, 0.75, 0.5];
+  const db = spriteBox('drum');
+  for (const [tag, w, h, dpr] of HB_VIEWS) {
+    const v = hbView(w, h, dpr, 0);
+    let st, lo = 9, hi = 0;
+    for (let dz = 25; dz >= 6; dz -= 0.25) {
+      project(v, 0, 0, dz);
+      st = pickStep((P.s * WORLD_H.drum) / (db.H - 2), st, STEPS3);
+      const half = ((db.L + db.R) / 2) * STEPS3[st] / P.s;
+      lo = Math.min(lo, half); hi = Math.max(hi, half);
+    }
+    const bh = Core.OBST.drum.w;
+    assert.ok(bh >= lo && bh <= hi * 1.05, `${tag} 드럼통: 맞는 반폭 ${bh}가 그린 반폭 ${lo.toFixed(2)}~${hi.toFixed(2)} 밖`);
+  }
+  assert.match(src, /const want = \(P\.s \* WORLD_H\.drum\) \/ \(sh\.frames\[0\]\[0\]\.h - 2\)/, '렌더러도 WORLD_H.drum으로 축소 단계를 고른다');
+  // 방패: 테두리 = 정예 표식 색(OBSTACLES.shield.color, 렌더러 ELITE_COL.shield도 같은 값), 졸개(지역 옷 모두)의 모든 프레임에서 렌더러 자리(shieldAt)에 두면 눈(W)은 안 가리고 옷(u·U)은 60% 넘게 가린다
+  const rs = SHEETS.riotShield;
+  assert.equal(palOf(rs.pal).t, OBSTACLES.shield.color, '방패 테두리 = 방패 정예 색');
+  assert.match(src, /shield: \{ ring: OBSTACLES\.shield\.color/, '발밑 고리·머리 표식도 같은 색');
+  const S = outline(frameRaster(rs.frames[0], palOf(rs.pal)), OUT);
+  for (const name of Object.keys(SHEETS).filter((k) => k === 'grunt' || k.startsWith('grunt_'))) {
+    SHEETS[name].frames.forEach((rows, fr) => {
+      const gw = rows[0].length + 2, gh = rows.length + 2, at = R_.shieldAt(fr);
+      const cover = new Set();
+      for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) if (S.get(x, y)) cover.add(((gw >> 1) + at.dx - (S.w >> 1) + x - 1) + ',' + (gh - 1 + at.dy - (S.h - 1) + y - 1));
+      let eyes = 0, shirt = 0, hid = 0;
+      const cheek = rows.findIndex((r) => r.includes('p'));   // 눈 = 볼(p) 줄 위의 W(달려드는 그림의 벌린 입 이빨 W는 가려도 된다)
+      rows.forEach((r, y) => [...r].forEach((ch, x) => {
+        if (ch === 'W' && y < cheek) { eyes++; assert.ok(!cover.has(x + ',' + y), `${name}[${fr}]: 방패가 눈(${x},${y})을 가린다`); }
+        if ((ch === 'u' || ch === 'U') && y > cheek) { shirt++; if (cover.has(x + ',' + y)) hid++; }   // 옷 = 볼 아래(눈 모자의 u는 빼고)
+      }));
+      assert.ok(eyes >= 2, `${name}[${fr}] 눈`);
+      assert.ok(hid / shirt > 0.6, `${name}[${fr}]: 방패가 몸(옷)을 ${hid}/${shirt}만 가린다`);
+    });
+  }
+  // 장갑문: 폭은 벽처럼 x0~x1(boxFaces), 벽보다 높고 두껍다, 숫자는 체력(벽과 같은 규칙)
+  assert.ok(R_.DOOR_H > R_.WALL_H && R_.DOOR_D > 0.35, `장갑문 ${R_.DOOR_H}×${R_.DOOR_D}m vs 벽 ${R_.WALL_H}×0.35m`);
+  assert.match(src, /const top = boxFaces\(p, DOOR_H, DOOR_D\);/, '장갑문은 x0~x1로 그린다');
+  assert.match(src, /function drawDoor[\s\S]*?const t = String\(Math\.max\(1, Math\.ceil\(p\.hp\)\)\);/, '장갑문 숫자 = 체력');
+  assert.match(src, /k === 'door'\) drawDoor\(s, it\.o\); else if \(k === 'drum'\) drawDrum\(s, it\.o, bio\)/, '소품 종류마다 그림');
+  // 드럼통 체력 숫자의 글자 색 짝은 미리 굽는다(그리는 중 굽기 0)
+  const m = src.match(/function drawDrum[\s\S]*?font\.draw\([^;]*fill: '(#[0-9A-F]+)', out: PANEL\.bad\.out/);
+  assert.ok(m && GLYPH_PAIRS.some(([f, o]) => f === m[1] && o === GLYPH_PAIRS[2][1]), '드럼통 숫자 색 짝');
+  // 충돌 크기 보기: 장애물이 있는 구간(2단계 판 4구간)의 모든 모양 종류에 색, 폭발 반경 = 그리는 원(blastRing) = core의 원
+  const kinds = new Set();
+  for (const seed of [1, 2, 3, 4]) {
+    const st = Core.newGame(Core.buildSegment(seed, 4, 400, 2, 0, { obs: true }));
+    const shapes = Core.hitShapes(st);
+    for (const h of shapes) { kinds.add(h.k); assert.ok(R_.HB_COL[h.k], `충돌 크기 보기 색 없음: ${h.k}`); }
+    for (const p of st.props.filter((q) => q.kind === 'drum')) {
+      const b = shapes.find((h) => h.k === 'blast' && Math.abs((h.x0 + h.x1) / 2 - (p.x0 + p.x1) / 2) < 1e-9 && Math.abs((h.z0 + h.z1) / 2 - p.z) < 1e-9);
+      assert.ok(b && b.ell, '드럼통마다 폭발 반경(원)');
+      const pts = R_.blastRing(p, 32);
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      for (let i = 0; i < pts.length; i += 2) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); z0 = Math.min(z0, pts[i + 1]); z1 = Math.max(z1, pts[i + 1]); }
+      for (const [a, c] of [[x0, b.x0], [x1, b.x1], [z0, b.z0], [z1, b.z1]]) assert.ok(Math.abs(a - c) < 1e-9, '그리는 원 = hitShapes blast');
+      // 원 위의 점에 걸친 상자는 부서지고(blastReach), 조금 밖이면 안 부서진다 — 그린 원이 core의 판정과 같다
+      for (let i = 0; i < pts.length; i += 2) {
+        const dx = pts[i] - (p.x0 + p.x1) / 2, dz = pts[i + 1] - p.z, k = 1 - 1e-6, j = 1 + 1e-3;
+        const at = (u) => ({ x0: (p.x0 + p.x1) / 2 + dx * u, x1: (p.x0 + p.x1) / 2 + dx * u, z: p.z + dz * u });
+        assert.ok(Core.blastReach(p, at(k)) && !Core.blastReach(p, at(j)), '폭발 반경 가장자리');
+      }
+    }
+  }
+  for (const k of ['door', 'drum', 'blast']) assert.ok(kinds.has(k), `시험 구간에 ${k}가 있다`);
+  assert.notEqual(R_.HB_COL.drum, R_.HB_COL.blast, '드럼통 선과 폭발 반경은 다른 색');
+  assert.match(src, /for \(const p of s\.props\) if \(p\.kind === 'drum' && p\.alive && !p\.passed\) drawBlastZone\(s, p\);/, '바닥에 폭발 반경');
+  assert.match(src, /blastRing\(p, RING_N, ringPts\);/, '바닥 원도 blastRing으로');
+  // 이벤트 그림: 폭발·상자 잃음(잔해)·드럼통 처치·장갑문 부서짐
+  for (const re of [/case 'blast': \{/, /case 'crateLost': \{/, /e\.by === 'drum' && lastBlast/, /case 'wallBreak':\s*if \(e\.kind === 'door'\)/]) assert.match(src, re);
+  // 화면(main.js): 처음 보는 장애물은 종류마다 한 번 안내(저장 tips 'obs-<종류>', 이름·글은 roster OBSTACLES), 상자 안내는 드럼통·장갑문에 뜨지 않는다
+  assert.match(main, /case 'obstacle': \{\s*[^}]*const O = OBSTACLES\[e\.kind\];\s*if \(O\) tip\('obs-' \+ e\.kind, `\$\{O\.name\}: \$\{O\.text\(\)\}`, true\);/);
+  assert.match(main, /if \(p\.kind === 'door' \|\| p\.kind === 'drum'\) continue;/);
+  for (const k of Object.keys(OBSTACLES)) assert.ok(OBSTACLES[k].name && OBSTACLES[k].text().length > 8 && /[가-힣]요/.test(OBSTACLES[k].text()), `${k} 안내 글(해요체)`);
+});

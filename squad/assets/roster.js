@@ -265,15 +265,15 @@ export const OBSTACLE_IDS = Object.keys(OBSTACLES);
    화면에 보이는 수치·글은 여기에 두고 core.js가 읽는다(글은 이 값에서 — 수치를 고치면 글도 따라간다). 규칙은 core.js relicOn을 보는 곳들.
    kings: 열리는 때 — 0이면 3단계(첫 대왕)와 함께, n이면 대왕 누적 n번째 처치에(5단계). 순서는 열리는 순서(유물 카드도 이 순서로 보인다).
    text(): 좋은 점, cost(): 대신 쪽('' = 없음). good·bad는 예전 이름(같은 글).
-   - compass 나침반: 갈림길 위험한 쪽 보상 상자의 속이 ahead m 앞에서 보이고(갈림길 알림과 같은 거리), 그 상자의 병사 ×v(지원병 v배, 무기·탄종 상자가 병사로 바뀔 때도 v배 —
-     무기 단계·탄 효과 레벨은 한 칸이라 그대로)
+   - compass 나침반: 갈림길 위험한 쪽 보상 상자의 속이 ahead m 앞에서 보이고(갈림길 알림과 같은 거리 — core.js MARK_AHEAD), 그 상자의 병사 ×v(지원병 v배,
+     무기·탄종 상자·철창이 얻을 수 없어 병사로 바뀔 때도 v배 — 무기 단계·탄 효과 레벨·특수병 합류는 한 칸이라 그대로)
    - banner 전장의 휘장: 병력이 이 판 최고치의 at 아래면(화면의 위기 신호와 같은 문턱) 총알 화력 ×(1 + v)
    - megaphone 빨간 확성기: 빨간 덧셈 칸(−로 시작한 칸)이 red배 빨리 오른다 — 대신 파란 칸은 blue배
    - coil 과부하 코일: 무기 단계 상한 3 → tier(core.js WEAPON의 다섯째 값) — 대신 지원병 상자 병력 ×men
-   - fourth 넷째 자리: 특수병 자리 3 → slots — 대신 특수병마다 호위 병사 4 → escort명
+   - fourth 넷째 자리: 특수병 자리 3 → slots — 대신 특수병마다 호위 병사 4 → escort명(병과가 자리보다 많은 판에만 나온다 — 지금 세 병과로는 넷째 자리가 빈다)
    - heart 불굴의 심장: 한 번 전멸을 무효로 — 병력이 그 구간 바닥선(core.js segFloor)의 v로 돌아온다. 쓰면 사라진다
    - bag 수집가의 가방: 대왕이 아닌 보스의 알 확률 EGG.pEndless → egg(화면 쪽 뽑기 — core.js eggP) — 대신 보스 뒤 카드 3장 → cards장
-   - pouch 넓은 탄낭: 탄 효과 슬롯 FX_SLOTS → slots — 대신 증원 카드가 나오지 않는다 */
+   - pouch 넓은 탄낭: 탄 효과 슬롯 FX_SLOTS → slots — 대신 증원 카드가 나오지 않는다(얻을 수 있는 탄 효과가 슬롯보다 많은 판에만 나온다) */
 export const RELICS = {
   compass: { name: '나침반', kings: 0, ahead: 45, v: 1.5, text: () => `갈림길 보상 상자 속이 ${RELICS.compass.ahead}m 앞에서 보이고, 위험한 쪽 보상 병사 ×${RELICS.compass.v}`, cost: () => '' },
   banner: { name: '전장의 휘장', kings: 0, at: 0.4, v: 0.4, text: () => `병력이 이 판 최고치의 ${apc(RELICS.banner.at)}% 아래면 화력 +${apc(RELICS.banner.v)}%`, cost: () => '' },
@@ -281,7 +281,7 @@ export const RELICS = {
   coil: { name: '과부하 코일', kings: 0, tier: 4, men: 0.7, text: () => `무기 단계 상한 3 → ${RELICS.coil.tier}`, cost: () => `지원병 상자 병력 −${apc(1 - RELICS.coil.men)}%` },
   fourth: { name: '넷째 자리', kings: 2, slots: 4, escort: 6, text: () => `특수병 자리 3 → ${RELICS.fourth.slots}`, cost: () => `특수병마다 호위 병사 4 → ${RELICS.fourth.escort}명` },
   heart: { name: '불굴의 심장', kings: 3, v: 0.5, text: () => `한 번 전멸해도 그 구간 바닥선의 ${apc(RELICS.heart.v)}%로 돌아와요`, cost: () => '쓰면 사라져요' },
-  bag: { name: '수집가의 가방', kings: 4, egg: 0.35, cards: 2, text: () => `보스의 알 확률 ${apc(EGG.pEndless)} → ${apc(RELICS.bag.egg)}%`, cost: () => `카드 3장 → ${RELICS.bag.cards}장` },
+  bag: { name: '수집가의 가방', kings: 4, egg: 0.35, cards: 2, text: () => `일반 보스의 알 확률 ${apc(EGG.pEndless)} → ${apc(RELICS.bag.egg)}%`, cost: () => `카드 3장 → ${RELICS.bag.cards}장` },
   pouch: { name: '넓은 탄낭', kings: 5, slots: 3, text: () => `탄 효과 슬롯 ${FX_SLOTS} → ${RELICS.pouch.slots}`, cost: () => '증원 카드가 나오지 않아요' },
 };
 export const RELIC_IDS = Object.keys(RELICS);

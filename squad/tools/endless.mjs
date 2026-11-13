@@ -170,7 +170,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       for (const x of b) hist[x] = (hist[x] | 0) + 1;
       const label = pk ? `${name.padEnd(12)} ${pk.padEnd(7)}` : name.padEnd(12);
       const ch = pk ? ` | 카드 ${Object.entries(pickHist(res.flatMap((r) => r.picks || []))).map(([k, v]) => `${k} ${v}`).join(' ')}` : '';
-      console.log(`${label} up${up} 중앙 ${median(b)} 평균 ${(b.reduce((a, c) => a + c, 0) / b.length).toFixed(2)} 최소 ${Math.min(...b)} 최대 ${Math.max(...b)} | 분포 ${JSON.stringify(hist)} | 시간 중앙 ${Math.round(median(res.map((r) => r.t)))}초 코인 중앙 ${median(res.map((r) => r.coins))} | 경기장에서 죽음 ${res.filter((r) => r.arena).length}/${res.length}${ch} | ${Date.now() - t0}ms`);
+      // 3단계: 고른 유물(대왕 보스 뒤 — 'relic:id')
+      const rh = {};
+      for (const p of res.flatMap((r) => r.picks || [])) if (p.startsWith('relic:')) rh[p.slice(6)] = (rh[p.slice(6)] | 0) + 1;
+      const rl = Object.keys(rh).length ? ` | 유물 ${Object.entries(rh).map(([k, v]) => `${k} ${v}`).join(' ')}` : '';
+      console.log(`${label} up${up} 중앙 ${median(b)} 평균 ${(b.reduce((a, c) => a + c, 0) / b.length).toFixed(2)} 최소 ${Math.min(...b)} 최대 ${Math.max(...b)} | 분포 ${JSON.stringify(hist)} | 시간 중앙 ${Math.round(median(res.map((r) => r.t)))}초 코인 중앙 ${median(res.map((r) => r.coins))} | 경기장에서 죽음 ${res.filter((r) => r.arena).length}/${res.length}${ch}${rl} | ${Date.now() - t0}ms`);
       if (flag('trace')) for (const r of res.slice(0, 6)) console.log('   ', r.bosses, r.cause, r.arena ? 'arena' : 'run', 'ns', r.ns.join('→'), 'peak', r.peak, ...(r.picks ? ['picks', r.picks.join(',')] : []));
     }
   }

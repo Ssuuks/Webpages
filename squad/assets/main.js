@@ -1908,20 +1908,28 @@ function resumeRun() {
 const tipQueue = [];
 let tipUntil = 0;
 let tipKey = '';
-/* first: 줄 맨 앞에(다가오는 것을 알리는 안내 — 처음 보는 장애물은 45m 앞에서 와서, 밀린 안내 뒤에 서면 지나간 뒤에 뜬다) */
+let tipFirst = false;   // 지금 떠 있는 안내가 first(다가오는 것) 안내인가
+/* first: 다가오는 것을 알리는 안내(처음 보는 장애물 — 45m 앞에서 와서, 밀린 안내 뒤에 서면 지나간 뒤에 뜬다). 줄에서 다른 first 안내 뒤·보통 안내 앞에 서고(같은 틱에 둘이 와도 온 차례대로),
+   떠 있는 안내가 TIP_CUT ms(그것도 first 안내면 TIP_CUT_FIRST ms — 한 줄을 읽을 만큼) 넘게 보였으면 그것을 일찍 내리고 뜬다(장애물 둘이 한꺼번에 와도 둘째가 닿기 전에) */
+const TIP_SHOW = 3200, TIP_CUT = 1200, TIP_CUT_FIRST = 2000;
 function tip(key, text, first = false) {
   if (data.tips[key] || tipQueue.some((t) => t.key === key)) return;
-  if (first) tipQueue.unshift({ key, text }); else tipQueue.push({ key, text });
+  const t = { key, text, first };
+  if (!first) { tipQueue.push(t); return; }
+  let i = 0;
+  while (i < tipQueue.length && tipQueue[i].first) i++;
+  tipQueue.splice(i, 0, t);
 }
 /* 안내는 플레이 중에만 넘기고, 실제로 보여 준 것만 '봤음'으로 저장한다 */
 function updateTips(now) {
   const el = $('tip');
   if (mode !== 'play' || tutorial) { if (mode !== 'play') el.hidden = true; return; }
-  if (now < tipUntil) return;
+  if (now < tipUntil && !(tipQueue.length && tipQueue[0].first && now >= tipUntil - TIP_SHOW + (tipFirst ? TIP_CUT_FIRST : TIP_CUT))) return;
   if (!tipQueue.length) { el.hidden = true; return; }
   const t = tipQueue.shift();
   if (t.key === 'heroReady' && s && s.hero && (s.hero.charge < 1 || s.hero.act > 0)) return;   // 그새 써 버렸다 — 다음에 다시
   tipKey = t.key;
+  tipFirst = !!t.first;
   data.tips[t.key] = 1;
   save(data);
   el.textContent = t.text;
@@ -1930,7 +1938,7 @@ function updateTips(now) {
   el.classList.remove('pop');
   void el.offsetWidth;
   el.classList.add('pop');
-  tipUntil = now + 3200;
+  tipUntil = now + TIP_SHOW;
 }
 function watchTips() {
   const q = s.squad;
@@ -1962,6 +1970,7 @@ function handleEvents(ev) {
   if (attract) return;
   // 이번 묶음에서 켜진 시너지(2단계): 카드·탄종 상자 알림이 이름을 함께 싣고(알림은 한 칸이라 뒤 것이 앞 것을 덮는다), 남은 것(철창·금색 칸의 특수병)은 끝에 따로
   let combos = null, combosShown = false;
+  let lost = null;   // 이번 묶음에서 폭발에 부서진 상자·철창(한 폭발에 둘이 나가도 알림은 한 줄)
   for (const e of ev) {
     switch (e.t) {
       case 'shot': sfx.shot(); break;
@@ -2073,8 +2082,8 @@ function handleEvents(ev) {
       case 'crateLost': {
         // 폭발 드럼통 둘레의 상자·철창이 내용물째 부서졌다(보상 없음) — 왜 못 받았는지
         const w = e.kind === 'cage' ? '철창' : '상자';
-        sfx.leave();
-        toast(`폭발에 ${w}${ga(w)} 부서졌어요`, 1400);
+        if (!lost) { lost = []; sfx.leave(); }
+        if (!lost.includes(w)) lost.push(w);
         tip('crateLost', `드럼통이 터지면 둘레 ${OBSTACLES.drum.r}m의 상자·철창도 부서져요(보상 없음). 상자를 먼저 부수고 터뜨려요`);
         break;
       }
@@ -2155,6 +2164,7 @@ function handleEvents(ev) {
     }
   }
   if (combos && !combosShown) { sfx.levelUp(); vibe([15, 30, 15]); toast(`시너지 켜짐! ${comboNames(combos)}`, 2000); }
+  if (lost) { const w = lost.join('·'); toast(`폭발에 ${w}${ga(w)} 부서졌어요`, 1400); }
 }
 
 /* 가장 아까운 게이트: 같은 줄의 가장 좋은 다른 칸보다 20% 이상(2명 이상) 덜 얻은 줄 중 차이가 가장 큰 것 */
