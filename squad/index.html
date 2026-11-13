@@ -233,6 +233,12 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 #bossBar { margin: 10px auto 0; width: min(420px, 92%); display: flex; align-items: center; gap: 8px; font-family: var(--display); font-size: 16px; text-shadow: 0 2px 0 var(--edge); }
 #bossBar .bar { flex: 1; height: 14px; border-radius: 7px; overflow: hidden; background: rgba(14, 10, 26, 0.7); border: 2px solid var(--edge); position: relative; }
 #bossBar i { position: absolute; inset: 0; background: linear-gradient(90deg, #E8384F, #FF8A5C); transform-origin: left; }
+/* 보스 체력 막대: 깎인 만큼이 흰 띠로 잠깐 남았다 줄어들고(얼마나 깎았는지 보인다), 25%마다 눈금 — 75·50(분노)·25%에서 보스가 달라진다 */
+#bossBar i { box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.28), inset 0 -3px 0 rgba(110, 26, 51, 0.35); }
+#bossBar b { position: absolute; inset: 0; background: #FFF1DE; transform-origin: left; transition: transform 0.45s ease-out 0.22s; }
+#bossBar .bar::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0, transparent calc(25% - 2px), rgba(14, 10, 26, 0.75) calc(25% - 2px), rgba(14, 10, 26, 0.75) 25%); }
+#bossBar.rage i { background: linear-gradient(90deg, #FF5A3C, #FFD84A); }
+@media (prefers-reduced-motion: reduce) { #bossBar b { transition: none; } }
 #bossBar.rage .bar { animation: rage 0.5s ease-in-out infinite alternate; }
 @keyframes rage { to { box-shadow: 0 0 10px 2px rgba(255, 70, 50, 0.8); } }
 #spChips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -471,7 +477,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <span class="hud-coins coinchip" id="hudCoins">0</span>
     <button id="btnPause" aria-label="일시정지" title="일시정지 (Esc)"></button>
   </div>
-  <div id="bossBar" hidden><span id="bossName">보스</span><div class="bar"><i id="bossFill"></i></div><span id="bossEta" hidden role="timer"><span id="bossEtaT"></span></span></div>
+  <div id="bossBar" hidden><span id="bossName">보스</span><div class="bar"><b id="bossGhost"></b><i id="bossFill"></i></div><span id="bossEta" hidden role="timer"><span id="bossEtaT"></span></span></div>
   <div id="spChips" aria-label="함께하는 특수병"></div>
 </div>
 <div id="touchL" class="touch-hint" hidden aria-hidden="true">◀</div>
