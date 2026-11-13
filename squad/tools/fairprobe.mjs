@@ -1,7 +1,7 @@
 /* 한 손 조작 공정성 갈라 보기(P14, 3단계): node squad/tools/fairprobe.mjs [--levels 5-60] [--seeds 2] [--rho 0.3] [--json out.json]
-   무한모드: --endless 8 [--unl 2] [--segs 9] [--relics all|id,…] — 판 8개(시드 77 + 13i, 강화 10단계·뭉치 Lv5, think 카드 고르기)를 그 해금 단계로 돌며 같은 갈라 보기
+   무한모드: --endless 8 [--unl 2] [--segs 9] [--relics all|id,…] [--flame] — 판 8개(시드 77 + 13i, 강화 10단계·뭉치 Lv5, think 카드 고르기)를 그 해금 단계로 돌며 같은 갈라 보기
    (단계 해금 2단계의 장애물 — 장갑문·폭발 드럼통·방패 정예 — 이 피할 길을 막지 않는지. 기록의 L은 구간 번호. --relics는 3단계에서 열린 유물 — 대왕 보스 뒤에 think로 고른다.
-   불굴의 심장이 전멸을 무효로 한 갈래도 전멸로 센다)
+   불굴의 심장이 전멸을 무효로 한 갈래도 전멸로 센다. --flame은 화염병 줄(4단계)을 연 판 — 불 지대는 분대를 다치게 하지 않으니 피할 길을 바꾸지 않는지만 본다)
    사람 흉내 봇(sloppy0.1, 기대 강화)으로 돌다가 위협이 예고되는 틱(독침 발사 spit, 내려찍기 예고 slam, 보스 소환 summon, 톱날이 26m 안에 들어옴 saw)마다
    판을 갈라, rho초 늦게 반응하는 한 손 조작 — 그대로 서 있기 / 왼쪽·오른쪽을 0.15·0.3·0.5초·끝까지 누르기(반응 전에는 하던 쪽으로 계속) — 을 모두 돌린다.
    - 피할 수 없음: 어느 손으로도 그 위협(독침·내려찍기)에 맞는다, 톱날은 어느 손으로도 max(2명, 병력 5%) 넘게 잃는다
@@ -83,7 +83,7 @@ export function fairProbe(L, o = {}) {
 }
 /* 무한모드 판 i(워커에서) → 위협 기록 배열. 보스 뒤 카드는 think로 고르고(tools/endless.mjs), o.segs 구간의 보스를 잡으면 멈춘다 */
 export function fairProbeEndless(i, o = {}) {
-  const s = C.newEndless({ seed: 77 + 13 * i, start: C.START_N + 20, fire: 10, hero: { id: 'mungchi', lv: 5 }, unl: o.unl ?? 2, ammoOpen: R.AMMO_IDS, relicsOpen: o.relics || [] });
+  const s = C.newEndless({ seed: 77 + 13 * i, start: C.START_N + 20, fire: 10, hero: { id: 'mungchi', lv: 5 }, unl: o.unl ?? 2, ammoOpen: R.AMMO_IDS, relicsOpen: o.relics || [], flame: o.flame === true });
   const pol = makeBot(o.bot || 'sloppy0.1', seedOf('fairE', i, 0), { skill: true });
   const pick = makePicker('think', 2000 + i);
   const out = [];
@@ -150,10 +150,10 @@ if (isMainThread && process.argv[1] && pathToFileURL(process.argv[1]).href === i
   const o = cliArgs(process.argv.slice(2), { levels: '5-60', seeds: 2, rho: 0.3, bot: 'sloppy0.1' });
   const runs = o.endless ? Array.from({ length: Math.max(1, +o.endless || 8) }, (_, i) => i) : null;
   const { res, sec } = runs
-    ? await mapLevels(import.meta.url, 'fairProbeEndless', runs, { rho: +o.rho, bot: o.bot, unl: +(o.unl ?? 2), segs: +(o.segs ?? 9), relics: o.relics === 'all' ? R.RELIC_IDS.slice() : String(o.relics || '').split(',').filter((id) => R.RELICS[id]) }, o.workers)
+    ? await mapLevels(import.meta.url, 'fairProbeEndless', runs, { rho: +o.rho, bot: o.bot, unl: +(o.unl ?? 2), segs: +(o.segs ?? 9), flame: o.flame === true, relics: o.relics === 'all' ? R.RELIC_IDS.slice() : String(o.relics || '').split(',').filter((id) => R.RELICS[id]) }, o.workers)
     : await mapLevels(import.meta.url, 'fairProbe', o.levels, { seeds: +o.seeds, rho: +o.rho, bot: o.bot }, o.workers);
   const all = (runs || o.levels).flatMap((L) => res[L]);
-  if (runs) console.log(`한 손 공정성 갈라 보기 — 무한모드 해금 ${o.unl ?? 2}단계, SIM ${C.SIM}, ${o.bot}, 반응 ${o.rho}초, 판 ${runs.length}개 × ${o.segs ?? 9}구간까지 (${sec.toFixed(0)}초)`);
+  if (runs) console.log(`한 손 공정성 갈라 보기 — 무한모드 해금 ${o.unl ?? 2}단계${o.flame === true ? ' + 화염병' : ''}, SIM ${C.SIM}, ${o.bot}, 반응 ${o.rho}초, 판 ${runs.length}개 × ${o.segs ?? 9}구간까지 (${sec.toFixed(0)}초)`);
   else console.log(`한 손 공정성 갈라 보기 — SIM ${C.SIM}, ${o.bot}, 반응 ${o.rho}초, L${o.levels[0]}-${o.levels.at(-1)}, 시드 ${o.seeds} (${sec.toFixed(0)}초)`);
   for (const [k, b] of Object.entries(fairStats(all))) console.log(`  ${k.padEnd(7)} ${String(b.n).padStart(5)}번  피할 수 없음 ${b.undodge}  억지 손해(≥max(2, 5%n)) ${b.forced} (${b.forcedPct.toFixed(1)}%)`);
   for (const r of all.filter((x) => !x.dodge || x.forced).slice(0, 20)) console.log('   ', JSON.stringify(r));

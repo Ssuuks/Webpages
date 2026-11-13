@@ -4,7 +4,8 @@
    --cards가 없으면 예전 그대로(카드 없음). 있으면 (봇 × 카드 고르기)마다 한 줄 + 고른 카드 종류 분포. --unl은 --cards가 있으면 1이 기본
    (2: 탄 효과·탄종 상자·시너지 + 4구간부터 장애물(장갑문·폭발 드럼통·방패 정예) — core.CARD.stageMax까지. 장애물만 끄고 재려면 C.RUN_ORDER.obstacle = Infinity),
    --ammo는 별로 열린 탄종(기본 넷 다 — 탄종 카드 후보).
-   3단계(유물 — 대왕 보스 뒤): --unl 3 [--relics all|compass,coil,…](열린 유물, 기본 all) [--hold heart,…](처음부터 가진 유물 — 유물마다 재 보기). --flame: 화염병 줄(4단계)을 연 판 */
+   3단계(유물 — 대왕 보스 뒤): --unl 3 [--relics all|compass,coil,…](열린 유물, 기본 all) [--hold heart,…](처음부터 가진 유물 — 유물마다 재 보기).
+   --flame: 화염병 줄(4단계)을 연 판(특수병 카드·철창·금색 칸에 화염병이 나온다 — think는 화염병을 THINK.sp.flame으로 본다. '그 병과 우선' 고르기는 밸런스 때 더한다) */
 import * as C from '../assets/core.js';
 import { AMMO_IDS, FX_LV, RELICS, RELIC_IDS } from '../assets/roster.js';
 import { makeBot, rng } from '../tests/bots.mjs';
@@ -44,7 +45,7 @@ export const median = (a) => { const b = a.slice().sort((x, y) => x - y); return
 export const THINK = {
   H: 2,          // 오래 남는 효과가 남은 판에서 몇 구간 더 쓸모 있다고 보는가(잰 값: sloppy0.1 24판, H 0·1·2·3·5 → 평균 5.79·5.79·6.63·6.67·6.21)
   ammo: 0.01,    // 탄종 바꾸기의 구간당 몫(탄종끼리는 세기가 비슷하다 — 합격 기준 ±5%p)
-  sp: { medic: 0.1, sniper: 0.09, rocket: 0.12 },   // 특수병 한 명 = 병력의 이만큼(core.js SP_WORTH — 봇이 상자·철창을 볼 때 쓰는 값)
+  sp: { medic: 0.1, sniper: 0.09, rocket: 0.12, flame: 0.1 },   // 특수병 한 명 = 병력의 이만큼(core.js SP_WORTH — 봇이 상자·철창을 볼 때 쓰는 값. 화염병(4단계 판만)은 초안)
   // 2단계(탄 효과): 효과 Lv2(= 그 탄종의 좋은 점 100%)가 화력 몇 배 몫인가, 시너지 하나가 켜지는 몫 [초안 — 밸런스 때 재서 고칠 것.
   // 속사만 식 그대로(화력 +15%), 나머지는 맞는 좀비가 늘 있지 않은 만큼 낮춰 어림했다]
   fx: { pierce: 0.08, burst: 0.08, rapid: 0.15, frost: 0.04 },

@@ -32,6 +32,21 @@ export const UNITS = {
     lv: { every: [2.4, 2, 1.7], r: [2.2, 2.6, 3] },
     up: (lv) => `${unitVal('rocket', 'every', lv)}초마다 로켓(폭발 반경 ${unitVal('rocket', 'r', lv)}m)`,
   },
+  /* 화염병(단계 해금 4단계 — 2회차 엔딩으로 열린다): 무한모드에서 화염병 줄을 연 판에만(특수병 카드·철창·금색 칸). unlock(캠페인 소개 레벨)이 없다 —
+     캠페인의 철창·금색 칸 병과는 '열린 병과 중 무작위'라 병과가 늘면 캠페인 배치가 바뀐다. endless: 무한모드 전용 표시(화면이 캠페인 목록에서 뺄 때 본다).
+     lv: 놓는 간격 every(초) · 지대 폭 w × 길이 len(m) · 유지 T(초) · 초당 피해 dmg(× 지금 분대 화력 D) [초안].
+     horn: 짝 영웅 뭉치의 돌격 나팔 동안 지대 폭 +이만큼(화염병 레벨만큼 SYNERGY ×1·×1.25·×1.5 — 나비·보리의 짝 효과와 같은 규칙) */
+  flame: {
+    name: '화염병', color: '#FF5E3A', endless: true,
+    line: '좀비 떼가 지나갈 길에 불바다!',
+    get desc() { return `${unitVal('flame', 'every', 1)}초마다 8~20m 앞, 좀비가 가장 많이 지나갈 자리에 불 지대를 깔아요. 보스전에서는 보스 발밑에`; },
+    tip: '화염병 합류! 좀비 떼가 지나갈 자리에 불을 깔아요',
+    role: '좀비가 가장 많이 지나갈 자리에 불 지대를 깔아요. 보스전에서는 보스 발밑에',
+    lv: { every: [2, 1.7, 1.4], w: [2, 2, 2.6], len: [4, 4, 4], T: [2, 2.5, 3], dmg: [0.25, 0.3, 0.35] },
+    horn: 0.5,
+    up: (lv) => `${unitVal('flame', 'every', lv)}초마다 불 지대(폭 ${unitVal('flame', 'w', lv)}m, ${unitVal('flame', 'T', lv)}초 동안 초당 위력 ${pc(unitVal('flame', 'dmg', lv))}%)`,
+    pair: (lv) => `뭉치의 돌격 나팔 동안 불 지대 폭 +${pc(UNITS.flame.horn * synergyOf(lv))}%`,
+  },
 };
 export const UNIT_IDS = Object.keys(UNITS);
 /* 특수병 수치 lv[k]의 그 레벨 값(1..SP_LV_MAX) */
@@ -45,7 +60,7 @@ export const synergyOf = (lv) => SYNERGY[Math.max(1, Math.min(SP_LV_MAX, lv | 0 
    세 영웅은 같은 레벨이면 집중한 사람(sloppy0.1)의 승률이 ±5%p 안이 되게 맞췄다(tools/bench.mjs --hero). */
 export const HEROES = {
   mungchi: {
-    name: '뭉치 대장', role: '지휘', color: '#FF9F43',
+    name: '뭉치 대장', role: '지휘', color: '#FF9F43', match: 'flame',   // 짝 특수병 화염병(무한모드 4단계 판에만 — 캠페인에는 화염병이 없다): 합류·레벨 업에 게이지, 돌격 나팔 동안 불 지대 폭(UNITS.flame.horn)
     look: '별 달린 장교 모자를 비뚤게 쓴 귤빛 단발, 바람에 날리는 노랑 스카프, 몸만 한 확성기',
     line: '목소리는 부대 최강, 용기는… 연습 중!',
     unlock: { type: 'clear', L: 2, text: '레벨 2를 깨면 합류' },
@@ -238,13 +253,15 @@ export function fxText(id, lv) {
 
 /* 시너지(탄 효과 × 탄 효과 · 특수병 · 영웅 — 둘이 함께 있을 때만 켜지는 추가 규칙, 단계 해금 2단계) [수치는 초안].
    need: 함께 있어야 하는 것(탄종 id = 그 탄 효과(출격 탄종이든 카드든), 병과 id = 그 특수병(레벨 상관없이), 영웅 id = 출격 영웅).
-   v: 수치(frostSniper 위력 배수 덧셈, burstRocket 반경 덧셈 m, rapidMungchi 스킬 길이 초). SYNERGY는 영웅 짝 배수의 이름이라 다른 이름 */
+   v: 수치(frostSniper 위력 배수 덧셈, burstRocket 반경 덧셈 m, rapidMungchi 스킬 길이 초, frostFlame 불 지대 피해 배수 덧셈). SYNERGY는 영웅 짝 배수의 이름이라 다른 이름 */
 export const COMBOS = {
   pierceBurst: { need: ['pierce', 'burst'], name: '연쇄 폭발', text: () => '뚫고 지난 뒤 좀비에서도 터져요' },
   frostSniper: { need: ['frost', 'sniper'], name: '얼음 조준', v: 0.5, text: () => `느려진 적에게 저격 위력 +${apc(COMBOS.frostSniper.v)}%` },
   burstRocket: { need: ['burst', 'rocket'], name: '대폭발', v: 0.4, text: () => `로켓 폭발 반경 +${COMBOS.burstRocket.v}m` },
   pierceSniper: { need: ['pierce', 'sniper'], name: '꿰뚫는 저격', text: () => '저격이 일직선 뒤 표적 하나를 더 뚫어요' },
   rapidMungchi: { need: ['rapid', 'mungchi'], name: '긴 나팔', v: 7, text: () => `돌격 나팔 ${HEROES.mungchi.skill.dur} → ${COMBOS.rapidMungchi.v}초` },
+  // 4단계(화염병 줄을 연 판에만 재료가 생긴다): v = 느려진 적이 불 지대에서 받는 피해 배수 덧셈
+  frostFlame: { need: ['frost', 'flame'], name: '얼음불', v: 0.25, text: () => `언 적이 불 지대에서 받는 피해 +${apc(COMBOS.frostFlame.v)}%` },
 };
 export const COMBO_IDS = Object.keys(COMBOS);
 

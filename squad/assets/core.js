@@ -1,4 +1,4 @@
-import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, FX_LV, FX_LV_MAX, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, EGG, OBSTACLES, OBSTACLE_IDS } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, FX_LV, FX_LV_MAX, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, EGG, OBSTACLES, OBSTACLE_IDS } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -128,13 +128,19 @@ export const SP = {
   medic: { share: unitVal('medic', 'share', 1) },
   sniper: { every: unitVal('sniper', 'every', 1), dmg: unitVal('sniper', 'dmg', 1), near: 2, far: 36 },
   rocket: { every: unitVal('rocket', 'every', 1), dmg: 0.6, r: unitVal('rocket', 'r', 1), speed: 30, near: 8, far: 30 },
+  // 화염병(단계 해금 4단계 — 화염병 줄을 연 무한모드 판에만, SP_KINDS 밖): near~far m 앞에서 지대(폭 × 길이) 안 체력 합이 min·D 넘는 가장 큰 무리
+  // (로켓병과 같은 고르기 — crowdAt), 보스전에서는 보스 발밑. 레벨별 간격·크기·유지·초당 피해는 roster.js UNITS.flame.lv
+  flame: { every: unitVal('flame', 'every', 1), dmg: unitVal('flame', 'dmg', 1), w: unitVal('flame', 'w', 1), len: unitVal('flame', 'len', 1), T: unitVal('flame', 'T', 1), near: 8, far: 20, min: 0.3 },
 };
 /* 회복 풀로 가는 몫의 상한(의무병 + 보리). SIM 9: 0.8 → 0.9 — 의무병 Lv2·Lv3과 보리 짝 효과가 쌓일 자리(Lv1 의무병 + 보리 Lv5 = 0.78은 그대로) */
 export const SHARE_MAX = 0.9;
-export const SP_KINDS = Object.keys(SP);
+/* 캠페인·화염병 줄을 안 연 판의 병과(이 순서 그대로 — 철창·금색 칸·카드의 병과 뽑기가 이 목록의 길이·차례로 고른다. 늘리면 캠페인 배치와 앞 단계 지문이 바뀐다).
+   SP_FLAME: 화염병 줄(4단계)을 연 무한모드 판의 병과 — 판마다 spKindsOf(s) */
+export const SP_KINDS = ['medic', 'sniper', 'rocket'];
+export const SP_FLAME = [...SP_KINDS, 'flame'];
 export const BONUS_CAP = 0.1;
 export const NABI_CAP = 0.02;   // 나비 레벨 1당 보스전 추가 피해 한도
-export const SP_LV_CAP = 0.02;  // 저격수·로켓병의 레벨 1당(Lv1 위로) 보스전 추가 피해 한도(SIM 9 — 레벨 오른 특수병이 보스전에서도 세게)
+export const SP_LV_CAP = 0.02;  // 저격수·로켓병·화염병의 레벨 1당(Lv1 위로) 보스전 추가 피해 한도(SIM 9 — 레벨 오른 특수병이 보스전에서도 세게)
 const has = (L, m) => L >= UNLOCK[m];
 
 /* ---------- 난수 ---------- */
@@ -1222,8 +1228,11 @@ const CHUNK = {
    SIM 9: 철창·금색 칸의 수·자리·확률은 SIM 8 그대로(억지로 늘리지 않는다). 병과만 '바로 앞과 다른 병과' 규칙 없이 무작위 —
    같은 병과가 자연스럽게 두 번 나오면 두 번째는 병사 대신 레벨 업 */
 const GOLD_KINDS = ['plain', 'think', 'stake'];
-function placeSpecials(lv, p, bare = false, seed = null) {
+/* flame(무한모드 — 화염병 줄(4단계)을 연 판만): 열린 병과 끝에 화염병을 더한다. 철창·금색 칸 하나에 rand 한 번은 그대로라 수·자리는 같고 병과만 넷 중에서
+   (화염병 줄을 안 연 판은 예전 그대로 — 앞 단계 지문). 화염병에는 소개 레벨이 없다(intro가 되지 않는다) */
+function placeSpecials(lv, p, bare = false, seed = null, flame = false) {
   const kinds = SP_KINDS.filter((k) => p.L >= UNLOCK[k]);
+  if (flame) kinds.push('flame');
   if (!kinds.length || p.L < UNLOCK.cage) return;
   const sg = { rs: seed ?? hash(VERSION, 'sp', p.L, lv.attempt) };
   const intro = kinds.find((k) => UNLOCK[k] === p.L);
@@ -1439,7 +1448,8 @@ export function segParams(k) {
 }
 /* 구간 하나(레벨 한 판과 같은 모양의 객체 — z는 0부터). n = 그 순간 병력, tier = 무기 단계. 같은 (seed, k, n, tier, attempt, opt) → 같은 구간.
    opt.obs: 2단계 장애물(단계 해금 기획서 4절 — 2단계를 연 판만, RUN_ORDER.obstacle구간부터)을 넣는다. 장애물은 장애물 전용 난수(lv.og)로만 고르고
-   기존 것을 그 자리에서 바꾸거나 뒤에 더한다 — 장갑문(갈림길 위험한 쪽), 방패 정예(무리마다 하나), 폭발 드럼통(구간마다 1~2개). 그 밖의 배치는 opt 없이 만든 구간과 같다 */
+   기존 것을 그 자리에서 바꾸거나 뒤에 더한다 — 장갑문(갈림길 위험한 쪽), 방패 정예(무리마다 하나), 폭발 드럼통(구간마다 1~2개). 그 밖의 배치는 opt 없이 만든 구간과 같다.
+   opt.flame: 4단계(화염병 줄을 연 판만) — 철창·금색 칸의 병과를 화염병까지 넷 중에서 고른다(수·자리·나머지 배치는 그대로, placeSpecials) */
 export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   const p = segParams(k);
   const E = ENDLESS;
@@ -1486,7 +1496,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
       lv.golden.push(ng);
     }
     lv.arenaZ = z + 12;
-    placeSpecials(lv, p, false, hash(VERSION, 'endless-sp', seed >>> 0, p.seg, attempt));
+    placeSpecials(lv, p, false, hash(VERSION, 'endless-sp', seed >>> 0, p.seg, attempt), !!(opt && opt.flame));
     if (lv.og) { placeDrums(lv); obstacleMarks(lv); }
   } finally { GK = 1; delete lv.og; }
   // MAX 칸(높인 끝)은 쓰지 않는다 — 몰아 쏘기 확인(redFast)을 판 중간에 돌릴 수 없다
@@ -1589,11 +1599,12 @@ export function blastReach(d, o) {
    relics(시험·측정용 — 화면은 주지 않는다): 처음부터 가진 유물(열린 것 중, RELIC.max까지). 판에서는 대왕 보스 뒤에만 얻는다 */
 export function newEndless(opt = {}) {
   const seed = (opt.seed >>> 0) || 1;
-  const seg = buildSegment(seed, 1, opt.start ?? START_N, 0);
+  const unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(opt.unl) || 0)));
+  const flame = unl >= 1 && opt.flame === true;   // 화염병 줄(4단계): 첫 구간의 철창·금색 칸부터 화염병이 나온다
+  const seg = buildSegment(seed, 1, opt.start ?? START_N, 0, 0, flame ? FLAME_ON : null);
   const s = newGame(seg, opt);
   s.endless = { seed, seg: 1, bosses: 0, bank: 0, wait: 0, z0: 0 };
   // 보스 뒤 3택 1(opt.unl ≥ 1): 연 단계·별로 열린 탄종·고른 카드·지금 떠 있는 카드. 안 연 판에는 필드가 없다(해시 그대로)
-  const unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(opt.unl) || 0)));
   if (unl >= 1) {
     s.endless.unl = unl;
     s.endless.ammo = (Array.isArray(opt.ammoOpen) ? opt.ammoOpen : []).filter((a, i, l) => AMMO[a] && l.indexOf(a) === i);
@@ -1610,8 +1621,8 @@ export function newEndless(opt = {}) {
       e.spent = [];
       if (e.relics.length) relicSeg(s);   // 처음부터 가진 유물(시험·측정): 첫 구간에도 구간 규칙(확성기·코일·나침반)을 건다
     }
-    // 따로 가는 줄(4단계 화염병 — 2회차 엔딩): 카드가 있는 판에만 받아 둔다(그 단계를 만들면 병과 뽑기가 본다). 안 연 판에는 필드가 없다
-    if (opt.flame === true) s.endless.flame = true;
+    // 따로 가는 줄(4단계 화염병 — 2회차 엔딩): 카드가 있는 판에만. 병과 뽑기(철창·금색 칸·특수병 카드 — spKindsOf)가 화염병까지 본다. 안 연 판에는 필드가 없다
+    if (flame) s.endless.flame = true;
   }
   s.refMul = seg.refMul;
   return s;
@@ -1637,7 +1648,7 @@ export const CARD = {
 function cardPool(s) {
   const q = s.squad;
   const e = s.endless;
-  const units = SP_KINDS.filter((k) => {
+  const units = spKindsOf(s).filter((k) => {
     const m = q.sp.find((o) => o.k === k);
     return m ? (m.lv || 1) < SP_LV_MAX : q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1);
   });
@@ -1734,7 +1745,7 @@ function cardPool2(s) {
   const e = s.endless;
   const up = e.bosses >= FX_UP_FROM;
   const calm = (id) => up || !combosBy(s, id).length;
-  const units = SP_KINDS.filter((k) => {
+  const units = spKindsOf(s).filter((k) => {
     const m = q.sp.find((o) => o.k === k);
     return (m ? (m.lv || 1) < SP_LV_MAX : q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1)) && calm(k);
   });
@@ -1817,10 +1828,12 @@ export function forkPeek(s, d) {
   const p = forkCrate(s, d);
   return p && p.alive && !p.passed ? p : null;
 }
-/* 이 판에서 나올 수 있는 병과(화염병 줄(4단계)을 만들면 여기에 더한다 — 넷째 자리가 이것을 본다) */
-export const spKindsOf = (s) => SP_KINDS;
+/* 화염병 줄(4단계 — 2회차 엔딩)을 연 무한모드 판인가 */
+export const flameOn = (s) => !!(s && s.endless && s.endless.flame === true);
+/* 이 판에서 나올 수 있는 병과(특수병 카드·이어하기가 보고, 넷째 자리 유물이 이 수를 본다). 화염병 줄을 연 판은 넷(SP_FLAME), 아니면 예전 셋(SP_KINDS — 같은 배열·같은 차례) */
+export const spKindsOf = (s) => (flameOn(s) ? SP_FLAME : SP_KINDS);
 /* 유물의 좋은 점이 이 판에서 들 수 있나(구현 판단 — 대신 쪽만 남는 유물은 카드로 내지 않는다):
-   넷째 자리는 병과가 자리(SP_MAX)보다 많을 때만(같은 병과는 레벨이 오를 뿐이라 세 병과로는 넷째 자리가 늘 빈다),
+   넷째 자리는 병과가 자리(SP_MAX)보다 많을 때만(같은 병과는 레벨이 오를 뿐이라 세 병과로는 넷째 자리가 늘 빈다 — 화염병 줄을 연 판(넷)에만 나온다),
    넓은 탄낭은 얻을 수 있는 탄 효과 종류(별로 열린 탄종 + 출격 탄종)가 슬롯(FX_SLOTS)보다 많을 때만 */
 export function relicFits(s, id) {
   const e = s.endless;
@@ -1904,13 +1917,15 @@ export function pickCard(s, i) {
   if (e.relics) relicSeg(s);
   return true;
 }
-const OBS_ON = { obs: true };
+const OBS_ON = { obs: true }, FLAME_ON = { flame: true }, OBS_FLAME = { obs: true, flame: true };
+/* 구간을 만드는 옵션: 2단계를 연 판만 장애물(4구간부터), 화염병 줄을 연 판만 철창·금색 칸에 화염병. 둘 다 없으면 null(예전 그대로) */
+const segOpt = (e) => (e.unl >= 2 ? (e.flame ? OBS_FLAME : OBS_ON) : e.flame ? FLAME_ON : null);
 /* 보스가 쓰러진 뒤: 지나간 것을 버리고 다음 구간을 지금 자리 앞에 이어 붙인다(상태가 커지지 않는다) */
 function nextSegment(s) {
   const q = s.squad;
   const e = s.endless;
   e.seg++;
-  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.unl >= 2 ? OBS_ON : null);   // 2단계를 연 판만 장애물(4구간부터)
+  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, segOpt(e));
   const dz = q.z + ENDLESS.lead;
   const off = s.nextId;
   for (const r of seg.rows) { r.id += off; r.z += dz; }
@@ -1923,6 +1938,7 @@ function nextSegment(s) {
   s.rows = seg.rows; s.foes = seg.foes; s.props = seg.props; s.saws = seg.saws; s.marks = seg.marks;
   s.spits = []; s.rockets = [];
   delete s.pools;
+  delete s.flames;   // 불 지대(화염병)도 지나간 것과 함께
   s.L = seg.L; s.params = seg.params; s.speed = seg.speed;
   s.arenaZ = seg.arenaZ + dz; s.stopZ = s.arenaZ + 6;
   s.bossHp = seg.bossHp; s.bossRef = seg.arrive; s.refFire = ENDLESS.fire; s.refMul = seg.refMul;
@@ -2057,7 +2073,7 @@ export function restore(o) {
       } else { delete e.fx; delete e.obsSeen; }
       const kinds = e.fx ? CARD.kinds2 : CARD.kinds;
       const okRelic = (c) => relicCan(e, c.r);   // 유물 카드: 열린 것 중 아직 없는 것(RELIC.max개 아래)
-      const okCard = (c) => c && typeof c === 'object' && (c.k === 'relic' ? okRelic(c) : kinds.includes(c.k) && (c.k !== 'unit' || SP_KINDS.includes(c.u)) && ((c.k !== 'ammo' && c.k !== 'fx') || !!AMMO[c.a]) && (c.syn === undefined || c.syn === true));
+      const okCard = (c) => c && typeof c === 'object' && (c.k === 'relic' ? okRelic(c) : kinds.includes(c.k) && (c.k !== 'unit' || spKindsOf(o).includes(c.u)) && ((c.k !== 'ammo' && c.k !== 'fx') || !!AMMO[c.a]) && (c.syn === undefined || c.syn === true));
       if (e.offer != null && !(Array.isArray(e.offer) && e.offer.length && e.offer.every(okCard))) e.offer = null;
       if (e.offer == null) {
         e.offer = null;
@@ -2067,8 +2083,15 @@ export function restore(o) {
     }
   }
   for (const b of o.bullets) if (typeof b.hm !== 'number') b.hm = 1;
+  // 화염병(4단계): 화염병 줄을 연 판에만 — 아닌 판(손댄 저장)의 화염병·불 지대는 버린다. 불 지대는 숫자가 성한 것만(남은 시간이 있는 것), 비면 필드도 없게
+  if (!flameOn(o)) q.sp = q.sp.filter((m) => m.k !== 'flame');
+  if (o.flames !== undefined) {
+    const fl = flameOn(o) && Array.isArray(o.flames) ? o.flames.filter((f) => f && typeof f === 'object' && FLAME_KEYS.every((k) => typeof f[k] === 'number' && Number.isFinite(f[k])) && f.t > 0 && f.w > 0 && f.len > 0) : [];
+    if (fl.length) o.flames = fl; else delete o.flames;
+  }
   return o;
 }
+const FLAME_KEYS = ['id', 'x', 'z', 'w', 'len', 't', 'T', 'd', 'lv'];
 
 function emit(s, e) { s.ev.push(e); }
 
@@ -2257,7 +2280,7 @@ export function step(s, input) {
   if (wiped(s)) return s;
   if (s.hero) heroUpdate(s, input);
   if (s.boss) {
-    // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +BONUS_CAP까지(나비는 레벨마다 +NABI_CAP, 저격수·로켓병은 Lv1 위 레벨마다 +SP_LV_CAP)
+    // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +BONUS_CAP까지(나비는 레벨마다 +NABI_CAP, 저격수·로켓병·화염병은 Lv1 위 레벨마다 +SP_LV_CAP)
     let up = 0;
     for (const m of q.sp) if (m.k !== 'medic') up += (m.lv || 1) - 1;
     const cap = BONUS_CAP + (s.hero && s.hero.id === 'nabi' ? NABI_CAP * (Math.min(5, s.hero.lv) - 1) : 0) + SP_LV_CAP * up;
@@ -3141,20 +3164,27 @@ function snipeThru(s, f, x1, z1) {
   return g;
 }
 
+/* 가장 큰 무리(로켓병·화염병이 함께 쓰는 고르기): 분대 앞 near~far m의 좀비마다 그 둘레 네모(옆 ±rx, 앞뒤 ±rz) 안 체력 합을 보고
+   min·D를 넘는 것 중 가장 큰 자리(그 좀비 위치) — 없으면 null */
+function crowdAt(s, D, rx, rz, near, far, min = 0.3) {
+  const q = s.squad;
+  let best = null;
+  let bestHp = min * D;
+  for (const f of s.foes) {
+    if (!f.alive) continue;
+    const dz = f.z - q.z;
+    if (dz < near || dz > far) continue;
+    let sum = 0;
+    for (const g of s.foes) if (g.alive && Math.abs(g.x - f.x) < rx && Math.abs(g.z - f.z) < rz) sum += g.hp;
+    if (sum > bestHp) { bestHp = sum; best = { x: f.x, z: f.z, fid: f.id }; }
+  }
+  return best;
+}
 /* 로켓 표적: 8–30m 안 반경 r(로켓병 레벨) 안의 체력 합이 가장 큰 무리(0.3D 이상) → 분대 통로의 벽·장갑문 → 보스 */
 function rocketTarget(s, D, r = SP.rocket.r) {
   const q = s.squad;
   const R = radius(q.n);
-  let best = null;
-  let bestHp = 0.3 * D;
-  for (const f of s.foes) {
-    if (!f.alive) continue;
-    const dz = f.z - q.z;
-    if (dz < SP.rocket.near || dz > SP.rocket.far) continue;
-    let sum = 0;
-    for (const g of s.foes) if (g.alive && Math.abs(g.x - f.x) < r && Math.abs(g.z - f.z) < r) sum += g.hp;
-    if (sum > bestHp) { bestHp = sum; best = { x: f.x, z: f.z, fid: f.id }; }
-  }
+  let best = crowdAt(s, D, r, r, SP.rocket.near, SP.rocket.far);
   if (best) return best;
   for (const p of s.props) {
     if (!p.alive || p.passed || (p.kind !== 'wall' && p.kind !== 'door')) continue;
@@ -3165,6 +3195,30 @@ function rocketTarget(s, D, r = SP.rocket.r) {
   if (best) return best;
   if (s.boss && s.boss.hp > 0) return { x: s.boss.x, z: s.boss.z - 1, fid: -1 };
   return null;
+}
+/* 화염병이 불 지대를 놓을 자리(지대 가운데): 보스전(경기장 — 보스가 있으면)에는 보스 발밑(쓰러졌으면 없음), 달리는 동안은 SP.flame.near~far m 앞에서
+   지대(폭 w × 길이 len) 안에 들 체력 합이 가장 큰 무리(로켓병의 고르기 crowdAt — min·D 넘게). 좀비가 지대를 지나 분대 쪽으로 걸어온다(구현 판단: 앞당겨 놓지 않는다 — 고른 무리가 곧 지대 안) */
+function flameTarget(s, D, w, len) {
+  const b = s.boss;
+  if (b) return b.hp > 0 ? { x: b.x, z: b.z, boss: true } : null;
+  return crowdAt(s, D, w / 2, len / 2, SP.flame.near, SP.flame.far, SP.flame.min);
+}
+/* 불 지대가 이 좀비·보스를 태우나(그린 것이 맞는 것 — hitShapes 'fire'와 같은 네모): 좀비는 가운데가 지대 안, 보스는 몸통 폭(±BOSS_HIT)이 지대에 걸치고 발(b.z)이 지대 길이 안 */
+const inFire = (zn, x, z) => Math.abs(x - zn.x) < zn.w / 2 && Math.abs(z - zn.z) < zn.len / 2;
+const bossInFire = (zn, b) => Math.abs(b.x - zn.x) < zn.w / 2 + BOSS_HIT && Math.abs(b.z - zn.z) < zn.len / 2;
+/* 불 지대(4단계 화염병): 틱마다 지대 안 좀비에게 d·DT(얼음불 — 빙결 효과 + 화염병 — 이면 느려진 좀비는 × (1 + v)), 보스에게는 추가 피해 예산(BONUS_CAP — hitBossBonus) 안에서.
+   게이트·벽·장갑문·상자·드럼통은 태우지 않는다(좀비·보스만). 유지 시간이 다하면 사라지고, 다 사라지면 s.flames 필드도 없다 */
+function flamesUpdate(s) {
+  const ice = fxOf(s) && comboOn(s, 'frostFlame') ? 1 + COMBOS.frostFlame.v : 1;
+  const b = s.boss;
+  for (const zn of s.flames) {
+    const d = zn.d * DT;
+    for (const f of s.foes) if (f.alive && inFire(zn, f.x, f.z)) hitFoe(s, f, ice > 1 && f.slowT > s.t ? d * ice : d, 'flame');
+    if (b && b.hp > 0 && bossInFire(zn, b)) hitBossBonus(s, d);
+    zn.t -= DT;
+  }
+  s.flames = s.flames.filter((zn) => zn.t > 1e-9);
+  if (!s.flames.length) delete s.flames;
 }
 
 function specialsUpdate(s, R) {
@@ -3204,6 +3258,18 @@ function specialsUpdate(s, R) {
       s.rockets.push(rk);
       emit(s, { t: 'rocket', id: rk.id, x0: rk.x0, z0: rk.z0, x: rk.x, z: rk.z });
       m.cd = unitVal('rocket', 'every', lv);
+    } else if (m.k === 'flame') {
+      // 화염병(4단계): 레벨마다 더 자주·더 오래·더 세게(Lv3은 더 넓게). 짝 영웅 뭉치의 돌격 나팔 동안 폭 +horn(화염병 레벨만큼 ×1·×1.25·×1.5).
+      // 피해는 놓는 순간의 D(로켓처럼 — 뭉치 스킬 배수 포함)로 정해 지대에 싣는다. 그 틱부터 태운다(flamesUpdate)
+      const w = unitVal('flame', 'w', lv) * (h && h.id === 'mungchi' && h.act > 0 ? 1 + UNITS.flame.horn * synergyOf(lv) : 1);
+      const len = unitVal('flame', 'len', lv);
+      const t = flameTarget(s, D, w, len);
+      if (!t) { m.cd = 0.25; continue; }
+      const T = unitVal('flame', 'T', lv);
+      const zn = { id: s.nextId++, x: t.x, z: t.z, w, len, t: T, T, d: unitVal('flame', 'dmg', lv) * D, lv };
+      (s.flames || (s.flames = [])).push(zn);
+      emit(s, { t: 'flame', id: zn.id, x0: q.x, z0: q.z, x: zn.x, z: zn.z, w, len, T, lv, boss: !!t.boss });
+      m.cd = unitVal('flame', 'every', lv);
     } else m.cd = 1;
   }
   // 영웅 나비: 패시브 직접 저격(저격수가 없을 때), 스킬 중에는 연속 저격
@@ -3236,6 +3302,7 @@ function specialsUpdate(s, R) {
     }
     s.rockets = s.rockets.filter((rk) => rk.t > 0);
   }
+  if (s.flames) flamesUpdate(s);   // 불 지대(화염병 줄을 연 판에만 생긴다)
   void R;
 }
 
@@ -3481,7 +3548,7 @@ export function crateWorth(s, p) {
 }
 /* 특수병 한 명이 병사 몇 명 몫인가(봇 판단용). 이미 있는 병과의 레벨 올리기는 합류의 SP_UP_WORTH배(SIM 9) —
    단 SIM 8에서 같은 병과가 바뀌던 병사 몫보다 낮게 보지는 않는다(봇의 길이 SIM 8보다 나빠지지 않게) */
-const SP_WORTH = { medic: 0.1, sniper: 0.09, rocket: 0.12 };
+const SP_WORTH = { medic: 0.1, sniper: 0.09, rocket: 0.12, flame: 0.1 };   // 화염병(4단계 판만)은 초안 — 밸런스 때 잰다
 export const SP_UP_WORTH = 0.6;
 export function spWorth(s, k) {
   const q = s.squad;
@@ -3999,7 +4066,8 @@ export function progress(s) {
    땅 위 사각형 { k, x0, x1, z0, z1 }(ell이면 그 안에 든 타원). 분대 몸(squad)과 겹치면 맞는다: 적·톱날(타원)은 옆·앞뒤 모두, 벽·장갑문·상자·철창·드럼통은 분대 앞(z1)이 그 줄(z)에
    닿는 틱에 옆으로 걸쳤는지, 독침은 떨어지는 순간 옆으로 걸쳤는지. 보스: 총알 판(보스 − 1m)의 몸통 띠(bossHit — 이 띠를 지나는 총알만
    피해), 맞붙는 선(bossReach — 분대 앞에 닿으면 길 전체를 짓밟는다). 내려찍기 띠는 늘 맞는 범위(slamZone)로 그린다.
-   드럼통의 폭발 반경(blast — 원): 터지면 가운데가 이 안인 좀비가 맞고, 이 원에 닿는 상자·철창은 부서진다(분대는 안 다친다) */
+   드럼통의 폭발 반경(blast — 원): 터지면 가운데가 이 안인 좀비가 맞고, 이 원에 닿는 상자·철창은 부서진다(분대는 안 다친다).
+   불 지대(fire — 네모, 화염병): 가운데가 이 안인 좀비가 타고, 보스는 몸통 폭(±BOSS_HIT)이 걸치고 발이 이 길이 안이면 탄다(분대·게이트·소품은 안 탄다) */
 export function hitShapes(s) {
   const q = s.squad;
   const R = radius(q.n);
@@ -4016,6 +4084,8 @@ export function hitShapes(s) {
   }
   for (const sp of s.spits) out.push({ k: 'spit', x0: sp.x - SPIT_R, x1: sp.x + SPIT_R, z0: sp.z, z1: sp.z });
   if (s.pools) for (const p of s.pools) if (p.t <= 0 && !p.hit) out.push({ k: 'pool', x0: p.x - POOL_R, x1: p.x + POOL_R, z0: p.z - POOL_R, z1: p.z + POOL_R, ell: true });
+  // 불 지대(화염병 — 4단계): 가운데가 이 네모 안인 좀비가 탄다(보스는 몸통 폭이 걸치면). 분대는 안 다친다
+  if (s.flames) for (const zn of s.flames) out.push({ k: 'fire', x0: zn.x - zn.w / 2, x1: zn.x + zn.w / 2, z0: zn.z - zn.len / 2, z1: zn.z + zn.len / 2 });
   const b = s.boss;
   if (b && b.hp > 0) {
     out.push({ k: 'bossHit', x0: b.x - BOSS_HIT, x1: b.x + BOSS_HIT, z0: b.z - 1, z1: b.z - 1 });
@@ -4053,6 +4123,8 @@ export function stateHash(s) {
   // 무한모드(캠페인 판에는 없다 — 해시 그대로)
   if (s.divs) for (const d of s.divs) h = hash(h, d.id, d.z0.toFixed(3), d.z1.toFixed(3), d.risk);
   if (s.pools) for (const p of s.pools) h = hash(h, p.id, p.x.toFixed(4), p.z.toFixed(4), p.t.toFixed(4), p.life.toFixed(4), p.hit);
+  // 불 지대(화염병 줄을 연 판에 화염병이 놓은 동안만 필드가 있다 — 없는 판은 해시 그대로)
+  if (s.flames) for (const zn of s.flames) h = hash(h, 'fire', zn.id, zn.x.toFixed(4), zn.z.toFixed(4), zn.w.toFixed(4), zn.len.toFixed(4), zn.t.toFixed(4), zn.d.toFixed(4));
   if (s.endless) { const e = s.endless; h = hash(h, e.seed, e.seg, e.bosses, e.bank, e.wait.toFixed(4), e.z0.toFixed(4), s.L, s.arenaZ.toFixed(4), (s.refMul || 1).toFixed(6)); }
   // 보스 뒤 3택 1(연 판에만 필드가 있다 — 안 연 판은 해시 그대로)
   if (s.endless && s.endless.unl != null) { const e = s.endless; h = hash(h, e.unl, e.ammo.join(','), e.picks.join(','), e.offer ? e.offer.map((c) => c.k + (c.u || c.a || c.r || '') + (c.syn ? '*' : '')).join(',') : '-'); }

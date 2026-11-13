@@ -65,6 +65,8 @@ const TEAM_HURT = { ...TEAM, H: '#FFE4DC', h: '#FF9C8C', b: '#E8606A', B: '#B840
 const MEDIC = { ...TEAM, H: '#FFFFFF', h: '#F2F0F7', b: '#D3CFE3', B: '#A8A1C4', X: '#FF5F98', x: '#FF9EC3', z: '#E0709A' };
 const SNIPER = { ...TEAM, H: '#E2E0A8', h: '#B5B276', b: '#8C8A52', B: '#6B6A3C', r: '#6B4A3A', o: '#8C8A52', O: '#5E5D34', t: '#7FA040' };
 const ROCKET = { ...TEAM, H: '#FFE6C2', h: '#FFA54A', b: '#EE7A26', B: '#B95514', T: '#7FA040', E: '#3E5126', Y: '#FFD84A', F: '#FFF4B0', f: '#FFB347' };
+/* 화염병(무한모드 4단계): 그을음 빛 두건(로켓병의 주황 철모와 ΔE 20 넘게 — 진홍 쪽) + 초록 유리병·흰 심지·불꽃, 등에는 숯빛 연료 가방(주황 불꽃 무늬) */
+const FLAME = { ...TEAM, H: '#FFB49A', h: '#E8503A', b: '#B83A2C', B: '#7E2A26', E: '#3F8A5A', e: '#8FD9A0', w: '#F2E6C8', Y: '#FF7A3C', F: '#FFD84A', f: '#FFF4B0', x: '#4A3D4E', X: '#FF7A3C' };
 
 /* 합친 병사(분대장·중장갑병·전차): 같은 파랑 + 금 장식, 바이저·환기구 빛, 궤도, 배기 연기, 미등 */
 const TIER_EXTRA = { y: '#FFD84A', Y: '#FFF09A', d: '#D08A12', v: '#8CF6FF', V: '#E8FFFF', q: '#3B3F55', a: '#E8ECF2', A: '#C9CED6', e: '#FF9F43' };
@@ -78,6 +80,8 @@ export const PAL = {
   medicHurt: { ...MEDIC, ...HURT_CLOTH, H: '#FFE4DC', h: '#FFC8C0', b: '#F0A0A0', B: '#C06A7A' },
   sniperHurt: { ...SNIPER, ...HURT_CLOTH, H: '#FFD8C8', h: '#E8A08A', b: '#C0706A', B: '#8E4A50', o: '#C0706A', O: '#8E4A50' },
   rocketHurt: { ...ROCKET, ...HURT_CLOTH, H: '#FFE0D0', h: '#FF9C7C', b: '#E86A5A', B: '#B8405A' },
+  flame: FLAME,
+  flameHurt: { ...FLAME, ...HURT_CLOTH, H: '#FFD8CC', h: '#FF9C8C', b: '#E8606A', B: '#B8405A', x: '#8A4A5A' },
 };
 
 /* ---------------- 분대 병사(뒷모습, 12×12 → 외곽선 포함 14×14) ---------------- */
@@ -170,6 +174,31 @@ const RKT_BODY = [
 /* 로켓 쏘기: 웅크리기 → 발사(불꽃) → 회복 */
 const RKT_CROUCH = pad([B12, B12, ...RKT_HEAD.slice(0, 6), 'sBBBBBBBBsTT', '.cOooooOcYTT', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
 const RKT_FIRE = pad(['.........fFf', '..........F.', ...RKT_HEAD.slice(1, 6), 'sBBBBBBBBsTT', '.cOooooOcYTT', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
+
+/* 화염병(무한모드 4단계 — 다른 특수병과 같은 12칸 격자, 머리 7줄은 로켓병처럼): 진홍 두건 + 오른손에 치켜든 불붙은 유리병(초록 병·흰 심지·불꽃),
+   등에는 숯빛 연료 가방에 주황 불꽃 무늬. 걷는 동안 병의 불꽃이 두 꼴로 일렁인다(짝·홀 프레임). 던지기: 병을 뒤로 젖혀 웅크리기 → 빈손을 앞으로 뻗기 */
+const FLM_FIRE = [['.........YfY', '..hhhhhh..F.'], ['..........Y.', '..hhhhhh.YFY']];   // 병 위 불꽃 두 꼴(0줄·1줄)
+const FLM_HEAD = (k) => [
+  FLM_FIRE[k][0],
+  FLM_FIRE[k][1],
+  '.hhHHhhhh.w.',
+  'hhHhhhhhhbEE',
+  'hhhhhhhhbbEe',
+  'hhhhhhhbbbEE',
+  'sBBBBBBBBss.',
+];
+const FLM_BODY = [
+  '.cOxxxxOcc..',
+  'ccOxXXxOc...',
+  'scOOOOOOcs..',
+  '.nnnnnnnn...',
+];
+function flameFrames() {
+  const fr = [0, 1, 2, 3].map((f) => walk(FLM_HEAD(f & 1), FLM_BODY, f, 12));
+  return fr.concat([walk(FLM_HEAD(0), FLM_BODY, 0, 12), idle2(FLM_HEAD(1), FLM_BODY, 12)]);
+}
+const FLM_WIND = pad([B12, B12, '..hhhhhh....', '.hhHHhhhh...', 'hhHhhhhhhb.Y', 'hhhhhhhhbbYf', 'hhhhhhhbbbFE', 'sBBBBBBBBsEE', '.cOxxxxOcs..', 'ccOxXXxOcc..', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
+const FLM_THROW = pad(['.........f..', '.........F..', '..hhhhhh.s..', '.hhHHhhhhc..', 'hhHhhhhhhc..', 'hhhhhhhhbc..', 'hhhhhhhbbb..', 'sBBBBBBBBs..', '.cOxxxxOc...', 'ccOxXXxOcc..', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
 
 /* ---------------- 합친 병사(대형 단계): 10명 = 분대장, 100명 = 중장갑병, 1000명 = 전차 ----------------
    외곽선 포함 18×18 · 22×22 · 30×22(렌더러 TIER 표와 같다). 뒷모습, 발·궤도는 맨 아래 줄,
@@ -333,6 +362,7 @@ const FRONT_HAT = {
   medic: ['...hHHhhh...', '..hXXhXXhh..', '.hHXXXXXhhb.', '.hhhXXXhhbb.', '.BBBBXBBBBB.'],
   sniper: ['....hhhh....', '...hHHhhb...', '...rrrrrr...', '.hhhhhhhhhb.', 'BBBBBBBBBBBB'],
   rocket: ['.........EE.', '...hhhhhhTT.', '..hHHhhhhTT.', '.hHhhhhhhTT.', '.BBBBBBBBTT.'],
+  flame: ['...hhhhhh...', '..hHHhYhhh..', '.hHhhYfYhhb.', '.hhhhYFYhbb.', '.BBBBBBBBBB.'],   // 두건 앞 불꽃 무늬
 };
 function captive(k) {
   const hat = FRONT_HAT[k];
@@ -530,8 +560,12 @@ const ICON_PAL = {
   z: '#E8ECF2', Z: '#C9CED6', P: '#FF8FB8', Q: '#FFB0CC', r: '#D94A80', m: '#FFF1DE', M: '#E9B26B', l: '#4FD1C5', L: '#A6F0E6',
   // 탄 효과 아이콘(무한모드 2단계): 탄종 색(roster.AMMO의 color) — 관통 n · 작렬 v · 속사 a · 빙결 i
   n: '#F4F7FF', v: '#FFB347', a: '#FFE38A', i: '#8FD3FF',
+  // 유물 아이콘(무한모드 3·5단계): 구리 c·C(과부하 코일) · 진홍 R·D(확성기·심장 — 펫 하트의 분홍과 다르게) · 보라 V·N·x(유물 테두리 — 카드·HUD·나침반 표시)
+  c: '#C8692E', C: '#F7B672', R: '#E8384F', D: '#A92644', V: '#9B6BFF', N: '#5B3A9E', x: '#D9C4FF',
 };
 
+/* 화염병의 병·불꽃(던진 병 bottle, 불 지대 불꽃 flick): 유리 초록 · 심지 흰색 · 불꽃 주황 → 노랑 → 흰 노랑 */
+const FLAME_FX = { E: '#3F8A5A', e: '#8FD9A0', w: '#F2E6C8', Y: '#FF7A3C', F: '#FFD84A', f: '#FFF4B0', K: OUT };
 const FX_PAL = {
   W: '#FFFFFF', y: '#FFB347', Y: '#FFF4B0', o: '#FFD84A', O: '#D08A12', c: '#FFC93C', C: '#FFF09A',
   g: '#7CE07A', G: '#3FA65A', p: '#FF6FA0', P: '#FFB0CC', b: '#8FD3FF', s: '#C9CED6', S: '#9AA2B0', d: '#E6D2B0', D: '#B89A70',
@@ -551,12 +585,15 @@ export const SHEETS = {
     frames: crowdFrames(RKT_HEAD, RKT_BODY, 12).concat([RKT_CROUCH, RKT_FIRE]),
     alts: { hurt: 'rocketHurt' }, muzzle: [10, 0],
   },
+  /* 화염병(4단계): 걷기 4 · 서기 2 + 던지기 2(웅크리기 6, 던짐 7 — 렌더러 FRAMES.flame.throw) */
+  flame: { pal: 'flame', frames: flameFrames().concat([FLM_WIND, FLM_THROW]), alts: { hurt: 'flameHurt' } },
   sq10: { pal: 'tier', frames: sq10Frames(), alts: { hurt: 'tierHurt' }, muzzle: [15, 2], muzzles: [[15, 3], [15, 2], [15, 3], [15, 2], [15, 3], [15, 4]] },
   sq100: { pal: 'tier', frames: hvFrames(), alts: { hurt: 'tierHurt' }, muzzle: [17, 0], muzzles: [[17, 1], [17, 0], [17, 1], [17, 0], [17, 1], [17, 2]] },
   sq1000: { pal: 'tier', frames: tankFrames(), alts: { hurt: 'tierHurt' }, muzzle: [14, 0], muzzles: [[14, 1], [14, 0], [14, 1], [14, 0], [14, 1], [14, 0]] },
   captive_medic: { pal: PAL_FRONT(MEDIC), frames: captive('medic'), lod: [1, 0.75, 0.5] },
   captive_sniper: { pal: PAL_FRONT(SNIPER), frames: captive('sniper'), lod: [1, 0.75, 0.5] },
   captive_rocket: { pal: PAL_FRONT(ROCKET), frames: captive('rocket'), lod: [1, 0.75, 0.5] },
+  captive_flame: { pal: PAL_FRONT(FLAME), frames: captive('flame'), lod: [1, 0.75, 0.5] },
 
   /* 영웅(미소녀): 뒷모습 16×20 · 얼굴 30×30 [0 미소, 1 외침] — pix/heroines.js */
   ...HEROINE_SHEETS,
@@ -599,6 +636,9 @@ export const SHEETS = {
   tear: { pal: FX_PAL, frames: [['.b', 'bb', 'b.']], out: null },
   helmetBit: { pal: FX_PAL, frames: [['.hhh.', 'hHhhh', 'BBBBB']] },
   rocketShot: { pal: FX_PAL, frames: [['.E.', 'EeE', '.e.', '.e.', 'TeT', '.f.'], ['.E.', 'EeE', '.e.', '.e.', 'TeT', 'fYf']] },
+  /* 화염병이 던진 병(날아가며 돈다 — 선 병 · 누운 병)과 불 지대의 불꽃 혀(파편 풀 'flick' — 큰 것 → 작은 것, 꺼질수록 작아진다) */
+  bottle: { pal: FLAME_FX, frames: [['.F.', 'YfY', '.w.', '.E.', 'EeE', 'EEE'], ['.....Y', 'EEEwfF', 'eEE.Y.', 'EEE...']] },
+  flick: { pal: FLAME_FX, frames: [['.Y.', 'YFY', 'YfY', 'FfF', '.F.'], ['.Y.', 'YFY', 'FfF'], ['Y', 'F']], out: '#7E2A26' },
   glint: { pal: FX_PAL, frames: [['..W..', '..W..', 'WWWWW', '..W..', '..W..'], ['W...W', '.W.W.', '..W..', '.W.W.', 'W...W']], out: null },
   dust: { pal: FX_PAL, frames: [['.dd.', 'dDDd'], ['d..d', '.dd.']], out: null },
   bubble: { pal: { W: '#FFFFFF', K: OUT }, frames: [['.WWWWW.', 'WWWKWWW', 'WWWKWWW', 'WWWKWWW', 'WWWWWWW', 'WWWKWWW', '.WWWWW.', '.W.....']] },
@@ -631,6 +671,8 @@ export const ICONS = {
   medic: ['..hHHhh..', '.hXXhXXh.', 'hHXXXXXhb', 'hhhXXXhhb', 'hhhhXhhbb', 'BBBBBBBBB', '.sssssss.', '.sKsssKs.', '..sssss..'],
   sniper: ['..ttttt..', '.tTTKTTt.', 'tTTTKTTTt', 'tTTTTTTTt', 'tKKTKTKKt', 'tTTTTTTTt', 'tTTTKTTTt', '.tTTKTTt.', '..ttttt..'],
   rocket: ['....E....', '...EoE...', '...oOo...', '...oOo...', '...oOo...', '..AoOoA..', '.AA.o.AA.', '....f....', '...fFf...'],
+  /* 화염병(4단계): 심지에 불붙은 초록 유리병(무한모드 화면만 — 카드·HUD 칩·일시정지 목록·철창 표시) */
+  flame: ['....e....', '...eoe...', '..eofoe..', '..efFfe..', '...MmM...', '...EAE...', '..EAAAE..', '.EALAAAE.', '.EEEEEEE.'],
   gun: ['.........z', '.ZZZZZZZZZ', 'wwwwgggggg', 'www.gK....', 'ww..gg....', 'w.........'],
   men: ['..jjjjj..', '.jJJjjjj.', 'jJjjjjjju', 'UUUUUUUUU', '.sssssss.', '.sKsssKs.', '.pssKssp.', '..sssss..'],
   coin: ['..yyy..', '.yYYYy.', 'yYYdYYy', 'yYYdYYy', 'yYYdYYy', '.yYYYd.', '..ddd..'],
@@ -647,12 +689,23 @@ export const ICONS = {
   fx_burst: ['.........', '...vvv...', '..vOOvv..', '.vOOvvve.', '.vOvvvve.', '.vvvvvee.', '..vveee..', '...eee...', '.........'],
   fx_rapid: ['..Y...Y..', '.aYa.aYa.', '.aaa.aaa.', '.aaa.aaa.', '.ddd.ddd.', '..y...y..', '..y...y..', '..y...y..', '.........'],
   fx_frost: ['....J....', '...JJi...', '..JJiii..', '.JJiiiiu.', 'JJiiWiiuu', '.iiiiiuu.', '..iiiuu..', '...iuu...', '....u....'],
+  /* 유물(무한모드 3·5단계 — 유물 카드·HUD 줄·일시정지 목록·나침반 표시): relic_<roster RELIC_IDS>. 9×9 정사각, 실루엣이 서로 다르다(tests/art.mjs).
+     나침반 = 금테 둥근 판에 빨간 바늘 · 휘장 = 빨강·파랑 리본에 별 메달 · 확성기 = 오른쪽으로 벌어진 빨간 나팔과 소리 · 코일 = 구리 감개에 번개 ·
+     넷째 자리 = 병사 머리 넷(넷째가 금빛) · 심장 = 진홍 하트 · 가방 = 알이 고개 내민 자루 · 탄낭 = 총알 셋 꽂힌 초록 주머니 */
+  relic_compass: ['...ddd...', '.ddyyydd.', '.dyJRJyd.', 'dyJJRJJyd', 'dyJJKJJyd', 'dyJJgJJyd', '.dyJgJyd.', '.ddyyydd.', '...ddd...'],
+  relic_banner: ['.RRR.jjj.', '..RRDjj..', '...RDj...', '...ddd...', '..dyyyd..', '.dyyWyyd.', '.dyWWWyd.', '..dyWyd..', '...ddd...'],
+  relic_megaphone: ['......D..', '....DRD.W', '..DRRRD..', 'ggDRWRDW.', 'ggDRRRD..', '..DRRRDW.', '....DRD..', '..k...D.W', '..k......'],
+  relic_coil: ['..gGGGg..', '.cCCCCCc.', '.qqqYqqq.', '.cCCYYCc.', '.qqqqYqq.', '.cCCCYCc.', '.qqqYqqq.', '.cCCYCCc.', '..gGGGg..'],
+  relic_fourth: ['.jj...jj.', 'jJJj.jJJj', 'jjjj.jjjj', '.uu...uu.', '.........', '.jj...yy.', 'jJJj.yYYy', 'jjjj.yyyy', '.uu...dd.'],
+  relic_heart: ['.........', '.RR...RR.', 'RWRR.RRRD', 'RWRRRRRRD', 'RRRRRRRRD', '.RRRRRRD.', '..RRRRD..', '...RRD...', '....D....'],
+  relic_bag: ['...mmm...', '..mWmmM..', '..kkkkk..', '.wwwkwww.', 'wwwwwwwqw', 'wwwwwwwqw', 'wwwwwwqqw', '.wwwwqqq.', '..qqqqq..'],
+  relic_pouch: ['.Y..Y..Y.', '.f..f..f.', '.d..d..d.', 'EEEEEEEEE', 'EAAAAAAAE', 'EAAAyAAAE', 'EAAAAAAAE', 'EAAAAAAAE', '.EEEEEEE.'],
 };
 export const ICON_PAL_EXPORT = ICON_PAL;
 
-/* 병과·영웅 → 시트 */
-export const UNIT_ART = { medic: 'medic', sniper: 'sniper', rocket: 'rocket' };
-export const CAPTIVE_ART = { medic: 'captive_medic', sniper: 'captive_sniper', rocket: 'captive_rocket' };
+/* 병과·영웅 → 시트. 화염병(flame)은 무한모드 4단계 판에만 나온다(캠페인 화면은 UNITS[k].endless를 뺀다) */
+export const UNIT_ART = { medic: 'medic', sniper: 'sniper', rocket: 'rocket', flame: 'flame' };
+export const CAPTIVE_ART = { medic: 'captive_medic', sniper: 'captive_sniper', rocket: 'captive_rocket', flame: 'captive_flame' };
 export const HERO_ART = {
   mungchi: { back: 'hero_mungchi', portrait: 'face_mungchi', color: '#FF9F43', dark: '#B4561A' },
   bori: { back: 'hero_bori', portrait: 'face_bori', color: '#FF8FB8', dark: '#B03C70', band: '#D9558F' },   // band: 스킬 컷인 띠
@@ -668,6 +721,7 @@ export const ANIM = {
   medic: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
   sniper: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 } },
   rocket: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 }, fire: { f: [6, 7, 0], fps: 9 } },
+  flame: { walk: { f: [0, 1, 2, 3], fps: 10 }, idle: { f: [4, 5], fps: 2 }, throw: { f: [6, 7, 0], fps: 9 } },
   hero: { walk: { f: [0, 1, 2, 3], fps: 9 }, flutter: { f: [0, 4], fps: 4 }, idle: { f: [8, 9], fps: 2 }, ko: { f: [10] }, act: { f: [11, 12], fps: 6 }, look: { f: [13, 14] } },
   captive: { wave: { f: [0, 1], fps: 4 }, sad: { f: [2] } },
   grunt: { walk: { f: [0, 1, 2, 3], fps: 7 }, lunge: { f: [4, 5], fps: 12 } },
@@ -765,4 +819,7 @@ for (const [bid, sheet] of Object.entries(BOSS_SKIN)) if (sheet !== 'boss') (SKI
    renderer.prepBiome(bid)가 그 지역에 가기 전에 쉬는 틈에 굽고, 그리는 쪽은 아직 없으면 기본 시트로 그린다 */
 const DESERT_SHEETS = biomeSheets('desert');
 export const BIOME_ONLY = new Set(Object.keys(BIOME).filter((b) => b !== 'desert').flatMap((b) => biomeSheets(b)).filter((n) => !DESERT_SHEETS.includes(n)));
+/* 지역 시트 → 그 지역(아틀라스 묶음 — 오래 안 간 지역을 비울 때 그 지역 그림만 빠지게, createBiomeCache). 시트 하나는 한 지역에만 쓴다(tests/art.mjs) */
+export const BIOME_GROUP = new Map();
+for (const b of Object.keys(BIOME)) if (b !== 'desert') for (const n of biomeSheets(b)) if (BIOME_ONLY.has(n) && !BIOME_GROUP.has(n)) BIOME_GROUP.set(n, b);
 export { BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TEXT, BOSS_TIER, PET_ART };

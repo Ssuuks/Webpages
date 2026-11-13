@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { SHEETS, PAL, BIOME, BIOME_GROUND_KEYS, SEMANTIC, ANIM, UNIT_ART, CAPTIVE_ART, HERO_ART, ICONS, ICON_PAL_EXPORT, FONT, OUT, WORLD_H, BOSS_POSE_NAMES } from '../assets/pix/art.js';
 import { frameRaster, outline, downscale, deltaE, Raster } from '../assets/pix/raster.js';
 import { pickStep } from '../assets/pix/atlas.js';
-import { UNITS, HEROES, BIOMES, biomeOf } from '../assets/roster.js';
+import { UNITS, HEROES, BIOMES, biomeOf, RELICS, RELIC_IDS } from '../assets/roster.js';
 
 const palOf = (p) => (typeof p === 'string' ? PAL[p] : p);
 const MAGENTA = '#FF00FF';
@@ -774,11 +774,16 @@ test('충돌 크기: 그린 무리의 끝 = 분대 반지름 R(옆)·SQUAD_DEPTH
     }
   }
   // 특수병·영웅은 무리 뒤(맞는 몸 밖, 옆으로는 분대 폭 안 — 옆에서 오는 좀비가 먼저 닿지 않게)
+  // 넷째 자리(무한모드 유물 — RELICS.fourth.slots)까지: 자리끼리 겹치지 않는다
   for (const n of [12, 60, 300]) {
     const R = Core.radius(n), q = { z: 0 };
-    for (let i = 0; i < 3; i++) {
+    const seen = new Set();
+    for (let i = 0; i < RELICS.fourth.slots; i++) {
       const sl = slotPos(q, i, R, 0);
       assert.ok(sl.z < -Core.SQUAD_DEPTH * R && Math.abs(sl.x) <= R, `n=${n} 특수병 ${i} 자리 ${JSON.stringify(sl)}`);
+      const k = sl.x.toFixed(3) + ',' + sl.z.toFixed(3);
+      assert.ok(!seen.has(k), `n=${n} 특수병 ${i} 자리가 앞 자리와 겹친다`);
+      seen.add(k);
     }
     assert.ok(heroZ(q, R) < slotPos(q, 0, R, 0).z);
   }
@@ -1020,4 +1025,86 @@ test('장애물 그림: 드럼통(빨강, 길가 통과 다르게, 총알 받는
   assert.match(main, /case 'obstacle': \{\s*[^}]*const O = OBSTACLES\[e\.kind\];\s*if \(O\) tip\('obs-' \+ e\.kind, `\$\{O\.name\}: \$\{O\.text\(\)\}`, true\);/);
   assert.match(main, /if \(p\.kind === 'door' \|\| p\.kind === 'drum'\) continue;/);
   for (const k of Object.keys(OBSTACLES)) assert.ok(OBSTACLES[k].name && OBSTACLES[k].text().length > 8 && /[가-힣]요/.test(OBSTACLES[k].text()), `${k} 안내 글(해요체)`);
+});
+
+/* 무한모드 3·5단계(유물): 유물 아이콘, 무기 4단계(과부하 코일) 색·칸·총알, 나침반 표시(그린 것 = 받는 것), 유물 화면·이벤트·HUD의 연결 */
+test('유물 그림: relic_<id> 아이콘(9×9, 실루엣이 서로·다른 아이콘과 다르다) · 무기 4단계 색·칸·불꽃 · 나침반 상자 표시 · 유물 카드·HUD·불굴의 심장·알 확률', async () => {
+  const fs = await import('node:fs');
+  const R_ = await import('../assets/render.js');
+  const { AMMO_IDS } = await import('../assets/roster.js');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const mask = (rows) => frameRaster(rows, ICON_PAL_EXPORT).a.map((c) => (c ? 1 : 0)).join('');
+  // 아이콘: 유물마다 하나, 9×9 정사각(카드 칸·HUD 칸이 정사각), 실루엣이 서로 다르고 다른 9×9 아이콘(탄 효과 등)과도 다르다
+  const others = Object.keys(ICONS).filter((k) => !k.startsWith('relic_') && ICONS[k].length === 9 && ICONS[k][0].length === 9).map((k) => mask(ICONS[k]));
+  const mine = [];
+  for (const id of RELIC_IDS) {
+    const rows = ICONS['relic_' + id];
+    assert.ok(rows, `아이콘 relic_${id}`);
+    assert.equal(rows.length, 9, `relic_${id} 높이 9`);
+    for (const r of rows) assert.equal(r.length, 9, `relic_${id} 폭 9`);
+    const m = mask(rows);
+    assert.ok(m.split('1').length - 1 >= 30, `relic_${id}: 칠한 칸이 너무 적다(작게 줄여도 읽히게)`);
+    assert.ok(!others.includes(m), `relic_${id} 실루엣이 다른 아이콘과 같다`);
+    mine.push(m);
+  }
+  assert.equal(new Set(mine).size, mine.length, '유물 아이콘 실루엣이 서로 다르다');
+  // 불굴의 심장은 펫 하트(분홍)와 다른 진홍 — 가장 많은 색
+  const top = (rows) => { const n = new Map(); for (const c of frameRaster(rows, ICON_PAL_EXPORT).a) if (c) n.set(c, (n.get(c) | 0) + 1); return [...n.entries()].sort((a, b) => b[1] - a[1])[0][0]; };
+  assert.ok(deltaE(top(ICONS.relic_heart), top(ICONS.heart)) >= 12, '심장 유물 vs 펫 하트 색');
+  // 무기 단계 색: core WEAPON의 단계마다 하나(과부하 코일의 4단계 포함), 서로 ΔE 15 이상. 단계 칸은 WTIER 끝까지(예전 3칸 자르기 없음)
+  assert.equal(R_.WTIER.length, Core.WEAPON.length, '무기 단계마다 색');
+  for (let i = 0; i < R_.WTIER.length; i++) for (let j = i + 1; j < R_.WTIER.length; j++) assert.ok(deltaE(R_.WTIER[i], R_.WTIER[j]) >= 15, `무기 색 ${i}·${j}`);
+  assert.match(src, /const tierN = clamp\(q\.tier \| 0, 0, WTIER\.length - 1\);/, '단계 칸은 4단계까지');
+  assert.doesNotMatch(src, /WTIER\[Math\.min\(3,/, '단계 색을 3에서 자르지 않는다');
+  assert.match(src, /const crackle = !low && tier >= 4;/, '4단계 총알: 전기 불꽃');
+  assert.equal((src.match(/if \(crackle\) spark4\(/g) || []).length, 2, '탄종 모양·보통 모양 총알 모두');
+  // 넷째 자리: 특수병 넷째 칸은 셋째와 다른 자리(위 '충돌 크기' 시험이 겹치지 않는지 본다)
+  // 나침반 표시(peekOf): 그린 것이 받는 것 — 지원병 상자는 실린 숫자 그대로(나침반 ×1.5·코일 ×0.7이 든), 무기는 상한 아래일 때만 '+1', 얻을 수 없으면 병사
+  const base = Core.newEndless({ seed: 2, start: Core.START_N + 20, fire: 10, unl: 3, ammoOpen: AMMO_IDS, relicsOpen: RELIC_IDS, relics: ['compass'] });
+  const pk = (reward, mod) => { const s = Core.restore(Core.snapshot(base)); if (mod) mod(s); return { ...R_.peekOf(s, { reward }) }; };
+  assert.deepEqual(pk({ type: 'men', v: 27 }), { icon: 'men', text: '+27', fill: '#DDF3FF', out: '#1D3F8A' });
+  assert.deepEqual([pk({ type: 'gun', mul: 1.5 }).icon, pk({ type: 'gun', mul: 1.5 }).text], ['gun', '+1']);
+  assert.deepEqual([pk({ type: 'gun', mul: 1.5 }, (s) => { s.squad.tier = 3; }).icon, pk({ type: 'gun' }, (s) => { s.squad.tier = 3; }).text], ['men', ''], '3단계면 병사(코일 없음)');
+  assert.equal(pk({ type: 'gun' }, (s) => { s.squad.tier = 3; s.endless.relics.push('coil'); }).text, '+1', '코일이면 4단계까지 무기');
+  assert.equal(pk({ type: 'fx', a: 'pierce' }).icon, 'fx_pierce');
+  assert.equal(pk({ type: 'fx', a: 'pierce' }, (s) => { s.endless.fx = { burst: 3, frost: 3 }; }).icon, 'men', '얻을 수 없는 탄 효과는 병사');
+  assert.equal(pk({ type: 'unit', k: 'sniper' }).icon, 'sniper');
+  for (const p of [pk({ type: 'men', v: 1 }), pk({ type: 'gun' }), pk({ type: 'coin', v: 9 })]) assert.ok(R_.GLYPH_PAIRS.some(([f, o]) => f === p.fill && o === p.out), `미리 구운 글자 짝 ${p.fill}/${p.out}`);
+  // 판에서: 나침반을 쥔 판의 갈림길 알림(fork.reward)부터 상자 위에 표시 — 지원병 숫자는 상자에 실린 값, 부수면 그만큼 받는다
+  {
+    const s = Core.newEndless({ seed: 2, start: Core.START_N + 20, fire: 10, unl: 3, ammoOpen: AMMO_IDS, relicsOpen: RELIC_IDS, relics: ['compass'] });
+    let seen = null;
+    for (let t = 0; t < 12000 && !seen && s.phase !== 'lost'; t++) {
+      Core.step(s, Core.botInput(s));
+      if (Core.offerOf(s)) Core.pickCard(s, 0);
+      for (const e of s.ev) if (e.t === 'fork' && e.reward) seen = { e, d: s.divs.find((d) => d.z0 === e.z) };
+    }
+    assert.ok(seen, '나침반 판에 갈림길');
+    const p = Core.forkPeek(s, seen.d);
+    assert.ok(p, '알림과 같은 틱부터 표시');
+    assert.deepEqual(seen.e.reward, p.reward, '알림의 상자 속 = 표시하는 상자');
+    if (p.reward.type === 'men') assert.equal(R_.peekOf(s, p).text, '+' + p.reward.v);
+  }
+  assert.match(src, /function drawPeeks\(s\) \{\s*for \(const d of s\.divs\) \{\s*const p = forkPeek\(s, d\);/, '표시는 core.forkPeek가 돌려주는 상자만');
+  assert.match(src, /if \(s\.divs\) drawPeeks\(s\);/, '모든 소품 다음(벽 위)');
+  // 유물 이벤트 그림: 얻을 때(보라·금빛) · 불굴의 심장(번쩍임·흔들림·고리·하트·'+n' — 가장 크게, 가장자리 금빛 번짐이 위기 맥동 대신)
+  for (const re of [/case 'relic': \{/, /case 'relicUse': \{[\s\S]*?screenFlash\(0\.5,[\s\S]*?shake\(0\.7\)[\s\S]*?'heart'\);[\s\S]*?float\(cx, 2\.9, cz, '\+' \+ e\.n,/, /const crisis = !revived && /]) assert.match(src, re);
+  // 화면(main.js): 유물 카드(이름·좋은 점·대신 줄, 보라·금빛), 머리글, HUD 유물 칩(쓴 것 흐리게·켜진 휘장), 알 확률은 core.eggP, 결과 줄, 무기 카드의 상한
+  assert.match(main, /if \(c\.k === 'relic'\) \{[\s\S]*?det: Rl\.text\(\), cost: Rl\.cost\(\), col: RELIC_COL, icon: 'relic_' \+ c\.r, relic: true/);
+  assert.match(main, /cs\.textContent = `대신 \$\{T\.cost\}`;/);
+  assert.match(main, /\$\('scrPick'\)\.classList\.toggle\('relic', relic\);/);
+  assert.match(main, /Math\.random\(\) < eggP\(s\)/, '수집가의 가방: 알 확률은 core.eggP');
+  assert.doesNotMatch(main, /Math\.random\(\) < EGG\.pEndless/);
+  assert.match(main, /chip\.className = 'sp-chip relic-chip';/);
+  assert.match(main, /const ban = !!rl && bannerOn\(s\);/, '휘장이 켜지면 칩이 금빛');
+  assert.match(main, /case 'relicUse':\s*[^]*?if \(e\.id === 'heart'\) \{[^]*?slow\(/, '심장: 소리·진동·느리게·알림');
+  assert.match(main, /lines\.push\(\['유물', /, '결과 화면 유물 줄');
+  assert.match(main, /최대 \$\{tierMax\(s\)\}단계/, '무기 카드 상한은 core.tierMax');
+  assert.doesNotMatch(main, /최대 3단계|특수병 자리\(3명\)|병사가 4명은/, '자리·호위·무기 상한은 core 값으로(넷째 자리·코일)');
+  for (const sel of ['#scrPick.relic', '.pick-card.relic', '.pick-cost', '.relic-chip', '.relic-chip i.off', '.relic-chip i.on']) assert.ok(html.includes(sel), `index.html ${sel}`);
+  assert.match(html, /id="pickTitle"/);
+  // 유물 글은 해요체 한 줄(카드·일시정지 목록·HUD 이름)
+  for (const id of RELIC_IDS) { const t = RELICS[id].text(); assert.ok(t.length > 8 && t.length < 60, `${id}: ${t}`); }
 });

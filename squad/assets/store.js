@@ -34,7 +34,7 @@ export function defaults() {
     cyc: {},                         // 2회차부터의 진행: { '2': { maxL, cur, stars, best, fails } }
     upgX: { start: 0, fire: 0, coin: 0 },   // 10단계 위로 산 강화(upg는 옛 탭이 0~10으로 자르므로 따로 둔다)
     heroX: {},                       // 영웅마다 Lv5 위로 올린 레벨(heroes.lv는 옛 탭이 5로 자른다)
-    endless: { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수, 알린 해금 단계, 대왕 누적 처치
+    endless: { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0, rel: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수, 알린 해금 단계, 대왕 누적 처치, 출발 카드가 알린 유물 수
     pets: { own: {}, sel: '', eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
     ammo: { sel: '', seen: 0 },      // 탄종(ARSENAL.md 3절): 고른 탄종('' = 보통탄), 열림 안내를 본 별 문턱. 열림은 저장하지 않고 모은 별로 센다
   };
@@ -161,7 +161,7 @@ export function normalize(o) {
   }
   out.cycle = clampInt(out.cycle, 1, maxCycle(out));
   out.endSeen = clampInt(out.endSeen, 0, endedCycles(out));
-  for (const k of ['best', 'bestN', 'runs', 'unl', 'kings']) out.endless[k] = Math.max(0, Math.floor(num(out.endless[k])));
+  for (const k of ['best', 'bestN', 'runs', 'unl', 'kings', 'rel']) out.endless[k] = Math.max(0, Math.floor(num(out.endless[k])));
   // 펫: 모르는 id는 버리고, 레벨 1..PET_MAX_LV, 조각·알은 0 이상
   const ps = o.pets && typeof o.pets === 'object' ? o.pets : {};
   const pets = { own: {}, sel: '', eggs: Math.max(0, Math.floor(num(ps.eggs))), pity: clampInt(ps.pity, 0, 99), got: num(ps.got) ? 1 : 0 };

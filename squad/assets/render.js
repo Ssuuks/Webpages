@@ -2,11 +2,11 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul } from './core.js';
-import { HEROES, biomeOf, bossNameOf, OBSTACLES } from './roster.js';
+import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, forkPeek, tierMax } from './core.js';
+import { HEROES, biomeOf, bossNameOf, OBSTACLES, unitVal } from './roster.js';
 import { gateAlts } from './insight.js';
-import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, biomeSheets, PET_ART } from './pix/art.js';
-import { createAtlas, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
+import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, BIOME_GROUP, biomeSheets, PET_ART } from './pix/art.js';
+import { createAtlas, createBiomeCache, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
 import { createFont, opText, compactTexts } from './pix/font.js';
 import { createGround } from './pix/ground.js';
 import { frameRaster, outline } from './pix/raster.js';
@@ -18,7 +18,12 @@ import { frameRaster, outline } from './pix/raster.js';
 const FIT = { at: 0.70, up: 20, back: 24, minHz: 0.075, far: 180, farLow: 150 };
 const STEPS3 = [1, 0.75, 0.5];
 const STEPS4 = [1, 0.75, 0.5, 0.33];
-const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9'];   // 무기 단계 색
+/* 무기 단계 색. 다섯째(4단계)는 과부하 코일(무한모드 유물)로만 닿는다 — 전기 보라(총알 옆에 튀는 불꽃, drawBullets). core WEAPON과 같은 길이(tests/art.mjs) */
+export const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9', '#B98CFF'];
+const SPARK4 = '#F2E8FF';   // 4단계 총알 옆 전기 불꽃
+const HEART_GLOW = 1.6;     // 불굴의 심장이 되살린 뒤 가장자리 금빛 번짐(초)
+/* 유물(무한모드 3·5단계)의 색: 보라 테두리 + 금빛 — 카드(index.html .pick-card.relic)·HUD 줄·나침반 표시가 같은 짝 */
+export const RELIC_COL = '#9B6BFF', RELIC_GOLD = '#FFD84A';
 const GOLD_BULLET = '#FFD84A';
 const AMMO_COL = { pierce: '#F4F7FF', burst: '#FFB347', rapid: '#FFF4B0', frost: '#8FD3FF' };   // 탄종 머리 색(roster.AMMO와 같은 id)
 /* 총알 모양을 고를 탄종: 출격 탄종(s.ammo — 대신 쪽까지 진 탄), 없으면 무한모드 2단계 판의 탄 효과 중 가장 높은 레벨(같으면 위 순서).
@@ -33,11 +38,28 @@ export function shotAmmo(s) {
 const SKILL_LINE = { mungchi: '#FFD84A', bori: '#FF8FB8', nabi: '#7FF0E2' };   // 스킬 중 화면 가장자리 속도선
 /* 충돌 크기 보기(?hitbox=1)의 색 — core.hitShapes가 돌려주는 모양 종류(k)마다 하나(tests/art.mjs가 장애물이 있는 판의 모든 k를 본다).
    분대(하늘색) · 적·톱날(분홍 타원) · 벽·장갑문·상자·철창(주황 선 — 분대 앞 끝이 닿는 순간 옆으로 겹치면) · 드럼통(빨간 선 — 닿으면 터진다, 분대는 안 다친다) ·
-   폭발 반경(주황 원 — 가운데가 이 안인 좀비가 맞고, 이 원에 닿는 상자·철창이 부서진다) · 독침(연두) · 웅덩이(연보라) · 보스 몸통(노랑)·맞붙는 선(빨강) */
+   폭발 반경(주황 원 — 가운데가 이 안인 좀비가 맞고, 이 원에 닿는 상자·철창이 부서진다) · 독침(연두) · 웅덩이(연보라) · 보스 몸통(노랑)·맞붙는 선(빨강) ·
+   불 지대(진주황 네모 — 화염병, 가운데가 이 안인 좀비가 탄다) */
 export const HB_COL = {
   squad: '#4FF3FF', foe: '#FF4FD8', saw: '#FF4FD8', wall: '#FFB347', door: '#FFB347', crate: '#FFB347', cage: '#FFB347', drum: '#FF6B5B', blast: '#FF9A3D',
-  spit: '#C8FF5A', pool: '#D9A6FF', bossHit: '#FFE34F', bossReach: '#FF5D5D', div: '#FFFFFF',
+  spit: '#C8FF5A', pool: '#D9A6FF', bossHit: '#FFE34F', bossReach: '#FF5D5D', div: '#FFFFFF', fire: '#FF7A3C',
 };
+/* 불 지대(화염병 — 무한모드 4단계)의 바닥 타일: 한 변 FIRE_TILE m의 바둑판(그린 네모 = core hitShapes 'fire' = 타는 네모, tests/art.mjs).
+   타일은 두 주황이 번갈아 일렁이고, 테두리는 밝은 선(뭉치 돌격 나팔로 넓어진 지대는 금빛 — 짝 효과가 보이게). 놓인 뒤 FIRE_IGNITE초 동안 던진 병이 날아가며 불이 차오른다 */
+export const FIRE_TILE = 0.5, FIRE_IGNITE = 0.3;
+const GLASS_COL = ['#8FD9A0', '#3F8A5A'];   // 깨진 병 조각(art.js 화염병의 초록 유리)
+const FIRE_COL = { deep: '#C8361E', lo: '#FF7A3C', hi: '#FFB347', edge: '#FFE3B8', horn: '#FFD84A', ember: ['#FF7A3C', '#FFD84A', '#FFF4B0'], ash: ['#3A2A2A', '#5E3B2E', '#FF7A3C', '#FFD84A'] };
+/* 불 지대 하나의 바닥 타일(순수 함수 — 테스트가 그린 네모를 맞춰 본다): 지대 네모를 FIRE_TILE 칸으로 자른 [x0, x1, z0, z1, 짝홀]을 out에 채운다.
+   끝 칸은 지대 가장자리에서 잘린다(폭 2.6m처럼 칸으로 나누어떨어지지 않아도 그린 끝 = 타는 끝) */
+export function fireTiles(zn, out = []) {
+  out.length = 0;
+  const x0 = zn.x - zn.w / 2, x1 = zn.x + zn.w / 2, z0 = zn.z - zn.len / 2, z1 = zn.z + zn.len / 2;
+  const nx = Math.max(1, Math.ceil(zn.w / FIRE_TILE - 1e-9)), nz = Math.max(1, Math.ceil(zn.len / FIRE_TILE - 1e-9));
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    out.push([x0 + i * FIRE_TILE, Math.min(x1, x0 + (i + 1) * FIRE_TILE), z0 + j * FIRE_TILE, Math.min(z1, z0 + (j + 1) * FIRE_TILE), (i + j) & 1]);
+  }
+  return out;
+}
 /* 폭발 드럼통(prop.kind 'drum')의 폭발 반경 — 땅 위 원의 꼭짓점 n개(x, z를 번갈아 out에). 가운데 = 드럼통 가운데, 반지름 = OBSTACLES.drum.r:
    core의 drumBlast(가운데가 이 안인 좀비)·blastReach(이 원에 닿는 상자·철창)·hitShapes 'blast'와 같은 원이다(그린 원 = 맞는 원, 테스트) */
 export function blastRing(p, n = 24, out = []) {
@@ -52,6 +74,19 @@ const SHIELD_DX = [-1, -1, -1, -1, -1, -2], SHIELD_DY = [1, 0, 1, 0, 1, 0];
 export function shieldAt(fr, k = 1) {
   const i = fr >= 0 && fr < SHIELD_DX.length ? fr : 0;
   return { dx: Math.round(SHIELD_DX[i] * k), dy: Math.round(SHIELD_DY[i] * k) };
+}
+/* 나침반(유물)이 갈림길 상자 위에 띄우는 내용물(그린 것이 받는 것 — 지금 상태로 core.openCrate가 줄 것): 무기 '+1'(상한 tierMax 아래일 때) ·
+   탄 효과 총알(core.fxCan) · 철창의 특수병 · 병사 '+n'(지원병 상자 — 나침반 배수가 든 숫자) · 코인 '+n'. 얻을 수 없게 된 무기·탄종 상자는 병사 아이콘만
+   (병력에 따라 숫자가 바뀐다). 글자 색은 미리 구운 짝(GLYPH_PAIRS)만. out에 채워 돌려준다(매 프레임 새 객체 없이) */
+export function peekOf(s, p, out = {}) {
+  const r = (p && p.reward) || {}, t = r.type;
+  out.text = ''; out.fill = '#DDF3FF'; out.out = PANEL.good.out;
+  if (t === 'unit') out.icon = ICONS[r.k] ? r.k : 'men';
+  else if (t === 'gun' && (s.squad.tier | 0) < tierMax(s)) { out.icon = 'gun'; out.text = '+1'; out.fill = '#FFE38A'; out.out = OUT; }
+  else if (t === 'fx' && fxCan(s, r.a) && AMMO_COL[r.a]) out.icon = 'fx_' + r.a;
+  else if (t === 'coin') { out.icon = 'coin'; out.text = '+' + r.v; out.fill = '#FFE38A'; out.out = OUT; }
+  else { out.icon = 'men'; if (t === 'men' && r.v) out.text = '+' + r.v; }
+  return out;
 }
 /* 벽·장갑문의 그린 높이·두께(m — 폭은 둘 다 x0~x1 그대로). 장갑문은 벽보다 높고 두껍다(같은 자리의 셋째 패턴이 더 단단해 보이게, tests/art.mjs) */
 export const WALL_H = 1.45, DOOR_H = 1.75, DOOR_D = 0.5;
@@ -134,13 +169,15 @@ export const FRAMES = {
   tier: { sheets: ['soldier', 'sq10', 'sq100', 'sq1000'], walk: [0, 1, 2, 3], idle: [4, 5] },
   special: { sheets: 'unit', walk: [0, 1, 2, 3], idle: [4, 5], hit: [4] },
   rocket: { sheets: ['rocket'], fire: [6, 7] },
+  flame: { sheets: ['flame'], throw: [6, 7] },
+  flick: { sheets: ['flick'], f: [0, 1, 2] },
   hero: { sheets: 'hero', walk: [0, 1, 2, 3, 4, 5, 6, 7], idle: [8, 9], ko: [10], cast: [11, 12], look: [13], blink: [14] },
   captive: { sheets: 'captive', wave: [0, 1], sad: [2] },
   foe: { sheets: ['grunt', 'runner', ...SKINS('grunt'), ...SKINS('runner')], walk: [0, 1, 2, 3], idle: [0, 2], lunge: [4, 5] },
   brute: { sheets: ['brute', ...SKINS('brute')], walk: [0, 1, 2, 3], lunge: [1] },
   spit: { sheets: ['spit', ...SKINS('spit')], idle: [0, 1], tell: [2, 3, 4] },
   boss: { sheets: Object.values(BOSS_SKIN), walk: [0, 1, 2, 3], windup: [4], slam: [5], roar: [6, 7], stomp: [8, 9], dead: [10] },
-  fx2: { sheets: ['flash', 'spark', 'glint', 'boomfx', 'flag', 'rocketShot', 'smoke'], f: [0, 1] },
+  fx2: { sheets: ['flash', 'spark', 'glint', 'boomfx', 'flag', 'rocketShot', 'smoke', 'bottle'], f: [0, 1] },
   fx4: { sheets: ['saw', 'puff', 'coin'], f: [0, 1, 2, 3] },
   one: { sheets: ['bubble', 'tear', 'helmetBit', 'plus', 'heart', 'dust', 'riotShield'], f: [0] },
   drum: { sheets: ['drum'], lit: [0, 1] },
@@ -556,6 +593,7 @@ export function slotPos(q, i, R, qx) {
   const side = 0.55 * R + 0.4;
   if (i === 0) return { x: qx - side, z: back };
   if (i === 1) return { x: qx + side, z: back };
+  if (i === 3) return { x: qx + side, z: back - 0.75 };   // 넷째 자리(무한모드 유물 — 화염병이 있는 판에서만 찬다): 셋째의 오른쪽
   return { x: qx - side, z: back - 0.75 };
 }
 export const heroZ = (q, R) => q.z - R - 0.7;
@@ -570,7 +608,7 @@ export function createRenderer(cvs) {
   const ctx = cvs.getContext('2d', { alpha: false });
   const view = makeView();
   const screen = { w: 0, h: 0, col: 0 };
-  const atlas = createAtlas();
+  const atlas = createAtlas({ groupOf: (n) => BIOME_GROUP.get(n) || '' });   // 지역 시트는 지역마다 제 페이지에(오래 안 간 지역을 통째로 비운다)
   const font = createFont(atlas);
   const ground = createGround();
   let BW = 0, BH = 0, VW = 0, VH = 0, K = 1, dpr = 1, cssPer = 1, cssW = 0, cssH = 0;
@@ -612,14 +650,21 @@ export function createRenderer(cvs) {
   ensureJua();
   /* 지역 시트(좀비 옷·보스·길가 소품)는 그 지역에 가기 전에 쉬는 틈에 굽는다(부팅 때 여섯 보스를 다 굽지 않게 — 보스 하나 ≈ 0.75M px).
      부를 곳: 시작(이어 할 레벨), 레벨 카드(prepareRun), 이긴 결과 화면(다음 레벨). 한 지역씩 차례로(두 굽기가 한 틈을 나눠 먹지 않게).
-     그리는 쪽은 아직 없으면 기본 시트로 그리거나(좀비·보스) 비워 둔다(소품) — 그리는 중에는 굽지 않는다(lateBakes = 0) */
+     그리는 쪽은 아직 없으면 기본 시트로 그리거나(좀비·보스) 비워 둔다(소품) — 그리는 중에는 굽지 않는다(lateBakes = 0).
+     오래 안 간 지역 비우기(무한모드는 구간마다 지역이 바뀌어 30구간이면 여섯 지역을 다섯 번 돈다): 지역 그림은 BIOME_KEEP개만 들고, 새 지역을 굽기 직전에
+     가장 오래 안 쓴 지역(지금 그리는 지역은 빼고)을 통째로 비운다(createBiomeCache — 페이지 ≤ 공용 3장 + BIOME_KEEP장, 예전에는 다 돌면 8장).
+     셋: 지금 지역 + 미리 굽는 다음 지역 + 하나 더(이어하기가 다음·지금 지역을 차례로 부를 때 아직 앞 판 지역을 그리고 있어도 다음 지역이 밀려나지 않게) */
+  const BIOME_KEEP = 3;
+  const biomeCache = createBiomeCache(atlas, BIOME_KEEP);
   const prepped = new Map();
-  let prepChain = ready;
+  let prepChain = ready, touchedBid = '';
   function prepBiome(bid) {
+    biomeCache.touch(bid);
     let p = prepped.get(bid);
     if (!p) {
       p = prepChain = prepChain.then(() => new Promise((res) => {
         const todo = biomeSheets(bid).filter((n) => !atlas.has(n));
+        if (todo.some((n) => BIOME_GROUP.get(n) === bid)) for (const g of biomeCache.room(bid, curBid)) prepped.delete(g);
         if (!todo.length) res(true); else atlas.bakeIdle(todo, () => res(true));
       }));
       prepped.set(bid, p);
@@ -633,11 +678,14 @@ export function createRenderer(cvs) {
   let shownN = 0, countPop = 0, countTint = 0, lastN = -1, pillA = 1;
   let lastS = null, lastT = -1, stillFor = 0;
   let hurtAt = -9, bossImpactT = -9, roarT = -9, bossIntroT = -9, bossDeath = null, enrageT = -9;
+  let heartAt = -9;   // 불굴의 심장(유물)이 되살린 시각 — 가장자리 금빛 번짐
   let petT = -9;       // 펫 효과가 터진 때(core 'pet' 이벤트)
   let surgeT = -9;   // 몰이 알림(core 'surge' 이벤트): 화면 양옆에서 안쪽을 가리키는 붉은 화살표가 잠깐 깜박인다
   let stompT = -9;     // 보스 짓밟기(길 전체 땅 흔들림 표시)
   let hitboxOn = false; // 충돌 크기 보기(?hitbox=1, __squad.hitbox)
   let castT = -9, castId = '', castRun = false, castArena = false, healT = -9, rocketT = -9, snipeT = -9, readyT = -9;
+  let flameT = -9;     // 화염병이 병을 던진 때(core 'flame' 이벤트 — 던지기 자세)
+  const fireTileBuf = [];   // 불 지대 바닥 타일(fireTiles, 재사용)
   let healSum = 0, healShown = -9, groundMs = 0, putMs = 0, drawMs = 0, hurtSeed = 0;
   let cut = null;        // 컷인 { t, id }
   let bossCut = null;    // 보스 등장 띠 { t }
@@ -798,8 +846,8 @@ export function createRenderer(cvs) {
     for (const r of rings) r.on = false;
     trauma = 0; flashA = 0; camX = 0; units.length = 0; fading.length = 0; fComp = null; fArr = null; fGeo = null; fN = -1; formS = null; pendingLoss = 0; lastN = -1; countTint = 0; countPop = 0; shownN = 0; pillA = 1;
     dolly = 0; layout();   // 보스전 렌즈를 되돌린다(R1)
-    hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9; surgeT = -9; stompT = -9;
-    castT = -9; castRun = false; castArena = false; healT = -9; rocketT = -9; snipeT = -9; readyT = -9; healSum = 0; healShown = -9;
+    hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9; surgeT = -9; stompT = -9; heartAt = -9;
+    castT = -9; castRun = false; castArena = false; healT = -9; rocketT = -9; snipeT = -9; readyT = -9; healSum = 0; healShown = -9; flameT = -9;
     cut = null; bossCut = null; clearOverlay();
     lodScen.clear(); lodFoe.clear(); lodSaw.clear(); lodCage.clear(); lodBoss = undefined;
     flashFoe.clear(); flashBoss.clear(); hitSeen.clear(); tickAt.clear(); bruteStep.clear(); spSeen.clear(); pendingGet.length = 0;
@@ -966,6 +1014,10 @@ export function createRenderer(cvs) {
           } else if (e.by === 'rocket') {
             // 로켓: 위로 솟았다 떨어진다
             burst(e.x, big ? 1.2 : 0.7, e.z, big ? 16 : 9, kc, 2.2, 7.5, 0.85);
+          } else if (e.by === 'flame') {
+            // 불 지대(화염병): 그을린 재와 불씨가 낮게 흩어지고 연기 한 줄기가 오른다(튀어 나가지 않고 그 자리에서 타 버린다)
+            burst(e.x, big ? 0.9 : 0.5, e.z, big ? 12 : 7, FIRE_COL.ash, 1.4, 2.2, 0.7);
+            part(e.x, big ? 1.2 : 0.8, e.z, (Math.random() - 0.5) * 0.3, 0.9, 0, 0.8, '#9AA2B0', 1, -0.6, 'smoke');
           } else {
             burst(e.x, big ? 1.2 : 0.7, e.z, big ? 14 : 7, kc, big ? 3.5 : 2.5, 3);
             // 전차 포탄 몫: 총으로 잡은 자리에 작은 터짐(전차가 차지하는 병력 몫만큼)
@@ -1093,8 +1145,36 @@ export function createRenderer(cvs) {
           else if (e.fx === 'coin') burst(e.x, 2, e.z, 16, FX_COL.gold, 4, 4);
           else if (Math.random() < 0.5) fx('spark', q.x + (Math.random() - 0.5) * 2 * R, 1.3, q.z + R * 0.5, 0.09);
           break;
+        case 'relic': {
+          // 유물을 얻었다(대왕 보스 뒤): 보라·금빛 고리 둘과 위로 솟는 별, 유물 아이콘(글자는 DOM 알림 — 'card' 이벤트가 같은 틱에 온다)
+          const cx = e.x ?? q.x, cz = e.z ?? q.z;
+          ring(cx, cz, 0.3, R + 1.8, 0.6, RELIC_COL, { follow: 'sq', thick: 2 });
+          ring(cx, cz, 0.2, R + 0.9, 0.45, RELIC_GOLD, { follow: 'sq', thick: 2 });
+          for (let k = 0; k < 10; k++) part(cx + (Math.random() - 0.5) * 2 * R, 1 + Math.random(), cz, (Math.random() - 0.5) * 1.5, 2.5 + Math.random() * 2, q.vz || 0, 0.9, RELIC_GOLD, 1, 0, 'star');
+          burst(cx, 1.4, cz, 16, [RELIC_COL, '#D9C4FF', RELIC_GOLD], 3, 4, 0.7);
+          if (ICONS['relic_' + e.id]) float(cx, 2.7, cz, '', '#FFFFFF', { icon: 'relic_' + e.id, life: 1.4, vz: q.vz });
+          screenFlash(0.16, '170,130,255');
+          break;
+        }
+        case 'relicUse': {
+          // 불굴의 심장(유물)이 전멸을 무효로 했다 — 판이 끝날 뻔한 순간이라 가장 크게: 진홍 번쩍임·흔들림, 분대를 따라 번지는 고리 셋,
+          // 솟는 하트와 '+n'(심장 아이콘 — 되살아난 병력). 글자 풀이는 DOM 알림(main.js), HUD의 심장은 그 뒤 흐려진다
+          const cx = e.x ?? q.x, cz = e.z ?? q.z;
+          heartAt = time;
+          screenFlash(0.5, '255,96,120');
+          shake(0.7);
+          ring(cx, cz, 0.2, 5, 0.75, '#E8384F', { follow: 'sq', thick: 2 });
+          ring(cx, cz, 0.4, 3.2, 0.6, RELIC_GOLD, { follow: 'sq', thick: 2 });
+          ring(cx, cz, 0.1, 1.8, 0.45, '#FFFFFF', { follow: 'sq' });
+          for (let k = 0; k < 14; k++) part(cx + (Math.random() - 0.5) * 3, 0.6 + Math.random(), cz, (Math.random() - 0.5) * 3, 3 + Math.random() * 3, q.vz || 0, 1.2, '#FF6B7F', 1, 1.5, 'heart');
+          burst(cx, 1.2, cz, 28, ['#E8384F', RELIC_GOLD, '#FFFFFF'], 5, 5, 0.85);
+          float(cx, 2.9, cz, '+' + e.n, '#DDF3FF', { icon: 'relic_heart', out: PANEL.good.out, life: 1.9, scale: 2, vz: q.vz });
+          break;
+        }
         case 'card': {
-          // 무한모드 보스 뒤 3택 1에서 고른 카드: 분대 발밑에 금빛 고리와 작은 반짝임(글자는 DOM 알림). 특수병은 spGet·spUp이 숫자를 띄운다
+          // 무한모드 보스 뒤 3택 1에서 고른 카드: 분대 발밑에 금빛 고리와 작은 반짝임(글자는 DOM 알림). 특수병은 spGet·spUp이 숫자를 띄운다.
+          // 유물 카드는 'relic' 이벤트가 그린다
+          if (e.k === 'relic') break;
           const cx = e.x ?? q.x, cz = e.z ?? q.z;
           const col = e.k === 'ammo' || e.k === 'fx' ? AMMO_COL[e.a] || '#FFFFFF' : e.k === 'men' ? '#6CC0FF' : '#FFD84A';
           ring(cx, cz, 0.3, R + 1.2, 0.45, col, { follow: 'sq', thick: 2 });
@@ -1193,6 +1273,15 @@ export function createRenderer(cvs) {
           const p = i >= 0 ? slotPos(q, i, R, q.x) : { x: q.x, z: q.z };
           if (i >= 0 && (sp[i].lv || 1) >= 2) for (let k = 0; k < 5; k++) part(p.x + (Math.random() - 0.5) * 0.3, 0.9, p.z - 0.3, (Math.random() - 0.5) * 1.2, 0.5 + Math.random(), -2 - Math.random() * 2, 0.3, k & 1 ? '#FFB347' : '#FF7A3C', 1, 0);
           for (let k = 0; k < 6; k++) part(p.x + (Math.random() - 0.5) * 0.4, 0.9, p.z - 0.3, (Math.random() - 0.5) * 1.5, 0.8 + Math.random(), -1.5 - Math.random() * 1.5, 0.5, '#C9CED6', 1, 0, 'smoke');
+          break;
+        }
+        case 'flame': {
+          // 화염병이 불 지대를 깔았다: 화염병 자리에서 병이 포물선으로 날아가(FIRE_IGNITE초) 깨지며 불이 번진다. 지대는 core가 이미 놓았다 —
+          // 바닥 네모(타는 범위)는 이 틱부터 그리고(drawFire), 병이 닿을 때까지 불꽃이 차오른다
+          flameT = time;
+          const i = sp.findIndex((m) => m.k === 'flame');
+          const p = i >= 0 ? slotPos(q, i, R, q.x) : { x: e.x0, z: e.z0 };
+          fx('bottle', p.x + 0.3, 1.5, p.z, FIRE_IGNITE, { tx: e.x, tz: e.z });
           break;
         }
         case 'boom': {
@@ -1802,6 +1891,34 @@ export function createRenderer(cvs) {
     ctx.fillStyle = OUT; ctx.fillRect(Math.round(cx) - 2, y + ic.h + 2, 5, 1); ctx.fillRect(Math.round(cx) - 1, y + ic.h + 3, 3, 1);
     ctx.fillStyle = col; ctx.fillRect(Math.round(cx) - 1, y + ic.h + 2, 3, 1); ctx.fillRect(Math.round(cx), y + ic.h + 3, 1, 1);
   }
+  /* 나침반(유물 — 무한모드 3단계): 갈림길 위험한 쪽 보상 상자의 내용물. 갈림길 알림(코 45m 앞 — core.forkPeek가 상자를 돌려주는 동안)부터
+     상자 자리 위 PEEK_H m에 보라 테두리 표시로 떠 있다 — 벽에 가려도 보이게 모든 소품 다음에 그린다. 무엇을 그리는지는 모듈의 peekOf.
+     분대가 상자 PEEK_NEAR m 안에 오면 끈다(벽 앞 — 그때는 상자 자신의 아이콘·숫자가 보인다) */
+  const PEEK_H = 2.6, PEEK_NEAR = 9;
+  const peek = { icon: '', text: '', fill: '', out: '' };
+  function drawPeeks(s) {
+    for (const d of s.divs) {
+      const p = forkPeek(s, d);
+      if (!p || p.z - sq.z < PEEK_NEAR || p.z > view.camZ + view.zFar) continue;
+      const cx = (p.x0 + p.x1) / 2;
+      if (!project(view, cx, PEEK_H, p.z)) continue;
+      const k = peekOf(s, p, peek);
+      const ic = atlas.icon(k.icon);
+      const tw = k.text ? font.measure(k.text, 'small') : 0;
+      const w = ic.w + (tw ? tw + 1 : 0), h = ic.h;
+      const bob = ((time * 3 + 2) | 0) & 1;
+      const x = Math.round(P.x - w / 2), y = Math.round(P.y - h - 4 - bob);
+      ctx.fillStyle = OUT; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+      ctx.fillStyle = RELIC_COL; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+      ctx.fillStyle = '#2B1D2E'; ctx.fillRect(x, y, w, h);
+      atlas.blit(ctx, ic, x, y);
+      if (tw) font.draw(ctx, k.text, x + ic.w + 1 + tw / 2, y + h / 2, { size: 'small', fill: k.fill, out: k.out });
+      // 아래로 뾰족한 꼬리(어느 상자인지 — 열쇠 표시와 같은 꼴, 보라)
+      const mx = Math.round(P.x);
+      ctx.fillStyle = OUT; ctx.fillRect(mx - 2, y + h + 2, 5, 1); ctx.fillRect(mx - 1, y + h + 3, 3, 1);
+      ctx.fillStyle = RELIC_COL; ctx.fillRect(mx - 1, y + h + 2, 3, 1); ctx.fillRect(mx, y + h + 3, 1, 1);
+    }
+  }
   /* 열쇠 상자 표시(prop.key): 체력 숫자 위에 금테 두른 열쇠가 살짝 통통 — 멀리서도 '이건 꼭 깨야 한다'가 보이게.
      돌려주는 값: 표시 맨 위(그 위에 탄종 상자 내용물을 얹는다) */
   function keyMark(cx, yTop, w) {
@@ -2096,7 +2213,9 @@ export function createRenderer(cvs) {
       const sx = Math.round(pxs), sy = Math.round(pys);
       for (let i = 0; i < 3; i++) ctx.fillRect(sx - 5 + i * 4 + ((f.seed + i) & 1), sy - 22 - ((time * 40 + i * 5) % 6 | 0), 1, 3);
     }
-    let white = flashFoe.on(f.id, f.hitT, s.t, time, reduce);
+    // 불 지대 안(화염병): 틱마다 맞으니(core hitFoe) 흰 번쩍임 대신 몸에 일렁이는 불꽃 — 아래(rr 뒤)에서 그린다
+    const burning = !!s.flames && inFireAt(s, f.x, f.z);
+    let white = burning ? false : flashFoe.on(f.id, f.hitT, s.t, time, reduce);
     // 방패 정예: 정면 총알이 방패에 막히는 판(shieldMul < 1 — 관통 효과가 없다)이면 번쩍임은 몸 대신 방패에(막힌 것이 보이게)
     const shieldUp = f.elite === 'shield' && shieldMul(s) < 1;
     const shieldWhite = shieldUp && white;
@@ -2111,6 +2230,12 @@ export function createRenderer(cvs) {
       ctx.fillStyle = ec.ring; ellRing(pxs, pys, Math.max(4, f.r * 1.7 * ps * pu), Math.max(2, f.r * 0.62 * ps * pu), 1);
     }
     const rr = atlas.draw(ctx, sheet, fr, pxs, pys, st, white ? 'white' : ALT3[f.seed % 3]);
+    if (burning && st < 2) {
+      // 타는 좀비: 몸 아래쪽에 불꽃 혀 두 개가 엇갈려 일렁인다(가까운 단계만 — 먼 것은 바닥 불꽃으로 충분하다)
+      const ph = ((time * 8 + f.seed) | 0) & 1, hh = Math.round(rr.h * 0.35);
+      atlas.draw(ctx, 'flick', ph, pxs - 2, pys - hh + 2);
+      atlas.draw(ctx, 'flick', 1 - ph, pxs + 3, pys - hh + 4);
+    }
     if (f.elite === 'shield') {
       // 방패: 몸 앞(카메라 쪽)에 든 철판 — 눈·볼은 방패 위로 보인다. 걸음에 맞춰 몸과 함께 1px 흔들리고(shieldAt), 막힌 총알은 방패에서 하얀 불똥으로 튄다
       const at = shieldAt(fr, STEPS3[st]);
@@ -2519,6 +2644,7 @@ export function createRenderer(cvs) {
     let fr = moving ? FR.special.walk[((time * 10 + i * 0.5) | 0) & 3] : FR.special.idle[((time * 2 + i) | 0) & 1];
     let variant = '';
     if (m.k === 'rocket') { const t = time - rocketT; if (t < 0.36) fr = t < 0.12 ? FR.rocket.fire[0] : t < 0.24 ? FR.rocket.fire[1] : FR.special.walk[0]; }
+    if (m.k === 'flame') { const t = time - flameT; if (t < 0.3) fr = t < 0.1 ? FR.flame.throw[0] : t < 0.22 ? FR.flame.throw[1] : FR.special.walk[0]; }
     if (m.k === 'medic' && time - healT < 0.25) variant = 'glow';
     let py = P.y;
     if (won) py -= Math.round(Math.abs(Math.sin(time * 9 + i)) * 2);
@@ -2612,7 +2738,7 @@ export function createRenderer(cvs) {
     const tw = font.measure(text, 'big', 2);
     const w = tw + 8 + pop * 2, h = 20 + pop * 2;
     const x = Math.round(P.x - w / 2), y = Math.round(P.y - 20 - h / 2);
-    const tierN = clamp(q.tier | 0, 0, 3);
+    const tierN = clamp(q.tier | 0, 0, WTIER.length - 1);   // 과부하 코일(유물)이면 4칸
     const top = tierN ? y - 5 : y;
     // 게이트 앞에서는 35%로 흐리게, 고른 칸 숫자와 겹치면 아예 비켜 준다(반투명 상자가 숫자 위에 얼룩처럼 남지 않게, V7). 부드럽게 바뀐다
     let target = 1;
@@ -2637,7 +2763,7 @@ export function createRenderer(cvs) {
       const x0 = Math.round(P.x) - ((tierN * 6 - 1) >> 1);
       for (let i = 0; i < tierN; i++) {
         ctx.fillStyle = OUT; ctx.fillRect(x0 + i * 6, y - 5, 5, 4);
-        ctx.fillStyle = WTIER[Math.min(3, i + 1)];
+        ctx.fillStyle = WTIER[Math.min(WTIER.length - 1, i + 1)];
         ctx.fillRect(x0 + 1 + i * 6, y - 4, 3, 2);
       }
     }
@@ -2664,6 +2790,7 @@ export function createRenderer(cvs) {
     const glint = !low && fl >= 30 && (f60 & 2);
     const lenK = tier >= 1 ? 1.3 : 1;
     const after = !low && tier >= 3;
+    const crackle = !low && tier >= 4;   // 4단계(과부하 코일): 총알 옆에 1px 전기 불꽃이 좌우로 튄다(총알마다 다른 박자 — 몸 모양·자리는 그대로)
     const plane = s.boss && s.boss.hp > 0 ? s.boss.z - 1 : Infinity;
     const ammo = shotAmmo(s), ac = AMMO_COL[ammo];
     for (const b of s.bullets) {
@@ -2692,6 +2819,7 @@ export function createRenderer(cvs) {
         }
         if (b.c) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx - 1, hy, 3, 1); ctx.fillRect(hx, hy - 1, 1, 3); }
         for (let k = 0; k < embers; k++) { ctx.fillStyle = EMBER[k]; ctx.fillRect(hx, hy + len + 1 + 2 * k + ((f60 + k) & 1), 1, 1); }
+        if (crackle) spark4(hx, hy, len, 1, b.x);
         continue;
       }
       const u = (Math.abs(b.x) * 37.73) % 1;
@@ -2721,7 +2849,15 @@ export function createRenderer(cvs) {
       if (b.c) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx - 1, hy, 3, 1); ctx.fillRect(hx, hy - 1, 1, 3); }
       else if (glint) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx - 1, hy, 3, 1); }
       for (let k = 0; k < embers; k++) { ctx.fillStyle = EMBER[k]; ctx.fillRect(hx, hy + len + 1 + 2 * k + ((f60 + k) & 1), 1, 1); }
+      if (crackle) spark4(hx, hy, len, shape === 1 ? Math.max(2, wide) : wide, b.x);
     }
+  }
+  /* 4단계 총알의 전기 불꽃: 몸 옆 한 칸에 1px — 박자(f60)와 총알 x로 왼쪽·오른쪽·몸 중간 높이를 바꾼다(그리기만, 맞는 자리는 그대로) */
+  function spark4(hx, hy, len, w, bx) {
+    const ph = (f60 + ((Math.abs(bx) * 13.7) | 0)) & 3;
+    if (ph === 3) return;
+    ctx.fillStyle = SPARK4;
+    ctx.fillRect(ph & 1 ? hx + w : hx - 1, hy + ((len * (ph + 1)) >> 2), 1, 1);
   }
   function drawSpits(s, lag) {
     for (const sp of s.spits) {
@@ -2796,6 +2932,46 @@ export function createRenderer(cvs) {
     }
   }
 
+  /* 불 지대 하나(화염병): 바닥 주황 타일 바둑판(fireTiles — 그린 네모 = 타는 네모) + 밝은 테두리 + 피어오르는 불꽃 혀(파편 풀을 같이 쓴다 — 'flick').
+     놓인 뒤 FIRE_IGNITE초 동안 던진 병이 날아가며 불이 차오르고, 남은 0.5초 동안 옅어진다. 테두리는 처음부터(타는 범위는 놓인 틱부터다) */
+  function drawFire(zn) {
+    const T = zn.T || 1, age = T - zn.t;
+    const fade = clamp(zn.t / 0.5, 0, 1), ign = clamp(age / FIRE_IGNITE, 0, 1);
+    const x0 = zn.x - zn.w / 2, x1 = zn.x + zn.w / 2, z0 = zn.z - zn.len / 2, z1 = zn.z + zn.len / 2;
+    if (z1 < view.camZ + 1.6) return;
+    ctx.fillStyle = FIRE_COL.deep;
+    ctx.globalAlpha = (0.28 + 0.27 * ign) * fade;
+    groundQuad(x0, x1, z0, z1, 0.015);
+    // 바둑판: 칸마다 두 주황이 박자(6Hz)에 맞춰 번갈아 밝아진다(칸 자리·지대 id로 엇갈려 — 한꺼번에 깜빡이지 않게)
+    const ph = (time * 6) | 0;
+    ctx.globalAlpha = (0.3 + 0.45 * ign) * fade;
+    for (const t of fireTiles(zn, fireTileBuf)) {
+      if (((t[4] + ph + zn.id) & 1) === 0) continue;
+      ctx.fillStyle = ((hashInt(zn.id * 131 + ((t[0] * 4) | 0) * 17 + ((t[2] * 4) | 0) + ph) & 3) === 0) ? FIRE_COL.hi : FIRE_COL.lo;
+      groundQuad(t[0] + 0.04, t[1] - 0.04, t[2] + 0.04, t[3] - 0.04, 0.02);
+    }
+    ctx.globalAlpha = fade;
+    // 테두리 = 타는 끝(좀비 가운데가 이 안이면 탄다). 뭉치의 돌격 나팔로 넓어진 지대(놓을 때의 폭이 그 레벨 폭보다 넓다)는 금빛
+    ctx.fillStyle = zn.w > unitVal('flame', 'w', zn.lv || 1) + 1e-6 ? FIRE_COL.horn : FIRE_COL.edge;
+    const e = 0.05;
+    groundQuad(x0, x1, z0, z0 + e * 2, 0.025); groundQuad(x0, x1, z1 - e * 2, z1, 0.025);
+    groundQuad(x0, x0 + e * 2, z0, z1, 0.025); groundQuad(x1 - e * 2, x1, z0, z1, 0.025);
+    ctx.globalAlpha = 1;
+    // 불꽃 혀: 넓이에 비례해 초당 몇 개(박자 beats — 주사율과 상관없이), 다 차오른 뒤부터, 꺼져 갈수록 적게
+    if (ign < 1 || reduce) return;
+    const n = beats(Math.round(2.2 * zn.w * zn.len * (0.4 + 0.6 * fade)));
+    for (let k = 0; k < n; k++) {
+      const px = x0 + 0.15 + Math.random() * (zn.w - 0.3), pz = z0 + 0.15 + Math.random() * (zn.len - 0.3);
+      part(px, 0.15, pz, (Math.random() - 0.5) * 0.3, 0.9 + Math.random() * 0.8, 0, 0.45 + Math.random() * 0.3, FIRE_COL.lo, 1, -0.8, 'flick');
+      if (Math.random() < 0.3) part(px, 0.3, pz, (Math.random() - 0.5) * 0.8, 1.8 + Math.random() * 1.5, (Math.random() - 0.5) * 0.4, 0.5, FIRE_COL.ember[k % 3], 1, -0.4);
+    }
+  }
+  /* 이 좀비가 지금 불 지대 안에 있나(core의 타는 규칙과 같다 — 가운데가 네모 안): 타는 동안은 흰 번쩍임 대신 몸에 불꽃 */
+  function inFireAt(s, x, z) {
+    if (s.flames) for (const zn of s.flames) if (Math.abs(x - zn.x) < zn.w / 2 && Math.abs(z - zn.z) < zn.len / 2) return true;
+    return false;
+  }
+
   /* ---------- 바닥 표시(조준 띠·그림자·독침 예고·내려찍기 구역·고리) ---------- */
   function drawDecals(s, bio, qx, lag) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
@@ -2809,6 +2985,8 @@ export function createRenderer(cvs) {
       ctx.fillStyle = bio.shadow;
       squadShadow(qx, q.z, R + 0.12, SQUAD_DEPTH * R + 0.12);
     }
+    // 불 지대(화염병 — 무한모드 4단계): 독침 고리·웅덩이·내려찍기 띠보다 아래층(피해야 할 예고가 불에 가리지 않게)
+    if (s.flames) for (const zn of s.flames) drawFire(zn);
     for (const sp of s.spits) {
       if (!project(view, sp.x, 0.02, sp.z)) continue;
       const k = clamp(1 - (sp.t + lag) / (sp.T || 1), 0, 1);
@@ -3047,9 +3225,21 @@ export function createRenderer(cvs) {
           atlas.blit(ctx, r, Math.round(P.x - r.w / 2), Math.round(P.y - r.h / 2));
           break;
         }
+        case 'bottle': {
+          // 던진 병(화염병): 출발(f.x, f.z) → 지대 가운데(f.tx, f.tz), 날며 돈다. 닿으면 한 번 깨진다(불꽃·유리 조각)
+          const x = f.x + (f.tx - f.x) * u, z = f.z + (f.tz - f.z) * u, y = f.y * (1 - u) + 4.5 * u * (1 - u);
+          if (u > 0.9 && !f.n) {
+            f.n = 1;
+            burst(f.tx, 0.4, f.tz, 12, FIRE_COL.ember, 3, 3.5, 0.5);
+            burst(f.tx, 0.4, f.tz, 4, GLASS_COL, 2.5, 2.5, 0.4);
+          }
+          if (!project(view, x, y, z)) break;
+          atlas.draw(ctx, 'bottle', ((f.t * 14) | 0) & 1, P.x, P.y + 3);
+          break;
+        }
         case 'lunge': {
           if (!project(view, f.x, 0, f.z - 0.3)) break;
-          const sh = f.sheet;
+          const sh = atlas.has(f.sheet) ? f.sheet : f.foe;   // 지역 그림을 아틀라스에서 비웠으면(오래 안 간 지역) 기본 — 그리는 중 굽기 0
           const fr = f.foe === 'brute' ? FR.brute.lunge[0] : FR.foe.lunge[u > 0.5 ? 1 : 0];
           atlas.draw(ctx, sh, fr, P.x, P.y, 0, f.alt || '');
           if (f.shield) { const at = shieldAt(fr); atlas.draw(ctx, 'riotShield', 0, P.x + at.dx, P.y + at.dy); }   // 방패 정예가 물었다
@@ -3105,7 +3295,7 @@ export function createRenderer(cvs) {
       if (p.y < 0) { p.y = 0; p.vy *= -0.3; p.vx *= 0.6; p.vz *= 0.6; }
       if (!project(view, p.x, p.y, p.z)) continue;
       if (p.spr) {
-        const fr = p.spr === 'coin' ? ((time * 10) | 0) & 3 : p.spr === 'smoke' ? (p.life < p.max * 0.5 ? 1 : 0) : 0;
+        const fr = p.spr === 'coin' ? ((time * 10) | 0) & 3 : p.spr === 'smoke' ? (p.life < p.max * 0.5 ? 1 : 0) : p.spr === 'flick' ? (p.life > p.max * 0.6 ? 0 : p.life > p.max * 0.3 ? 1 : 2) : 0;
         if (p.life < p.max * 0.25 && (f60 & 1)) continue;
         const r = atlas.get(p.spr, fr);
         atlas.blit(ctx, r, Math.round(P.x - r.w / 2), Math.round(P.y - r.h / 2));
@@ -3367,6 +3557,7 @@ export function createRenderer(cvs) {
     selLbl.on = false;
     const q = s.squad;
     curBid = biomeOf(s.L || 1).id;
+    if (curBid !== touchedBid) { touchedBid = curBid; biomeCache.touch(curBid); }   // 그리는 지역 = 가장 최근에 쓴 지역(비우기 차례)
     if ((s.L || 1) !== tagL) { tagL = s.L || 1; bossTag = levelTag(tagL).tag; idle(renderBossTitle); }
     const bio = BIOME[curBid] || BIOME.desert;
     alpha = clamp(alpha || 0, 0, 1);
@@ -3473,6 +3664,7 @@ export function createRenderer(cvs) {
     if (hitSeen.size > 300) hitSeen.clear();
     if (bruteStep.size > 300) bruteStep.clear();
     if (pendingGet.length && time - pendingGet[0].t > 2) pendingGet.shift();
+    if (s.divs) drawPeeks(s);   // 나침반(유물): 벽 위에 — 모든 소품 다음
 
     drawSpits(s, lag);
     drawRockets(s, lag, qx, R);
@@ -3510,7 +3702,20 @@ export function createRenderer(cvs) {
       }
       ctx.globalAlpha = 1;
     }
-    const crisis = q.n >= 8 && q.peak > 0 && q.n < 0.4 * q.peak && time - hurtAt < 2.5 && (s.phase === 'run' || s.phase === 'arena');
+    const revived = time - heartAt < HEART_GLOW;
+    if (revived) {
+      // 불굴의 심장(유물)이 막 되살렸다: 가장자리가 금빛·진홍 띠를 번갈아 네 겹으로 번졌다가 사라진다(이 동안은 위기 붉은 맥동 대신 — 살아났다는 신호가 먼저)
+      const W = Math.floor(VW), Hh = Math.floor(VH), u = (time - heartAt) / HEART_GLOW;
+      for (let i = 0; i < 4; i++) {
+        const m = i * 3;
+        ctx.fillStyle = i & 1 ? '#E8384F' : RELIC_GOLD;
+        ctx.globalAlpha = (0.75 - i * 0.14) * (1 - u * u);
+        ctx.fillRect(m, m, W - 2 * m, 3); ctx.fillRect(m, Hh - m - 3, W - 2 * m, 3);
+        ctx.fillRect(m, m + 3, 3, Hh - 2 * m - 6); ctx.fillRect(W - m - 3, m + 3, 3, Hh - 2 * m - 6);
+      }
+      ctx.globalAlpha = 1;
+    }
+    const crisis = !revived && q.n >= 8 && q.peak > 0 && q.n < 0.4 * q.peak && time - hurtAt < 2.5 && (s.phase === 'run' || s.phase === 'arena');
     if (crisis) {
       // 위기: 방금 맞았고 병력이 이 판 최고치의 40% 아래 — 가장자리가 붉게 맥동한다(숫자를 안 봐도 위험을 알게)
       const W = Math.floor(VW), Hh = Math.floor(VH);
@@ -3567,7 +3772,7 @@ export function createRenderer(cvs) {
       return {
         BW, BH, K, dpr, cssPer, quality, frozen: frozenSet || stillFor > 0.25, reduce, pages: atlas.pages.length,
         groundMs: +groundMs.toFixed(2), putMs: +putMs.toFixed(2), drawMs: +drawMs.toFixed(2),
-        lateBakes: atlas.lateBakes, sealed: atlas.sealed, parts: nLive, hitbox: hitboxOn,
+        lateBakes: atlas.lateBakes, sealed: atlas.sealed, biomes: atlas.groups(), parts: nLive, hitbox: hitboxOn,
         squad: { units: units.length, fading: fading.length, comp: fComp ? fComp.join(',') : '', rows: fArr ? fArr.sizes.join('.') : '', plans: formPlans },
       };
     },
