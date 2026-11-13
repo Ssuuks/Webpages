@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { SHEETS, PAL, BIOME, BIOME_GROUND_KEYS, SEMANTIC, ANIM, UNIT_ART, CAPTIVE_ART, HERO_ART, ICONS, ICON_PAL_EXPORT, FONT, OUT, WORLD_H, BOSS_POSE_NAMES } from '../assets/pix/art.js';
 import { frameRaster, outline, downscale, deltaE, Raster } from '../assets/pix/raster.js';
 import { pickStep } from '../assets/pix/atlas.js';
-import { UNITS, HEROES, BIOMES, biomeOf } from '../assets/roster.js';
+import { UNITS, HEROES, BIOMES, biomeOf, RELICS, RELIC_IDS } from '../assets/roster.js';
 
 const palOf = (p) => (typeof p === 'string' ? PAL[p] : p);
 const MAGENTA = '#FF00FF';
@@ -774,11 +774,16 @@ test('충돌 크기: 그린 무리의 끝 = 분대 반지름 R(옆)·SQUAD_DEPTH
     }
   }
   // 특수병·영웅은 무리 뒤(맞는 몸 밖, 옆으로는 분대 폭 안 — 옆에서 오는 좀비가 먼저 닿지 않게)
+  // 넷째 자리(무한모드 유물 — RELICS.fourth.slots)까지: 자리끼리 겹치지 않는다
   for (const n of [12, 60, 300]) {
     const R = Core.radius(n), q = { z: 0 };
-    for (let i = 0; i < 3; i++) {
+    const seen = new Set();
+    for (let i = 0; i < RELICS.fourth.slots; i++) {
       const sl = slotPos(q, i, R, 0);
       assert.ok(sl.z < -Core.SQUAD_DEPTH * R && Math.abs(sl.x) <= R, `n=${n} 특수병 ${i} 자리 ${JSON.stringify(sl)}`);
+      const k = sl.x.toFixed(3) + ',' + sl.z.toFixed(3);
+      assert.ok(!seen.has(k), `n=${n} 특수병 ${i} 자리가 앞 자리와 겹친다`);
+      seen.add(k);
     }
     assert.ok(heroZ(q, R) < slotPos(q, 0, R, 0).z);
   }
@@ -893,4 +898,421 @@ test('충돌 크기: 물체마다 맞는 폭 ≤ 그린 폭(좀비 접촉·톱�
   assert.match(src, /function boxFaces\(p, H, depth = 0\.35\) \{\s*const z0 = p\.z - depth, z1 = p\.z \+ depth;\s*if \(!project\(view, p\.x0, H, z1\)\)/, '벽·상자는 x0~x1로 그린다');
   // 충돌 크기 보기는 시뮬레이션의 hitShapes만 그린다
   assert.match(src, /const sh = hitShapes\(s\);/);
+});
+
+/* 무한모드 2단계(탄 효과): 카드·탄종 상자 위·HUD 칩의 총알 아이콘과, 효과를 얻은 판의 총알 모양 */
+test('탄 효과 아이콘: 탄종마다 fx_<id>(9×9 정사각), 가장 많은 색이 그 탄종 색, 모양이 서로 다르다 · 상자 위 표시·총알 모양', async () => {
+  const fs = await import('node:fs');
+  const { AMMO, AMMO_IDS } = await import('../assets/roster.js');
+  const { shotAmmo } = await import('../assets/render.js');
+  const masks = [];
+  for (const id of AMMO_IDS) {
+    const rows = ICONS['fx_' + id];
+    assert.ok(rows, `아이콘 fx_${id}`);
+    assert.equal(rows.length, 9, `fx_${id} 높이 9`);
+    assert.equal(rows[0].length, 9, `fx_${id} 폭 9(DOM 칸이 정사각이라 늘어나지 않게)`);
+    const R = frameRaster(rows, ICON_PAL_EXPORT);
+    const n = new Map();
+    for (const c of R.a) if (c) n.set(c, (n.get(c) | 0) + 1);
+    const top = [...n.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    assert.ok(deltaE(top, AMMO[id].color) < 8, `fx_${id}: 가장 많은 색 ${top}이 탄종 색 ${AMMO[id].color}과 같은 계열`);
+    masks.push(R.a.map((c) => (c ? 1 : 0)).join(''));
+  }
+  assert.equal(new Set(masks).size, masks.length, '탄 효과 아이콘 실루엣이 서로 다르다');
+  // 렌더러: 탄종 상자({ type: 'fx', a })는 무기 아이콘 대신 그 효과의 총알, 상자 위에 내용물 표시(열쇠 상자면 열쇠 위)
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  assert.match(src, /t === 'fx' \? \(fxOk && AMMO_COL\[r\.a\] \? 'fx_' \+ r\.a : 'men'\)/, '상자 몸 아이콘이 탄 효과 총알(얻을 수 없게 됐으면 병사 — core도 병사를 준다)');
+  assert.match(src, /const fxOk = !!\(p\.reward && p\.reward\.type === 'fx' && fxCan\(s, p\.reward\.a\)\)/, '얻을 수 있는지는 core.fxCan으로');
+  assert.match(src, /if \(fxOk\) fxMark\(mx, yTop, w, p\.reward\.a\)/, '상자 위에 내용물 표시');
+  // 떠오르는 'Lv2'는 미리 구운 글자 짝(특수병 레벨 업과 같은 색)만 쓴다 — 그리는 중 굽기 0
+  for (const m of src.matchAll(/'Lv' \+ e\.(?:lv|to), '(#[0-9A-F]+)', \{[^}]*out: PANEL\.unit\.out/g)) assert.ok(GLYPH_PAIRS.some(([f, o]) => f === m[1] && o === GLYPH_PAIRS[4][1]), m[0]);
+  // 총알 모양: 출격 탄종이 먼저(대신 쪽까지 진 탄), 없으면 가장 높은 탄 효과(같으면 탄종 순서), 효과가 없는 판(1단계·캠페인)은 예전 그대로
+  assert.equal(shotAmmo({ ammo: 'frost', endless: { fx: { frost: 2, pierce: 3 } } }), 'frost');
+  assert.equal(shotAmmo({ endless: { fx: { burst: 1, rapid: 2 } } }), 'rapid');
+  assert.equal(shotAmmo({ endless: { fx: { burst: 2, rapid: 2 } } }), 'burst');
+  assert.equal(shotAmmo({ endless: { unl: 1 } }), '');
+  assert.equal(shotAmmo({}), '');
+});
+
+/* 무한모드 2단계 장애물(단계 해금 기획서 4절): 폭발 드럼통·방패 정예의 방패 도트, 장갑문·폭발 반경의 그린 크기 = 맞는 크기, 충돌 크기 보기의 새 모양, 처음 보는 장애물 안내 */
+test('장애물 그림: 드럼통(빨강, 길가 통과 다르게, 총알 받는 폭 = 그린 폭)·방패(청록 테두리, 눈은 방패 위)·장갑문(벽보다 높고 두껍다)·폭발 반경·충돌 크기 보기', async () => {
+  const fs = await import('node:fs');
+  const { OBSTACLES } = await import('../assets/roster.js');
+  const R_ = await import('../assets/render.js');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  const top = (R) => { const n = new Map(); for (const c of R.a) if (c && c !== OUT) n.set(c, (n.get(c) | 0) + 1); return [...n.entries()].sort((a, b) => b[1] - a[1])[0][0]; };
+  // 드럼통: 두 장(보통·밝은 마름모)이 같은 격자, 가장 많은 색이 빨강(나쁨 색 계열) — 길가 소품 통(주황)·상자(나무)와 ΔE 20 이상
+  const dr = SHEETS.drum;
+  assert.equal(dr.frames.length, 2, '드럼통 두 장');
+  assert.deepEqual(dr.frames[1].map((r) => r.length), dr.frames[0].map((r) => r.length), '두 장의 격자가 같다(깜박여도 자리가 그대로)');
+  const drumTop = top(frameRaster(dr.frames[0], palOf(dr.pal)));
+  assert.ok(deltaE(drumTop, '#E8384F') < 8, `드럼통 몸 색 ${drumTop}은 빨강`);
+  const barrelTop = top(frameRaster(SHEETS.barrel.frames[0], palOf(SHEETS.barrel.pal)));
+  for (const c of [barrelTop, '#C98A4E']) assert.ok(deltaE(drumTop, c) >= 20, `드럼통 ${drumTop} vs ${c}: ΔE ${deltaE(drumTop, c).toFixed(1)}`);
+  // 총알 받는 폭(core OBST.drum.w — x0~x1의 반)은 쏘는 거리(6~25m, 축소 단계 포함)에서 그린 반폭 범위 안(좀비 검사와 같은 규칙)
+  const STEPS3 = [1, 0.75, 0.5];
+  const db = spriteBox('drum');
+  for (const [tag, w, h, dpr] of HB_VIEWS) {
+    const v = hbView(w, h, dpr, 0);
+    let st, lo = 9, hi = 0;
+    for (let dz = 25; dz >= 6; dz -= 0.25) {
+      project(v, 0, 0, dz);
+      st = pickStep((P.s * WORLD_H.drum) / (db.H - 2), st, STEPS3);
+      const half = ((db.L + db.R) / 2) * STEPS3[st] / P.s;
+      lo = Math.min(lo, half); hi = Math.max(hi, half);
+    }
+    const bh = Core.OBST.drum.w;
+    assert.ok(bh >= lo && bh <= hi * 1.05, `${tag} 드럼통: 맞는 반폭 ${bh}가 그린 반폭 ${lo.toFixed(2)}~${hi.toFixed(2)} 밖`);
+  }
+  assert.match(src, /const want = \(P\.s \* WORLD_H\.drum\) \/ \(sh\.frames\[0\]\[0\]\.h - 2\)/, '렌더러도 WORLD_H.drum으로 축소 단계를 고른다');
+  // 방패: 테두리 = 정예 표식 색(OBSTACLES.shield.color, 렌더러 ELITE_COL.shield도 같은 값), 졸개(지역 옷 모두)의 모든 프레임에서 렌더러 자리(shieldAt)에 두면 눈(W)은 안 가리고 옷(u·U)은 60% 넘게 가린다
+  const rs = SHEETS.riotShield;
+  assert.equal(palOf(rs.pal).t, OBSTACLES.shield.color, '방패 테두리 = 방패 정예 색');
+  assert.match(src, /shield: \{ ring: OBSTACLES\.shield\.color/, '발밑 고리·머리 표식도 같은 색');
+  const S = outline(frameRaster(rs.frames[0], palOf(rs.pal)), OUT);
+  for (const name of Object.keys(SHEETS).filter((k) => k === 'grunt' || k.startsWith('grunt_'))) {
+    SHEETS[name].frames.forEach((rows, fr) => {
+      const gw = rows[0].length + 2, gh = rows.length + 2, at = R_.shieldAt(fr);
+      const cover = new Set();
+      for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) if (S.get(x, y)) cover.add(((gw >> 1) + at.dx - (S.w >> 1) + x - 1) + ',' + (gh - 1 + at.dy - (S.h - 1) + y - 1));
+      let eyes = 0, shirt = 0, hid = 0;
+      const cheek = rows.findIndex((r) => r.includes('p'));   // 눈 = 볼(p) 줄 위의 W(달려드는 그림의 벌린 입 이빨 W는 가려도 된다)
+      rows.forEach((r, y) => [...r].forEach((ch, x) => {
+        if (ch === 'W' && y < cheek) { eyes++; assert.ok(!cover.has(x + ',' + y), `${name}[${fr}]: 방패가 눈(${x},${y})을 가린다`); }
+        if ((ch === 'u' || ch === 'U') && y > cheek) { shirt++; if (cover.has(x + ',' + y)) hid++; }   // 옷 = 볼 아래(눈 모자의 u는 빼고)
+      }));
+      assert.ok(eyes >= 2, `${name}[${fr}] 눈`);
+      assert.ok(hid / shirt > 0.6, `${name}[${fr}]: 방패가 몸(옷)을 ${hid}/${shirt}만 가린다`);
+    });
+  }
+  // 장갑문: 폭은 벽처럼 x0~x1(boxFaces), 벽보다 높고 두껍다, 숫자는 체력(벽과 같은 규칙)
+  assert.ok(R_.DOOR_H > R_.WALL_H && R_.DOOR_D > 0.35, `장갑문 ${R_.DOOR_H}×${R_.DOOR_D}m vs 벽 ${R_.WALL_H}×0.35m`);
+  assert.match(src, /const top = boxFaces\(p, DOOR_H, DOOR_D\);/, '장갑문은 x0~x1로 그린다');
+  assert.match(src, /function drawDoor[\s\S]*?const t = String\(Math\.max\(1, Math\.ceil\(p\.hp\)\)\);/, '장갑문 숫자 = 체력');
+  assert.match(src, /k === 'door'\) drawDoor\(s, it\.o\); else if \(k === 'drum'\) drawDrum\(s, it\.o, bio\)/, '소품 종류마다 그림');
+  // 드럼통 체력 숫자의 글자 색 짝은 미리 굽는다(그리는 중 굽기 0)
+  const m = src.match(/function drawDrum[\s\S]*?font\.draw\([^;]*fill: '(#[0-9A-F]+)', out: PANEL\.bad\.out/);
+  assert.ok(m && GLYPH_PAIRS.some(([f, o]) => f === m[1] && o === GLYPH_PAIRS[2][1]), '드럼통 숫자 색 짝');
+  // 충돌 크기 보기: 장애물이 있는 구간(2단계 판 4구간)의 모든 모양 종류에 색, 폭발 반경 = 그리는 원(blastRing) = core의 원
+  const kinds = new Set();
+  for (const seed of [1, 2, 3, 4]) {
+    const st = Core.newGame(Core.buildSegment(seed, 4, 400, 2, 0, { obs: true }));
+    const shapes = Core.hitShapes(st);
+    for (const h of shapes) { kinds.add(h.k); assert.ok(R_.HB_COL[h.k], `충돌 크기 보기 색 없음: ${h.k}`); }
+    for (const p of st.props.filter((q) => q.kind === 'drum')) {
+      const b = shapes.find((h) => h.k === 'blast' && Math.abs((h.x0 + h.x1) / 2 - (p.x0 + p.x1) / 2) < 1e-9 && Math.abs((h.z0 + h.z1) / 2 - p.z) < 1e-9);
+      assert.ok(b && b.ell, '드럼통마다 폭발 반경(원)');
+      const pts = R_.blastRing(p, 32);
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      for (let i = 0; i < pts.length; i += 2) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); z0 = Math.min(z0, pts[i + 1]); z1 = Math.max(z1, pts[i + 1]); }
+      for (const [a, c] of [[x0, b.x0], [x1, b.x1], [z0, b.z0], [z1, b.z1]]) assert.ok(Math.abs(a - c) < 1e-9, '그리는 원 = hitShapes blast');
+      // 원 위의 점에 걸친 상자는 부서지고(blastReach), 조금 밖이면 안 부서진다 — 그린 원이 core의 판정과 같다
+      for (let i = 0; i < pts.length; i += 2) {
+        const dx = pts[i] - (p.x0 + p.x1) / 2, dz = pts[i + 1] - p.z, k = 1 - 1e-6, j = 1 + 1e-3;
+        const at = (u) => ({ x0: (p.x0 + p.x1) / 2 + dx * u, x1: (p.x0 + p.x1) / 2 + dx * u, z: p.z + dz * u });
+        assert.ok(Core.blastReach(p, at(k)) && !Core.blastReach(p, at(j)), '폭발 반경 가장자리');
+      }
+    }
+  }
+  for (const k of ['door', 'drum', 'blast']) assert.ok(kinds.has(k), `시험 구간에 ${k}가 있다`);
+  assert.notEqual(R_.HB_COL.drum, R_.HB_COL.blast, '드럼통 선과 폭발 반경은 다른 색');
+  assert.match(src, /for \(const p of s\.props\) if \(p\.kind === 'drum' && p\.alive && !p\.passed\) drawBlastZone\(s, p\);/, '바닥에 폭발 반경');
+  assert.match(src, /blastRing\(p, RING_N, ringPts\);/, '바닥 원도 blastRing으로');
+  // 이벤트 그림: 폭발·상자 잃음(잔해)·드럼통 처치·장갑문 부서짐
+  for (const re of [/case 'blast': \{/, /case 'crateLost': \{/, /e\.by === 'drum' && lastBlast/, /case 'wallBreak':\s*if \(e\.kind === 'door'\)/]) assert.match(src, re);
+  // 화면(main.js): 처음 보는 장애물은 종류마다 한 번 안내(저장 tips 'obs-<종류>', 이름·글은 roster OBSTACLES), 상자 안내는 드럼통·장갑문에 뜨지 않는다
+  assert.match(main, /case 'obstacle': \{\s*[^}]*const O = OBSTACLES\[e\.kind\];\s*if \(O\) tip\('obs-' \+ e\.kind, `\$\{O\.name\}: \$\{O\.text\(\)\}`, true\);/);
+  assert.match(main, /if \(p\.kind === 'door' \|\| p\.kind === 'drum'\) continue;/);
+  for (const k of Object.keys(OBSTACLES)) assert.ok(OBSTACLES[k].name && OBSTACLES[k].text().length > 8 && /[가-힣]요/.test(OBSTACLES[k].text()), `${k} 안내 글(해요체)`);
+});
+
+/* 무한모드 3·5단계(유물): 유물 아이콘, 무기 4단계(과부하 코일) 색·칸·총알, 나침반 표시(그린 것 = 받는 것), 유물 화면·이벤트·HUD의 연결 */
+test('유물 그림: relic_<id> 아이콘(9×9, 실루엣이 서로·다른 아이콘과 다르다) · 무기 4단계 색·칸·불꽃 · 나침반 상자 표시 · 유물 카드·HUD·불굴의 심장·알 확률', async () => {
+  const fs = await import('node:fs');
+  const R_ = await import('../assets/render.js');
+  const { AMMO_IDS } = await import('../assets/roster.js');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const mask = (rows) => frameRaster(rows, ICON_PAL_EXPORT).a.map((c) => (c ? 1 : 0)).join('');
+  // 아이콘: 유물마다 하나, 9×9 정사각(카드 칸·HUD 칸이 정사각), 실루엣이 서로 다르고 다른 9×9 아이콘(탄 효과 등)과도 다르다
+  const others = Object.keys(ICONS).filter((k) => !k.startsWith('relic_') && ICONS[k].length === 9 && ICONS[k][0].length === 9).map((k) => mask(ICONS[k]));
+  const mine = [];
+  for (const id of RELIC_IDS) {
+    const rows = ICONS['relic_' + id];
+    assert.ok(rows, `아이콘 relic_${id}`);
+    assert.equal(rows.length, 9, `relic_${id} 높이 9`);
+    for (const r of rows) assert.equal(r.length, 9, `relic_${id} 폭 9`);
+    const m = mask(rows);
+    assert.ok(m.split('1').length - 1 >= 30, `relic_${id}: 칠한 칸이 너무 적다(작게 줄여도 읽히게)`);
+    assert.ok(!others.includes(m), `relic_${id} 실루엣이 다른 아이콘과 같다`);
+    mine.push(m);
+  }
+  assert.equal(new Set(mine).size, mine.length, '유물 아이콘 실루엣이 서로 다르다');
+  // 불굴의 심장은 펫 하트(분홍)와 다른 진홍 — 가장 많은 색
+  const top = (rows) => { const n = new Map(); for (const c of frameRaster(rows, ICON_PAL_EXPORT).a) if (c) n.set(c, (n.get(c) | 0) + 1); return [...n.entries()].sort((a, b) => b[1] - a[1])[0][0]; };
+  assert.ok(deltaE(top(ICONS.relic_heart), top(ICONS.heart)) >= 12, '심장 유물 vs 펫 하트 색');
+  // 무기 단계 색: core WEAPON의 단계마다 하나(과부하 코일의 4단계 포함), 서로 ΔE 15 이상. 단계 칸은 WTIER 끝까지(예전 3칸 자르기 없음)
+  assert.equal(R_.WTIER.length, Core.WEAPON.length, '무기 단계마다 색');
+  for (let i = 0; i < R_.WTIER.length; i++) for (let j = i + 1; j < R_.WTIER.length; j++) assert.ok(deltaE(R_.WTIER[i], R_.WTIER[j]) >= 15, `무기 색 ${i}·${j}`);
+  assert.match(src, /const tierN = clamp\(q\.tier \| 0, 0, WTIER\.length - 1\);/, '단계 칸은 4단계까지');
+  assert.doesNotMatch(src, /WTIER\[Math\.min\(3,/, '단계 색을 3에서 자르지 않는다');
+  assert.match(src, /const crackle = !low && tier >= 4;/, '4단계 총알: 전기 불꽃');
+  assert.equal((src.match(/if \(crackle\) spark4\(/g) || []).length, 2, '탄종 모양·보통 모양 총알 모두');
+  // 넷째 자리: 특수병 넷째 칸은 셋째와 다른 자리(위 '충돌 크기' 시험이 겹치지 않는지 본다)
+  // 나침반 표시(peekOf): 그린 것이 받는 것 — 지원병 상자는 실린 숫자 그대로(나침반 ×1.5·코일 ×0.7이 든), 무기는 상한 아래일 때만 '+1', 얻을 수 없으면 병사
+  const base = Core.newEndless({ seed: 2, start: Core.START_N + 20, fire: 10, unl: 3, ammoOpen: AMMO_IDS, relicsOpen: RELIC_IDS, relics: ['compass'] });
+  const pk = (reward, mod) => { const s = Core.restore(Core.snapshot(base)); if (mod) mod(s); return { ...R_.peekOf(s, { reward }) }; };
+  assert.deepEqual(pk({ type: 'men', v: 27 }), { icon: 'men', text: '+27', fill: '#DDF3FF', out: '#1D3F8A' });
+  assert.deepEqual([pk({ type: 'gun', mul: 1.5 }).icon, pk({ type: 'gun', mul: 1.5 }).text], ['gun', '+1']);
+  assert.deepEqual([pk({ type: 'gun', mul: 1.5 }, (s) => { s.squad.tier = 3; }).icon, pk({ type: 'gun' }, (s) => { s.squad.tier = 3; }).text], ['men', ''], '3단계면 병사(코일 없음)');
+  assert.equal(pk({ type: 'gun' }, (s) => { s.squad.tier = 3; s.endless.relics.push('coil'); }).text, '+1', '코일이면 4단계까지 무기');
+  assert.equal(pk({ type: 'fx', a: 'pierce' }).icon, 'fx_pierce');
+  assert.equal(pk({ type: 'fx', a: 'pierce' }, (s) => { s.endless.fx = { burst: 3, frost: 3 }; }).icon, 'men', '얻을 수 없는 탄 효과는 병사');
+  assert.equal(pk({ type: 'unit', k: 'sniper' }).icon, 'sniper');
+  for (const p of [pk({ type: 'men', v: 1 }), pk({ type: 'gun' }), pk({ type: 'coin', v: 9 })]) assert.ok(R_.GLYPH_PAIRS.some(([f, o]) => f === p.fill && o === p.out), `미리 구운 글자 짝 ${p.fill}/${p.out}`);
+  // 판에서: 나침반을 쥔 판의 갈림길 알림(fork.reward)부터 상자 위에 표시 — 지원병 숫자는 상자에 실린 값, 부수면 그만큼 받는다
+  {
+    const s = Core.newEndless({ seed: 2, start: Core.START_N + 20, fire: 10, unl: 3, ammoOpen: AMMO_IDS, relicsOpen: RELIC_IDS, relics: ['compass'] });
+    let seen = null;
+    for (let t = 0; t < 12000 && !seen && s.phase !== 'lost'; t++) {
+      Core.step(s, Core.botInput(s));
+      if (Core.offerOf(s)) Core.pickCard(s, 0);
+      for (const e of s.ev) if (e.t === 'fork' && e.reward) seen = { e, d: s.divs.find((d) => d.z0 === e.z) };
+    }
+    assert.ok(seen, '나침반 판에 갈림길');
+    const p = Core.forkPeek(s, seen.d);
+    assert.ok(p, '알림과 같은 틱부터 표시');
+    assert.deepEqual(seen.e.reward, p.reward, '알림의 상자 속 = 표시하는 상자');
+    if (p.reward.type === 'men') assert.equal(R_.peekOf(s, p).text, '+' + p.reward.v);
+  }
+  assert.match(src, /function drawPeeks\(s\) \{\s*for \(const d of s\.divs\) \{\s*const p = forkPeek\(s, d\);/, '표시는 core.forkPeek가 돌려주는 상자만');
+  assert.match(src, /if \(s\.divs\) drawPeeks\(s\);/, '모든 소품 다음(벽 위)');
+  // 유물 이벤트 그림: 얻을 때(보라·금빛) · 불굴의 심장(번쩍임·흔들림·고리·하트·'+n' — 가장 크게, 가장자리 금빛 번짐이 위기 맥동 대신)
+  for (const re of [/case 'relic': \{/, /case 'relicUse': \{[\s\S]*?screenFlash\(0\.5,[\s\S]*?shake\(0\.7\)[\s\S]*?'heart'\);[\s\S]*?float\(cx, 2\.9, cz, '\+' \+ e\.n,/, /const crisis = !revived && /]) assert.match(src, re);
+  // 화면(main.js): 유물 카드(이름·좋은 점·대신 줄, 보라·금빛), 머리글, HUD 유물 칩(쓴 것 흐리게·켜진 휘장), 알 확률은 core.eggP, 결과 줄, 무기 카드의 상한
+  assert.match(main, /if \(c\.k === 'relic'\) \{[\s\S]*?det: Rl\.text\(\), cost: Rl\.cost\(\), col: RELIC_COL, icon: 'relic_' \+ c\.r, relic: true/);
+  assert.match(main, /cs\.textContent = `대신 \$\{T\.cost\}`;/);
+  assert.match(main, /\$\('scrPick'\)\.classList\.toggle\('relic', relic\);/);
+  assert.match(main, /Math\.random\(\) < eggP\(s\)/, '수집가의 가방: 알 확률은 core.eggP');
+  assert.doesNotMatch(main, /Math\.random\(\) < EGG\.pEndless/);
+  assert.match(main, /chip\.className = 'sp-chip relic-chip';/);
+  assert.match(main, /const ban = !!rl && bannerOn\(s\);/, '휘장이 켜지면 칩이 금빛');
+  assert.match(main, /case 'relicUse':\s*[^]*?if \(e\.id === 'heart'\) \{[^]*?slow\(/, '심장: 소리·진동·느리게·알림');
+  assert.match(main, /lines\.push\(\['유물', /, '결과 화면 유물 줄');
+  assert.match(main, /최대 \$\{tierMax\(s\)\}단계/, '무기 카드 상한은 core.tierMax');
+  assert.doesNotMatch(main, /최대 3단계|특수병 자리\(3명\)|병사가 4명은/, '자리·호위·무기 상한은 core 값으로(넷째 자리·코일)');
+  for (const sel of ['#scrPick.relic', '.pick-card.relic', '.pick-cost', '.relic-chip', '.relic-chip i.off', '.relic-chip i.on']) assert.ok(html.includes(sel), `index.html ${sel}`);
+  assert.match(html, /id="pickTitle"/);
+  // 유물 글은 해요체 한 줄(카드·일시정지 목록·HUD 이름)
+  for (const id of RELIC_IDS) { const t = RELICS[id].text(); assert.ok(t.length > 8 && t.length < 60, `${id}: ${t}`); }
+});
+
+/* 무한모드 4단계(화염병): 특수병 그림(다른 특수병과 같은 격자·뒷모습·프레임 + 던지기 둘)·포로·아이콘, 던진 병·불꽃 혀,
+   불 지대 바닥 타일(그린 네모 = hitShapes 'fire' = 타는 네모), 그리는 층, 이벤트 그림, 화면 연결(캠페인에는 화염병이 없다) */
+test('화염병 그림: 다른 특수병과 같은 격자·뒷모습(+던지기 두 장)·포로·아이콘, 빨강(나쁨)과 다른 옷 · 불 지대 타일 = hitShapes fire · 독침·웅덩이·내려찍기보다 아래층 · 화면 연결', async () => {
+  const fs = await import('node:fs');
+  const R_ = await import('../assets/render.js');
+  const { UNIT_IDS, unitVal, synergyOf } = await import('../assets/roster.js');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  const F = SHEETS[UNIT_ART.flame], Rk = SHEETS.rocket;
+  // 격자: 프레임마다 로켓병(머리 7줄 — 들고 있는 것이 머리 위로 솟는 특수병)과 같은 크기, 폭은 모든 특수병과 같은 12칸 —
+  // 줄지어 따라가는 특수병이 같은 크기로 보인다(기획서 6절 '다른 특수병과 같은 크기'). 던지기 둘(6·7)은 로켓병의 웅크리기·쏘기 자리 — 같은 폭, 걷는 그림보다 크지 않다(발끝 기준)
+  assert.equal(F.frames.length, Rk.frames.length, '프레임 수 = 로켓병(걷기 4 · 서기 2 · 쏘기 2)');
+  F.frames.forEach((fr, i) => {
+    if (i < 6) assert.deepEqual([fr[0].length, fr.length], [Rk.frames[i][0].length, Rk.frames[i].length], `화염병[${i}] 격자 = 로켓병[${i}]`);
+    else assert.ok(fr[0].length === 12 && fr.length <= F.frames[0].length, `화염병 던지기[${i}] ${fr[0].length}×${fr.length}`);
+  });
+  for (const k of ['medic', 'sniper', 'rocket']) assert.equal(SHEETS[UNIT_ART[k]].frames[0][0].length, F.frames[0][0].length, `폭 = ${k}`);
+  assert.deepEqual(R_.FRAMES.flame.throw, [6, 7], '렌더러 던지기 자세 = 6·7');
+  assert.deepEqual(ANIM.flame.walk.f, ANIM.rocket.walk.f, '걷기 박자도 같다');
+  // 뒷모습: 얼굴(눈 W·볼 p)이 없다 — 포로(앞모습)에만 있다. 뒤통수에 불꽃 무늬(Y·F) — 의무병 하트처럼 병과가 보인다
+  for (const fr of F.frames) assert.ok(!fr.join('').includes('W') && !fr.join('').includes('p'), '뒷모습에는 눈·볼이 없다');
+  const pal = palOf(F.pal);
+  const hood = F.frames[0].slice(2, 7).join('');
+  assert.ok(hood.includes('Y') && hood.includes('F'), '두건 뒤 불꽃 무늬');
+  // 색: 가장 많은 색(두건)은 로켓병 철모와 ΔE 25 넘게, 옷 넷(H h b B)은 빨강(SEMANTIC.bad — 빨간 칸·내려찍기 띠)과 ΔE 20 넘게(영웅과 같은 규칙)
+  const top = (rows, p) => { const n = new Map(); for (const c of frameRaster(rows, p).a) if (c && c !== OUT) n.set(c, (n.get(c) | 0) + 1); return [...n.entries()].sort((a, b) => b[1] - a[1])[0][0]; };
+  const hc = top(F.frames[0], pal), rc = top(Rk.frames[0], palOf(Rk.pal));
+  assert.equal(hc, pal.h, '가장 많은 색 = 두건');
+  assert.ok(deltaE(hc, rc) >= 25, `화염병 두건 ${hc} vs 로켓병 ${rc}: ΔE ${deltaE(hc, rc).toFixed(1)}`);
+  for (const k of ['H', 'h', 'b', 'B']) for (const r of SEMANTIC.bad) assert.ok(deltaE(pal[k], r) >= 20, `화염병 옷 ${k} ${pal[k]} ~ 빨강 ${r}`);
+  assert.ok(F.alts && PAL[F.alts.hurt], '다친 빛 변형');
+  // 포로(철창 안 앞모습): 다른 포로와 같은 프레임·격자·단계
+  const Cf = SHEETS[CAPTIVE_ART.flame], Cr = SHEETS.captive_rocket;
+  assert.equal(Cf.frames.length, Cr.frames.length);
+  Cf.frames.forEach((fr, i) => assert.deepEqual([fr[0].length, fr.length], [Cr.frames[i][0].length, Cr.frames[i].length], `포로[${i}] 격자`));
+  assert.deepEqual(Cf.lod, Cr.lod);
+  // 아이콘(카드·HUD 칩·일시정지 목록·철창 표시): 9×9, 다른 병과·불 아이콘과 실루엣이 다르다
+  const mask = (rows) => frameRaster(rows, ICON_PAL_EXPORT).a.map((c) => (c ? 1 : 0)).join('');
+  assert.equal(ICONS.flame.length, 9);
+  for (const r of ICONS.flame) assert.equal(r.length, 9);
+  for (const k of ['medic', 'sniper', 'rocket', 'fire']) assert.notEqual(mask(ICONS.flame), mask(ICONS[k]), `아이콘 flame vs ${k}`);
+  // 던진 병(날며 도는 두 장)·불꽃 혀(파편 풀 'flick' — 꺼질수록 작아진다)는 부팅 때 굽는 공용 시트(지역 그림이 아니다)
+  assert.equal(SHEETS.bottle.frames.length, 2);
+  const fl = SHEETS.flick.frames.map((f) => f.length * f[0].length);
+  assert.ok(fl.length === 3 && fl[0] > fl[1] && fl[1] > fl[2], `불꽃 혀가 작아진다 ${fl}`);
+  assert.ok(R_.FRAMES.fx2.sheets.includes('bottle') && R_.FRAMES.flick.sheets.includes('flick'));
+  // 불 지대 바닥 타일: 레벨 폭 2 · 2.6m, 뭉치 나팔 폭(×(1 + horn × 짝 배수)), 이상한 크기까지 — 칸이 겹치지 않고 빈틈없이 덮고, 끝 = 지대 끝
+  const zones = [];
+  for (const lv of [1, 2, 3]) {
+    const w = unitVal('flame', 'w', lv), len = unitVal('flame', 'len', lv);
+    zones.push({ id: lv, x: 0.3 * lv, z: 20 + lv, w, len, t: 1, T: 2, lv });
+    zones.push({ id: 10 + lv, x: -1, z: 30, w: w * (1 + UNITS.flame.horn * synergyOf(lv)), len, t: 1, T: 2, lv });
+  }
+  zones.push({ id: 99, x: 0, z: 9, w: 0.3, len: 0.7, t: 1, T: 2, lv: 1 });
+  // 판에서 놓인 지대(봇이 달리는 화염병 줄 판 — 화염병 Lv3을 쥐고) 하나도
+  const s = Core.newEndless({ seed: 3, start: Core.START_N + 20, fire: 10, unl: 1, flame: true });
+  s.squad.sp = [{ id: 99100, k: 'flame', cd: 0, lv: 3 }];
+  let ev = null;
+  for (let t = 0; t < 4000 && !s.flames && s.phase !== 'lost'; t++) {
+    Core.step(s, Core.botInput(s));
+    if (Core.offerOf(s)) Core.pickCard(s, 0);
+    ev = s.ev.find((e) => e.t === 'flame') || ev;
+  }
+  assert.ok(s.flames && ev, '화염병을 쥔 판에 불 지대');
+  for (const k of ['x0', 'z0', 'x', 'z', 'w', 'len', 'T', 'lv']) assert.ok(Number.isFinite(ev[k]), `flame 이벤트 ${k}(던지는 자리 → 지대)`);
+  zones.push(s.flames[0]);
+  for (const zn of zones) {
+    const tiles = R_.fireTiles(zn);
+    const st = { ...s, flames: [zn] };
+    const hs = Core.hitShapes(st).filter((h) => h.k === 'fire');
+    assert.equal(hs.length, 1);
+    const h = hs[0];
+    const ext = [Math.min(...tiles.map((t) => t[0])), Math.max(...tiles.map((t) => t[1])), Math.min(...tiles.map((t) => t[2])), Math.max(...tiles.map((t) => t[3]))];
+    for (const [a, b] of [[ext[0], h.x0], [ext[1], h.x1], [ext[2], h.z0], [ext[3], h.z1]]) assert.ok(Math.abs(a - b) < 1e-9, `지대 ${zn.id}: 그린 끝 ${a} = 타는 끝 ${b}`);
+    let area = 0;
+    for (const t of tiles) { assert.ok(t[1] > t[0] && t[3] > t[2], '빈 칸 없음'); area += (t[1] - t[0]) * (t[3] - t[2]); }
+    assert.ok(Math.abs(area - zn.w * zn.len) < 1e-9, `지대 ${zn.id}: 칸 넓이 합 ${area} = ${zn.w * zn.len}(겹침·빈틈 없음)`);
+    assert.ok(tiles.every((t) => t[4] === 0 || t[4] === 1), '바둑판 짝·홀');
+  }
+  // 충돌 크기 보기: 불 지대가 있는 판의 모든 모양에 색, 불 지대 색은 폭발 반경·드럼통·독침과 다르다
+  for (const h of Core.hitShapes(s)) assert.ok(R_.HB_COL[h.k], `충돌 크기 보기 색 없음: ${h.k}`);
+  for (const k of ['blast', 'drum', 'spit', 'pool']) assert.notEqual(R_.HB_COL.fire, R_.HB_COL[k], `fire vs ${k}`);
+  // 층: 바닥 표시에서 불 지대는 분대 그림자 다음, 독침 고리·웅덩이·내려찍기 띠보다 먼저(피해야 할 예고가 불에 가리지 않게)
+  const dec = src.slice(src.indexOf('function drawDecals('));
+  const iFire = dec.indexOf('if (s.flames) for (const zn of s.flames) drawFire(zn);');
+  assert.ok(iFire > 0, '바닥 표시가 불 지대를 그린다');
+  for (const re of ['for (const sp of s.spits) {', 'if (s.pools) for (const pl of s.pools) {', 'if (b && b.slam && b.hp > 0) {']) assert.ok(dec.indexOf(re) > iFire, `불 지대가 '${re}'보다 아래층`);
+  assert.ok(dec.indexOf('squadShadow(qx, q.z') < iFire, '분대 그림자 위');
+  // 불꽃 혀는 파편 풀을 같이 쓴다(따로 풀을 만들지 않는다), 그린 타일 = fireTiles
+  assert.match(src, /function drawFire\(zn\) \{[\s\S]*?for \(const t of fireTiles\(zn, fireTileBuf\)\)[\s\S]*?part\([^;]*'flick'\);/);
+  // 이벤트 그림: 던진 병(화염병 자리 → 지대), 불에 탄 좀비(재·연기), 던지기 자세. 타는 동안은 흰 번쩍임 대신 불꽃(틱마다 맞으니 — core hitFoe)
+  assert.match(src, /case 'flame': \{[\s\S]*?fx\('bottle', [^;]*\{ tx: e\.x, tz: e\.z \}\);/);
+  assert.match(src, /\} else if \(e\.by === 'flame'\) \{/);
+  assert.match(src, /if \(m\.k === 'flame'\) \{ const t = time - flameT;[^}]*FR\.flame\.throw\[0\]/);
+  assert.match(src, /let white = burning \? false : flashFoe\.on\(/);
+  // 화면(main.js): 특수병 칩 열쇠는 병과 넷·레벨까지 겹치지 않게(32진), 2회차 엔딩 안내 줄 '화염병 합류'(store.endlessUnlocks의 flame),
+  // 캠페인 목록은 소개 레벨(unlock)로만 병과를 고른다 — 화염병에는 unlock이 없어 캠페인 화면에 안 나온다
+  assert.match(main, /for \(const m of sp\) key = key \* 32 \+ \(UNIT_IDS\.indexOf\(m\.k\) \+ 1\) \* 4 \+ \(m\.lv \|\| 1\);/);
+  assert.ok((UNIT_IDS.length + 1) * 4 + 3 < 32, '한 칸 값 < 32');
+  assert.match(main, /\$\('endEndlessInfo'\)\.textContent = c === 2 && endlessUnlocks\(data, CARD\.stageMax\)\.flame \? `화염병 합류!/);
+  assert.equal(UNITS.flame.unlock, undefined, '화염병은 캠페인 소개 레벨이 없다');
+  assert.ok(UNITS.flame.endless, '무한모드 전용 표시');
+  const uses = main.match(/UNIT_IDS\.[a-zA-Z]+\([^)]*\)[^;]*/g) || [];
+  for (const u of uses) assert.ok(/UNITS\[k\]\.unlock === L|indexOf\(m\.k\)/.test(u), `캠페인 화면이 병과 목록을 그대로 돈다: ${u}`);
+});
+
+/* 기획서 7절: 오래 안 간 지역 그림 비우기. 가짜 캔버스(node)로 아틀라스를 실제로 굽고 — 부팅(렌더러와 같은 목록) + 무한모드 30구간(여섯 지역을 다섯 번) —
+   렌더러와 같은 정책(createBiomeCache.prep: 구간이 시작될 때 다음 지역을 미리 굽는다)으로 돈다. 페이지 수는 부팅 페이지 + keep장 안(예전에는 다 돌면 8장),
+   지역 하나 = 큰 페이지 한 장, 그리는 지역·다음 지역은 늘 다 구워져 있고(그리는 쪽이 기본 시트로 물러날 일 없음), 굽기는 모두 쉬는 틈에(lateBakes 0),
+   비운 페이지를 가리키는 기록이 남지 않는다(0×0 캔버스를 그리면 drawImage가 던진다) */
+test('아틀라스: 오래 안 간 지역 비우기 — 30구간 판에서도 페이지 상한 안, 지역 하나 = 한 장, 그리는·다음 지역은 늘 있고 그리는 중 굽기 0', async () => {
+  const fs = await import('node:fs');
+  const { createAtlas, createBiomeCache } = await import('../assets/pix/atlas.js');
+  const { BIOME_ONLY, BIOME_GROUP, biomeSheets } = await import('../assets/pix/art.js');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  const keep = +src.match(/const BIOME_KEEP = (\d+);/)[1];
+  const saved = { document: globalThis.document, ImageData: globalThis.ImageData, ric: globalThis.requestIdleCallback };
+  const made = [];
+  globalThis.ImageData = class { constructor(a, w, h) { if (typeof a === 'number') { this.width = a; this.height = w; this.data = new Uint8ClampedArray(a * w * 4); } else { this.data = a; this.width = w; this.height = h; } } };
+  globalThis.document = { createElement: () => { const c = { width: 0, height: 0, getContext: () => ({ createImageData: (w, h) => new ImageData(w, h), putImageData() {} }) }; made.push(c); return c; } };
+  globalThis.requestIdleCallback = (fn) => setImmediate(() => fn({ timeRemaining: () => 40, didTimeout: false }));
+  try {
+    const groupOf = (n) => BIOME_GROUP.get(n) || '';
+    const atlas = createAtlas({ groupOf });
+    let readyRes;
+    const ready = new Promise((r) => { readyRes = r; });
+    atlas.bakeIdle([() => { for (const k of Object.keys(ICONS)) atlas.icon(k); }, ...Object.keys(SHEETS).filter((n) => !BIOME_ONLY.has(n))], () => readyRes(true));
+    let now = 'desert';
+    const cache = createBiomeCache(atlas, keep, { ready, sheetsOf: biomeSheets, groupOf, now: () => now });
+    await ready;
+    const boot = atlas.pages.length;
+    assert.ok(boot <= 3, `부팅 페이지 ${boot}장(공용 큰 페이지 둘 + 작은 페이지)`);
+    assert.equal(atlas.groups().length, 0, '부팅 때는 지역 그림을 굽지 않는다(사막은 공용)');
+    const bio = (k) => biomeOf(Core.segInfo(k).L).id;
+    // 무한모드를 고르면(main.js startEndless) 1·2구간 지역을, 구간이 시작될 때마다 다음 구간 지역을 부른다
+    await Promise.all([cache.prep(bio(1)), cache.prep(bio(2))]);
+    let maxPages = 0, evicted = 0;
+    const seen = new Set();
+    for (let k = 1; k <= 30; k++) {
+      now = bio(k);
+      cache.touch(now);   // 그리는 지역이 바뀌었다(렌더러 draw)
+      await cache.prep(bio(k + 1));
+      seen.add(now);
+      for (const b of [now, bio(k + 1)]) for (const n of biomeSheets(b)) assert.ok(atlas.has(n), `${k}구간: ${b} 그림 ${n}이 없다(그리는 쪽이 기본 시트로 물러난다)`);
+      const gs = atlas.groups();
+      assert.ok(gs.length <= keep, `${k}구간: 들고 있는 지역 ${gs}`);
+      for (const g of gs) assert.equal(atlas.groupPages(g), 1, `${g} 지역 그림은 큰 페이지 한 장`);
+      maxPages = Math.max(maxPages, atlas.pages.length);
+      assert.ok(atlas.pages.length <= boot + keep, `${k}구간: 페이지 ${atlas.pages.length}장 > ${boot} + ${keep}`);
+    }
+    assert.equal(seen.size, 6, '여섯 지역을 다 돌았다');
+    evicted = made.filter((c) => c.width === 0 && c.height === 0).length;
+    assert.ok(evicted >= 20, `오래 안 간 지역을 비웠다(빈 페이지 ${evicted}장)`);
+    assert.ok(atlas.pages.every((c) => c.width > 0), '목록의 페이지는 모두 살아 있다');
+    assert.equal(atlas.lateBakes, 0, '굽기는 모두 쉬는 틈에(그리는 중 굽기 0)');
+    // 이어하기: 앞 판 지역(now)을 그리는 동안 이어 할 지역·그다음 지역을 차례로 부르면 셋 다 남는다(keep 3의 까닭)
+    now = 'park';
+    await Promise.all([cache.prep('snow'), cache.prep('city')]);
+    for (const b of ['park', 'snow', 'city']) assert.ok(biomeSheets(b).every((n) => atlas.has(n)), `이어하기: ${b}`);
+    // 굽는 도중에 그 지역을 비워도(사슬 밖에서 — 렌더러는 하지 않는다) 비운 페이지를 가리키는 기록은 되살아나지 않는다
+    atlas.evict('forest');
+    await new Promise((res) => {
+      atlas.bakeIdle(biomeSheets('forest'), res);
+      setImmediate(() => atlas.evict('forest'));
+    });
+    for (const n of biomeSheets('forest')) if (atlas.has(n)) assert.ok(atlas.get(n, 0).img.width > 0, `${n}: 비운 페이지를 가리킨다`);
+    assert.ok(atlas.pages.every((c) => c.width > 0));
+  } finally {
+    globalThis.document = saved.document; globalThis.ImageData = saved.ImageData; globalThis.requestIdleCallback = saved.ric;
+    if (saved.document === undefined) delete globalThis.document;
+    if (saved.ImageData === undefined) delete globalThis.ImageData;
+    if (saved.ric === undefined) delete globalThis.requestIdleCallback;
+  }
+  // 렌더러: 같은 정책을 쓰고(prep · 지금 그리는 지역은 굽는 순간의 curBid), 그리는 지역이 바뀌면 touch, 지역 그림은 atlas.has로 보고 없으면 기본(그리는 중 굽기 0)
+  assert.match(src, /const biomeCache = createBiomeCache\(atlas, BIOME_KEEP, \{ ready, sheetsOf: biomeSheets, groupOf: biomeGroup, now: \(\) => curBid \}\);/);
+  assert.match(src, /const prepBiome = \(bid\) => biomeCache\.prep\(bid\);/);
+  assert.match(src, /if \(curBid !== touchedBid\) \{ touchedBid = curBid; biomeCache\.touch\(curBid\); \}/);
+  assert.match(src, /const sheet = atlas\.has\(sk\) \? sk : f\.kind;/, '좀비 옷');
+  assert.match(src, /bs = atlas\.has\(bs0\) \? bs0 : 'boss';/, '보스');
+  assert.match(src, /if \(atlas\.has\(name\)\) push\(sceneryZ/, '길가 소품');
+  assert.match(src, /const sh = atlas\.has\(f\.sheet\) \? f\.sheet : f\.foe;/, '무는 좀비');
+});
+
+test('화면 마무리(2~5단계 검토): 긴 일시정지 목록은 목록만 스크롤 · 유물 머리글 선은 자리를 안 먹는다 · 멈춘 화면의 병력 숫자 · 드럼통 숫자가 옆 상자 숫자를 가리지 않는다 · 알림 말', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  // 일시정지: 특수병 넷 + 탄 효과 셋 + 시너지 + 유물 셋이면 열 줄이 넘는다 — 목록에 높이 상한과 제 스크롤(계속하기·나가기 단추가 늘 화면 안에)
+  assert.match(html, /#pSp \{[^}]*max-height: max\(\d+px, calc\(100d?vh - \d+px\)\);[^}]*overflow-y: auto;/, '일시정지 목록 높이 상한');
+  assert.match(html, /#pSp\.more \{[^}]*mask-image:/, '아래로 더 있으면 끝을 흐리게');
+  assert.match(main, /show\('scrPause'\);\n  pSpMore\(\);[\s\S]*show\('scrPause'\);\n  pSpMore\(\);/, '일시정지를 열 때마다(멈춤·이어하기) 흐림을 다시 잰다');
+  // 유물 머리글: 테두리(border)는 폭을 먹어 320px 폰에서 머리글이 두 줄로 꺾였다 — 그림자 선
+  const head = html.match(/#scrPick\.relic \.pick-head \{([^}]*)\}/);
+  assert.ok(head && !/border:/.test(head[1]) && /box-shadow: 0 0 0 2px/.test(head[1]), '유물 머리글 선');
+  assert.match(main, /가진\\u00a0유물\\u00a0\$\{/, "'가진 유물 n/3'은 한 덩어리로 꺾인다");
+  // 병력 숫자: 멈춘 그림(dt 0 — 이어하기로 연 3택 1·일시정지)에서는 지금 값으로(reset 뒤 0으로 남지 않게)
+  assert.match(src, /if \(Math\.abs\(q\.n - shownN\) < 0\.5 \|\| dt <= 0\) shownN = q\.n;/, '멈춘 화면의 병력 숫자');
+  // 드럼통 숫자: 옆 상자·철창 숫자와 겹치면 통 몸에(작으면 접는다) — 상자 숫자(얻을지 말지)가 먼저
+  assert.match(src, /function drawDrum[\s\S]*?const clash = drumLabelClash\(s, p, px, ty, font\.measure\(t, 'small'\)\);/, '드럼통 숫자 비키기');
+  assert.match(src, /function drumLabelClash[\s\S]*?o\.kind !== 'crate' && o\.kind !== 'cage'/, '상자·철창 숫자와 견준다');
+  // 나침반 알림: 얻을 수 없게 된 무기·탄종 상자는 '병사 보상 ×1.5'(분대가 1.5배가 아니다) · 새 유물 안내의 조건은 유물마다
+  assert.match(main, /return `병사 보상\$\{r\.mul \? ` ×\$\{r\.mul\}` : ''\}`;/, '나침반 병사 보상');
+  assert.match(main, /const later = ids\.filter\(waitOf\)/, '새 유물 안내: 유물마다 조건');
+  // 이어하기 알림은 계속하기를 누르면 내린다(바로 뜨는 카드 머리글을 가리지 않게)
+  assert.match(main, /function resume\(\) \{[\s\S]*?if \(\$\('toast'\)\.textContent === READY_TOAST\) \$\('toast'\)\.hidden = true;/, '이어하기 알림 내리기');
 });

@@ -32,6 +32,21 @@ export const UNITS = {
     lv: { every: [2.4, 2, 1.7], r: [2.2, 2.6, 3] },
     up: (lv) => `${unitVal('rocket', 'every', lv)}초마다 로켓(폭발 반경 ${unitVal('rocket', 'r', lv)}m)`,
   },
+  /* 화염병(단계 해금 4단계 — 2회차 엔딩으로 열린다): 무한모드에서 화염병 줄을 연 판에만(특수병 카드·철창·금색 칸). unlock(캠페인 소개 레벨)이 없다 —
+     캠페인의 철창·금색 칸 병과는 '열린 병과 중 무작위'라 병과가 늘면 캠페인 배치가 바뀐다. endless: 무한모드 전용 표시(화면이 캠페인 목록에서 뺄 때 본다).
+     lv: 놓는 간격 every(초) · 지대 폭 w × 길이 len(m) · 유지 T(초) · 초당 피해 dmg(× 지금 분대 화력 D) [초안].
+     horn: 짝 영웅 뭉치의 돌격 나팔 동안 지대 폭 +이만큼(화염병 레벨만큼 SYNERGY ×1·×1.25·×1.5 — 나비·보리의 짝 효과와 같은 규칙) */
+  flame: {
+    name: '화염병', color: '#FF5E3A', endless: true,
+    line: '좀비 떼가 지나갈 길에 불바다!',
+    get desc() { return `${unitVal('flame', 'every', 1)}초마다 8~20m 앞, 좀비가 가장 많이 지나갈 자리에 불 지대를 깔아요. 보스전에서는 보스 발밑에`; },
+    tip: '화염병 합류! 좀비 떼가 지나갈 자리에 불을 깔아요',
+    role: '좀비가 가장 많이 지나갈 자리에 불 지대를 깔아요. 보스전에서는 보스 발밑에',
+    lv: { every: [2, 1.7, 1.4], w: [2, 2, 2.6], len: [4, 4, 4], T: [2, 2.5, 3], dmg: [0.25, 0.3, 0.35] },
+    horn: 0.5,
+    up: (lv) => `${unitVal('flame', 'every', lv)}초마다 불 지대(폭 ${unitVal('flame', 'w', lv)}m, ${unitVal('flame', 'T', lv)}초 동안 초당 위력 ${pc(unitVal('flame', 'dmg', lv))}%)`,
+    pair: (lv) => `뭉치의 돌격 나팔 동안 불 지대 폭 +${pc(UNITS.flame.horn * synergyOf(lv))}%`,
+  },
 };
 export const UNIT_IDS = Object.keys(UNITS);
 /* 특수병 수치 lv[k]의 그 레벨 값(1..SP_LV_MAX) */
@@ -45,7 +60,7 @@ export const synergyOf = (lv) => SYNERGY[Math.max(1, Math.min(SP_LV_MAX, lv | 0 
    세 영웅은 같은 레벨이면 집중한 사람(sloppy0.1)의 승률이 ±5%p 안이 되게 맞췄다(tools/bench.mjs --hero). */
 export const HEROES = {
   mungchi: {
-    name: '뭉치 대장', role: '지휘', color: '#FF9F43',
+    name: '뭉치 대장', role: '지휘', color: '#FF9F43', match: 'flame',   // 짝 특수병 화염병(무한모드 4단계 판에만 — 캠페인에는 화염병이 없다): 합류·레벨 업에 게이지, 돌격 나팔 동안 불 지대 폭(UNITS.flame.horn)
     look: '별 달린 장교 모자를 비뚤게 쓴 귤빛 단발, 바람에 날리는 노랑 스카프, 몸만 한 확성기',
     line: '목소리는 부대 최강, 용기는… 연습 중!',
     unlock: { type: 'clear', L: 2, text: '레벨 2를 깨면 합류' },
@@ -209,6 +224,85 @@ export function ammoText(id) {
 export const AMMO_IDS = Object.keys(AMMO);
 /* 그 별 수로 열린 탄종 */
 export const ammoOpen = (id, stars) => !!AMMO[id] && stars >= AMMO[id].stars;
+
+/* 탄 효과(무한모드 빌드 단계 해금 2단계 — 무한모드에서만): 탄종의 '좋은 점'만 떼어 낸 것. 보스 뒤 카드·탄종 상자로 얻고, 같은 효과를 또 얻으면 레벨 +1(Lv3까지).
+   Lv1·2·3 = 그 탄종 값의 FX_LV배(50·100·150%) [초안]. 대신 쪽(피해·사거리)은 없다 — 출격 때 고른 탄종(s.ammo)만 Lv2로 한 칸을 차지하고 대신 쪽을 그대로 진다.
+   슬롯 FX_SLOTS칸(같은 효과는 한 칸). 수치는 AMMO에서 — 탄종 수치를 고치면 효과도 따라간다 */
+export const FX_LV = [0.5, 1, 1.5];
+export const FX_LV_MAX = 3;
+export const FX_SLOTS = 2;
+export const FX_BASE_LV = 2;   // 출격 탄종이 차지하는 레벨
+const fxK = (lv) => FX_LV[Math.max(1, Math.min(FX_LV_MAX, lv | 0 || 1)) - 1];
+/* 그 레벨의 좋은 점: { pierce } | { splash, r } | { dmg }(화력 배수) | { slow, T } */
+export function fxVal(id, lv) {
+  const A = AMMO[id];
+  const k = fxK(lv);
+  if (!A) return {};
+  if (A.pierce) return { pierce: A.pierce * k };
+  if (A.splash) return { splash: A.splash * k, r: A.r };
+  if (A.slow) return { slow: A.slow * k, T: A.T };
+  return { dmg: 1 + (A.dmg - 1) * k };
+}
+/* 소개 글(카드·일시정지 판) — '뒤의 좀비 하나에 30%'처럼 수치에서. 반올림은 소수 넷째 자리에서 먼저 끊는다
+   (0.15 × 0.5 = 0.0749999…라 그냥 반올림하면 +8%가 아니라 +7%가 된다 — 기획서 표의 값과 맞게) */
+const fpc = (x) => Math.round(Math.round(x * 1e6) / 1e4);
+export function fxText(id, lv) {
+  const v = fxVal(id, lv);
+  return v.pierce ? `뒤의 좀비 하나에 ${fpc(v.pierce)}%` : v.splash ? `둘레 ${v.r}m에 ${fpc(v.splash)}%` : v.slow ? `${v.T}초 동안 ${fpc(v.slow)}% 느리게` : v.dmg ? `화력 +${fpc(v.dmg - 1)}%` : '';
+}
+
+/* 시너지(탄 효과 × 탄 효과 · 특수병 · 영웅 — 둘이 함께 있을 때만 켜지는 추가 규칙, 단계 해금 2단계) [수치는 초안].
+   need: 함께 있어야 하는 것(탄종 id = 그 탄 효과(출격 탄종이든 카드든), 병과 id = 그 특수병(레벨 상관없이), 영웅 id = 출격 영웅).
+   v: 수치(frostSniper 위력 배수 덧셈, burstRocket 반경 덧셈 m, rapidMungchi 스킬 길이 초, frostFlame 불 지대 피해 배수 덧셈). SYNERGY는 영웅 짝 배수의 이름이라 다른 이름 */
+export const COMBOS = {
+  pierceBurst: { need: ['pierce', 'burst'], name: '연쇄 폭발', text: () => '뚫고 지난 뒤 좀비에서도 터져요' },
+  frostSniper: { need: ['frost', 'sniper'], name: '얼음 조준', v: 0.5, text: () => `느려진 적에게 저격 위력 +${apc(COMBOS.frostSniper.v)}%` },
+  burstRocket: { need: ['burst', 'rocket'], name: '대폭발', v: 0.4, text: () => `로켓 폭발 반경 +${COMBOS.burstRocket.v}m` },
+  pierceSniper: { need: ['pierce', 'sniper'], name: '꿰뚫는 저격', text: () => '저격이 일직선 뒤 표적 하나를 더 뚫어요' },
+  rapidMungchi: { need: ['rapid', 'mungchi'], name: '긴 나팔', v: 7, text: () => `돌격 나팔 ${HEROES.mungchi.skill.dur} → ${COMBOS.rapidMungchi.v}초` },
+  // 4단계(화염병 줄을 연 판에만 재료가 생긴다): v = 느려진 적이 불 지대에서 받는 피해 배수 덧셈
+  frostFlame: { need: ['frost', 'flame'], name: '얼음불', v: 0.25, text: () => `언 적이 불 지대에서 받는 피해 +${apc(COMBOS.frostFlame.v)}%` },
+};
+export const COMBO_IDS = Object.keys(COMBOS);
+
+/* 장애물(단계 해금 2단계 — 2단계를 연 무한모드 판의 4구간부터, core.js RUN_ORDER.obstacle) [수치는 초안]. 보통탄만으로도 넘을 길은 늘 있고,
+   탄 효과는 '더 쉬운 길'을 연다. 화면에 보이는 수치는 여기에 두고 core.js가 읽는다(글도 이 값에서 — 수치를 고치면 글도 따라간다). 자리·개수는 core.js OBST.
+   - door 장갑문: 갈림길 위험한 쪽의 셋째 패턴(벽 · 좀비 떼 · 장갑문). 체력 = 벽 식 × hp. 받는 피해 배수 — gun 보통 총알, pierce 관통 효과(레벨 상관없이),
+     burst 작렬 효과(Lv2 = 탄종 값 100%에서 이 값, Lv1은 gun과의 사이 값, Lv3도 이 값까지), rocket 로켓. 가진 효과 중 가장 큰 배수
+   - drum 폭발 드럼통: 부서지거나 분대가 닿으면 반경 r m 안의 좀비에게 지금 분대 화력 dmg초 몫, 반경 안의 상자·철창은 내용물째 부서진다. 분대는 안 다친다
+   - shield 방패 정예(셋째 정예, 청록): 정면 총알 피해 gun배 — 관통 효과가 있으면 제 피해. 작렬 둘레·저격·로켓·영웅 스킬·드럼통은 제 피해 */
+export const OBSTACLES = {
+  door: { name: '장갑문', hp: 0.6, gun: 0.5, pierce: 1, burst: 1.5, rocket: 1.5, text: () => `보통 총알은 ${apc(OBSTACLES.door.gun)}%만 들어가요. 관통·작렬·로켓이 잘 뚫어요` },
+  drum: { name: '폭발 드럼통', r: 2.5, dmg: 1.5, text: () => `쏘면 터져서 둘레 ${OBSTACLES.drum.r}m 좀비를 날려요. 옆 상자도 같이 부서져요` },
+  shield: { name: '방패 정예', gun: 0.3, color: '#3FE0D0', text: () => `정면 총알을 ${apc(1 - OBSTACLES.shield.gun)}% 막아요. 관통·작렬·저격·로켓은 그대로 들어가요` },
+};
+export const OBSTACLE_IDS = Object.keys(OBSTACLES);
+
+/* 유물(단계 해금 3단계·5단계 — 무한모드에서만, 대왕 보스 뒤 3개 중 1개, 한 판에 3개까지). 수치가 아니라 규칙을 바꾼다 [수치는 초안].
+   화면에 보이는 수치·글은 여기에 두고 core.js가 읽는다(글은 이 값에서 — 수치를 고치면 글도 따라간다). 규칙은 core.js relicOn을 보는 곳들.
+   kings: 열리는 때 — 0이면 3단계(첫 대왕)와 함께, n이면 대왕 누적 n번째 처치에(5단계). 순서는 열리는 순서(유물 카드도 이 순서로 보인다).
+   text(): 좋은 점, cost(): 대신 쪽('' = 없음). good·bad는 예전 이름(같은 글).
+   - compass 나침반: 갈림길 위험한 쪽 보상 상자의 속이 ahead m 앞에서 보이고(갈림길 알림과 같은 거리 — core.js MARK_AHEAD), 그 상자의 병사 ×v(지원병 v배,
+     무기·탄종 상자·철창이 얻을 수 없어 병사로 바뀔 때도 v배 — 무기 단계·탄 효과 레벨·특수병 합류는 한 칸이라 그대로)
+   - banner 전장의 휘장: 병력이 이 판 최고치의 at 아래면(화면의 위기 신호와 같은 문턱) 총알 화력 ×(1 + v)
+   - megaphone 빨간 확성기: 빨간 덧셈 칸(−로 시작한 칸)이 red배 빨리 오른다 — 대신 파란 칸은 blue배
+   - coil 과부하 코일: 무기 단계 상한 3 → tier(core.js WEAPON의 다섯째 값) — 대신 지원병 상자 병력 ×men
+   - fourth 넷째 자리: 특수병 자리 3 → slots — 대신 특수병마다 호위 병사 4 → escort명(병과가 자리보다 많은 판에만 나온다 — 지금 세 병과로는 넷째 자리가 빈다)
+   - heart 불굴의 심장: 한 번 전멸을 무효로 — 병력이 그 구간 바닥선(core.js segFloor)의 v로 돌아온다. 쓰면 사라진다
+   - bag 수집가의 가방: 대왕이 아닌 보스의 알 확률 EGG.pEndless → egg(화면 쪽 뽑기 — core.js eggP) — 대신 보스 뒤 카드 3장 → cards장
+   - pouch 넓은 탄낭: 탄 효과 슬롯 FX_SLOTS → slots — 대신 증원 카드가 나오지 않는다(얻을 수 있는 탄 효과가 슬롯보다 많은 판에만 나온다) */
+export const RELICS = {
+  compass: { name: '나침반', kings: 0, ahead: 45, v: 1.5, text: () => `갈림길 보상 상자 속이 ${RELICS.compass.ahead}m 앞에서 보이고, 위험한 쪽 보상 병사 ×${RELICS.compass.v}`, cost: () => '' },
+  banner: { name: '전장의 휘장', kings: 0, at: 0.4, v: 0.4, text: () => `병력이 이 판 최고치의 ${apc(RELICS.banner.at)}% 아래면 화력 +${apc(RELICS.banner.v)}%`, cost: () => '' },
+  megaphone: { name: '빨간 확성기', kings: 0, red: 1.5, blue: 0.8, text: () => `빨간 덧셈 칸이 ${RELICS.megaphone.red}배 빨리 올라요`, cost: () => `파란 칸은 ${RELICS.megaphone.blue}배` },
+  coil: { name: '과부하 코일', kings: 0, tier: 4, men: 0.7, text: () => `무기 단계 상한 3 → ${RELICS.coil.tier}`, cost: () => `지원병 상자 병력 −${apc(1 - RELICS.coil.men)}%` },
+  fourth: { name: '넷째 자리', kings: 2, slots: 4, escort: 6, text: () => `특수병 자리 3 → ${RELICS.fourth.slots}`, cost: () => `특수병마다 호위 병사 4 → ${RELICS.fourth.escort}명` },
+  heart: { name: '불굴의 심장', kings: 3, v: 0.5, text: () => `한 번 전멸해도 그 구간 바닥선의 ${apc(RELICS.heart.v)}%로 돌아와요`, cost: () => '쓰면 사라져요' },
+  bag: { name: '수집가의 가방', kings: 4, egg: 0.35, cards: 2, text: () => `일반 보스의 알 확률 ${apc(EGG.pEndless)} → ${apc(RELICS.bag.egg)}%`, cost: () => `카드 3장 → ${RELICS.bag.cards}장` },
+  pouch: { name: '넓은 탄낭', kings: 5, slots: 3, text: () => `탄 효과 슬롯 ${FX_SLOTS} → ${RELICS.pouch.slots}`, cost: () => '증원 카드가 나오지 않아요' },
+};
+export const RELIC_IDS = Object.keys(RELICS);
+for (const id of RELIC_IDS) Object.defineProperties(RELICS[id], { good: { get() { return this.text(); } }, bad: { get() { return this.cost(); } } });
 
 /* 지역 */
 export const BIOMES = [

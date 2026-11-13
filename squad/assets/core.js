@@ -1,4 +1,4 @@
-import { HEROES, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, FX_LV, FX_LV_MAX, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, EGG, OBSTACLES, OBSTACLE_IDS } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -19,7 +19,9 @@ export const START_N = 12;
 export const VOLLEY_HZ = 10;
 export const BULLET_SPEED = 48;
 export const BULLET_RANGE = 30;
-export const WEAPON = [1, 1.35, 1.7, 2.1];
+export const WEAPON = [1, 1.35, 1.7, 2.1, 2.5];   // 무기 단계 0~3(캠페인·보통 판), 넷째 값은 과부하 코일(무한모드 유물 — 3단계와 같은 걸음) [초안]
+export const TIER_MAX = 3;        // 보통 판의 무기 단계 상한(유물이 올리면 tierMax(s))
+export const THREAT_TIER = 3;     // 무한모드 위협 식(buildSegment)이 보는 무기 단계 상한 — 코일의 넷째 단계는 위협에 안 들어가 오래 남는 이득이다
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
 export const VERSION = 'squad-v1';   // 레벨 배치의 소금 — 바꾸지 않는다(바꾸면 모든 레벨이 달라진다)
@@ -126,13 +128,19 @@ export const SP = {
   medic: { share: unitVal('medic', 'share', 1) },
   sniper: { every: unitVal('sniper', 'every', 1), dmg: unitVal('sniper', 'dmg', 1), near: 2, far: 36 },
   rocket: { every: unitVal('rocket', 'every', 1), dmg: 0.6, r: unitVal('rocket', 'r', 1), speed: 30, near: 8, far: 30 },
+  // 화염병(단계 해금 4단계 — 화염병 줄을 연 무한모드 판에만, SP_KINDS 밖): near~far m 앞에서 지대(폭 × 길이) 안 체력 합이 min·D 넘는 가장 큰 무리
+  // (로켓병과 같은 고르기 — crowdAt), 보스전에서는 보스 발밑. 레벨별 간격·크기·유지·초당 피해는 roster.js UNITS.flame.lv
+  flame: { every: unitVal('flame', 'every', 1), dmg: unitVal('flame', 'dmg', 1), w: unitVal('flame', 'w', 1), len: unitVal('flame', 'len', 1), T: unitVal('flame', 'T', 1), near: 8, far: 20, min: 0.3 },
 };
 /* 회복 풀로 가는 몫의 상한(의무병 + 보리). SIM 9: 0.8 → 0.9 — 의무병 Lv2·Lv3과 보리 짝 효과가 쌓일 자리(Lv1 의무병 + 보리 Lv5 = 0.78은 그대로) */
 export const SHARE_MAX = 0.9;
-export const SP_KINDS = Object.keys(SP);
+/* 캠페인·화염병 줄을 안 연 판의 병과(이 순서 그대로 — 철창·금색 칸·카드의 병과 뽑기가 이 목록의 길이·차례로 고른다. 늘리면 캠페인 배치와 앞 단계 지문이 바뀐다).
+   SP_FLAME: 화염병 줄(4단계)을 연 무한모드 판의 병과 — 판마다 spKindsOf(s) */
+export const SP_KINDS = ['medic', 'sniper', 'rocket'];
+export const SP_FLAME = [...SP_KINDS, 'flame'];
 export const BONUS_CAP = 0.1;
 export const NABI_CAP = 0.02;   // 나비 레벨 1당 보스전 추가 피해 한도
-export const SP_LV_CAP = 0.02;  // 저격수·로켓병의 레벨 1당(Lv1 위로) 보스전 추가 피해 한도(SIM 9 — 레벨 오른 특수병이 보스전에서도 세게)
+export const SP_LV_CAP = 0.02;  // 저격수·로켓병·화염병의 레벨 1당(Lv1 위로) 보스전 추가 피해 한도(SIM 9 — 레벨 오른 특수병이 보스전에서도 세게)
 const has = (L, m) => L >= UNLOCK[m];
 
 /* ---------- 난수 ---------- */
@@ -159,7 +167,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 /* ---------- 공통 수식 ---------- */
 export function dps(n, tier = 0, fireLv = 0) {
   if (n <= 0) return 0;
-  return 6 * Math.pow(n, 0.8) * WEAPON[clamp(tier, 0, 3)] * (1 + 0.05 * fireLv);
+  return 6 * Math.pow(n, 0.8) * WEAPON[clamp(tier, 0, WEAPON.length - 1)] * (1 + 0.05 * fireLv);   // 캠페인 단계는 3을 넘지 않는다(값 그대로)
 }
 export function radius(n) { return Math.min(2.4, 0.35 + 0.18 * Math.sqrt(Math.max(1, n))); }
 export function volleySize(n) { return Math.min(12, 2 + Math.floor(Math.sqrt(Math.max(1, n)))); }
@@ -604,7 +612,14 @@ function spawnWave(lv, g, p, z, ng, scale, opt = {}) {
   for (let i = 0; i < k; i++) grunts.push(addFoe(lv, g, 'grunt', U(g, x0, x1), z + U(g, 0, 9), hp));
   for (const f of grunts) placed.push(f);
   if (p.endless && !opt.noElite) makeElites(g, p, grunts, ng);
+  if (lv.og && !opt.noElite) makeShield(lv.og, grunts);
   return placed;
+}
+/* 2단계 장애물(4구간부터 — lv.og가 있는 구간만): 무리의 앞쪽 졸개 하나를 방패 정예로(앞줄에서 총알을 막는다). 체력은 그대로 — 총알만 덜 들어간다.
+   장애물 전용 난수(lv.og)라 무리의 자리·체력·다른 정예는 장애물이 없는 구간과 같다 */
+function makeShield(og, grunts) {
+  const pool = grunts.filter((f) => !f.elite).sort((a, b) => a.z - b.z || a.id - b.id);
+  for (let i = OBST.shield.n; i > 0 && pool.length > 2; i--) pool.splice((rand(og) * Math.min(4, pool.length)) | 0, 1)[0].elite = 'shield';
 }
 /* 무한모드: 무리의 졸개 몇을 정예로 바꾼다(체력 × ELITE.hp — 무리가 그만큼 단단해진다). 뒤쪽(먼) 졸개부터 — 앞줄 졸개를 잡는 동안 보인다 */
 function makeElites(g, p, grunts, ng) {
@@ -1136,6 +1151,9 @@ const CHUNK = {
      벽 체력 = 그 차선을 달리며 쏟는 화력(위협 기준 — 구간이 오를수록 커진다)의 FORK_WALL배: 앞 구간은 넉넉히 뚫리고, 뒤로 갈수록
      강화·무기 단계·스킬·특수병이 받쳐 줘야 뚫린다(들어가기 전에 벽 숫자를 보고 고른다). 골든 패스는 안전한 쪽(병력 그대로) */
   fork(lv, g, p, z, ng) {
+    // 2단계 장애물(4구간부터): 위험한 쪽이 셋에 하나꼴로 장갑문(셋째 패턴). 장애물 전용 난수로 먼저 정하고 벽·떼는 그대로 만든 뒤 바꾼다 —
+    // 구간의 나머지(게이트·적·상자의 자리·숫자·id, 판의 난수 흐름)가 장애물이 없는 구간과 같게
+    const door = !!lv.og && chance(lv.og, OBST.door.p);
     const D = threatD(lv, ng);
     const risk = chance(g, 0.5) ? 1 : -1;
     const z0 = z + FORK.nose, zf = z0 + FORK_TAPER, wz = zf + FORK.wall, z1 = wz + FORK.after;
@@ -1147,8 +1165,10 @@ const CHUNK = {
     const ch = Math.max(1, Math.round(hp * 0.12));
     const horde = p.seg >= FORK_HORDE_FROM && chance(g, FORK_HORDE_P);
     const div = { id: 0, z0, z1, risk, wall: 0 };
+    let doorId = 0;
     if (horde) {
       // 좀비 떼: 벽 대신 차선을 메운 무리(거구 하나 + 분열 좀비 둘 + 졸개). 체력 합 H — 못 잡은 만큼 물린다(벽과 같은 '남은 체력 10마다 1명')
+      const f0 = lv.foes.length;
       const H = hp * U(g, FORK_HORDE[0], FORK_HORDE[1]);
       const xr = () => U(g, rl.x0 + 0.8, rl.x1 - 0.8);
       addFoe(lv, g, 'brute', cx + U(g, -0.6, 0.6), wz - 2, H * 0.3, { fork: true });
@@ -1159,10 +1179,18 @@ const CHUNK = {
       }
       const m = 10;
       for (let i = 0; i < m; i++) addFoe(lv, g, 'grunt', xr(), zf + 6 + (i * (FORK.wall - 8)) / m + U(g, -0.8, 0.8), (H * 0.5) / m, { fork: true });
-      div.kind = 'horde';
-      div.hp = Math.round(H);
+      if (door) doorId = lv.foes.splice(f0)[0].id;   // 장갑문 자리: 만든 떼를 거두고 그 첫 id(거구)를 문에 준다
+      else { div.kind = 'horde'; div.hp = Math.round(H); }
     } else {
       div.wall = wallProp(lv, rl.x0 + 0.15, rl.x1 - 0.15, wz, hp, { fork: true }).id;
+    }
+    if (door) {
+      // 장갑문: 벽 자리에 체력 = 벽 식 × OBSTACLES.door.hp. 받는 피해는 총알 종류마다 다르다(doorMul — 보통 총알은 덜, 관통·작렬·로켓은 더)
+      const h = Math.max(1, Math.round(hp * OBSTACLES.door.hp));
+      const w = div.wall ? lv.props.find((q) => q.id === div.wall) : null;
+      if (w) { w.kind = 'door'; w.hp = w.max = h; }
+      else { lv.props.push({ id: doorId, kind: 'door', x0: rl.x0 + 0.15, x1: rl.x1 - 0.15, z: wz, hp: h, max: h, alive: true, hitT: -9, fork: true }); div.wall = doorId; }
+      div.kind = 'door';
     }
     lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.1, x1: cx + 1.1, z: wz + 7, hp: ch, max: ch, alive: true, hitT: -9, reward, fork: true });
     const sl = lane(-risk);
@@ -1200,8 +1228,11 @@ const CHUNK = {
    SIM 9: 철창·금색 칸의 수·자리·확률은 SIM 8 그대로(억지로 늘리지 않는다). 병과만 '바로 앞과 다른 병과' 규칙 없이 무작위 —
    같은 병과가 자연스럽게 두 번 나오면 두 번째는 병사 대신 레벨 업 */
 const GOLD_KINDS = ['plain', 'think', 'stake'];
-function placeSpecials(lv, p, bare = false, seed = null) {
+/* flame(무한모드 — 화염병 줄(4단계)을 연 판만): 열린 병과 끝에 화염병을 더한다. 철창·금색 칸 하나에 rand 한 번은 그대로라 수·자리는 같고 병과만 넷 중에서
+   (화염병 줄을 안 연 판은 예전 그대로 — 앞 단계 지문). 화염병에는 소개 레벨이 없다(intro가 되지 않는다) */
+function placeSpecials(lv, p, bare = false, seed = null, flame = false) {
   const kinds = SP_KINDS.filter((k) => p.L >= UNLOCK[k]);
+  if (flame) kinds.push('flame');
   if (!kinds.length || p.L < UNLOCK.cage) return;
   const sg = { rs: seed ?? hash(VERSION, 'sp', p.L, lv.attempt) };
   const intro = kinds.find((k) => UNLOCK[k] === p.L);
@@ -1384,6 +1415,8 @@ export function segInfo(k) {
   const tag = n % 6 === 0 ? 'super' : n % 6 === 3 ? 'hard' : '';
   return { k: n, loop: Math.floor((n - 1) / 6), biome: bi, tag, L: 60 + 10 * bi + (tag === 'super' ? 10 : tag === 'hard' ? 5 : 2) };
 }
+/* 보스 b마리를 잡은 판에서 쓰러뜨린 대왕 수(6구간마다 대왕 — segInfo와 같은 규칙) */
+export const segKings = (bosses) => Math.floor(Math.max(0, bosses | 0) / 6);
 /* 구간 k의 달리는 속도 배수: 구간마다 speedStep씩 빨라지고 speedMax에서 멈춘다(ARSENAL.md 9절) */
 export const segSpeed = (k) => Math.min(ENDLESS.speedMax, 1 + ENDLESS.speedStep * (Math.max(1, k) - 1));
 export const segMul = (k) => ENDLESS.mul0 * Math.pow(ENDLESS.mulStep, Math.max(1, k) - 1);
@@ -1413,21 +1446,25 @@ export function segParams(k) {
   p.boss = { mode: 'endless', m: E.bossM[i.tag], c: E.bossC };
   return p;
 }
-/* 구간 하나(레벨 한 판과 같은 모양의 객체 — z는 0부터). n = 그 순간 병력, tier = 무기 단계. 같은 (seed, k, n, tier, attempt) → 같은 구간 */
-export function buildSegment(seed, k, n, tier = 0, attempt = 0) {
+/* 구간 하나(레벨 한 판과 같은 모양의 객체 — z는 0부터). n = 그 순간 병력, tier = 무기 단계. 같은 (seed, k, n, tier, attempt, opt) → 같은 구간.
+   opt.obs: 2단계 장애물(단계 해금 기획서 4절 — 2단계를 연 판만, RUN_ORDER.obstacle구간부터)을 넣는다. 장애물은 장애물 전용 난수(lv.og)로만 고르고
+   기존 것을 그 자리에서 바꾸거나 뒤에 더한다 — 장갑문(갈림길 위험한 쪽), 방패 정예(무리마다 하나), 폭발 드럼통(구간마다 1~2개). 그 밖의 배치는 opt 없이 만든 구간과 같다.
+   opt.flame: 4단계(화염병 줄을 연 판만) — 철창·금색 칸의 병과를 화염병까지 넷 중에서 고른다(수·자리·나머지 배치는 그대로, placeSpecials) */
+export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   const p = segParams(k);
   const E = ENDLESS;
   const g = { rs: hash(VERSION, 'endless', seed >>> 0, p.seg, attempt) };
   const n0 = clamp(Math.floor(n), 1, MAX_N);
   // 뒤처진 분대(바닥선 아래)에게는 위협이 바닥선 병력 기준(화력 ∝ 병력^0.8)
   const behind = Math.pow(Math.max(1, segFloor(p.seg) / n0), 0.8);
-  const base = WEAPON[clamp(tier | 0, 0, 3)] * segMul(p.seg) * behind;
+  const base = WEAPON[clamp(tier | 0, 0, THREAT_TIER)] * segMul(p.seg) * behind;   // 코일의 넷째 단계는 위협에 넣지 않는다(THREAT_TIER)
   const lv = {
     L: p.L, attempt, seed: hash(VERSION, 'endless-run', seed >>> 0), speed: p.speed, params: p, tag: p.tag,
     rows: [], foes: [], props: [], saws: [], plan: [], golden: [], chunks: [], nextId: 1,
     arenaZ: 0, bossHp: 0, par: 0, arrive: 0, helpStart: 0,
     startE: n0, fireE: E.fire, heroE: null, marks: [], bare: true, refMul: base,
   };
+  if (opt && opt.obs && p.seg >= RUN_ORDER.obstacle) lv.og = { rs: hash(VERSION, 'obstacle', seed >>> 0, p.seg, attempt) };
   GK = E.gk;
   try {
     const plan = planChunks(p, g);
@@ -1459,8 +1496,9 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0) {
       lv.golden.push(ng);
     }
     lv.arenaZ = z + 12;
-    placeSpecials(lv, p, false, hash(VERSION, 'endless-sp', seed >>> 0, p.seg, attempt));
-  } finally { GK = 1; }
+    placeSpecials(lv, p, false, hash(VERSION, 'endless-sp', seed >>> 0, p.seg, attempt), !!(opt && opt.flame));
+    if (lv.og) { placeDrums(lv); obstacleMarks(lv); }
+  } finally { GK = 1; delete lv.og; }
   // MAX 칸(높인 끝)은 쓰지 않는다 — 몰아 쏘기 확인(redFast)을 판 중간에 돌릴 수 없다
   for (const r of lv.rows) for (const c of r.cells) if (c.cap0 != null) { c.cap = c.cap0; delete c.cap0; }
   // 코인 상자는 구간 번호만큼(가상 레벨 61~120의 값을 그대로 주지 않는다)
@@ -1475,21 +1513,419 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0) {
   lv.bossHp = Math.max(30, Math.round(dps(Gn * p.boss.m, 0, E.fire) * (base / segMul(p.seg)) * E.bossMul0 * Math.pow(E.bossStep, p.seg - 1) * p.bossKill * bossHitFrac(Gn)));
   return lv;
 }
-/* 무한모드 새 판. opt = { seed, start, fire, hero } */
+/* 2단계 장애물의 자리·개수(보이는 수치는 roster.js OBSTACLES) [초안].
+   door.p: 4구간부터 갈림길 위험한 쪽이 장갑문일 몫(벽 · 좀비 떼 · 장갑문이 셋에 하나꼴).
+   shield.n: 무리(spawnWave) 하나에 섞이는 방패 정예 수.
+   drum: two = 한 구간에 둘일 몫(아니면 하나), crate = 상자·철창 옆에 둘 몫(아니면 좀비 무리 앞), hp = 체력(그 청크 위협 화력의 이만큼 초 — 작다),
+   w = 반폭(m), gap = 상자 바깥 옆으로 띄우는 거리(m — 반경 안), wave·deep = 무리로 치는 덩어리(한 좀비 둘레 옆으로 반경·앞뒤 deep m 안의 좀비 수), chunks = 무리를 찾는 청크 */
+export const OBST = {
+  door: { p: 1 / 3 },
+  shield: { n: 1 },
+  drum: { two: 0.5, crate: 0.35, hp: 0.2, w: 0.45, gap: 0.9, wave: 4, deep: 6, chunks: ['wave', 'surge', 'spit', 'crate', 'gate'] },
+};
+/* 폭발 드럼통 놓기(장애물 전용 난수): 좀비 무리의 가장 빽빽한 덩어리 조금 앞(드럼통이 사거리에 들 때 덩어리가 걸어와 둘레에 있다 — 노릴 맛이 있게), 때로 상자·철창의 바깥 옆(반경 안 — 같이 쏘면 상자를 잃는다).
+   갈림길 안·코 앞에는 두지 않는다(벽·떼·문 고르기가 이미 있다). 가운데 쪽이 아니라 바깥 옆이라 맞은편 상자(열쇠 대 지원병)는 반경 밖 */
+function placeDrums(lv) {
+  const og = lv.og, O = OBST.drum;
+  const inDiv = (z) => !!lv.divs && lv.divs.some((d) => z >= d.z0 - 6 && z <= d.z1 + 2);
+  const chunkAt = (z) => { let c = lv.chunks[0]; for (const ch of lv.chunks) if (ch.z <= z) c = ch; return c; };
+  // 청크마다 가장 빽빽한 덩어리(한 좀비 둘레 — 옆으로 반경, 앞뒤로 O.deep m 안): 무리가 양옆으로 갈렸어도 한쪽 덩어리에 둔다
+  const r = OBSTACLES.drum.r;
+  const waves = [];
+  for (const ch of lv.chunks) {
+    if (!O.chunks.includes(ch.kind)) continue;
+    const fs = lv.foes.filter((f) => f.kind !== 'spit' && !f.fork && !f.flank && f.z >= ch.z && f.z < ch.z + ch.len && !inDiv(f.z));
+    let cl = [];
+    for (const f of fs) { const c = fs.filter((g) => Math.abs(g.x - f.x) < r && Math.abs(g.z - f.z) < O.deep); if (c.length > cl.length) cl = c; }
+    if (cl.length >= O.wave) waves.push(cl);
+  }
+  const boxes = lv.props.filter((q) => (q.kind === 'crate' || q.kind === 'cage') && !q.fork && !inDiv(q.z));
+  const n = chance(og, O.two) ? 2 : 1;
+  for (let i = 0; i < n; i++) {
+    let x, z;
+    if (boxes.length && (!waves.length || chance(og, O.crate))) {
+      const c = boxes.splice((rand(og) * boxes.length) | 0, 1)[0];
+      const cx = (c.x0 + c.x1) / 2;
+      const sd = cx > 0 ? 1 : cx < 0 ? -1 : chance(og, 0.5) ? 1 : -1;
+      x = clamp(cx + sd * ((c.x1 - c.x0) / 2 + O.gap), -ROAD + O.w + 0.05, ROAD - O.w - 0.05);
+      z = c.z;
+    } else if (waves.length) {
+      const fs = waves.splice((rand(og) * waves.length) | 0, 1)[0];
+      const zs = fs.map((f) => f.z).sort((a, b) => a - b);
+      let sx = 0;
+      for (const f of fs) sx += f.x;
+      x = clamp(sx / fs.length, -3.9, 3.9);
+      // 무리 가운데가 걸어와 닿는 자리: 무리는 WAKE m 앞에서 깨어 걷고, 드럼통은 사거리(BULLET_RANGE)에 들 때 처음 맞는다 — 그때 무리 가운데가 드럼통 둘레에 오게
+      z = zs[zs.length >> 1] - (FOE_BASE.grunt.spd * (WAKE - BULLET_RANGE)) / (lv.speed + FOE_BASE.grunt.spd);
+      if (inDiv(z)) continue;
+    } else break;
+    const ch = chunkAt(z);
+    const hp = Math.max(1, Math.round(O.hp * dps(ch.ng, 0, lv.fireE) * (ch.thr || 1)));
+    lv.props.push({ id: lv.nextId++, kind: 'drum', x0: x - O.w, x1: x + O.w, z, hp, max: hp, alive: true, hitT: -9 });
+  }
+}
+/* 처음 보는 장애물 알림 자리: 구간마다 종류별로 가장 앞의 것(장갑문은 그 갈림길의 코 — 고르는 자리). 판에서 종류마다 한 번만 알린다(marksUpdate → 'obstacle') */
+function obstacleMarks(lv) {
+  const first = {};
+  const put = (k, z) => { if (!(first[k] <= z)) first[k] = z; };
+  for (const d of lv.divs || []) if (d.kind === 'door') put('door', d.z0);
+  for (const q of lv.props) if (q.kind === 'drum') put('drum', q.z);
+  for (const f of lv.foes) if (f.elite === 'shield') put('shield', f.z);
+  for (const k of OBSTACLE_IDS) if (first[k] != null) lv.marks.push({ t: 'obstacle', kind: k, z: first[k] });
+}
+/* 장갑문이 이 판의 총알에서 받는 피해 배수: 보통 총알 gun, 관통 효과가 있으면 pierce, 작렬 효과면 레벨만큼(Lv2 = burst, Lv1은 gun과의 사이, Lv3도 burst까지) — 가진 것 중 가장 큰 값.
+   봇의 갈림길 판단(divSteer)도 이 값을 본다 */
+export function doorMul(s) {
+  const D = OBSTACLES.door;
+  const fx = fxOf(s);
+  let k = D.gun;
+  if (fx && fx.pierce) k = Math.max(k, D.pierce);
+  if (fx && fx.burst) k = Math.max(k, D.gun + (D.burst - D.gun) * Math.min(1, FX_LV[Math.min(FX_LV_MAX, fx.burst) - 1]));
+  return k;
+}
+/* 방패 정예가 총알에서 받는 피해 배수(관통 효과가 있으면 방패를 무시한다) */
+export const shieldMul = (s) => { const fx = fxOf(s); return fx && fx.pierce ? 1 : OBSTACLES.shield.gun; };
+/* 드럼통 d의 폭발 반경이 소품 o(상자·철창 — x0~x1 줄)에 닿나: 드럼통 가운데에서 그 줄의 가장 가까운 점까지 */
+export function blastReach(d, o) {
+  const x = (d.x0 + d.x1) / 2;
+  const dx = Math.max(0, o.x0 - x, x - o.x1), dz = o.z - d.z;
+  return dx * dx + dz * dz <= OBSTACLES.drum.r * OBSTACLES.drum.r;
+}
+
+/* 무한모드 새 판. opt = { seed, start, fire, hero, pet, ammo, unl, ammoOpen, flame, relicsOpen, relics }
+   해금(단계 해금 기획서 1절 — store.endlessUnlocks가 센다): unl = 선형 단계(1 카드, 2 탄 효과·시너지·장애물, 3 유물 — CARD.stageMax까지),
+   ammoOpen = 별로 열린 탄종, flame = 화염병(4단계, 2회차 엔딩 — 따로 가는 줄), relicsOpen = 열린 유물 id(3단계의 넷 + 5단계로 하나씩).
+   상태 s.endless에는 그 단계가 열려 뜻이 있을 때만 싣는다 — 없는 값은 필드도 없게(앞 단계를 연 판의 지문 PLAIN_FP·STAGE1_FP… 그대로).
+   relics(시험·측정용 — 화면은 주지 않는다): 처음부터 가진 유물(열린 것 중, RELIC.max까지). 판에서는 대왕 보스 뒤에만 얻는다 */
 export function newEndless(opt = {}) {
   const seed = (opt.seed >>> 0) || 1;
-  const seg = buildSegment(seed, 1, opt.start ?? START_N, 0);
+  const unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(opt.unl) || 0)));
+  const flame = unl >= 1 && opt.flame === true;   // 화염병 줄(4단계): 첫 구간의 철창·금색 칸부터 화염병이 나온다
+  const seg = buildSegment(seed, 1, opt.start ?? START_N, 0, 0, flame ? FLAME_ON : null);
   const s = newGame(seg, opt);
   s.endless = { seed, seg: 1, bosses: 0, bank: 0, wait: 0, z0: 0 };
+  // 보스 뒤 3택 1(opt.unl ≥ 1): 연 단계·별로 열린 탄종·고른 카드·지금 떠 있는 카드. 안 연 판에는 필드가 없다(해시 그대로)
+  if (unl >= 1) {
+    s.endless.unl = unl;
+    s.endless.ammo = (Array.isArray(opt.ammoOpen) ? opt.ammoOpen : []).filter((a, i, l) => AMMO[a] && l.indexOf(a) === i);
+    s.endless.picks = [];
+    s.endless.offer = null;
+    // 2단계(탄 효과·시너지): 효과마다 레벨 { 탄종: Lv }(해시는 AMMO_IDS 순서). 출격 탄종은 한 칸을 Lv2로 차지한다 — 대신 쪽은 s.ammo 그대로
+    if (unl >= 2) { s.endless.fx = {}; if (s.ammo) s.endless.fx[s.ammo] = FX_BASE_LV; s.endless.obsSeen = []; }   // obsSeen: 이 판에서 알린 장애물 종류(처음 한 번씩)
+    // 3단계(유물): 열린 유물 중 아는 것만 한 번씩(열리는 순서 그대로). 3단계 아래 판에는 필드가 없다
+    // relics: 이 판에서 얻은 유물(얻은 순서), spent: 그중 써서 사라진 것(불굴의 심장) — 얻은 수(RELIC.max)에는 그대로 든다
+    if (unl >= 3) {
+      const e = s.endless;
+      e.relicsOpen = relicList(opt.relicsOpen);
+      e.relics = relicList(opt.relics).filter((id) => e.relicsOpen.includes(id)).slice(0, RELIC.max);
+      e.spent = [];
+      if (e.relics.length) relicSeg(s);   // 처음부터 가진 유물(시험·측정): 첫 구간에도 구간 규칙(확성기·코일·나침반)을 건다
+    }
+    // 따로 가는 줄(4단계 화염병 — 2회차 엔딩): 카드가 있는 판에만. 병과 뽑기(철창·금색 칸·특수병 카드 — spKindsOf)가 화염병까지 본다. 안 연 판에는 필드가 없다
+    if (flame) s.endless.flame = true;
+  }
   s.refMul = seg.refMul;
   return s;
 }
+const relicList = (l) => (Array.isArray(l) ? l : []).filter((id, i, a) => typeof id === 'string' && RELICS[id] && a.indexOf(id) === i);
+
+/* ---------- 무한모드 보스 뒤 3택 1(단계 해금 기획서 1단계) ----------
+   보스가 쓰러지고 연출(ENDLESS.wait)이 끝나면 다음 구간이 시작되기 전에 카드가 뜬다. 고를 때까지 판은 멈춘다(step이 틱을 세지 않는다).
+   - 카드는 모두 이미 게임에 있는 효과: 증원(병력 ×CARD.men) · 무기(+1단계) · 특수병(열린 병과 합류 또는 가진 병과 Lv+1, 철창 규칙 그대로) ·
+     탄종 바꾸기(별로 열린 탄종 중 지금 것 빼고 하나).
+   - 서로 다른 종류 CARD.count장. 어떤 카드(와 어느 병과·탄종)가 나올지는 시드와 구간 번호로 정해진다 — 다시 뽑기 없음, 숨은 난수 없음.
+     그 순간 쓸모없는 카드는 나오지 않는다(병력 상한, 무기 3단계, 특수병 자리가 차고 모두 Lv3이거나 호위 병사가 모자람, 바꿀 탄종 없음).
+   - 다음 구간은 고르기 전의 병력·무기 단계로 만든 뒤 카드를 적용한다 — 그래야 다음 구간의 게이트·적 숫자가 카드만큼 같이 부풀지 않는다.
+   - 떠 있는 카드는 상태(s.endless.offer)에 있어 이어하기로 다시 열어도 같은 카드가 뜬다 */
+export const CARD = {
+  stageMax: 3,      // 지금 만든 해금 단계(1: 보스 뒤 3택 1 기본 카드, 2: 탄 효과·시너지·장애물, 3: 유물 — 5단계는 유물이 하나씩 더 열릴 뿐 같은 단계)
+  count: 3,
+  men: 1.3,         // 증원: 병력 × 1.3
+  kinds: ['men', 'gun', 'unit', 'ammo'],   // 1단계(탄종 바꾸기 'ammo')
+  kinds2: ['men', 'gun', 'unit', 'fx'],    // 2단계부터(탄종 바꾸기 대신 탄 효과 'fx')
+};
+/* 지금 상태에서 나올 수 있는 카드 종류와 그 대상(특수병 병과·탄종 후보) */
+function cardPool(s) {
+  const q = s.squad;
+  const e = s.endless;
+  const units = spKindsOf(s).filter((k) => {
+    const m = q.sp.find((o) => o.k === k);
+    return m ? (m.lv || 1) < SP_LV_MAX : q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1);
+  });
+  const ammo = (e.ammo || []).filter((a) => a !== (s.ammo || ''));
+  const kinds = CARD.kinds.filter((k) => (k === 'men' ? q.n < MAX_N : k === 'gun' ? q.tier < tierMax(s) : k === 'unit' ? units.length > 0 : ammo.length > 0));
+  return { kinds, units, ammo };
+}
+/* 카드 고르기: 대왕 보스 뒤(3단계 판)는 유물(relicOffer — 없으면 카드), 2단계를 연 판은 makeOffer2, 1단계 판은 예전 그대로(1단계 지문) */
+const makeOffer = (s) => relicOffer(s) || (s.endless.fx ? makeOffer2(s) : makeOffer1(s));
+/* 1단계: 시드·구간 번호로 정한 순서에서 앞의 CARD.count장(보이는 순서는 CARD.kinds 순) */
+function makeOffer1(s) {
+  const e = s.endless;
+  const g = { rs: hash(VERSION, 'card', e.seed >>> 0, e.seg) };
+  const pool = cardPool(s);
+  const order = pool.kinds.slice();
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rand(g) * (i + 1)); const t = order[i]; order[i] = order[j]; order[j] = t; }
+  const u = pool.units.length ? pool.units[Math.floor(rand(g) * pool.units.length)] : '';
+  const a = pool.ammo.length ? pool.ammo[Math.floor(rand(g) * pool.ammo.length)] : '';
+  const pick = order.slice(0, CARD.count).sort((x, y) => CARD.kinds.indexOf(x) - CARD.kinds.indexOf(y));
+  return pick.map((k) => (k === 'unit' ? { k, u } : k === 'ammo' ? { k, a } : { k }));
+}
+/* 카드 한 장이 바꾸는 값(화면이 '병력 142 → 185'처럼 적는다): { k, from, to, u?, a? } */
+export function cardInfo(s, c) {
+  const q = s.squad;
+  if (!c) return null;
+  if (c.k === 'men') return { k: 'men', from: q.n, to: Math.min(MAX_N, q.n + cardMen(q.n)) };
+  if (c.k === 'gun') return { k: 'gun', from: q.tier, to: Math.min(tierMax(s), q.tier + 1) };
+  if (c.k === 'unit') {
+    const m = q.sp.find((o) => o.k === c.u);
+    const o = { k: 'unit', u: c.u, from: m ? m.lv || 1 : 0, to: m ? Math.min(SP_LV_MAX, (m.lv || 1) + 1) : 1 };
+    const cb = combosBy(s, c.u);   // 2단계 판: 이 특수병으로 켜지는 시너지(화면이 카드에 적는다 — 1단계 판은 늘 빈 목록이라 필드가 없다)
+    if (cb.length) o.combos = cb;
+    return o;
+  }
+  if (c.k === 'ammo') return { k: 'ammo', a: c.a, from: s.ammo || '', to: c.a };
+  if (c.k === 'fx') { const lv = fxLv(s, c.a); const o = { k: 'fx', a: c.a, from: lv, to: Math.min(FX_LV_MAX, lv + 1) }; const cb = combosBy(s, c.a); if (cb.length) o.combos = cb; return o; }
+  if (c.k === 'relic') return RELICS[c.r] ? { k: 'relic', r: c.r } : null;   // 유물 카드(3단계): 글은 roster.js RELICS[r].text()·cost()
+  return null;
+}
+const cardMen = (n) => Math.max(1, Math.round(n * (CARD.men - 1)));
+
+/* ---------- 2단계: 탄 효과·탄종 상자·시너지(단계 해금 기획서 3절 — s.endless.fx가 있는 판에만) ----------
+   - 탄 효과는 탄종의 좋은 점만(roster.js fxVal — Lv1·2·3 = 그 탄종 값의 50·100·150%). 출격 탄종은 Lv2로 한 칸을 차지하고 대신 쪽(s.ammo의 피해·사거리)을 그대로 진다.
+   - 슬롯 FX_SLOTS칸. 같은 효과를 또 얻으면 레벨 +1(Lv3까지), 슬롯이 차면 가진 효과(Lv3 아래)만 더 얻는다.
+   - 시너지(roster.js COMBOS)는 재료가 함께 있으면 켜진다(따로 저장하지 않는다 — 재료가 곧 상태). 켜지는 순간 'combo' 이벤트.
+   - 1단계 판의 코드 경로(ammoHit·fire의 탄종 처리·makeOffer1)는 그대로 두고 따로 간다 — 부동소수 순서가 바뀌면 1단계 지문(STAGE1_FP)이 깨진다 */
+/* 판 안 순서(기획서 2절 장치 2) — 다 연 사람도 처음 두 보스 뒤에는 기본 카드(증원·무기·특수병 합류/Lv+1·새 탄 효과)만 본다:
+   up: 잡은 보스가 이만큼이 된 뒤의 카드부터 탄 효과 레벨 업·시너지를 완성하는 카드(탄종 상자 내용물도 같은 규칙),
+   obstacle: 이 구간부터 장애물(기획서 4절), relic: 이 구간(대왕) 보스 뒤부터 유물(5절) — 장애물·유물은 그 단계를 만들 때 이 값을 본다 */
+export const RUN_ORDER = { up: 3, obstacle: 4, relic: 6 };
+export const FX_UP_FROM = RUN_ORDER.up;
+export const FX_WORTH = 0.1;   // 봇이 보는 탄종 상자 하나 = 병력의 이만큼(특수병 한 명쯤)
+export const fxOf = (s) => (s && s.endless && s.endless.fx) || null;
+export const fxLv = (s, a) => { const fx = fxOf(s); return fx ? fx[a] | 0 : 0; };
+/* 슬롯 수 — 넓은 탄낭(유물)이면 RELICS.pouch.slots */
+export const fxSlots = (s) => (relicOn(s, 'pouch') ? RELICS.pouch.slots : FX_SLOTS);
+const fxCount = (fx) => AMMO_IDS.reduce((n, a) => n + (fx[a] ? 1 : 0), 0);
+/* 효과 a를 지금 얻을 수 있나: 가진 효과면 Lv3 아래, 새 효과면 빈 칸이 있을 때 */
+export function fxCan(s, a) {
+  const fx = fxOf(s);
+  if (!fx || !AMMO[a]) return false;
+  return fx[a] ? fx[a] < FX_LV_MAX : fxCount(fx) < fxSlots(s);
+}
+/* 시너지 재료: 탄종 id = 그 탄 효과(출격 탄종이든 카드든), 병과 = 그 특수병(레벨 상관없이), 영웅 id = 출격 영웅 */
+function hasPart(s, id) {
+  if (AMMO[id]) return fxLv(s, id) > 0;
+  if (SP[id]) return s.squad.sp.some((m) => m.k === id);
+  return !!(s.hero && s.hero.id === id);
+}
+export const comboOn = (s, id) => !!fxOf(s) && COMBOS[id].need.every((x) => hasPart(s, x));
+export const combosOn = (s) => (fxOf(s) ? COMBO_IDS.filter((id) => comboOn(s, id)) : []);
+/* 재료 id를 얻으면 새로 켜지는 시너지들(이미 가졌으면 없다) */
+function combosBy(s, id) {
+  if (!fxOf(s) || hasPart(s, id)) return [];
+  return COMBO_IDS.filter((c) => COMBOS[c].need.includes(id) && COMBOS[c].need.every((x) => x === id || hasPart(s, x)));
+}
+const comboEmit = (s, ids, x, z) => { for (const id of ids) emit(s, { t: 'combo', id, x: x ?? s.squad.x, z: z ?? s.squad.z }); };
+/* 탄 효과 a를 얻는다(레벨 +1) — 부르는 쪽이 fxCan을 확인한다 */
+function fxAdd(s, a, via, x, z) {
+  const fx = s.endless.fx;
+  const on = combosBy(s, a);
+  fx[a] = (fx[a] | 0) + 1;
+  emit(s, { t: 'fxUp', a, lv: fx[a], via, x: x ?? s.squad.x, z: z ?? s.squad.z });
+  comboEmit(s, on, x, z);
+}
+function shuffle(g, a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand(g) * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+  return a;
+}
+/* 2단계의 카드 후보: 증원·무기·특수병(1단계 그대로) + 탄 효과(별로 열린 탄종과 출격 탄종 중 지금 얻을 수 있는 것).
+   up(3구간 보스 뒤)이 아니면 효과는 새것만, 새 시너지를 켜는 특수병·효과는 뺀다 */
+function cardPool2(s) {
+  const q = s.squad;
+  const e = s.endless;
+  const up = e.bosses >= FX_UP_FROM;
+  const calm = (id) => up || !combosBy(s, id).length;
+  const units = spKindsOf(s).filter((k) => {
+    const m = q.sp.find((o) => o.k === k);
+    return (m ? (m.lv || 1) < SP_LV_MAX : q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1)) && calm(k);
+  });
+  const fx = AMMO_IDS.filter((a) => ((e.ammo || []).includes(a) || s.ammo === a) && fxCan(s, a) && (up || !e.fx[a]) && calm(a));
+  // 넓은 탄낭(유물)의 대신 쪽: 증원 카드가 나오지 않는다
+  const kinds = CARD.kinds2.filter((k) => (k === 'men' ? q.n < MAX_N && !relicOn(s, 'pouch') : k === 'gun' ? q.tier < tierMax(s) : k === 'unit' ? units.length > 0 : fx.length > 0));
+  return { kinds, units, fx, up };
+}
+/* 2단계 카드: 범주(증원·무기·특수병·탄 효과) 중 서로 다른 것을 시드 순서로 CARD.count개(1단계와 범주 분포가 같다), 범주가 모자라면 다른 탄 효과로 채운다.
+   3구간 보스 뒤에는 특수병·탄 효과의 대상을 고를 때 시너지를 켜는 것을 먼저 고르고 카드에 syn 표시(화면: 금빛 테두리) */
+function makeOffer2(s) {
+  const e = s.endless;
+  const g = { rs: hash(VERSION, 'card', e.seed >>> 0, e.seg) };
+  const pool = cardPool2(s);
+  const count = cardCount(s);   // 수집가의 가방(유물)이면 2장
+  const kinds = shuffle(g, pool.kinds.slice()).slice(0, count);
+  const syn = (id) => pool.up && combosBy(s, id).length > 0;
+  const rank = (list) => { const l = shuffle(g, list.slice()); return [...l.filter(syn), ...l.filter((x) => !syn(x))]; };
+  const units = rank(pool.units);
+  const fxs = kinds.includes('fx') ? rank(pool.fx).slice(0, Math.min(pool.fx.length, 1 + count - kinds.length)) : [];
+  const mark = (c, id) => (syn(id) ? { ...c, syn: true } : c);
+  const out = [];
+  for (const k of CARD.kinds2) {
+    if (!kinds.includes(k)) continue;
+    if (k === 'unit') out.push(mark({ k, u: units[0] }, units[0]));
+    else if (k === 'fx') for (const a of AMMO_IDS) { if (fxs.includes(a)) out.push(mark({ k, a }, a)); }
+    else out.push({ k });
+  }
+  return out;
+}
+/* 탄종 상자: 무기 단계가 이미 3이면 이번 구간의 무기 강화 상자(갈림길 보상 상자·열쇠 상자 포함)가 탄종 상자로 — 내용물(탄 효과 하나)은
+   지금 시드로 정해 상자에 싣는다(reward.a — 화면이 상자 위에 아이콘으로 띄운다, 부수기 전에 고른다). 후보는 카드와 같다(열린 탄종·슬롯·판 안 순서).
+   얻을 수 있는 효과가 없으면 그대로 무기 상자(3단계라 병사로). 고른 카드가 들은 뒤(구간이 시작되는 순간)의 상태로 정한다 */
+function fxCrates(s) {
+  const e = s.endless;
+  if (!e.fx || s.squad.tier < tierMax(s)) return;   // 과부하 코일(유물)이면 4단계가 된 뒤부터
+  const pool = cardPool2(s).fx;
+  if (!pool.length) return;
+  const g = { rs: hash(VERSION, 'fxcrate', e.seed >>> 0, e.seg) };
+  for (const p of s.props) if (p.kind === 'crate' && p.reward && p.reward.type === 'gun') p.reward = { type: 'fx', a: pool[Math.floor(rand(g) * pool.length)] };
+}
+/* ---------- 3단계·5단계: 유물(단계 해금 기획서 5절 — s.endless.relics가 있는 판(unl ≥ 3)에만) ----------
+   - 대왕 구간(segInfo tag 'super' — 6·12·18…, RUN_ORDER.relic부터) 보스 뒤에 카드 대신 유물 카드 RELIC.show장 중 1장: 열린 유물 중 이 판에 아직 없는 것을
+     시드·구간 번호로 정한 순서에서 앞의 것(보이는 순서는 RELIC_IDS 순). 남은 게 모자라면 그만큼, 없거나 이미 RELIC.max개면 보통 카드.
+     그 판에서 좋은 점이 들 수 없는 유물(relicFits — 대신 쪽만 남는다)은 내지 않는다.
+   - 유물은 수치가 아니라 규칙을 바꾼다(roster.js RELICS — 보이는 수치·글). 규칙은 relicOn(s, id)를 보는 곳들:
+     나침반 relicSeg·forkPeek·openCrate, 휘장 fire(bannerOn), 확성기 relicSeg, 코일 tierMax·relicSeg, 넷째 자리 spMax·spEscort,
+     심장 lose(heartRevive), 가방 cardCount·eggP(화면), 탄낭 fxSlots·cardPool2.
+   - 구간을 바꾸는 유물(확성기·코일·나침반)은 구간이 시작될 때 한 번 건다(relicSeg — 고른 카드·유물이 든 뒤, 탄종 상자를 정한 뒤).
+     바뀐 숫자는 상태(덧셈 칸 step, 상자 reward)에 실려 이어하기로 다시 걸리지 않는다 */
+export const RELIC = { max: 3, show: 3 };
+export const relicsOf = (s) => (s && s.endless && s.endless.relics) || null;
+/* 유물 id가 이 판에 켜져 있나(얻었고 아직 쓰지 않았다) */
+export function relicOn(s, id) {
+  const e = s && s.endless;
+  return !!(e && e.relics && e.relics.includes(id) && !(e.spent && e.spent.includes(id)));
+}
+/* 무기 단계 상한(과부하 코일이면 RELICS.coil.tier — WEAPON의 끝 값) */
+export const tierMax = (s) => (relicOn(s, 'coil') ? Math.min(WEAPON.length - 1, RELICS.coil.tier) : TIER_MAX);
+/* 특수병 자리·호위 병사 수(넷째 자리면 RELICS.fourth) */
+export const spMax = (s) => (relicOn(s, 'fourth') ? RELICS.fourth.slots : SP_MAX);
+export const spEscort = (s) => (relicOn(s, 'fourth') ? RELICS.fourth.escort : SP_ESCORT);
+/* 보스 뒤 카드 장 수(수집가의 가방이면 RELICS.bag.cards — 유물 카드 장 수는 그대로 RELIC.show) */
+export const cardCount = (s) => (relicOn(s, 'bag') ? RELICS.bag.cards : CARD.count);
+/* 대왕이 아닌 무한모드 보스를 잡을 때 펫 알이 나올 확률(뽑기는 화면 쪽 — 시뮬레이션 밖의 난수). 대왕은 늘 하나 */
+export const eggP = (s) => (relicOn(s, 'bag') ? RELICS.bag.egg : EGG.pEndless);
+/* 전장의 휘장이 지금 켜졌나: 병력이 이 판 최고치(q.peak)의 at 아래(화면의 위기 신호와 같은 문턱) */
+export const bannerOn = (s) => relicOn(s, 'banner') && s.squad.n < RELICS.banner.at * s.squad.peak;
+/* 총알 화력 배수(휘장이 켜졌으면 1 + v, 아니면 1 — 봇의 화력 어림도 이 값을 곱한다: x × 1 = x라 유물 없는 판은 그대로) */
+export const relicFire = (s) => (bannerOn(s) ? 1 + RELICS.banner.v : 1);
+/* 갈림길 d의 보상 상자(위험한 쪽 — 철창이 됐을 수도) */
+export function forkCrate(s, d) {
+  for (const p of s.props) if (p.fork && (p.kind === 'crate' || p.kind === 'cage') && p.z > d.z0 && p.z < d.z1 && Math.sign(p.x0 + p.x1) === d.risk) return p;
+  return null;
+}
+/* 나침반: 지금 속이 보이는 갈림길 보상 상자(갈림길 알림 'fork'가 뜬 틱부터 — 코 MARK_AHEAD(= RELICS.compass.ahead, 테스트가 본다) m 앞, 아직 부서지지·지나치지 않았으면).
+   알림과 같은 틱이게 d.seen을 본다. 보통은 벽에 가려 가까이 가야 보인다(ARSENAL.md 8절) — 화면이 벽 위에 내용물을 띄운다. 없으면 null */
+export function forkPeek(s, d) {
+  if (!relicOn(s, 'compass') || !d || !d.seen) return null;
+  const p = forkCrate(s, d);
+  return p && p.alive && !p.passed ? p : null;
+}
+/* 화염병 줄(4단계 — 2회차 엔딩)을 연 무한모드 판인가 */
+export const flameOn = (s) => !!(s && s.endless && s.endless.flame === true);
+/* 이 판에서 나올 수 있는 병과(특수병 카드·이어하기가 보고, 넷째 자리 유물이 이 수를 본다). 화염병 줄을 연 판은 넷(SP_FLAME), 아니면 예전 셋(SP_KINDS — 같은 배열·같은 차례) */
+export const spKindsOf = (s) => (flameOn(s) ? SP_FLAME : SP_KINDS);
+/* 유물의 좋은 점이 이 판에서 들 수 있나(구현 판단 — 대신 쪽만 남는 유물은 카드로 내지 않는다):
+   넷째 자리는 병과가 자리(SP_MAX)보다 많을 때만(같은 병과는 레벨이 오를 뿐이라 세 병과로는 넷째 자리가 늘 빈다 — 화염병 줄을 연 판(넷)에만 나온다),
+   넓은 탄낭은 얻을 수 있는 탄 효과 종류(별로 열린 탄종 + 출격 탄종)가 슬롯(FX_SLOTS)보다 많을 때만 */
+export function relicFits(s, id) {
+  const e = s.endless;
+  if (id === 'fourth') return spKindsOf(s).length > SP_MAX;
+  if (id === 'pouch') return AMMO_IDS.filter((a) => (e.ammo || []).includes(a) || s.ammo === a).length > FX_SLOTS;
+  return !!RELICS[id];
+}
+/* 대왕 보스 뒤의 유물 카드(아니면 null — 보통 카드) */
+function relicOffer(s) {
+  const e = s.endless;
+  if (!e.relics || e.seg < RUN_ORDER.relic || segInfo(e.seg).tag !== 'super' || e.relics.length >= RELIC.max) return null;
+  const left = e.relicsOpen.filter((id) => !e.relics.includes(id) && relicFits(s, id));
+  if (!left.length) return null;
+  const g = { rs: hash(VERSION, 'relic', e.seed >>> 0, e.seg) };
+  const show = shuffle(g, left).slice(0, RELIC.show);
+  return RELIC_IDS.filter((id) => show.includes(id)).map((r) => ({ k: 'relic', r }));
+}
+/* 유물 카드 r을 지금 얻을 수 있나(열렸고, 이 판에 없고, RELIC.max개 아래) */
+const relicCan = (e, r) => !!(e.relics && RELICS[r] && e.relicsOpen.includes(r) && !e.relics.includes(r) && e.relics.length < RELIC.max);
+/* 유물 id를 얻는다: 'relic' 이벤트. 넷째 자리는 바로 호위 병사 규칙(4 → 6명)이 든다 — 모자라면 가장 늦게 온 특수병이 떠난다 */
+function relicAdd(s, id) {
+  const q = s.squad;
+  s.endless.relics.push(id);
+  emit(s, { t: 'relic', id, x: q.x, z: q.z });
+  if (id === 'fourth') escort(s);
+}
+/* 구간이 시작될 때 유물이 구간에 거는 규칙(한 구간에 한 번 — 고른 카드·유물이 든 뒤):
+   확성기 — 덧셈 칸의 오르는 빠르기(−로 시작한 빨간 칸은 red배 빨리, 파란 칸은 blue배 — step을 나눈다. 역전한 칸도 처음 색대로),
+   코일 — 지원병 상자(reward 'men')의 병력 × men,
+   나침반 — 갈림길 위험한 쪽 보상 상자의 병사 × v(지원병 상자는 병력에 곱하고, 무기·탄종 상자와 철창은 mul — 얻을 수 없어 병사로 바뀔 때.
+   무기 단계·탄 효과 레벨·특수병 합류는 한 칸이라 그대로). 병력 수는 상자에 실어 둔다(화면·봇이 보는 숫자 = 받는 숫자) */
+function relicSeg(s) {
+  const M = RELICS.megaphone;
+  if (relicOn(s, 'megaphone')) for (const row of s.rows) for (const c of row.cells) if (c.op === 'add') c.step /= c.v0 < 0 ? M.red : M.blue;
+  const coil = relicOn(s, 'coil'), compass = relicOn(s, 'compass');
+  if (!coil && !compass) return;
+  const risky = new Set();
+  if (compass) for (const d of s.divs || []) { const p = forkCrate(s, d); if (p) risky.add(p.id); }
+  for (const p of s.props) {
+    const r = p.reward;
+    if (!r || !p.alive) continue;
+    const k = (coil && r.type === 'men' ? RELICS.coil.men : 1) * (risky.has(p.id) ? RELICS.compass.v : 1);
+    if (r.type === 'men' && k !== 1) r.v = Math.max(1, Math.round(r.v * k));
+    else if (risky.has(p.id) && (r.type === 'gun' || r.type === 'fx' || r.type === 'unit')) r.mul = RELICS.compass.v;
+  }
+}
+/* 불굴의 심장: 전멸한 순간(lose가 병력을 0으로 만든 그 자리) 병력이 그 구간 바닥선(segFloor)의 v로 돌아오고 유물은 사라진다(spent — 얻은 수에는 그대로 든다).
+   바닥선이 없는 1구간은 바닥선의 밑(ENDLESS.floor0 — 시작 병력 강화 10단계의 출발 병력)을 쓴다(구현 판단 — 유물은 대왕(6구간) 뒤에 얻으므로 판에서는 늘 바닥선이 있고,
+   1구간은 처음부터 쥐여 주는 시험·측정에서만). 'relicUse' { id, n, cause }. 호위 병사가 모자라면 가장 늦게 온 특수병이 떠난다 */
+function heartRevive(s, cause) {
+  const q = s.squad, e = s.endless;
+  const n = clamp(Math.round(RELICS.heart.v * (segFloor(e.seg) || ENDLESS.floor0)), 1, MAX_N);
+  e.spent.push('heart');
+  q.n = n;
+  q.peak = Math.max(q.peak, n);
+  emit(s, { t: 'relicUse', id: 'heart', n, cause, x: q.x, z: q.z });
+  escort(s);
+}
+
+/* 지금 떠 있는 카드(없으면 null) */
+export const offerOf = (s) => (s && s.endless && s.endless.offer) || null;
+/* 카드 i를 고른다: 다음 구간을 만들어 이어 붙이고(고르기 전의 병력·무기 단계로) 카드를 적용한다. 고른 것이 없으면 false */
+export function pickCard(s, i) {
+  const e = s.endless;
+  if (!e || !e.offer || !e.offer.length) return false;
+  const c = e.offer[clamp(Math.floor(Number(i) || 0), 0, e.offer.length - 1)];
+  s.ev.length = 0;
+  e.offer = null;
+  nextSegment(s);
+  const q = s.squad;
+  const info = cardInfo(s, c);
+  if (c.k === 'men') gain(s, cardMen(q.n), q.x, q.z, 'card');
+  else if (c.k === 'gun') q.tier = Math.min(tierMax(s), q.tier + 1);
+  else if (c.k === 'unit') addSpecial(s, c.u, 'card', q.x, q.z);
+  else if (c.k === 'ammo') s.ammo = c.a;
+  else if (c.k === 'fx' && fxCan(s, c.a)) fxAdd(s, c.a, 'card', q.x, q.z);
+  else if (c.k === 'relic' && relicCan(e, c.r)) relicAdd(s, c.r);
+  e.picks.push(c.k === 'unit' ? 'unit:' + c.u : c.k === 'ammo' ? 'ammo:' + c.a : c.k === 'fx' ? 'fx:' + c.a : c.k === 'relic' ? 'relic:' + c.r : c.k);
+  emit(s, { t: 'card', ...info, x: q.x, z: q.z });
+  if (e.fx) fxCrates(s);
+  if (e.relics) relicSeg(s);
+  return true;
+}
+const OBS_ON = { obs: true }, FLAME_ON = { flame: true }, OBS_FLAME = { obs: true, flame: true };
+/* 구간을 만드는 옵션: 2단계를 연 판만 장애물(4구간부터), 화염병 줄을 연 판만 철창·금색 칸에 화염병. 둘 다 없으면 null(예전 그대로) */
+const segOpt = (e) => (e.unl >= 2 ? (e.flame ? OBS_FLAME : OBS_ON) : e.flame ? FLAME_ON : null);
 /* 보스가 쓰러진 뒤: 지나간 것을 버리고 다음 구간을 지금 자리 앞에 이어 붙인다(상태가 커지지 않는다) */
 function nextSegment(s) {
   const q = s.squad;
   const e = s.endless;
   e.seg++;
-  const seg = buildSegment(e.seed, e.seg, q.n, q.tier);
+  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, segOpt(e));
   const dz = q.z + ENDLESS.lead;
   const off = s.nextId;
   for (const r of seg.rows) { r.id += off; r.z += dz; }
@@ -1502,6 +1938,7 @@ function nextSegment(s) {
   s.rows = seg.rows; s.foes = seg.foes; s.props = seg.props; s.saws = seg.saws; s.marks = seg.marks;
   s.spits = []; s.rockets = [];
   delete s.pools;
+  delete s.flames;   // 불 지대(화염병)도 지나간 것과 함께
   s.L = seg.L; s.params = seg.params; s.speed = seg.speed;
   s.arenaZ = seg.arenaZ + dz; s.stopZ = s.arenaZ + 6;
   s.bossHp = seg.bossHp; s.bossRef = seg.arrive; s.refFire = ENDLESS.fire; s.refMul = seg.refMul;
@@ -1607,10 +2044,54 @@ export function restore(o) {
     if (typeof o.endless !== 'object') return null;
     num0(o.endless, ['seed', 'seg', 'bosses', 'bank', 'wait', 'z0']);
     if (o.endless.seg < 1) return null;
+    const e = o.endless;
+    // 3택 1을 안 연 판에 카드가 들어 있으면(손댄 저장) 버린다 — 남기면 step이 멈춘 채로 풀리지 않는다
+    if (e.unl == null) { delete e.offer; delete e.picks; delete e.ammo; delete e.fx; delete e.flame; delete e.relicsOpen; delete e.relics; delete e.spent; delete e.obsSeen; } else {
+      e.unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(e.unl) || 0)));
+      e.ammo = Array.isArray(e.ammo) ? e.ammo.filter((a) => AMMO[a]) : [];
+      e.picks = Array.isArray(e.picks) ? e.picks.filter((x) => typeof x === 'string') : [];
+      if (e.flame !== true) delete e.flame;
+      // 3단계 유물: 열린 것·얻은 것은 아는 id만 한 번씩, 얻은 것은 RELIC.max개까지, 쓴 것(spent)은 얻은 것 중에서만(탄 효과 슬롯이 넓은 탄낭을 보므로 fx보다 먼저)
+      if (e.unl >= 3) {
+        e.relicsOpen = relicList(e.relicsOpen);
+        e.relics = relicList(e.relics).slice(0, RELIC.max);
+        e.spent = relicList(e.spent).filter((id) => e.relics.includes(id));
+        for (const p of o.props) if (p.reward && p.reward.mul !== undefined && !(typeof p.reward.mul === 'number' && p.reward.mul > 0 && p.reward.mul < 10)) delete p.reward.mul;
+      } else { delete e.relicsOpen; delete e.relics; delete e.spent; }
+      // 2단계 탄 효과: 아는 탄종만 Lv1..3, 슬롯 수까지(AMMO_IDS 순서로 — 출격 탄종 먼저). 없으면 출격 탄종 Lv2에서 다시. 2단계 아래 판에는 없다
+      if (e.unl >= 2) {
+        const src = e.fx && typeof e.fx === 'object' && !Array.isArray(e.fx) ? e.fx : o.ammo ? { [o.ammo]: FX_BASE_LV } : {};
+        const fx = {};
+        for (const a of [o.ammo, ...AMMO_IDS]) {
+          const lv = Math.floor(Number(src[a]));
+          if (AMMO[a] && !fx[a] && lv >= 1 && Object.keys(fx).length < fxSlots(o)) fx[a] = Math.min(FX_LV_MAX, lv);
+        }
+        e.fx = fx;
+        for (const p of o.props) if (p.reward && p.reward.type === 'fx' && !AMMO[p.reward.a]) p.reward = { type: 'gun' };
+        // 알린 장애물 종류: 아는 것만 한 번씩(없으면 빈 목록 — 다시 알린다)
+        e.obsSeen = Array.isArray(e.obsSeen) ? e.obsSeen.filter((k, i, l) => OBSTACLE_IDS.includes(k) && l.indexOf(k) === i) : [];
+      } else { delete e.fx; delete e.obsSeen; }
+      const kinds = e.fx ? CARD.kinds2 : CARD.kinds;
+      const okRelic = (c) => relicCan(e, c.r);   // 유물 카드: 열린 것 중 아직 없는 것(RELIC.max개 아래)
+      const okCard = (c) => c && typeof c === 'object' && (c.k === 'relic' ? okRelic(c) : kinds.includes(c.k) && (c.k !== 'unit' || spKindsOf(o).includes(c.u)) && ((c.k !== 'ammo' && c.k !== 'fx') || !!AMMO[c.a]) && (c.syn === undefined || c.syn === true));
+      if (e.offer != null && !(Array.isArray(e.offer) && e.offer.length && e.offer.every(okCard))) e.offer = null;
+      if (e.offer == null) {
+        e.offer = null;
+        // 카드가 떠 있어야 할 자리(보스가 쓰러지고 연출이 끝남)인데 카드가 깨졌으면 그 자리에서 다시 만든다(같은 시드 → 같은 카드)
+        if (e.unl >= 1 && o.boss && o.boss.dead && e.wait <= 0) { const of = makeOffer(o); e.offer = of.length ? of : null; }
+      }
+    }
   }
   for (const b of o.bullets) if (typeof b.hm !== 'number') b.hm = 1;
+  // 화염병(4단계): 화염병 줄을 연 판에만 — 아닌 판(손댄 저장)의 화염병·불 지대는 버린다. 불 지대는 숫자가 성한 것만(남은 시간이 있는 것), 비면 필드도 없게
+  if (!flameOn(o)) q.sp = q.sp.filter((m) => m.k !== 'flame');
+  if (o.flames !== undefined) {
+    const fl = flameOn(o) && Array.isArray(o.flames) ? o.flames.filter((f) => f && typeof f === 'object' && FLAME_KEYS.every((k) => typeof f[k] === 'number' && Number.isFinite(f[k])) && f.t > 0 && f.w > 0 && f.len > 0) : [];
+    if (fl.length) o.flames = fl; else delete o.flames;
+  }
   return o;
 }
+const FLAME_KEYS = ['id', 'x', 'z', 'w', 'len', 't', 'T', 'd', 'lv'];
 
 function emit(s, e) { s.ev.push(e); }
 
@@ -1646,7 +2127,11 @@ function lose(s, k, cause, x, z, sub) {
   q.hurtT = s.t;
   s.stats.lost += real;
   emit(s, { t: 'loss', n: real, cause, x: x ?? q.x, z: z ?? q.z });
-  if (q.n <= 0) { s.cause = cause; return; }
+  if (q.n <= 0) {
+    if (relicOn(s, 'heart')) heartRevive(s, cause);   // 불굴의 심장(유물): 한 번은 전멸하지 않는다 — 같은 틱의 나머지도 되살아난 병력으로 흐른다
+    else s.cause = cause;
+    return;
+  }
   if (cause !== 'gate') {
     q.recent += real;
     // 짓밟기(보스가 닿은 뒤)로 잃은 병사는 회복 풀로 가지 않는다 — 닿기 전에 잡는 것이 보스전의 목표
@@ -1683,12 +2168,12 @@ function spDrop(s, cause) {
 /* 병사가 너무 적으면 특수병이 떠난다 */
 function escort(s) {
   const q = s.squad;
-  while (q.sp.length && q.n < SP_ESCORT * q.sp.length) spDrop(s, 'escort');
+  while (q.sp.length && q.n < spEscort(s) * q.sp.length) spDrop(s, 'escort');
 }
 
 /* 특수병 합류. 같은 병과가 이미 있으면 그 특수병의 레벨이 오른다(SIM 9, Lv3까지 — 새 자리·호위 병사는 필요 없다).
    Lv3인 같은 병과·자리 초과·호위 병사 부족이면 병사로 바꿔 준다(spFull.why: 'max' | 'full' | 'escort') */
-function addSpecial(s, k, via, x, z) {
+function addSpecial(s, k, via, x, z, mul = 0) {
   const q = s.squad;
   const h = s.hero;
   const m = q.sp.find((o) => o.k === k);
@@ -1699,16 +2184,20 @@ function addSpecial(s, k, via, x, z) {
     if (h && HEROES[h.id].match === k) chargeHero(s, 0.25);
     return;
   }
-  if (m || q.sp.length >= SP_MAX || q.n < SP_ESCORT * (q.sp.length + 1)) {
-    const n = Math.max(5, nice(0.12 * q.n));
+  const cap = spMax(s);   // 넷째 자리(유물)면 4자리·호위 병사 6명
+  if (m || q.sp.length >= cap || q.n < spEscort(s) * (q.sp.length + 1)) {
+    const n0 = Math.max(5, nice(0.12 * q.n));
+    const n = mul ? Math.max(1, Math.round(n0 * mul)) : n0;   // mul: 나침반(유물)이 실은 갈림길 위험한 쪽 철창의 병사 배수
     gain(s, n, x, z, 'spFull');
-    emit(s, { t: 'spFull', k, n, why: m ? 'max' : q.sp.length >= SP_MAX ? 'full' : 'escort', x: x ?? q.x, z: z ?? q.z });
+    emit(s, { t: 'spFull', k, n, why: m ? 'max' : q.sp.length >= cap ? 'full' : 'escort', x: x ?? q.x, z: z ?? q.z });
     return;
   }
+  const on = combosBy(s, k);   // 2단계 판: 이 특수병으로 켜지는 시너지(1단계·캠페인 판은 늘 빈 목록)
   q.sp.push({ id: s.nextId++, k, cd: 0.6, lv: 1 });
   s.stats.spGot++;
   emit(s, { t: 'spGet', k, via, x: x ?? q.x, z: z ?? q.z });
   if (h && HEROES[h.id].match === k) chargeHero(s, 0.25);
+  if (on.length) comboEmit(s, on, x, z);
 }
 
 function gain(s, k, x, z, why) {
@@ -1724,6 +2213,7 @@ function gain(s, k, x, z, why) {
 export function step(s, input) {
   s.ev.length = 0;
   if (s.phase === 'won' || s.phase === 'lost') { s.endT += DT; s.tick++; s.t += DT; return s; }
+  if (s.endless && s.endless.offer) return s;   // 보스 뒤 3택 1: 고를 때까지(pickCard) 판이 멈춘다 — 틱도 세지 않는다
   s.tick++;
   s.t += DT;
   const q = s.squad;
@@ -1753,7 +2243,14 @@ export function step(s, input) {
   if (q.x > EDGE) { q.x = EDGE; if (q.vx > 0) q.vx = 0; }
   // 분리대(갈림길): 코를 지나면 제 쪽에 갇힌다 — 몸이 가운데에서 차츰 밀려나 FORK_TAPER m 뒤에는 통째로 제 쪽에 있다
   if (s.divs && s.phase === 'run') {
-    for (const d of s.divs) if (!d.seen && q.z + MARK_AHEAD >= d.z0) { d.seen = 1; emit(s, { t: 'fork', z: d.z0, risk: d.risk, kind: d.kind || 'wall' }); }   // 갈림길 45m 앞 알림(한 번)
+    for (const d of s.divs) {
+      if (d.seen || q.z + MARK_AHEAD < d.z0) continue;
+      d.seen = 1;   // 갈림길 45m 앞 알림(한 번). 나침반(유물)이 있으면 위험한 쪽 보상 상자의 속(reward)도 — 화면은 forkPeek로 벽 위에 띄운다
+      const ev = { t: 'fork', z: d.z0, risk: d.risk, kind: d.kind || 'wall' };
+      const pk = forkPeek(s, d);
+      if (pk) ev.reward = { ...pk.reward };
+      emit(s, ev);
+    }
     const dv = divAt(s);
     if (dv) {
       const side = xPrev > 0 || (xPrev === 0 && q.vx > 0) ? 1 : -1;
@@ -1783,7 +2280,7 @@ export function step(s, input) {
   if (wiped(s)) return s;
   if (s.hero) heroUpdate(s, input);
   if (s.boss) {
-    // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +BONUS_CAP까지(나비는 레벨마다 +NABI_CAP, 저격수·로켓병은 Lv1 위 레벨마다 +SP_LV_CAP)
+    // 특수병·영웅이 보스에게 더 줄 수 있는 몫: 병사 화력의 +BONUS_CAP까지(나비는 레벨마다 +NABI_CAP, 저격수·로켓병·화염병은 Lv1 위 레벨마다 +SP_LV_CAP)
     let up = 0;
     for (const m of q.sp) if (m.k !== 'medic') up += (m.lv || 1) - 1;
     const cap = BONUS_CAP + (s.hero && s.hero.id === 'nabi' ? NABI_CAP * (Math.min(5, s.hero.lv) - 1) : 0) + SP_LV_CAP * up;
@@ -1870,8 +2367,16 @@ function marksUpdate(s) {
   for (const m of s.marks) {
     if (m.done || q.z < m.z - MARK_AHEAD) continue;
     m.done = true;
-    emit(s, { t: m.t, z: m.z, x: 0 });
+    if (m.t === 'obstacle') obstacleSeen(s, m);
+    else emit(s, { t: m.t, z: m.z, x: 0 });
   }
+}
+/* 장애물을 45m 앞에서 처음 볼 때(2단계 판 — 그 판에서 종류마다 한 번): 'obstacle' { kind, z } — 화면이 처음 한 번만 안내한다 */
+function obstacleSeen(s, m) {
+  const e = s.endless;
+  if (!e || !e.obsSeen || e.obsSeen.includes(m.kind)) return;
+  e.obsSeen.push(m.kind);
+  emit(s, { t: 'obstacle', kind: m.kind, z: m.z, x: 0 });
 }
 
 /* 못 부순 상자·철창에 부딪히면 남은 체력 × crateHit(일반 25%, 어려움 50%)만큼 10마다 1명을 잃는다(P10).
@@ -1890,6 +2395,7 @@ function propsUpdate(s, R) {
     if (ov <= 0) { p.passed = true; continue; }
     p.alive = false;
     const x = (p.x0 + p.x1) / 2;
+    if (p.kind === 'drum') { drumBlast(s, p, 'touch'); continue; }   // 폭발 드럼통: 닿아도 터진다(분대는 안 다친다)
     if (p.kind === 'crate' || p.kind === 'cage') {
       // 부딪힌 병사만 잃는다: 걸친 폭의 병사(n × ov)보다 많이는 아니다(SIM 8)
       const k = Math.min(Math.ceil(((p.hp * crateHitOf(s.params)) / SOLDIER_HP) * Math.min(1, ov * 2)), Math.ceil(q.n * ov));
@@ -1898,8 +2404,9 @@ function propsUpdate(s, R) {
       if (k > 0) lose(s, k, 'crate', x, p.z);
       continue;
     }
+    // 벽·장갑문: 남은 체력 10마다 1명(걸친 몫만)
     const k = Math.min(Math.ceil((p.hp / SOLDIER_HP) * Math.min(1, ov * 2)), Math.ceil(q.n * ov));
-    emit(s, { t: 'wallCrash', x, z: p.z, n: k });
+    emit(s, p.kind === 'door' ? { t: 'wallCrash', x, z: p.z, n: k, kind: 'door' } : { t: 'wallCrash', x, z: p.z, n: k });
     lose(s, Math.max(1, k), 'wall');
   }
 }
@@ -1923,6 +2430,8 @@ function sawsUpdate(s, R) {
 
 function foesUpdate(s, R) {
   const q = s.squad;
+  const fx = s.endless && s.endless.fx;
+  const slowK = fx ? (fx.frost ? fxVal('frost', fx.frost).slow : 0) : AMMO.frost.slow;
   for (const f of s.foes) {
     if (!f.alive) continue;
     const dz = f.z - q.z;
@@ -1943,7 +2452,7 @@ function foesUpdate(s, R) {
         }
       }
     } else {
-      f.z -= (f.slowT > s.t ? f.spd * (1 - AMMO.frost.slow) : f.spd) * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로)
+      f.z -= (f.slowT > s.t ? f.spd * (1 - slowK) : f.spd) * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로)
       if (dz < f.homeDist) {
         const d = q.x - f.x;
         const m = f.home * DT;
@@ -1978,7 +2487,8 @@ function spitEscape(s, R) {
   const D = dps(q.n, q.tier, s.fireLv);
   const vz = Math.max(1, q.vz);
   const span = R + 0.3;
-  const here = foeLeftover(s.foes, q.x, R, span, D, vz, q.z);
+  const sk = shieldMul(s);   // 방패 정예는 총알이 덜 든다(2단계 장애물 — 그만큼 단단하게 본다)
+  const here = foeLeftover(s.foes, q.x, R, span, D, vz, q.z, sk);
   const slack = Math.max(2, 0.05 * q.n) * SOLDIER_HP;
   // 반응하는 동안(REACT_FAR초)은 하던 쪽을 계속 누른다고 본다(공정성 갈라 보기와 같은 가정): 0.5m/s 넘게 가던 쪽으로 ACCEL로 빨라져 VMAX까지, 길 끝에서 멈춘다
   let xr = q.x + q.vx * REACT_FAR;
@@ -1999,8 +2509,8 @@ function spitEscape(s, R) {
     if (tGo > SPIT_T) continue;
     let blocked = false;
     for (const p of s.props) {
-      if (!p.alive || p.passed || p.z < q.z || p.z - q.z > SPIT_LANE_Z) continue;
-      const cost = p.kind === 'wall' ? p.hp : p.hp * crateHitOf(s.params);
+      if (!p.alive || p.passed || p.z < q.z || p.z - q.z > SPIT_LANE_Z || p.kind === 'drum') continue;   // 드럼통은 닿아도 안 다친다
+      const cost = p.kind === 'wall' || p.kind === 'door' ? p.hp : p.hp * crateHitOf(s.params);
       if (cost > slack && overlap(xt - R - SPIT_OVER, xt + R + SPIT_OVER, p.x0, p.x1) > 0) { blocked = true; break; }
     }
     if (!blocked) {
@@ -2026,11 +2536,11 @@ function spitEscape(s, R) {
       const tc = Math.max(0, dz) / (vz + f.spd);
       const reach = f.home * Math.max(0, tc - Math.max(0, (dz - f.homeDist) / (vz + f.spd)));
       if (Math.abs(xt - f.x) - reach >= R + f.r * 0.8 + SPIT_OVER) continue;
-      leftSum += Math.max(0, f.hp - D * 0.85 * Math.max(0, tc - tGo));
+      leftSum += Math.max(0, f.elite === 'shield' ? f.hp - D * sk * 0.85 * Math.max(0, tc - tGo) : f.hp - D * 0.85 * Math.max(0, tc - tGo));
       if (leftSum > 0.6 * slack) { blocked = true; break; }
     }
     if (blocked) continue;
-    if (foeLeftover(s.foes, xt, R, span, D, vz, q.z) - here > slack) continue;
+    if (foeLeftover(s.foes, xt, R, span, D, vz, q.z, sk) - here > slack) continue;
     return true;
   }
   return false;
@@ -2122,7 +2632,13 @@ function fire(s, R) {
     const hm = heroDmg(s);
     let dmg = (dps(q.n, q.tier, s.fireLv) * hm) / (VOLLEY_HZ * b);
     const A = s.ammo ? AMMO[s.ammo] : null;
-    if (A && A.dmg) dmg *= A.dmg;
+    const FX = s.endless && s.endless.fx;
+    if (FX) {
+      // 2단계: 출격 탄종의 대신 쪽(한 발 피해 −)은 그대로, 속사 효과의 좋은 점(화력 +)은 그 레벨만큼
+      if (A && A.dmg < 1) dmg *= A.dmg;
+      if (FX.rapid) dmg *= fxVal('rapid', FX.rapid).dmg;
+    } else if (A && A.dmg) dmg *= A.dmg;
+    if (bannerOn(s)) dmg *= 1 + RELICS.banner.v;   // 전장의 휘장(유물): 병력이 이 판 최고치의 40% 아래면 총알 화력 +40%
     const rng = A && A.range ? A.range : 0;   // 탄종의 사거리(없으면 기본)
     const span = R + 0.3;
     // 펫의 확률 효과(크리티컬은 총알마다, 멀리·넓게 쏘기는 일제 사격마다 굴린다 — 펫 전용 난수). avg면 기대값만큼 피해를 고르게 올린다
@@ -2168,6 +2684,7 @@ function bulletsUpdate(s) {
   const zMax = q.z + BULLET_RANGE * (petFx(s) === 'far' ? PET_FAR : 1) + 4;
   const near = [];
   if (list.length) for (const f of s.foes) if (f.alive && f.z - f.r < zMax) near.push(f);
+  const FX = s.endless && s.endless.fx;
   let w = 0;
   for (let i = 0; i < list.length; i++) {
     const b = list[i];
@@ -2213,8 +2730,9 @@ function bulletsUpdate(s) {
       }
       continue;
     }
-    if (hitKind === 2) { hitProp(s, hitObj, b.dmg); continue; }
-    if (hitKind === 3) { hitFoe(s, hitObj, b.dmg, 'gun'); if (s.ammo) ammoHit(s, b, hitObj, near); continue; }
+    // 장갑문은 총알 종류만큼(doorMul), 방패 정예는 정면 총알을 막는다(shieldMul — 관통 효과면 제 피해). 둘 다 2단계 판의 4구간부터만 있다
+    if (hitKind === 2) { hitProp(s, hitObj, hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg); continue; }
+    if (hitKind === 3) { hitFoe(s, hitObj, hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg, 'gun'); if (FX) fxHit(s, b, hitObj, near, FX); else if (s.ammo) ammoHit(s, b, hitObj, near); continue; }
     if (hitKind === 4) {
       // 뭉치 스킬로 늘어난 몫은 특수병·영웅 보너스 예산에서만 들어간다(보스가 너무 빨리 녹지 않게)
       const base = b.hm > 1 ? b.dmg / b.hm : b.dmg;
@@ -2256,6 +2774,38 @@ function ammoHit(s, b, f, near) {
     if (n) emit(s, { t: 'splash', x: f.x, z: f.z, r: A.r, n });
   } else if (A.slow && f.alive) f.slowT = s.t + A.T;
 }
+/* 탄 효과의 덧효과(2단계 — 가진 효과가 모두 든다): 관통(바로 뒤 좀비 하나) → 작렬(둘레 — 관통 + 작렬 '연쇄 폭발'이면 뚫고 지난 좀비 둘레에서도) → 빙결.
+   1단계의 ammoHit과 같은 판정(뒤의 좀비 고르기·둘레·느려짐)을 레벨 수치로 */
+function fxHit(s, b, f, near, fx) {
+  let g = null;
+  if (fx.pierce) {
+    const left = (b.r || BULLET_RANGE) - b.d;
+    for (const o of near) {
+      if (!o.alive || o === f || o.z <= f.z || o.z - b.z > left) continue;
+      if (Math.abs(o.x - b.x) > o.r + 0.12) continue;
+      if (!g || o.z < g.z) g = o;
+    }
+    if (g) { emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: g.z }); hitFoe(s, g, b.dmg * fxVal('pierce', fx.pierce).pierce, 'gun'); }
+  }
+  if (fx.burst) {
+    const v = fxVal('burst', fx.burst);
+    fxSplash(s, b, f, near, v);
+    if (g) fxSplash(s, b, g, near, v);
+  }
+  if (fx.frost && f.alive) f.slowT = s.t + fxVal('frost', fx.frost).T;
+}
+function fxSplash(s, b, f, near, v) {
+  const r2 = v.r * v.r;
+  let n = 0;
+  for (const o of near) {
+    if (!o.alive || o === f) continue;
+    const dx = o.x - f.x, dz = o.z - f.z;
+    if (dx * dx + dz * dz > r2) continue;
+    hitFoe(s, o, b.dmg * v.splash, 'gun');
+    n++;
+  }
+  if (n) emit(s, { t: 'splash', x: f.x, z: f.z, r: v.r, n });
+}
 
 /* 피해 공용 처리(총알·저격·로켓·영웅) */
 function hitProp(s, p, dmg) {
@@ -2264,7 +2814,36 @@ function hitProp(s, p, dmg) {
   if (p.hp > 0) return;
   p.alive = false;
   if (p.kind === 'wall') emit(s, { t: 'wallBreak', x: (p.x0 + p.x1) / 2, z: p.z });
+  else if (p.kind === 'door') emit(s, { t: 'wallBreak', x: (p.x0 + p.x1) / 2, z: p.z, kind: 'door' });
+  else if (p.kind === 'drum') drumBlast(s, p, 'shot');
   else openCrate(s, p);
+}
+/* 폭발 드럼통이 터진다(쏴서·로켓·분대가 닿아서·옆 드럼통이 터져서 — by 'shot'|'touch'|'chain'): 반경 r 안(가운데 거리)의 좀비에게 지금 분대 화력 × dmg초 몫
+   (방패 정예도 제 피해), 반경 안의 상자·철창은 내용물째 부서진다(보상 없음 — crateLost), 반경 안의 다른 드럼통도 터진다. 분대는 안 다친다.
+   'blast' { x, z, r, by, n(맞은 좀비), lost(잃은 상자·철창) } */
+function drumBlast(s, p, by) {
+  const q = s.squad;
+  const O = OBSTACLES.drum;
+  p.alive = false;
+  const x = (p.x0 + p.x1) / 2, r2 = O.r * O.r;
+  const dmg = O.dmg * dps(q.n, q.tier, s.fireLv) * heroDmg(s);
+  const e = { t: 'blast', x, z: p.z, r: O.r, by, n: 0, lost: 0 };
+  emit(s, e);
+  for (const f of s.foes) {
+    if (!f.alive) continue;
+    const dx = f.x - x, dz = f.z - p.z;
+    if (dx * dx + dz * dz > r2) continue;
+    e.n++;
+    hitFoe(s, f, dmg, 'drum');
+  }
+  for (const o of s.props) {
+    if (!o.alive || o.passed || !blastReach(p, o)) continue;
+    if (o.kind === 'crate' || o.kind === 'cage') {
+      o.alive = false;
+      e.lost++;
+      emit(s, { t: 'crateLost', kind: o.kind, reward: { ...o.reward }, x: (o.x0 + o.x1) / 2, z: o.z });
+    } else if (o.kind === 'drum') drumBlast(s, o, 'chain');
+  }
 }
 function hitFoe(s, f, dmg, by) {
   f.hp -= dmg;
@@ -2296,6 +2875,8 @@ function hitBossBonus(s, dmg) {
   return d;
 }
 
+/* 무기·탄종 상자를 얻을 수 없을 때 대신 주는 병사(나침반 유물이 실은 r.mul이면 그만큼 — 갈림길 위험한 쪽. 없는 판은 예전 식 그대로) */
+const crateMen = (n, r) => { const v = Math.max(5, nice(n * 0.2)); return r.mul ? Math.max(1, Math.round(v * r.mul)) : v; };
 function openCrate(s, p) {
   const q = s.squad;
   const r = p.reward;
@@ -2303,12 +2884,18 @@ function openCrate(s, p) {
   const x = (p.x0 + p.x1) / 2;
   if (r.type === 'unit') {
     emit(s, { t: 'cageOpen', k: r.k, x, z: p.z });
-    addSpecial(s, r.k, 'cage', x, p.z);
+    addSpecial(s, r.k, 'cage', x, p.z, r.mul);
+    return;
+  }
+  if (r.type === 'fx') {
+    // 탄종 상자(2단계): 얻을 수 없으면(슬롯이 차고 그 효과가 없음·Lv3) 무기 상자처럼 병사로
+    if (fxCan(s, r.a)) { fxAdd(s, r.a, 'crate', x, p.z); emit(s, { t: 'crate', type: 'fx', a: r.a, lv: fxLv(s, r.a), x, z: p.z }); }
+    else { gain(s, crateMen(q.n, r), x, p.z, 'crate'); emit(s, { t: 'crate', type: 'men', x, z: p.z }); }
     return;
   }
   if (r.type === 'gun') {
-    if (q.tier < 3) { q.tier++; emit(s, { t: 'crate', type: 'gun', tier: q.tier, x, z: p.z }); }
-    else { gain(s, Math.max(5, nice(q.n * 0.2)), x, p.z, 'crate'); emit(s, { t: 'crate', type: 'men', x, z: p.z }); }
+    if (q.tier < tierMax(s)) { q.tier++; emit(s, { t: 'crate', type: 'gun', tier: q.tier, x, z: p.z }); }
+    else { gain(s, crateMen(q.n, r), x, p.z, 'crate'); emit(s, { t: 'crate', type: 'men', x, z: p.z }); }
   } else if (r.type === 'men') {
     gain(s, r.v, x, p.z, 'crate');
     emit(s, { t: 'crate', type: 'men', v: r.v, x, z: p.z });
@@ -2346,7 +2933,16 @@ function bossUpdate(s, R) {
       emit(s, { t: 'segClear', seg: e.seg, coins, tag: p.tag });
     } else {
       e.wait -= DT;
-      if (e.wait <= 0) nextSegment(s);
+      if (e.wait <= 0) {
+        // 3택 1을 연 판: 카드를 띄우고 고를 때까지 멈춘다(다음 구간은 pickCard가 잇는다)
+        if (e.unl >= 1) {
+          const offer = makeOffer(s);
+          if (offer.length) { e.offer = offer; emit(s, offer[0].k === 'relic' ? { t: 'offer', n: offer.length, seg: e.seg, relic: true } : { t: 'offer', n: offer.length, seg: e.seg }); return; }   // relic: 유물 카드(대왕 보스 뒤)
+        }
+        nextSegment(s);
+        if (e.fx) fxCrates(s);
+        if (e.relics) relicSeg(s);
+      }
     }
     return;
   }
@@ -2463,7 +3059,7 @@ function castHero(s) {
   const q = s.squad;
   const H = HEROES[h.id];
   h.charge = 0;
-  h.T = H.skill.dur;
+  h.T = h.id === 'mungchi' && fxOf(s) && comboOn(s, 'rapidMungchi') ? COMBOS.rapidMungchi.v : H.skill.dur;   // 긴 나팔(속사 + 뭉치)
   h.act = h.T;
   h.shot = 0;
   s.stats.heroUses++;
@@ -2537,30 +3133,61 @@ function snipe(s, dmg, src) {
   let kill = false;
   let x1;
   let z1;
-  if (t.kind === 'foe') { x1 = t.o.x; z1 = t.o.z; kill = hitFoe(s, t.o, dmg, src === 'hero' ? 'hero' : 'sniper'); }
+  // 2단계 시너지(저격수의 저격만): 얼음 조준 — 느려진 적에게 위력 +, 꿰뚫는 저격 — 일직선 뒤 표적 하나를 더
+  const fx = src === 'sniper' && fxOf(s);
+  const ice = fx && comboOn(s, 'frostSniper') ? 1 + COMBOS.frostSniper.v : 1;
+  const dmgAt = (o) => (ice > 1 && o.slowT > s.t ? dmg * ice : dmg);
+  if (t.kind === 'foe') { x1 = t.o.x; z1 = t.o.z; kill = hitFoe(s, t.o, fx ? dmgAt(t.o) : dmg, src === 'hero' ? 'hero' : 'sniper'); }
   else if (t.kind === 'prop') { x1 = (t.o.x0 + t.o.x1) / 2; z1 = t.o.z; hitProp(s, t.o, dmg); kill = !t.o.alive; }
   else { x1 = t.o.x; z1 = t.o.z - 1; hitBossBonus(s, dmg); }
   emit(s, { t: 'snipe', x0: q.x, z0: q.z, x1, z1, src, kill });
+  if (fx && t.kind === 'foe' && comboOn(s, 'pierceSniper')) {
+    const g = snipeThru(s, t.o, x1, z1);
+    if (g) emit(s, { t: 'snipe', x0: x1, z0: z1, x1: g.x, z1: g.z, src, kill: hitFoe(s, g, dmgAt(g), 'sniper'), thru: true });
+  }
   return true;
 }
-
-/* 로켓 표적: 8–30m 안 반경 r(로켓병 레벨) 안의 체력 합이 가장 큰 무리(0.3D 이상) → 분대 통로의 벽 → 보스 */
-function rocketTarget(s, D, r = SP.rocket.r) {
+/* 꿰뚫는 저격(관통 + 저격수): 분대 → 첫 표적의 일직선 뒤(사거리 SP.sniper.far 안)에서 선에 걸친(좀비 반지름 + 0.12m — 총알과 같은 너그러움) 가장 가까운 좀비 */
+function snipeThru(s, f, x1, z1) {
   const q = s.squad;
-  const R = radius(q.n);
+  const dx = x1 - q.x, dz = z1 - q.z;
+  const L = Math.hypot(dx, dz);
+  if (!(L > 0)) return null;
+  let g = null, best = Infinity;
+  for (const o of s.foes) {
+    if (!o.alive || o === f) continue;
+    const ox = o.x - q.x, oz = o.z - q.z;
+    const u = (ox * dx + oz * dz) / L;
+    if (u <= L || u > SP.sniper.far || Math.abs(ox * dz - oz * dx) / L > o.r + 0.12) continue;
+    if (u < best || (u === best && o.id < g.id)) { best = u; g = o; }
+  }
+  return g;
+}
+
+/* 가장 큰 무리(로켓병·화염병이 함께 쓰는 고르기): 분대 앞 near~far m의 좀비마다 그 둘레 네모(옆 ±rx, 앞뒤 ±rz) 안 체력 합을 보고
+   min·D를 넘는 것 중 가장 큰 자리(그 좀비 위치) — 없으면 null */
+function crowdAt(s, D, rx, rz, near, far, min = 0.3) {
+  const q = s.squad;
   let best = null;
-  let bestHp = 0.3 * D;
+  let bestHp = min * D;
   for (const f of s.foes) {
     if (!f.alive) continue;
     const dz = f.z - q.z;
-    if (dz < SP.rocket.near || dz > SP.rocket.far) continue;
+    if (dz < near || dz > far) continue;
     let sum = 0;
-    for (const g of s.foes) if (g.alive && Math.abs(g.x - f.x) < r && Math.abs(g.z - f.z) < r) sum += g.hp;
+    for (const g of s.foes) if (g.alive && Math.abs(g.x - f.x) < rx && Math.abs(g.z - f.z) < rz) sum += g.hp;
     if (sum > bestHp) { bestHp = sum; best = { x: f.x, z: f.z, fid: f.id }; }
   }
+  return best;
+}
+/* 로켓 표적: 8–30m 안 반경 r(로켓병 레벨) 안의 체력 합이 가장 큰 무리(0.3D 이상) → 분대 통로의 벽·장갑문 → 보스 */
+function rocketTarget(s, D, r = SP.rocket.r) {
+  const q = s.squad;
+  const R = radius(q.n);
+  let best = crowdAt(s, D, r, r, SP.rocket.near, SP.rocket.far);
   if (best) return best;
   for (const p of s.props) {
-    if (!p.alive || p.passed || p.kind !== 'wall') continue;
+    if (!p.alive || p.passed || (p.kind !== 'wall' && p.kind !== 'door')) continue;
     const dz = p.z - q.z;
     if (dz < 4 || dz > SP.rocket.far || overlap(q.x - R, q.x + R, p.x0, p.x1) <= 0) continue;
     if (!best || p.z < best.z) best = { x: clamp(q.x, p.x0, p.x1), z: p.z, fid: -1 };
@@ -2568,6 +3195,30 @@ function rocketTarget(s, D, r = SP.rocket.r) {
   if (best) return best;
   if (s.boss && s.boss.hp > 0) return { x: s.boss.x, z: s.boss.z - 1, fid: -1 };
   return null;
+}
+/* 화염병이 불 지대를 놓을 자리(지대 가운데): 보스전(경기장 — 보스가 있으면)에는 보스 발밑(쓰러졌으면 없음), 달리는 동안은 SP.flame.near~far m 앞에서
+   지대(폭 w × 길이 len) 안에 들 체력 합이 가장 큰 무리(로켓병의 고르기 crowdAt — min·D 넘게). 좀비가 지대를 지나 분대 쪽으로 걸어온다(구현 판단: 앞당겨 놓지 않는다 — 고른 무리가 곧 지대 안) */
+function flameTarget(s, D, w, len) {
+  const b = s.boss;
+  if (b) return b.hp > 0 ? { x: b.x, z: b.z, boss: true } : null;
+  return crowdAt(s, D, w / 2, len / 2, SP.flame.near, SP.flame.far, SP.flame.min);
+}
+/* 불 지대가 이 좀비·보스를 태우나(그린 것이 맞는 것 — hitShapes 'fire'와 같은 네모): 좀비는 가운데가 지대 안, 보스는 몸통 폭(±BOSS_HIT)이 지대에 걸치고 발(b.z)이 지대 길이 안 */
+const inFire = (zn, x, z) => Math.abs(x - zn.x) < zn.w / 2 && Math.abs(z - zn.z) < zn.len / 2;
+const bossInFire = (zn, b) => Math.abs(b.x - zn.x) < zn.w / 2 + BOSS_HIT && Math.abs(b.z - zn.z) < zn.len / 2;
+/* 불 지대(4단계 화염병): 틱마다 지대 안 좀비에게 d·DT(얼음불 — 빙결 효과 + 화염병 — 이면 느려진 좀비는 × (1 + v)), 보스에게는 추가 피해 예산(BONUS_CAP — hitBossBonus) 안에서.
+   게이트·벽·장갑문·상자·드럼통은 태우지 않는다(좀비·보스만). 유지 시간이 다하면 사라지고, 다 사라지면 s.flames 필드도 없다 */
+function flamesUpdate(s) {
+  const ice = fxOf(s) && comboOn(s, 'frostFlame') ? 1 + COMBOS.frostFlame.v : 1;
+  const b = s.boss;
+  for (const zn of s.flames) {
+    const d = zn.d * DT;
+    for (const f of s.foes) if (f.alive && inFire(zn, f.x, f.z)) hitFoe(s, f, ice > 1 && f.slowT > s.t ? d * ice : d, 'flame');
+    if (b && b.hp > 0 && bossInFire(zn, b)) hitBossBonus(s, d);
+    zn.t -= DT;
+  }
+  s.flames = s.flames.filter((zn) => zn.t > 1e-9);
+  if (!s.flames.length) delete s.flames;
 }
 
 function specialsUpdate(s, R) {
@@ -2598,7 +3249,8 @@ function specialsUpdate(s, R) {
       m.cd = snipe(s, unitVal('sniper', 'dmg', lv) * D * nabiBoost, 'sniper') ? unitVal('sniper', 'every', lv) : 0.25;
     } else if (m.k === 'rocket') {
       // 로켓병: 레벨마다 더 자주·더 넓게
-      const r = unitVal('rocket', 'r', lv);
+      let r = unitVal('rocket', 'r', lv);
+      if (fxOf(s) && comboOn(s, 'burstRocket')) r += COMBOS.burstRocket.v;   // 대폭발(작렬 + 로켓병): 폭발 반경 +
       const t = rocketTarget(s, D, r);
       if (!t) { m.cd = 0.25; continue; }
       const T = Math.max(0.25, (t.z - q.z) / SP.rocket.speed);
@@ -2606,6 +3258,18 @@ function specialsUpdate(s, R) {
       s.rockets.push(rk);
       emit(s, { t: 'rocket', id: rk.id, x0: rk.x0, z0: rk.z0, x: rk.x, z: rk.z });
       m.cd = unitVal('rocket', 'every', lv);
+    } else if (m.k === 'flame') {
+      // 화염병(4단계): 레벨마다 더 자주·더 오래·더 세게(Lv3은 더 넓게). 짝 영웅 뭉치의 돌격 나팔 동안 폭 +horn(화염병 레벨만큼 ×1·×1.25·×1.5).
+      // 피해는 놓는 순간의 D(로켓처럼 — 뭉치 스킬 배수 포함)로 정해 지대에 싣는다. 그 틱부터 태운다(flamesUpdate)
+      const w = unitVal('flame', 'w', lv) * (h && h.id === 'mungchi' && h.act > 0 ? 1 + UNITS.flame.horn * synergyOf(lv) : 1);
+      const len = unitVal('flame', 'len', lv);
+      const t = flameTarget(s, D, w, len);
+      if (!t) { m.cd = 0.25; continue; }
+      const T = unitVal('flame', 'T', lv);
+      const zn = { id: s.nextId++, x: t.x, z: t.z, w, len, t: T, T, d: unitVal('flame', 'dmg', lv) * D, lv };
+      (s.flames || (s.flames = [])).push(zn);
+      emit(s, { t: 'flame', id: zn.id, x0: q.x, z0: q.z, x: zn.x, z: zn.z, w, len, T, lv, boss: !!t.boss });
+      m.cd = unitVal('flame', 'every', lv);
     } else m.cd = 1;
   }
   // 영웅 나비: 패시브 직접 저격(저격수가 없을 때), 스킬 중에는 연속 저격
@@ -2630,7 +3294,7 @@ function specialsUpdate(s, R) {
       for (const f of s.foes) if (f.alive && Math.abs(f.x - rk.x) < rk.r + f.r && Math.abs(f.z - rk.z) < rk.r + f.r) hitFoe(s, f, rk.dmg, 'rocket');
       for (const p of s.props) {
         if (!p.alive || p.passed || Math.abs(p.z - rk.z) > rk.r || overlap(rk.x - rk.r, rk.x + rk.r, p.x0, p.x1) <= 0) continue;
-        hitProp(s, p, rk.dmg);
+        hitProp(s, p, p.kind === 'door' ? rk.dmg * OBSTACLES.door.rocket : rk.dmg);   // 장갑문에는 로켓이 잘 든다
       }
       const b = s.boss;
       if (b && b.hp > 0 && Math.abs(b.z - 1 - rk.z) < rk.r + 1 && Math.abs(b.x - rk.x) < rk.r + b.r) hitBossBonus(s, rk.dmg);
@@ -2638,12 +3302,13 @@ function specialsUpdate(s, R) {
     }
     s.rockets = s.rockets.filter((rk) => rk.t > 0);
   }
+  if (s.flames) flamesUpdate(s);   // 불 지대(화염병 줄을 연 판에만 생긴다)
   void R;
 }
 
 /* ---------- 봇 ---------- */
 /* 목표 x → 좌우 누르기 입력. 봇도 좌우 누르기만으로 깰 수 있어야 한다. */
-/* 봇의 갈림길 판단: 분리대가 20m 안이면 한쪽을 고른다 — 벽이 지금 화력으로 뚫릴 만하면(다가오는 동안 쏟는 양의 0.9배 안) 위험한 쪽, 아니면 안전한 쪽.
+/* 봇의 갈림길 판단: 분리대가 20m 안이면 한쪽을 고른다 — 벽(장갑문)이 지금 화력으로 뚫릴 만하면(다가오는 동안 쏟는 양의 0.9배 안) 위험한 쪽, 아니면 안전한 쪽.
    이미 갈렸으면 제 쪽 그대로. 고른 쪽 차선 안(몸이 통째로 들어가는 자리)으로 목표를 옮긴다 */
 function divSteer(s, tx) {
   const q = s.squad;
@@ -2653,15 +3318,16 @@ function divSteer(s, tx) {
   let side;
   if (q.z >= dv.z0) side = q.x >= 0 ? 1 : -1;
   else {
-    const can = dps(q.n, q.tier, s.fireLv) * heroDmg(s) * 0.9 * ((BULLET_RANGE - 2) / Math.max(1, q.vz));
+    const can = dps(q.n, q.tier, s.fireLv) * relicFire(s) * heroDmg(s) * 0.9 * ((BULLET_RANGE - 2) / Math.max(1, q.vz));
     if (dv.kind === 'horde') {
       // 좀비 떼: 위험한 쪽 차선에 남은 체력 합을 벽처럼 견준다(다가오는 적이라 쏠 시간이 짧다 — FORK_HORDE의 위쪽 끝이 벽 한 장 몫)
       let H = 0;
       for (const f of s.foes) if (f.alive && f.z >= dv.z0 && f.z <= dv.z1 && Math.sign(f.x) === dv.risk) H += f.hp * (f.elite === 'split' ? 1 + ELITE.split.kids * ELITE.split.kidHp : 1);
       side = H > can * FORK_HORDE[1] ? -dv.risk : dv.risk;
     } else {
+      // 벽(장갑문이면 이 판의 총알이 문에 주는 배수 doorMul만큼 — 작렬·관통 효과가 있으면 더 잘 뚫린다)
       const w = s.props.find((p) => p.id === dv.wall);
-      side = w && w.alive && w.hp > can ? -dv.risk : dv.risk;
+      side = w && w.alive && w.hp > (w.kind === 'door' ? can * doorMul(s) : can) ? -dv.risk : dv.risk;
     }
   }
   const lo = Math.min(EDGE, R + 0.1);
@@ -2690,7 +3356,7 @@ export function botTarget(s, opt = {}) {
   const R = radius(q.n);
   const sight = opt.sight ?? 40;
   if (s.phase === 'arena' && s.boss) return bossDodge(s, R);
-  const D = dps(q.n, q.tier, s.fireLv);
+  const D = dps(q.n, q.tier, s.fireLv) * relicFire(s);   // 휘장(유물)이 켜졌으면 그만큼 더 쏜다(× 1이면 그대로)
   const vz = Math.max(1, q.vz);
   const span = R + 0.3;
   const cover = (x, x0, x1) => overlap(x - span, x + span, x0, x1) / (2 * span);
@@ -2720,6 +3386,10 @@ export function botTarget(s, opt = {}) {
   }
   // 톱날 한 번 스치는 손실(띠를 지나는 시간 동안 초당 4 + 0.35n의 대부분)
   const sawCost = (4 + 0.35 * q.n) * ((2 * (0.55 * R + 0.35)) / vz) * 0.8 + 1;
+  // 2단계 장애물: 장갑문에 들어가는 총알 몫, 앞에 있는 폭발 드럼통(닿아도 안 다치고 보상도 없다 — 옆 상자를 같이 쏘면 상자째 터진다)
+  const dk = doorMul(s);
+  const drums = [];
+  for (const p of s.props) if (p.kind === 'drum' && p.alive && !p.passed && p.z > q.z - 1 && p.z - q.z < 40) drums.push(p);
   let row = null;
   for (const r of s.rows) if (!r.done && r.z > q.z && r.z - q.z < sight) { if (!row || r.z < row.z) row = r; }
   const horizon = row ? row.z : q.z + 34;
@@ -2746,12 +3416,12 @@ export function botTarget(s, opt = {}) {
     // 벽·상자·철창: 그 자리에서 쏴서 못 부수면 남은 만큼 잃는다(상자·철창은 crateHit만큼 — P10, 모든 봇이 장애물로 본다).
     // 부술 수 있으면 보상: 보통 상자는 상자를 챙기는 봇만, 앞에 게이트 줄이 보이지 않을 때. 열쇠 상자(p.key)는 누구나(opt.keys=false가 아니면)
     for (const p of s.props) {
-      if (!p.alive || p.passed || p.z < q.z || p.z > horizon + 0.5 || p.z - q.z > 34) continue;
+      if (!p.alive || p.passed || p.z < q.z || p.z > horizon + 0.5 || p.z - q.z > 34 || p.kind === 'drum') continue;
       const t = (p.z - q.z) / vz;
       const shot = D * cover(x, p.x0, p.x1) * Math.max(0, t - travel) * 0.85;
       const ov = overlap(x - R, x + R, p.x0, p.x1) / (2 * R);
-      const left = p.hp - shot;
-      if (p.kind === 'wall') {
+      const left = p.kind === 'door' ? p.hp - shot * dk : p.hp - shot;
+      if (p.kind === 'wall' || p.kind === 'door') {
         if (ov > 0 && left > 0) val -= contactCost(left) * Math.min(1, ov * 2) + 1;
         continue;
       }
@@ -2760,6 +3430,7 @@ export function botTarget(s, opt = {}) {
         continue;
       }
       if (row && !p.key) continue;
+      if (drums.length && drums.some((d) => cover(x, d.x0, d.x1) > 0 && blastReach(d, p))) continue;   // 이 자리의 총알이 옆 드럼통도 터뜨린다 — 상자째 잃는다
       const r = p.reward;
       if (r.type === 'unit') { if (opt.specials !== false) val += spWorth(s, r.k); }
       else if (opt.crates !== false || (p.key && opt.keys !== false)) val += crateWorth(s, p);
@@ -2832,10 +3503,11 @@ export function botInput(s, opt) {
 /* 분대가 x에 서 있으면 닿을 적들의 '쏴서 못 잡는 체력'(봇 판단용). 적마다: 닿기까지 tc초, 따라붙기는 homeDist 안에서부터 초당 home m,
    총알 폭 안에 든 뒤로 사거리 안에서 맞는다. 닿을 적의 체력 합 − 화력 × 0.85 × (그 적들이 맞는 평균 초) */
 function hordeCost(s, x, R, span, D, vz) {
-  return foeLeftover(s.foes, x, R, span, D, vz, s.squad.z);
+  return foeLeftover(s.foes, x, R, span, D, vz, s.squad.z, shieldMul(s));
 }
-/* qz = 분대 z(판 중), null이면 레벨 생성용 — 적마다 34m 앞에서 처음 본다고 친다 */
-function foeLeftover(foes, x, R, span, D, vz, qz) {
+/* qz = 분대 z(판 중), null이면 레벨 생성용 — 적마다 34m 앞에서 처음 본다고 친다.
+   sk(판 중만): 방패 정예에 총알이 드는 몫(shieldMul) — 그 좀비의 체력을 1/sk배로 본다(못 잡는 몫을 넉넉히 — 독침 공정성에도 안전한 쪽). 레벨 생성은 1(방패를 안 본다) */
+function foeLeftover(foes, x, R, span, D, vz, qz, sk = 1) {
   let H = 0;
   let hts = 0;
   for (const f of foes) {
@@ -2850,8 +3522,9 @@ function foeLeftover(foes, x, R, span, D, vz, qz) {
     if (dx - reach >= R + f.r * 0.8) continue;
     const enter = dx <= span ? 0 : t0 + (dx - span) / Math.max(0.1, f.home);
     const tr = Math.max(0, (dz - BULLET_RANGE) / close);
-    H += f.hp;
-    hts += f.hp * Math.max(0, tc - Math.max(enter, tr));
+    const hp = sk < 1 && f.elite === 'shield' ? f.hp / sk : f.hp;
+    H += hp;
+    hts += hp * Math.max(0, tc - Math.max(enter, tr));
   }
   if (H <= 0) return 0;
   return Math.max(0, H - D * 0.85 * (hts / H));
@@ -2870,19 +3543,19 @@ export const KEY_WORTH = 0.25;
 export function crateWorth(s, p) {
   const q = s.squad;
   const r = p.reward;
-  const v = r.type === 'gun' ? (q.tier < 3 ? q.n * 0.25 + 3 : 2) : r.type === 'men' ? r.v : 2;
+  const v = r.type === 'gun' ? (q.tier < tierMax(s) ? q.n * 0.25 + 3 : 2) : r.type === 'men' ? r.v : r.type === 'fx' ? (fxCan(s, r.a) ? 3 + q.n * FX_WORTH : 2) : 2;
   return v + (p.key ? KEY_WORTH * q.n : 0);
 }
 /* 특수병 한 명이 병사 몇 명 몫인가(봇 판단용). 이미 있는 병과의 레벨 올리기는 합류의 SP_UP_WORTH배(SIM 9) —
    단 SIM 8에서 같은 병과가 바뀌던 병사 몫보다 낮게 보지는 않는다(봇의 길이 SIM 8보다 나빠지지 않게) */
-const SP_WORTH = { medic: 0.1, sniper: 0.09, rocket: 0.12 };
+const SP_WORTH = { medic: 0.1, sniper: 0.09, rocket: 0.12, flame: 0.1 };   // 화염병(4단계 판만)은 초안 — 밸런스 때 잰다
 export const SP_UP_WORTH = 0.6;
 export function spWorth(s, k) {
   const q = s.squad;
   const lv = spLv(q, k);
   const men = Math.max(5, nice(0.12 * q.n));
   if (lv && lv < SP_LV_MAX) return Math.max(men, 3 + q.n * SP_WORTH[k] * SP_UP_WORTH);
-  if (lv || q.sp.length >= SP_MAX || q.n < SP_ESCORT * (q.sp.length + 1)) return men;
+  if (lv || q.sp.length >= spMax(s) || q.n < spEscort(s) * (q.sp.length + 1)) return men;
   return 3 + q.n * SP_WORTH[k];
 }
 
@@ -3390,9 +4063,11 @@ export function progress(s) {
 }
 
 /* 충돌 크기 보기(?hitbox=1 또는 __squad.hitbox = true, SIM 8): 시뮬레이션이 실제로 재는 모양을 그대로 돌려준다 — 렌더러는 이것만 그린다.
-   땅 위 사각형 { k, x0, x1, z0, z1 }(ell이면 그 안에 든 타원). 분대 몸(squad)과 겹치면 맞는다: 적·톱날(타원)은 옆·앞뒤 모두, 벽·상자·철창은 분대 앞(z1)이 그 줄(z)에
+   땅 위 사각형 { k, x0, x1, z0, z1 }(ell이면 그 안에 든 타원). 분대 몸(squad)과 겹치면 맞는다: 적·톱날(타원)은 옆·앞뒤 모두, 벽·장갑문·상자·철창·드럼통은 분대 앞(z1)이 그 줄(z)에
    닿는 틱에 옆으로 걸쳤는지, 독침은 떨어지는 순간 옆으로 걸쳤는지. 보스: 총알 판(보스 − 1m)의 몸통 띠(bossHit — 이 띠를 지나는 총알만
-   피해), 맞붙는 선(bossReach — 분대 앞에 닿으면 길 전체를 짓밟는다). 내려찍기 띠는 늘 맞는 범위(slamZone)로 그린다 */
+   피해), 맞붙는 선(bossReach — 분대 앞에 닿으면 길 전체를 짓밟는다). 내려찍기 띠는 늘 맞는 범위(slamZone)로 그린다.
+   드럼통의 폭발 반경(blast — 원): 터지면 가운데가 이 안인 좀비가 맞고, 이 원에 닿는 상자·철창은 부서진다(분대는 안 다친다).
+   불 지대(fire — 네모, 화염병): 가운데가 이 안인 좀비가 타고, 보스는 몸통 폭(±BOSS_HIT)이 걸치고 발이 이 길이 안이면 탄다(분대·게이트·소품은 안 탄다) */
 export function hitShapes(s) {
   const q = s.squad;
   const R = radius(q.n);
@@ -3402,9 +4077,15 @@ export function hitShapes(s) {
   if (s.divs) for (const d of s.divs) out.push({ k: 'div', x0: 0, x1: 0, z0: d.z0 + FORK_TAPER, z1: d.z1 });
   for (const f of s.foes) if (f.alive) out.push({ k: 'foe', x0: f.x - FOE_HX * f.r, x1: f.x + FOE_HX * f.r, z0: f.z - f.r, z1: f.z + f.r, ell: true });
   for (const w of s.saws) out.push({ k: 'saw', x0: w.x - w.w / 2, x1: w.x + w.w / 2, z0: w.z - SAW_HD, z1: w.z + SAW_HD, ell: true });
-  for (const p of s.props) if (p.alive && !p.passed) out.push({ k: p.kind, x0: p.x0, x1: p.x1, z0: p.z, z1: p.z });
+  for (const p of s.props) {
+    if (!p.alive || p.passed) continue;
+    out.push({ k: p.kind, x0: p.x0, x1: p.x1, z0: p.z, z1: p.z });   // 벽·장갑문(door)·상자·철창·드럼통(drum): 분대 앞이 그 줄에 닿는 틱에 옆으로 걸치면
+    if (p.kind === 'drum') { const x = (p.x0 + p.x1) / 2, r = OBSTACLES.drum.r; out.push({ k: 'blast', x0: x - r, x1: x + r, z0: p.z - r, z1: p.z + r, ell: true }); }   // 폭발 반경(가운데가 이 원 안인 좀비·닿는 상자)
+  }
   for (const sp of s.spits) out.push({ k: 'spit', x0: sp.x - SPIT_R, x1: sp.x + SPIT_R, z0: sp.z, z1: sp.z });
   if (s.pools) for (const p of s.pools) if (p.t <= 0 && !p.hit) out.push({ k: 'pool', x0: p.x - POOL_R, x1: p.x + POOL_R, z0: p.z - POOL_R, z1: p.z + POOL_R, ell: true });
+  // 불 지대(화염병 — 4단계): 가운데가 이 네모 안인 좀비가 탄다(보스는 몸통 폭이 걸치면). 분대는 안 다친다
+  if (s.flames) for (const zn of s.flames) out.push({ k: 'fire', x0: zn.x - zn.w / 2, x1: zn.x + zn.w / 2, z0: zn.z - zn.len / 2, z1: zn.z + zn.len / 2 });
   const b = s.boss;
   if (b && b.hp > 0) {
     out.push({ k: 'bossHit', x0: b.x - BOSS_HIT, x1: b.x + BOSS_HIT, z0: b.z - 1, z1: b.z - 1 });
@@ -3442,6 +4123,32 @@ export function stateHash(s) {
   // 무한모드(캠페인 판에는 없다 — 해시 그대로)
   if (s.divs) for (const d of s.divs) h = hash(h, d.id, d.z0.toFixed(3), d.z1.toFixed(3), d.risk);
   if (s.pools) for (const p of s.pools) h = hash(h, p.id, p.x.toFixed(4), p.z.toFixed(4), p.t.toFixed(4), p.life.toFixed(4), p.hit);
+  // 불 지대(화염병 줄을 연 판에 화염병이 놓은 동안만 필드가 있다 — 없는 판은 해시 그대로)
+  if (s.flames) for (const zn of s.flames) h = hash(h, 'fire', zn.id, zn.x.toFixed(4), zn.z.toFixed(4), zn.w.toFixed(4), zn.len.toFixed(4), zn.t.toFixed(4), zn.d.toFixed(4));
   if (s.endless) { const e = s.endless; h = hash(h, e.seed, e.seg, e.bosses, e.bank, e.wait.toFixed(4), e.z0.toFixed(4), s.L, s.arenaZ.toFixed(4), (s.refMul || 1).toFixed(6)); }
+  // 보스 뒤 3택 1(연 판에만 필드가 있다 — 안 연 판은 해시 그대로)
+  if (s.endless && s.endless.unl != null) { const e = s.endless; h = hash(h, e.unl, e.ammo.join(','), e.picks.join(','), e.offer ? e.offer.map((c) => c.k + (c.u || c.a || c.r || '') + (c.syn ? '*' : '')).join(',') : '-'); }
+  // 2단계(탄 효과 — 연 판에만): 효과 레벨(AMMO_IDS 순서), 탄종 상자 내용물, 출격 탄종이 없을 때의 빙결
+  const fx = fxOf(s);
+  if (fx) {
+    h = hash(h, AMMO_IDS.map((a) => fx[a] | 0).join(''));
+    for (const p of s.props) if (p.reward && p.reward.type === 'fx') h = hash(h, p.id, p.reward.a);
+    if (!s.ammo && fx.frost) for (const f of s.foes) if (f.alive && f.slowT > s.t) h = hash(h, f.id, f.slowT.toFixed(4));
+    // 장애물(4구간부터): 장갑문·드럼통(소품 종류), 방패 정예, 알린 장애물 종류
+    for (const p of s.props) if (p.kind === 'door' || p.kind === 'drum') h = hash(h, p.id, p.kind);
+    for (const f of s.foes) if (f.alive && f.elite === 'shield') h = hash(h, f.id, 'shield');
+    if (s.endless.obsSeen) h = hash(h, 'obs', s.endless.obsSeen.join(','));
+  }
+  if (s.endless && s.endless.flame) h = hash(h, 'flame');
+  if (s.endless && s.endless.relicsOpen) h = hash(h, 'relics', s.endless.relicsOpen.join(','));
+  // 3단계 유물(연 판에만): 얻은 것·쓴 것, 최고 병력(휘장의 문턱), 유물이 바꾼 상자 병력·덧셈 칸 빠르기
+  if (s.endless && s.endless.relics) {
+    const e = s.endless;
+    h = hash(h, e.relics.join(','), e.spent.join(','), q.peak);
+    if (e.relics.length) {
+      for (const p of s.props) if (p.reward && (p.reward.type === 'men' || p.reward.mul)) h = hash(h, p.id, p.reward.v | 0, p.reward.mul || 0);
+      for (const r of s.rows) for (const c of r.cells) if (c.op === 'add') h = hash(h, c.step.toFixed(6));
+    }
+  }
   return h;
 }

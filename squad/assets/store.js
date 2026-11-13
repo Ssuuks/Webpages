@@ -1,6 +1,6 @@
 /* 진행 저장 — 키는 'squad.v1' 그대로, v2는 필드를 더하기만 한다(옛 탭이 저장해도 새 필드가 남는다).
    localStorage가 막혀 있으면(사생활 보호 모드 등) 메모리로 계속 돈다. */
-import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap, PETS, PET_MAX_LV, AMMO } from './roster.js';
+import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap, PETS, PET_MAX_LV, AMMO, RELICS, RELIC_IDS } from './roster.js';
 
 const KEY = 'squad.v1';
 const BAK = 'squad.bak';
@@ -34,7 +34,7 @@ export function defaults() {
     cyc: {},                         // 2회차부터의 진행: { '2': { maxL, cur, stars, best, fails } }
     upgX: { start: 0, fire: 0, coin: 0 },   // 10단계 위로 산 강화(upg는 옛 탭이 0~10으로 자르므로 따로 둔다)
     heroX: {},                       // 영웅마다 Lv5 위로 올린 레벨(heroes.lv는 옛 탭이 5로 자른다)
-    endless: { best: 0, bestN: 0, runs: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수
+    endless: { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0, rel: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수, 알린 해금 단계, 대왕 누적 처치, 출발 카드가 알린 유물 수
     pets: { own: {}, sel: '', eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
     ammo: { sel: '', seen: 0 },      // 탄종(ARSENAL.md 3절): 고른 탄종('' = 보통탄), 열림 안내를 본 별 문턱. 열림은 저장하지 않고 모은 별로 센다
   };
@@ -57,6 +57,31 @@ export function endedCycles(d) {
 }
 /* 열린 가장 높은 회차 */
 export const maxCycle = (d) => endedCycles(d) + 1;
+/* 무한모드 빌드의 해금(단계 해금 기획서 1절). 여는 조건은 모두 이미 저장하는 것(엔딩·무한모드 기록·회차)이라 새 진행 화폐는 없다.
+   선형 단계 unl(만든 단계 stageMax = core.CARD.stageMax까지):
+     1: 1회차 엔딩(무한모드와 함께) → 보스 뒤 3택 1
+     2: + 무한모드 3구간에 처음 닿기(잡은 보스 best ≥ 2) → 탄 효과·탄종 상자·시너지(·장애물)
+     3: + 첫 대왕(best ≥ 6) → 유물(넷)
+   따로 가는 줄: flame = 2회차 엔딩(4단계 화염병 — 캠페인만 하는 사람에게도 무한모드를 다시 열 이유),
+   relics = unl 3이면 RELICS의 kings 0인 넷 + 대왕 누적(kings) 2·3·4·5번에 하나씩(5단계). kings는 1단계를 넣은 뒤부터 셌으므로
+   첫 대왕을 잡은 기록(best ≥ 6)이 있으면 적어도 1로 친다.
+   next: 다음에 열 것과 그 조건(화면의 '다음: 3구간에 닿기' 한 줄) — { unl, best }(무한모드에서 잡은 보스 수) | { relic, kings }(대왕 누적) | null */
+export function endlessUnlocks(d, stageMax = 1) {
+  const ended = endedCycles(d);
+  const best = d.endless ? Math.max(0, d.endless.best | 0) : 0;
+  const kings = Math.max(d.endless ? Math.max(0, d.endless.kings | 0) : 0, best >= 6 ? 1 : 0);
+  const ladder = ended < 1 ? 0 : best >= 6 ? 3 : best >= 2 ? 2 : 1;
+  const unl = Math.max(0, Math.min(stageMax, ladder));
+  const relics = unl >= 3 ? RELIC_IDS.filter((id) => kings >= RELICS[id].kings) : [];
+  let next = null;
+  if (unl >= 1 && unl < Math.min(3, stageMax)) next = unl === 1 ? { unl: 2, best: 2 } : { unl: 3, best: 6 };
+  else if (unl >= 3) { const id = RELIC_IDS.find((r) => !relics.includes(r)); if (id) next = { relic: id, kings: RELICS[id].kings }; }
+  return { unl, flame: ended >= 2, relics, next };
+}
+/* 선형 해금 단계만(예전 이름 — endlessUnlocks를 부른다) */
+export function endlessStage(d, stageMax = 1) {
+  return endlessUnlocks(d, stageMax).unl;
+}
 /* 강화 단계(10단계 위 포함)와 영웅 레벨(Lv5 위 포함) */
 export const upgLv = (d, id) => (d.upg[id] | 0) + (d.upgX ? d.upgX[id] | 0 : 0);
 export function addUpg(d, id) { if ((d.upg[id] | 0) < 10) d.upg[id] = (d.upg[id] | 0) + 1; else d.upgX[id] = (d.upgX[id] | 0) + 1; }
@@ -136,7 +161,7 @@ export function normalize(o) {
   }
   out.cycle = clampInt(out.cycle, 1, maxCycle(out));
   out.endSeen = clampInt(out.endSeen, 0, endedCycles(out));
-  for (const k of ['best', 'bestN', 'runs']) out.endless[k] = Math.max(0, Math.floor(num(out.endless[k])));
+  for (const k of ['best', 'bestN', 'runs', 'unl', 'kings', 'rel']) out.endless[k] = Math.max(0, Math.floor(num(out.endless[k])));
   // 펫: 모르는 id는 버리고, 레벨 1..PET_MAX_LV, 조각·알은 0 이상
   const ps = o.pets && typeof o.pets === 'object' ? o.pets : {};
   const pets = { own: {}, sel: '', eggs: Math.max(0, Math.floor(num(ps.eggs))), pity: clampInt(ps.pity, 0, 99), got: num(ps.got) ? 1 : 0 };

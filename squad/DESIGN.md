@@ -131,13 +131,29 @@ ENDLESS                                  // 상수(위협의 기준 화력 10단
 segInfo(k) → { k, loop, biome, tag, L }  // 구간 k(1부터)의 지역·등급·가상 레벨(61~120 — 렌더러·화면은 s.L만 보고 지역 그림·왕관·이름을 고른다)
 segMul(k), segFloor(k), segCoins(k), segParams(k)
 buildSegment(seed, k, n, tier, attempt)  // 그 순간 병력 n·무기 단계로 만든 구간(레벨 한 판과 같은 모양, z는 0부터). 보정 없음 — 식으로만
-newEndless({ seed, start, fire, hero, pet })
+newEndless({ seed, start, fire, hero, pet, ammo, unl, ammoOpen })   // unl ≥ 1: 보스 뒤 3택 1(단계 해금 1단계), ammoOpen: 별로 열린 탄종
 s.endless = { seed, seg, bosses, bank, wait, z0 }   // 평범한 JSON. 캠페인 판에는 없다
+s.endless.unl, .ammo, .picks, .offer      // 3택 1을 연 판에만(없으면 해시·동작 예전 그대로): 연 단계, 열린 탄종, 고른 카드('men'|'gun'|'unit:<병과>'|'ammo:<탄종>'),
+                                         // 떠 있는 카드 null | [{ k:'men'|'gun' } | { k:'unit', u } | { k:'ammo', a }] — 떠 있으면 step()은 틱을 세지 않는다
+CARD = { stageMax, count, men, kinds }   // 지금 만든 단계(1), 장 수(3), 증원 배수(1.3), 보이는 순서(men·gun·unit·ammo)
+offerOf(s), pickCard(s, i), cardInfo(s, c) → { k, from, to, u?, a? }   // pickCard: 다음 구간을 고르기 전 병력·무기로 이어 붙인 뒤 카드 적용
+segKings(bosses)                         // 그 판에서 쓰러뜨린 대왕 수(6구간마다)
+// 단계 해금 2~5단계(ENDGAME.md 14절) — 그 단계가 열린 판에만 필드가 있다(없는 판의 해시 그대로: STAGE1/2/3_FP·FLAME_FP)
+newEndless({ …, unl 1|2|3, flame, relicsOpen, relics(시험·측정용 — 처음부터 가진 유물) })   // CARD.stageMax = 3
+s.endless.fx = { 탄종: Lv }               // 2단계: 탄 효과(출격 탄종 s.ammo는 Lv2). fxOf, fxLv, fxSlots, fxCan, FX_LV·fxVal·fxText(roster)
+s.endless.obsSeen                         // 2단계: 이 판에서 처음 본 장애물 종류. buildSegment(…, opt { obs, flame }) — 장애물은 따로 난수(나머지 배치 그대로)
+s.endless.relics, .spent, .relicsOpen     // 3단계: 얻은 유물·써서 사라진 것·열린 것. RELIC, relicOn, relicFits, tierMax, spMax, spEscort, cardCount, eggP, bannerOn, relicFire, forkCrate, forkPeek
+s.endless.flame, s.flames = [{ id, x, z, w, len, t, T, d, lv }]   // 4단계: 화염병 줄, 불 지대. flameOn, spKindsOf(SP_KINDS | SP_FLAME)
+offer 카드: { k:'fx', a, syn? } · { k:'unit', u, syn? } · { k:'relic', r } — cardInfo의 combos(켜지는 시너지), COMBOS·COMBO_IDS·comboOn·combosOn
+WEAPON[4] = 2.5(과부하 코일 — THREAT_TIER 3은 위협 식의 상한), OBST·OBSTACLES(roster)·doorMul·shieldMul·blastReach, RUN_ORDER { up 3, obstacle 4, relic 6 }
 s.refMul                                 // 보스가 부르는 졸개 체력 배수(무한모드만)
 s.boss.dead                              // 무한모드: 쓰러지는 연출 중(ENDLESS.wait초 뒤 nextSegment — 지나간 줄·적·소품을 버리고 이어 붙인다)
 endlessCoins(s, bonusPct)                // 적립한 보스 코인 + 처치 10마리당 1(보급 %) + 상자 코인
 progress(s)                              // 무한모드는 이번 구간의 출발 자리(z0)부터
 // 이벤트: segClear { seg, coins, tag }(보스를 잡음 — 코인 적립), segStart { seg, L }(다음 구간이 이어짐). 'win'은 나오지 않는다
+// 단계 해금: fxUp { a, lv, via }, combo { id }, crate type 'fx', snipe thru, obstacle { kind, z }(처음 볼 때), blast, crateLost, relic { id }, relicUse { id:'heart', n }, flame { x, z, w, len, T, lv, boss }, kill.by 'drum'|'flame', offer.relic
+// hitShapes: 'door'·'drum'·'blast'(원)·'fire'
+// 3택 1: offer { n, seg }(카드가 떴다 — 화면은 'pick' 모드로), card { k, from, to, u?, a?, x, z }(고른 카드 — 그 앞에 segStart, 효과의 gain·spGet·spUp)
 
 // 회차
 expectAt(L, c), expectLoadout(L, c), upgCap(maxL, c), capLoadout(L, c)   // c = 회차(기본 1 — 1회차는 예전 그대로)
@@ -167,7 +183,7 @@ bullet.c(크리티컬) · bullet.r(사거리) · bullet.w(넓게 쏘기로 더�
 ## 5. 저장
 
 - 진행: 키 `squad.v1` 그대로, v2는 **필드 추가만**(옛 탭이 써도 깨지지 않게). 추가 필드: `v, updated, lastRunId, backupAt, nagged, heroes{sel, lv{}}, codex{foe,unit,hero,biome}, stats{wins,kills,bossKills,maxN,spGot,heroUses,resumes}, set.music, set.autoSkill`. 불러올 때 normalize(값 범위 고치기, 영웅 합류 소급).
-- 엔드게임 필드(더하기만): `cycle`(지금 회차), `endSeen`(엔딩 화면을 본 가장 높은 회차), `cyc{ c: { maxL, cur, stars, best, fails } }`(2회차부터의 진행 — 1회차는 옛 필드 그대로, `prog(d, c)`), `upgX{start,fire,coin}`(10단계 위 강화 — 옛 탭이 `upg`를 0~10으로 자르므로 따로 둔다, `upgLv`·`addUpg`), `heroX{id}`(Lv5 위, `heroLvOf`·`addHeroLv`), `endless{best,bestN,runs}`, `pets{own{id:{lv,sh}},sel,eggs,pity,got}`, `tips.endgame`. 끝낸 회차는 저장에서 셈한다(`endedCycles`: 그 회차의 maxL > 60 — 예전에 L60을 넘긴 저장은 1회차를 끝낸 것). 백업 코드는 저장을 통째로 싣기 때문에 새 필드도 그대로 간다(가져오기 비교 표의 '진행'에 회차가 나온다).
+- 엔드게임 필드(더하기만): `cycle`(지금 회차), `endSeen`(엔딩 화면을 본 가장 높은 회차), `cyc{ c: { maxL, cur, stars, best, fails } }`(2회차부터의 진행 — 1회차는 옛 필드 그대로, `prog(d, c)`), `upgX{start,fire,coin}`(10단계 위 강화 — 옛 탭이 `upg`를 0~10으로 자르므로 따로 둔다, `upgLv`·`addUpg`), `heroX{id}`(Lv5 위, `heroLvOf`·`addHeroLv`), `endless{best,bestN,runs,unl,kings,rel}`(unl: 화면이 알린 해금 단계, kings: 대왕 누적 처치 — 3택 1을 넣은 뒤부터 센다, rel: 출발 카드가 알린 유물 수; 해금은 `endlessUnlocks(d)` → `{ unl, flame, relics, next }`가 저장에서 셈한다 — unl 2 = best ≥ 2, 3 = best ≥ 6, flame = 2회차 엔딩, 유물은 kings(best ≥ 6이면 최소 1)), `pets{own{id:{lv,sh}},sel,eggs,pity,got}`, `tips.endgame`. 끝낸 회차는 저장에서 셈한다(`endedCycles`: 그 회차의 maxL > 60 — 예전에 L60을 넘긴 저장은 1회차를 끝낸 것). 백업 코드는 저장을 통째로 싣기 때문에 새 필드도 그대로 간다(가져오기 비교 표의 '진행'에 회차가 나온다).
 - 이어하기: `squad.run.v1` = `{ v:1, sim:SIM, id, at, L, attempt, start, fire, support, hero, par, state }`. 3초마다·일시정지·화면 내릴 때·경기장 입장 때 저장. 결과 정산 뒤 `lastRunId`를 기록하고 지운다(이중 보상 방지). 다시 열면 멈춘 상태로 시작.
 - 백업 코드: `save.js`의 `SQD1.` 코드(압축 + 검사값). 넣기 전 비교 표, 덮어쓰기 전 `squad.bak`에 보관해 되돌리기.
 - 저장이 막히면 "저장 꺼짐" 표시, 첫 승리 뒤 `navigator.storage.persist()`, 레벨 10 이후 백업 한 번 권하기.
@@ -180,10 +196,10 @@ bullet.c(크리티컬) · bullet.r(사거리) · bullet.w(넓게 쏘기로 더�
 - 지역 좀비 옷(`pix/foes.js`, `SKIN[지역][종류]`): 졸개·질주·독침·거구마다 지역 옷 한 벌 + 무리 색 변형 `a`·`b`(`f.seed % 3`). 프레임 수·격자 크기·프레임마다 그림 상자가 기본과 같고, 크기 단계는 종류의 `WORLD_H`(졸개 1.17·질주 1.04 그대로)로 고른다 — 충돌·무는 틈 검사가 지역과 상관없다.
 - 지역 보스(`pix/bosses.js`, `SKIN[지역].boss`): 우락이·빙수·와장창·뽀글이·화르륵·곰곰이. 지금 보스와 같은 틀(108×104 → 외곽선 110×106, 11자세, 닻 (55, 105), 걷기 60~74줄 |x−54| ≤ 29 꽉 참 = 총알 받는 몸통 ±1.8m, windup은 치는 것이 y ≤ 20, `rage`·흰 번쩍임·lod 4단계). 정예·대왕(core `levelTag`의 hard·super, 그림만)은 왕관 덧그림(`BOSS_CROWN[시트][자세]` 자리)과 반짝이, 이름 앞말. 효과 색(`BOSS_FX`)은 지역마다, 내려찍기 띠·피격 번쩍임은 빨강 그대로. 등장 띠(0.2~1.6초)는 이름·대사를 쉬는 틈에 미리 그려 둔다.
 - 영웅(`pix/heroines.js`): 꼬마 미소녀 셋 — 뭉치(귤빛 단발·장교 모자·확성기), 보리(솜사탕빛 트윈테일·하트 간호모·하트 가방), 나비(긴 민트빛 머리·분홍 나비 리본·긴 총). 뒷모습 16×20(예전보다 2px 큼 — 렌즈 검사는 발을 재므로 그대로), 얼굴 30×30 두 장(미소, 스킬 컷인의 외침).
-- 아틀라스: 부팅 때 기본 그림 + 사막(≈0.89M px, 예전처럼 페이지 3장)만 굽고, 다른 지역(좀비 옷·보스·소품 ≈0.81M px, 1024² 한 장 더)은 `renderer.prepBiome(id)`가 그 지역에 가기 전에 쉬는 틈에 굽는다(첫 화면·레벨 카드·이긴 결과 화면, 한 지역씩 차례로). 그리는 쪽은 `atlas.has`로 보고 없으면 기본 시트로 그린다(소품은 비운다) — 그리는 중 굽기 0(`lateBakes`).
+- 아틀라스: 부팅 때 기본 그림 + 사막(≈0.89M px, 예전처럼 페이지 3장)만 굽고, 다른 지역(좀비 옷·보스·소품 ≈0.81M px, 1024² 한 장 더)은 `renderer.prepBiome(id)`가 그 지역에 가기 전에 쉬는 틈에 굽는다(첫 화면·레벨 카드·이긴 결과 화면, 한 지역씩 차례로). 그리는 쪽은 `atlas.has`로 보고 없으면 기본 시트로 그린다(소품은 비운다) — 그리는 중 굽기 0(`lateBakes`). 지역 그림은 지역마다 한 장이고 최근 3곳(`BIOME_KEEP`, `createBiomeCache.prep`)만 남긴다 — 오래 안 간 지역은 비우고, 다시 가면 쉬는 틈에 다시 굽는다(무한모드 30구간에도 6장 이하, 굽는 중에 비운 지역이 빈 페이지를 가리키지 않게 막는다).
 - 분대는 합친 병사로 그린다(그리기만 — 시뮬레이션은 그대로): 병사 1 · 분대장 10(`sq10`) · 중장갑 100(`sq100`) · 전차 1000(`sq1000`). 205명 = 중장갑 하나 + 분대장 열 + 병사 다섯(자릿수 그대로에서 줄이 찰 만큼 큰 것을 열로 쪼갠다). 자릿수 그대로도 너무 빽빽한 큰 수는 낮은 단계부터 덜 그린다(어림 — 숫자 말풍선이 정확한 수).
 - 대형은 단체 사진: 큰 단계가 앞줄(먼 쪽), 작은 단계가 뒷줄, 줄 안에서는 큰 것이 가운데. 줄마다 양옆 끝이 몸 끝(±R), 줄 간격은 옆 끝 그림이 위아래로 이어질 만큼 — 그린 무리 = 맞는 몸(SIM 8). 한 명씩 늘고 줄 때는 합치기·나누기가 한 걸음에 많아야 한 번(머뭇거림), 합칠 때는 작은 것들이 모여 펑 하고 큰 것이 톡, 나눌 때는 큰 것이 펑 하고 작은 것들이 튀어나온다.
 
 ## 7. 미룬 것
 
-방패병·화염병, 영웅 쾅이·철순이·딸깍, 도감 화면·업적·오늘의 작전(하지 않기로 했다 — ENDGAME.md), 정면 승리 포즈, 무한모드 보스 뒤 3택 1 보상(구간 사이 `nextSegment`가 끼울 자리), 펫 등급·펫 레벨 상한의 회차 해제, 무한모드 병력 숫자 줄여 쓰기(상한이 9999라 필요 없었다), 오래 안 간 지역 그림을 아틀라스에서 비우기(지금은 지역을 다 돌면 페이지가 8장까지 는다).
+방패병, 캠페인의 화염병(무한모드에만 있다 — 넣으면 `SIM`을 올리고 `--keep`으로 배치를 지킨다), 영웅 쾅이·철순이·딸깍, 도감 화면·업적·오늘의 작전(하지 않기로 했다 — ENDGAME.md), 정면 승리 포즈, 펫 등급·펫 레벨 상한의 회차 해제, 무한모드 병력 숫자 줄여 쓰기(상한이 9999라 필요 없었다), 출격 전 편성(열린 것 중 가져갈 것 고르기 — 유물이 8종을 넘으면 다시 본다).
