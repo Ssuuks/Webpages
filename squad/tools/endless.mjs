@@ -41,11 +41,12 @@ export const median = (a) => { const b = a.slice().sort((x, y) => x - y); return
    'look'   카드마다 판과 이동 봇을 복제해(structuredClone, pol.clone()) 다음 카드·전멸·opt.cap틱까지 돌려 본다 —
             살아남은 쪽, 그다음은 다음 카드가 뜰 때 병력이 큰 쪽(모두 전멸이면 더 멀리 간 쪽, 같으면 앞 카드).
             결정적인 판을 미리 보는 '신의 눈'이라 상한을 재는 용도(판마다 카드 수 × 한 구간을 더 돈다 — 4배쯤 느리다)
-   'pref:unit>gun>men>ammo'  적힌 순서로 먼저 있는 종류(측정용 — --cards가 쉼표로 나누므로 '>'로 잇는다) */
+   'pref:unit>gun>men>ammo'  적힌 순서로 먼저 있는 종류(측정용 — --cards가 쉼표로 나누므로 '>'로 잇는다)
+   'one:<탄종>' · 'nofx' · 'unit:<병과>' · 'relic:<id>'  think + 고집 하나(밸런스 측정 — 단계 해금 기획서 7절의 합격 기준, ENDGAME.md 13절) */
 export const THINK = {
   H: 2,          // 오래 남는 효과가 남은 판에서 몇 구간 더 쓸모 있다고 보는가(잰 값: sloppy0.1 24판, H 0·1·2·3·5 → 평균 5.79·5.79·6.63·6.67·6.21)
   ammo: 0.01,    // 탄종 바꾸기의 구간당 몫(탄종끼리는 세기가 비슷하다 — 합격 기준 ±5%p)
-  sp: { medic: 0.1, sniper: 0.09, rocket: 0.12, flame: 0.1 },   // 특수병 한 명 = 병력의 이만큼(core.js SP_WORTH — 봇이 상자·철창을 볼 때 쓰는 값. 화염병(4단계 판만)은 초안)
+  sp: { medic: 0.1, sniper: 0.09, rocket: 0.12, flame: 0.05 },   // 특수병 한 명 = 병력의 이만큼(core.js SP_WORTH — 봇이 상자·철창을 볼 때 쓰는 값). 화염병(4단계 판만)은 잰 값으로 0.05: 0.1(의무병과 같게)이면 think가 로켓·의무병 대신 화염병을 골라 화염병을 연 판이 −0.63, 0.05면 −0.49(96판)
   // 2단계(탄 효과): 효과 Lv2(= 그 탄종의 좋은 점 100%)가 화력 몇 배 몫인가, 시너지 하나가 켜지는 몫 [초안 — 밸런스 때 재서 고칠 것.
   // 속사만 식 그대로(화력 +15%), 나머지는 맞는 좀비가 늘 있지 않은 만큼 낮춰 어림했다]
   fx: { pierce: 0.08, burst: 0.08, rapid: 0.15, frost: 0.04 },
@@ -112,6 +113,13 @@ export function makePicker(name, seed = 1, opt = {}) {
       return argMax(of.map((c, i) => lookScore(s, i, mp, cap)));
     };
   }
+  // 밸런스 측정용(단계 해금 기획서 7절): think에 한 가지 고집을 더한 사람 — 'one:<탄종>' 탄 효과는 그 하나만, 'nofx' 탄 효과를 안 고름(보통탄만),
+  // 'unit:<병과>' 그 병과 카드가 있으면 먼저, 'relic:<id>' 그 유물이 있으면 먼저. 나머지는 think 점수대로
+  const bend = (bonus) => (s, of) => argMax(of.map((c) => { const b = bonus(c); return b === -Infinity ? -1e9 : thinkScore(s, c, opt.think || THINK) + b; }));
+  if (name.startsWith('one:')) { const a = name.slice(4); return bend((c) => (c.k === 'fx' ? (c.a === a ? 100 : -Infinity) : 0)); }
+  if (name === 'nofx') return bend((c) => (c.k === 'fx' ? -Infinity : 0));
+  if (name.startsWith('unit:')) { const u = name.slice(5); return bend((c) => (c.k === 'unit' && c.u === u ? 100 : 0)); }
+  if (name.startsWith('relic:')) { const r = name.slice(6); return bend((c) => (c.k === 'relic' && c.r === r ? 100 : 0)); }
   if (name.startsWith('pref:')) {
     const order = name.slice(5).split('>');
     return (s, of) => { for (const k of order) { const i = of.findIndex((c) => c.k === k); if (i >= 0) return i; } return 0; };

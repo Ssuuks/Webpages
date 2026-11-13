@@ -2516,7 +2516,7 @@ test('화염병 판의 결정성·이어하기·해시: 같은 시드·같은 �
 
 /* 화염병 줄(4단계)을 연 판의 지문 — 화염병을 넣은 직후 코드로 잰 값(1단계 판 + 유물까지 다 연 3단계 판에 flame: true, 앞 단계와 같은 식).
    화염병 줄을 안 연 판은 앞 단계 지문(STAGE1~3_FP — 위 테스트) 그대로다. 밸런스 조정으로 화염병·앞 단계 수치를 일부러 바꾸면 다시 잰다 */
-const FLAME_FP = 4117032500;
+const FLAME_FP = 2175899401;   // 밸런스 정리에서 think의 화염병 몫(THINK.sp.flame)을 0.1 → 0.05로 — 고르는 카드가 달라져 다시 쟀다(규칙은 그대로)
 test('화염병 줄(4단계)을 연 판의 지문 — FLAME_FP(1단계 판·3단계 판에 flame: true). 넷째 자리(유물)는 화염병 줄을 연 판에만 유물 카드로 나온다(병과 넷 > 자리 셋)', () => {
   assert.equal(C.hash(stageFP(1, { flame: true }), stageFP(3, { relicsOpen: R.RELIC_IDS, flame: true })), FLAME_FP);
   const k6 = (s, relicsOpen) => { const o = C.snapshot(s); o.endless.seg = 6; o.endless.relicsOpen = relicsOpen; o.endless.offer = null; return C.restore(o); };
