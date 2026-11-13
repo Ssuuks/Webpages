@@ -1351,9 +1351,13 @@ function relicsFresh(U) {
    넓은 탄낭은 얻을 수 있는 탄 효과가 슬롯보다 많아야(별로 연 탄종) */
 function relicFreshText(ids, U) {
   if (!ids.length) return '';
-  const id = ids[ids.length - 1], nm = ids.map((r) => RELICS[r].name).join(' · ');
-  const wait = id === 'fourth' && !U.flame ? '화염병이 열리면' : id === 'pouch' && AMMO_IDS.filter((a) => ammoOpen(a, totalStars(data))).length <= FX_SLOTS ? '탄종이 더 열리면' : '';
-  return `새 유물 ${nm}! ${wait ? `${wait} 대왕 뒤` : '대왕을 잡으면'} 유물 카드에 나와요`;
+  const nm = ids.map((r) => RELICS[r].name).join(' · ');
+  const waitOf = (id) => (id === 'fourth' && !U.flame ? '화염병이 열리면' : id === 'pouch' && AMMO_IDS.filter((a) => ammoOpen(a, totalStars(data))).length <= FX_SLOTS ? '탄종이 더 열리면' : '');
+  // 조건은 유물마다(대왕 둘을 한 판에 잡으면 둘이 함께 열린다 — 마지막 것의 조건만 보면 '넷째 자리 · 불굴의 심장! 대왕을 잡으면…'처럼 틀린 말이 됐다)
+  const later = ids.filter(waitOf), w0 = later.length ? waitOf(later[0]) : '';
+  if (later.length === ids.length && later.every((id) => waitOf(id) === w0)) return `새 유물 ${nm}! ${w0} 대왕 뒤 유물 카드에 나와요`;
+  const eun = (w) => (ga(w) === '이' ? '은' : '는');
+  return `새 유물 ${nm}! 대왕을 잡으면 유물 카드에 나와요${later.map((id) => ` · ${RELICS[id].name}${eun(RELICS[id].name)} ${waitOf(id)}`).join('')}`;
 }
 /* 출발 카드의 '다음: …' 한 줄(store.endlessUnlocks의 next — 폰 폭에서 한 줄에 들게 짧은 이름으로) — 다음에 열 것이 없으면 '' */
 function nextUnlockText(nx) {
@@ -1546,7 +1550,7 @@ function finishEndless() {
   if (run && run.eggs) lines.push(['펫 알', `+${run.eggs}개`]);
   const cards = (e.picks || []).filter((p) => !p.startsWith('relic:'));   // 유물(3·5단계)은 카드가 아니라 제 줄로
   if (cards.length) lines.push(['고른 카드', pickSummary(cards)]);
-  if (e.relics && e.relics.length) lines.push(['유물', e.relics.map((id) => (RELICS[id] ? RELICS[id].name : id) + ((e.spent || []).includes(id) ? '(썼어요)' : '')).join(' · ')]);
+  if (e.relics && e.relics.length) lines.push(['유물', e.relics.map((id) => nb((RELICS[id] ? RELICS[id].name : id) + ((e.spent || []).includes(id) ? '(썼어요)' : ''))).join(' · ')]);
   // 이 판의 기록으로 새 단계가 열렸으면(캠페인의 '새 탄종 열림'과 같은 자리) — 다음 판 출발 카드가 한 줄로 다시 알린다
   if (got.opened.length) lines.push(['새로 열림', `${got.opened.join(', ')} — 다음 판부터`]);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
@@ -1617,15 +1621,18 @@ function cardDone(c) {
   return `${ammoName(c.to)} 장전`;
 }
 /* 나침반(유물)이 보여 주는 갈림길 상자 속(fork 이벤트의 reward — 그 순간 얻을 수 있는 것으로, 상자 위 표시와 같은 규칙):
-   '무기 +1단계' · '관통 효과' · '저격수' · '병사 +30명'. 얻을 수 없게 된 무기·탄종 상자는 병사(나침반 배수 ×1.5가 든다) */
+   '무기 +1단계' · '관통 효과' · '저격수' · '병사 +30명'. 얻을 수 없게 된 무기·탄종 상자는 병사 — 그 수는 여는 순간의 병력으로 정해져
+   '병사 보상 ×1.5'(나침반 배수)로 적는다('병사 ×1.5'는 분대가 1.5배가 되는 것으로 읽혔다) */
 function peekText(r) {
   if (r.type === 'unit') return UNITS[r.k] ? UNITS[r.k].name : '특수병';
   if (r.type === 'gun' && s.squad.tier < tierMax(s)) return '무기 +1단계';
   if (r.type === 'fx' && fxCan(s, r.a)) return `${fxName(r.a)} 효과`;
   if (r.type === 'coin') return `코인 +${r.v}`;
   if (r.type === 'men' && r.v) return `병사 +${r.v}명`;
-  return `병사${r.mul ? ` ×${r.mul}` : ''}`;
+  return `병사 보상${r.mul ? ` ×${r.mul}` : ''}`;
 }
+/* 결과 화면의 긴 줄(고른 카드·유물)은 ' · ' 사이에서만 꺾인다 — '관통 효과 / 2번'처럼 한 항목이 쪼개지지 않게 항목 안의 빈칸은 붙은 빈칸으로 */
+const nb = (t) => t.replace(/ /g, '\u00a0');
 /* 결과 화면 한 줄: '증원 2번 · 무기 · 저격수 · 관통탄'(종류 순서는 카드 순서). 횟수는 여러 번 고른 것만 '번'으로 —
    '무기 1'처럼 쓰면 카드의 '무기 1 → 2단계'와 같은 꼴이라 단계로 읽힌다 */
 function pickSummary(picks) {
@@ -1636,7 +1643,7 @@ function pickSummary(picks) {
   // 종류 순서: 1단계(…·탄종)와 2단계(…·탄 효과)를 합친 카드 순서 — 'fx:관통'처럼 고른 효과는 같은 효과끼리 '2번'으로 묶인다
   const order = [...new Set([...CARD.kinds, ...(CARD.kinds2 || [])])];
   const rank = (p) => order.indexOf(p.split(':')[0]);
-  return [...n.keys()].sort((a, b) => rank(a) - rank(b)).map((p) => (n.get(p) > 1 ? `${name(p)} ${n.get(p)}번` : name(p))).join(' · ');
+  return [...n.keys()].sort((a, b) => rank(a) - rank(b)).map((p) => nb(n.get(p) > 1 ? `${name(p)} ${n.get(p)}번` : name(p))).join(' · ');
 }
 function renderPick() {
   const list = $('pickList');
@@ -1646,7 +1653,7 @@ function renderPick() {
   const relic = offer.length > 0 && offer.every((c) => c.k === 'relic');
   $('scrPick').classList.toggle('relic', relic);
   $('pickTitle').textContent = relic ? '대왕 격파! 유물 하나를 골라요' : '보스 격파! 카드 하나를 골라요';
-  $('pickSub').textContent = relic ? `유물은 이 판 끝까지 규칙을 바꿔요 · 가진 유물 ${(relicsOf(s) || []).length}/${RELIC.max}` : '다음 구간이 시작되기 전에 하나를 골라요';
+  $('pickSub').textContent = relic ? `유물은 이 판 끝까지 규칙을 바꿔요 · 가진\u00a0유물\u00a0${(relicsOf(s) || []).length}/${RELIC.max}` : '다음 구간이 시작되기 전에 하나를 골라요';
   list.setAttribute('aria-label', relic ? '유물 카드' : '보상 카드');
   offer.forEach((c, i) => {
     const info = cardInfo(s, c);
@@ -1830,7 +1837,11 @@ function pause() {
   renderPauseUnits();
   renderPauseRestart();
   show('scrPause');
+  pSpMore();
 }
+/* 일시정지 목록이 높이 상한(index.html #pSp)을 넘으면 아래 끝을 흐리게 — 줄 경계에서 잘리면 더 있는 줄(맨 뒤의 유물)을 모르고 지나쳤다. 끝까지 내리면 걷는다 */
+function pSpMore() { const b = $('pSp'); b.classList.toggle('more', !b.hidden && b.scrollTop + b.clientHeight < b.scrollHeight - 2); }
+$('pSp').addEventListener('scroll', pSpMore, { passive: true });
 /* 일시정지의 '처음부터 다시': 첫 게이트를 지났으면 진 판으로 센다고 알리고, 3번째면 지원 받고 다시도 고를 수 있게 */
 function renderPauseRestart() {
   if (isEndless()) {
@@ -1902,8 +1913,11 @@ function renderPauseUnits() {
   }
   box.hidden = !box.childNodes.length;
 }
+/* 이어하기로 연 일시정지의 알림. 계속하기를 누르면 더는 맞지 않는 말이라 내린다(바로 뜨는 3택 1·유물 머리글을 3초 동안 가렸다) */
+const READY_TOAST = '준비되면 계속하기를 누르세요';
 function resume() {
   if (mode !== 'pause' || attract || !s) return;
+  if ($('toast').textContent === READY_TOAST) $('toast').hidden = true;
   mode = 'play';
   last = performance.now();
   requestWake();
@@ -1974,7 +1988,8 @@ function resumeRun() {
   renderPauseUnits();
   renderPauseRestart();
   show('scrPause');
-  toast('준비되면 계속하기를 누르세요');
+  pSpMore();
+  toast(READY_TOAST);
 }
 
 /* ---------- 안내 ---------- */

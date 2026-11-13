@@ -143,6 +143,7 @@ export function createAtlas(opt = {}) {
     if (!G) return 0;
     for (const n of G.names) { sheets.delete(n); pending.delete(n); }
     for (let i = unflushed.length - 1; i >= 0; i--) if (unflushed[i].pk === G.pk) unflushed.splice(i, 1);
+    G.pk.dead = true;   // 그 묶음을 굽던 생성기가 남아 있어도(쉬는 틈 굽기의 gen) 다 구운 기록을 되살리지 않게 — 0×0 캔버스를 그리면 drawImage가 던진다
     for (const c of G.pk.all) {
       const i = pages.indexOf(c);
       if (i >= 0) pages.splice(i, 1);
@@ -185,6 +186,7 @@ export function createAtlas(opt = {}) {
             rec.white[i].push(put(silhouette(R), pk));
           }
           yield;
+          if (pk.dead) return;   // 굽는 사이 그 묶음을 비웠다(evict) — 버린 페이지에 더 굽지 않는다
         }
         list.push(per);
       }
@@ -284,14 +286,20 @@ export function createAtlas(opt = {}) {
 }
 
 /* 지역 그림 캐시(오래 안 간 지역 비우기 — 무한모드 30구간 판에서도 아틀라스 페이지가 상한 안): 지역(묶음)을 많아야 keep개 들고 있다.
-   touch(지역): 그 지역을 쓴다(그리는 지역이 바뀔 때·prepBiome을 부를 때 — 최근 쓴 차례). room(지역, 지금 그리는 지역): 그 지역을 굽기 직전에 불러,
-   묶음이 keep개를 넘게 되면 가장 오래 안 쓴 것부터 비운다(굽을 지역·지금 그리는 지역은 남긴다). 비운 지역 목록을 돌려준다(다시 가면 prepBiome이 다시 굽는다).
-   지역 그림은 묶음만의 페이지에 있으니 비우면 페이지가 통째로 빠진다 — 페이지 수 ≤ 공용 페이지 + keep × (지역 하나의 페이지, 지금 1장). 그리는 중에는 굽지 않는다:
-   비운 지역의 시트는 atlas.has가 거짓이라 그리는 쪽이 기본 시트로 그린다(prepBiome이 그 지역에 가기 전에 쉬는 틈에 다시 굽는다) */
-export function createBiomeCache(atlas, keep = 3) {
+   지역 그림은 묶음만의 페이지에 있으니 비우면 페이지가 통째로 빠진다 — 페이지 수 ≤ 공용 페이지 + keep × (지역 하나의 페이지, 지금 1장, tests/art.mjs).
+   - touch(지역): 그 지역을 쓴다(그리는 지역이 바뀔 때·prep을 부를 때 — 최근 쓴 차례).
+   - room(지역, 지금 그리는 지역): 그 지역을 굽기 직전에 불러, 묶음이 keep개를 넘게 되면 가장 오래 안 쓴 것부터 비운다(굽을 지역·지금 그리는 지역은 남긴다).
+     비운 지역 목록을 돌려준다.
+   - prep(지역): 그 지역 그림을 쉬는 틈에 굽는다(o.sheetsOf(지역) 중 아직 없는 것 — 한 지역씩 차례로, 두 굽기가 한 틈을 나눠 먹지 않게). 굽기 직전에 room으로
+     자리를 내고, 비운 지역은 잊는다(다시 부르면 처음부터 굽는다). 지금 그리는 지역은 그 순간의 o.now()로 읽는다(부른 때가 아니라 — 그 사이 지역이 바뀐다).
+     비우기는 이 사슬 안에서만 한다: 앞 굽기는 다 끝났고(그 지역 페이지에 굽는 중인 시트가 없다), 그리는 쪽은 프레임 사이에만 바뀐 atlas.has를 본다.
+   그리는 중에는 굽지 않는다: 비운 지역의 시트는 atlas.has가 거짓이라 그리는 쪽이 기본 시트로 그린다(prep이 그 지역에 가기 전에 쉬는 틈에 다시 굽는다) */
+export function createBiomeCache(atlas, keep = 3, o = {}) {
   const used = new Map();   // 지역 → 마지막으로 쓴 차례
-  let tick = 0;
-  return {
+  const prepped = new Map();   // 지역 → 굽기 약속(다 구웠거나 사슬에서 기다린다)
+  let tick = 0, chain = o.ready || Promise.resolve();
+  const groupOf = o.groupOf || (() => '');
+  const api = {
     keep,
     touch(bid) { if (bid) used.set(bid, ++tick); },
     room(bid, now) {
@@ -303,12 +311,27 @@ export function createBiomeCache(atlas, keep = 3) {
       for (const g of old) {
         if (n < keep) break;
         atlas.evict(g);
+        prepped.delete(g);
         out.push(g);
         n--;
       }
       return out;
     },
+    prep(bid) {
+      api.touch(bid);
+      let p = prepped.get(bid);
+      if (!p) {
+        p = chain = chain.then(() => new Promise((res) => {
+          const todo = o.sheetsOf(bid).filter((n) => !atlas.has(n));
+          if (todo.some((n) => groupOf(n) === bid)) api.room(bid, o.now ? o.now() : '');
+          if (!todo.length) res(true); else atlas.bakeIdle(todo, () => res(true));
+        }));
+        prepped.set(bid, p);
+      }
+      return p;
+    },
   };
+  return api;
 }
 
 /* 래스터 → 독립 캔버스(DOM 아이콘·초상화용), 정수 배율 */

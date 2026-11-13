@@ -65,8 +65,10 @@ const TEAM_HURT = { ...TEAM, H: '#FFE4DC', h: '#FF9C8C', b: '#E8606A', B: '#B840
 const MEDIC = { ...TEAM, H: '#FFFFFF', h: '#F2F0F7', b: '#D3CFE3', B: '#A8A1C4', X: '#FF5F98', x: '#FF9EC3', z: '#E0709A' };
 const SNIPER = { ...TEAM, H: '#E2E0A8', h: '#B5B276', b: '#8C8A52', B: '#6B6A3C', r: '#6B4A3A', o: '#8C8A52', O: '#5E5D34', t: '#7FA040' };
 const ROCKET = { ...TEAM, H: '#FFE6C2', h: '#FFA54A', b: '#EE7A26', B: '#B95514', T: '#7FA040', E: '#3E5126', Y: '#FFD84A', F: '#FFF4B0', f: '#FFB347' };
-/* 화염병(무한모드 4단계): 그을음 빛 두건(로켓병의 주황 철모와 ΔE 20 넘게 — 진홍 쪽) + 초록 유리병·흰 심지·불꽃, 등에는 숯빛 연료 가방(주황 불꽃 무늬) */
-const FLAME = { ...TEAM, H: '#FFB49A', h: '#E8503A', b: '#B83A2C', B: '#7E2A26', E: '#3F8A5A', e: '#8FD9A0', w: '#F2E6C8', Y: '#FF7A3C', F: '#FFD84A', f: '#FFF4B0', x: '#4A3D4E', X: '#FF7A3C' };
+/* 화염병(무한모드 4단계): 그을린 적갈색 방화 두건 뒤통수에 주황 불꽃 무늬(의무병 하트처럼 뒷모습에서 병과가 보이게) + 초록 유리병·흰 심지·불꽃,
+   등에는 숯빛 연료 가방(주황 불꽃 무늬). 두건 색은 로켓병의 주황 철모와 ΔE 25 넘게, 옷 색 넷 모두 빨강(나쁨 — 빨간 칸·내려찍기 띠·다친 빛)과
+   ΔE 20 넘게(영웅과 같은 규칙, tests/art.mjs) — 불은 병·무늬가 말한다 */
+const FLAME = { ...TEAM, H: '#F0A070', h: '#C4683A', b: '#9C4E2C', B: '#6E3524', E: '#3F8A5A', e: '#8FD9A0', w: '#F2E6C8', Y: '#FF7A3C', F: '#FFD84A', f: '#FFF4B0', x: '#4A3D4E', X: '#FF7A3C' };
 
 /* 합친 병사(분대장·중장갑병·전차): 같은 파랑 + 금 장식, 바이저·환기구 빛, 궤도, 배기 연기, 미등 */
 const TIER_EXTRA = { y: '#FFD84A', Y: '#FFF09A', d: '#D08A12', v: '#8CF6FF', V: '#E8FFFF', q: '#3B3F55', a: '#E8ECF2', A: '#C9CED6', e: '#FF9F43' };
@@ -175,16 +177,16 @@ const RKT_BODY = [
 const RKT_CROUCH = pad([B12, B12, ...RKT_HEAD.slice(0, 6), 'sBBBBBBBBsTT', '.cOooooOcYTT', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
 const RKT_FIRE = pad(['.........fFf', '..........F.', ...RKT_HEAD.slice(1, 6), 'sBBBBBBBBsTT', '.cOooooOcYTT', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
 
-/* 화염병(무한모드 4단계 — 다른 특수병과 같은 12칸 격자, 머리 7줄은 로켓병처럼): 진홍 두건 + 오른손에 치켜든 불붙은 유리병(초록 병·흰 심지·불꽃),
+/* 화염병(무한모드 4단계 — 다른 특수병과 같은 12칸 격자, 머리 7줄은 로켓병처럼): 적갈색 두건(뒤통수에 불꽃 무늬) + 오른손에 치켜든 불붙은 유리병(초록 병·흰 심지·불꽃),
    등에는 숯빛 연료 가방에 주황 불꽃 무늬. 걷는 동안 병의 불꽃이 두 꼴로 일렁인다(짝·홀 프레임). 던지기: 병을 뒤로 젖혀 웅크리기 → 빈손을 앞으로 뻗기 */
 const FLM_FIRE = [['.........YfY', '..hhhhhh..F.'], ['..........Y.', '..hhhhhh.YFY']];   // 병 위 불꽃 두 꼴(0줄·1줄)
 const FLM_HEAD = (k) => [
   FLM_FIRE[k][0],
   FLM_FIRE[k][1],
-  '.hhHHhhhh.w.',
-  'hhHhhhhhhbEE',
-  'hhhhhhhhbbEe',
-  'hhhhhhhbbbEE',
+  '.hhHYhhhh.w.',
+  'hhHYFYhhhbEE',
+  'hhhYFYhhbbEe',
+  'hhhYYYhbbbEE',
   'sBBBBBBBBss.',
 ];
 const FLM_BODY = [
@@ -197,8 +199,8 @@ function flameFrames() {
   const fr = [0, 1, 2, 3].map((f) => walk(FLM_HEAD(f & 1), FLM_BODY, f, 12));
   return fr.concat([walk(FLM_HEAD(0), FLM_BODY, 0, 12), idle2(FLM_HEAD(1), FLM_BODY, 12)]);
 }
-const FLM_WIND = pad([B12, B12, '..hhhhhh....', '.hhHHhhhh...', 'hhHhhhhhhb.Y', 'hhhhhhhhbbYf', 'hhhhhhhbbbFE', 'sBBBBBBBBsEE', '.cOxxxxOcs..', 'ccOxXXxOcc..', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
-const FLM_THROW = pad(['.........f..', '.........F..', '..hhhhhh.s..', '.hhHHhhhhc..', 'hhHhhhhhhc..', 'hhhhhhhhbc..', 'hhhhhhhbbb..', 'sBBBBBBBBs..', '.cOxxxxOc...', 'ccOxXXxOcc..', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
+const FLM_WIND = pad([B12, B12, '..hhhhhh....', '.hhHYhhhh...', 'hhHYFYhhhb.Y', 'hhhYFYhhbbYf', 'hhhYYYhbbbFE', 'sBBBBBBBBsEE', '.cOxxxxOcs..', 'ccOxXXxOcc..', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
+const FLM_THROW = pad(['.........f..', '.........F..', '..hhhhhh.s..', '.hhHYhhhhc..', 'hhHYFYhhhc..', 'hhhYFYhhbc..', 'hhhYYYhbbb..', 'sBBBBBBBBs..', '.cOxxxxOc...', 'ccOxXXxOcc..', 'scOOOOOOcs..', '.kkk..kkk...'], 12);
 
 /* ---------------- 합친 병사(대형 단계): 10명 = 분대장, 100명 = 중장갑병, 1000명 = 전차 ----------------
    외곽선 포함 18×18 · 22×22 · 30×22(렌더러 TIER 표와 같다). 뒷모습, 발·궤도는 맨 아래 줄,

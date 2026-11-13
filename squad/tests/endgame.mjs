@@ -855,10 +855,10 @@ const bare2 = (fx, extra = {}) => {
 
 test('탄 효과의 세기(정해진 판): 관통 Lv1·2·3은 뒤의 좀비 하나에 30·60·90%, 작렬은 둘레 1m에 17.5·35·52.5%, 빙결은 0.8초 동안 12.5·25·37.5% 느리게, 속사는 화력 ×1.075·1.15·1.225. 출격 탄종은 대신 쪽(피해·사거리)을 그대로 진다', () => {
   // 한 줄로 선 좀비 A(10m)·B(12m), B 옆 C, A 옆 D에 100짜리 총알 한 발
-  const shot = (fx, extra) => {
+  const shot = (fx, extra, more = []) => {
     const s = bare2(fx, extra);
     const z = s.squad.z;
-    s.foes = [mkFoe(0, 0, z + 10), mkFoe(1, 0, z + 12), mkFoe(2, 0.8, z + 12.2), mkFoe(3, 0.8, z + 10.2)];
+    s.foes = [mkFoe(0, 0, z + 10), mkFoe(1, 0, z + 12), mkFoe(2, 0.8, z + 12.2), mkFoe(3, 0.8, z + 10.2), ...more.map(([x, d], i) => mkFoe(4 + i, x, z + d))];
     s.bullets = [{ x: 0, z: z + 9.5, d: 5, dmg: 100, hm: 1 }];
     C.step(s, { dir: 0 });
     return { hp: s.foes.map((f) => +(1e6 - f.hp).toFixed(6)), slow: s.foes.map((f) => (f.slowT > s.t ? +(f.slowT - s.t).toFixed(4) : 0)), ev: s.ev.map((e) => e.t) };
@@ -869,6 +869,8 @@ test('탄 효과의 세기(정해진 판): 관통 Lv1·2·3은 뒤의 좀비 하
   // 관통 + 작렬(연쇄 폭발): 뚫고 지난 B 둘레에서도 터진다
   assert.deepEqual(shot({ pierce: 2, burst: 2 }).hp, [100, 60, 35, 35], '연쇄 폭발');
   assert.deepEqual(shot({ pierce: 3, burst: 1 }).hp, [100, 90, 17.5, 17.5]);
+  // 관통은 맞은 좀비의 '뒤'만 — 총알이 이미 지난 분대 쪽(같은 줄 8.5m) 좀비는 뚫지 않는다(지문만 이것을 지키면 밸런스 때 다시 잴 때 놓친다)
+  assert.deepEqual(shot({ pierce: 2 }, undefined, [[0, 8.5]]).hp, [100, 60, 0, 0, 0], '관통은 뒤로만');
   assert.ok(shot({ pierce: 1, burst: 1 }).ev.filter((e) => e === 'splash').length === 2 && shot({ pierce: 1 }).ev.includes('pierce'));
   for (const lv of [1, 2, 3]) assert.deepEqual(shot({ frost: lv }).slow, [0.8, 0, 0, 0], `빙결 Lv${lv}: 맞은 좀비만 0.8초`);
   // 출격 탄종(Lv2)은 1단계와 같은 몫, Lv3이면 좋은 점만 150%
@@ -922,10 +924,10 @@ test('시너지 다섯(정해진 판): 얼음 조준(빙결 + 저격수) 느려�
     const s = bare2(fx, extra);
     s.squad.sp = [{ id: 99001, k: 'sniper', cd: 0, lv: 1 }];
     const z = s.squad.z;
-    s.foes = foes.map(([x, dz], i) => mkFoe(i, x, z + dz));
+    s.foes = foes.map(([x, dz, hp], i) => ({ ...mkFoe(i, x, z + dz), ...(hp ? { hp, max: hp } : {}) }));
     for (const i of slowed) s.foes[i].slowT = 99;
     C.step(s, { dir: 0 });
-    return { hp: s.foes.map((f) => 1e6 - f.hp), ev: s.ev.filter((e) => e.t === 'snipe'), s };
+    return { hp: s.foes.map((f) => f.max - f.hp), ev: s.ev.filter((e) => e.t === 'snipe'), s };
   };
   const base = snipe({}).hp[0];
   assert.ok(base > 0);
@@ -939,6 +941,8 @@ test('시너지 다섯(정해진 판): 얼음 조준(빙결 + 저격수) 느려�
   assert.deepEqual(th.ev.map((e) => !!e.thru), [false, true]);
   assert.deepEqual(snipe({ pierce: 1 }, { foes: [[0, 10], [0, 30], [0, 20]] }).hp.map((v) => +(v / base).toFixed(9)), [1, 0, 1], '가장 가까운 뒤 표적');
   assert.deepEqual(snipe({ pierce: 1 }, { foes: [[0, 10], [0, 40]] }).hp.map((v) => +(v / base).toFixed(9)), [1, 0], '저격 사거리 밖은 아니다');
+  // 첫 표적의 '뒤'로만: 표적(체력이 큰 20m 좀비)과 분대 사이 같은 줄의 좀비는 더 뚫지 않는다
+  assert.deepEqual(snipe({ pierce: 1 }, { foes: [[0, 10], [0, 20, 2e6]] }).hp.map((v) => +(v / base).toFixed(9)), [0, 1], '표적 앞의 좀비는 아니다');
   assert.deepEqual(snipe({ pierce: 1, frost: 1 }, { slowed: [1] }).hp.map((v) => +(v / base).toFixed(9)), [1, 1.5, 0], '둘 다: 뒤 표적이 느려져 있으면 +50%');
   // 1단계 판(출격 빙결탄·관통탄 + 저격수): 시너지 없음
   for (const ammo of ['frost', 'pierce']) {
@@ -1943,6 +1947,7 @@ test('불굴의 심장(정해진 판): 전멸하는 순간 병력이 그 구간 
   s7.endless.seg = 7;
   assert.equal(wipe(s7).find((e) => e.t === 'relicUse').n, Math.round(0.5 * C.segFloor(7)));
   assert.equal(s7.squad.n, Math.round(0.5 * C.segFloor(7)));
+  assert.equal(s7.squad.peak, s7.squad.n, '최고 병력(휘장의 문턱)도 되살아난 병력까지 오른다');
   // 특수병은 남는다 — 호위 병사가 모자라면(넷째 자리면 6 × 3 = 18 > 16) 가장 늦게 온 특수병이 떠난다
   for (const [relics, left] of [[['heart'], 3], [['heart', 'fourth'], 2]]) {
     const t = bare3(relics);
@@ -2309,6 +2314,14 @@ test('불 지대(정해진 판): 8~20m 앞에서 지대 안 체력 합이 가장
     C.step(s, { dir: 0 });
     assert.equal(!!s.flames, want, `체력 합 ${k} × 0.3D`);
     if (!want) assert.equal(s.squad.sp[0].cd, 0.25);
+  }
+  // 무리를 세는 네모는 지대 그대로(옆 ±w/2 · 앞뒤 ±len/2): 1.5m씩 띄운 셋(한 지대에 하나씩만 든다)보다 한 지대에 함께 드는 둘
+  {
+    const s = bareF(1);
+    const z = s.squad.z;
+    s.foes = [...[-1.5, 0, 1.5].map((x, i) => still(mkFoe(i, x, z + 12))), still(mkFoe(5, 3.5, z + 15)), still(mkFoe(6, 3.5, z + 15.5))];
+    C.step(s, { dir: 0 });
+    assert.deepEqual([s.flames[0].x, s.flames[0].z], [3.5, z + 15], '지대에 함께 드는 무리');
   }
   // 그린 것이 맞는 것: 지대 네모 끝 바로 안·바로 밖
   const s = bareF(1);

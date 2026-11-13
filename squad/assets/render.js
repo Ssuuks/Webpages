@@ -18,6 +18,7 @@ import { frameRaster, outline } from './pix/raster.js';
 const FIT = { at: 0.70, up: 20, back: 24, minHz: 0.075, far: 180, farLow: 150 };
 const STEPS3 = [1, 0.75, 0.5];
 const STEPS4 = [1, 0.75, 0.5, 0.33];
+const biomeGroup = (n) => BIOME_GROUP.get(n) || '';   // 지역 시트 → 그 지역(아틀라스 묶음), 나머지는 ''(늘 남는 공용 페이지)
 /* 무기 단계 색. 다섯째(4단계)는 과부하 코일(무한모드 유물)로만 닿는다 — 전기 보라(총알 옆에 튀는 불꽃, drawBullets). core WEAPON과 같은 길이(tests/art.mjs) */
 export const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9', '#B98CFF'];
 const SPARK4 = '#F2E8FF';   // 4단계 총알 옆 전기 불꽃
@@ -608,7 +609,7 @@ export function createRenderer(cvs) {
   const ctx = cvs.getContext('2d', { alpha: false });
   const view = makeView();
   const screen = { w: 0, h: 0, col: 0 };
-  const atlas = createAtlas({ groupOf: (n) => BIOME_GROUP.get(n) || '' });   // 지역 시트는 지역마다 제 페이지에(오래 안 간 지역을 통째로 비운다)
+  const atlas = createAtlas({ groupOf: biomeGroup });   // 지역 시트는 지역마다 제 페이지에(오래 안 간 지역을 통째로 비운다)
   const font = createFont(atlas);
   const ground = createGround();
   let BW = 0, BH = 0, VW = 0, VH = 0, K = 1, dpr = 1, cssPer = 1, cssW = 0, cssH = 0;
@@ -655,22 +656,9 @@ export function createRenderer(cvs) {
      가장 오래 안 쓴 지역(지금 그리는 지역은 빼고)을 통째로 비운다(createBiomeCache — 페이지 ≤ 공용 3장 + BIOME_KEEP장, 예전에는 다 돌면 8장).
      셋: 지금 지역 + 미리 굽는 다음 지역 + 하나 더(이어하기가 다음·지금 지역을 차례로 부를 때 아직 앞 판 지역을 그리고 있어도 다음 지역이 밀려나지 않게) */
   const BIOME_KEEP = 3;
-  const biomeCache = createBiomeCache(atlas, BIOME_KEEP);
-  const prepped = new Map();
-  let prepChain = ready, touchedBid = '';
-  function prepBiome(bid) {
-    biomeCache.touch(bid);
-    let p = prepped.get(bid);
-    if (!p) {
-      p = prepChain = prepChain.then(() => new Promise((res) => {
-        const todo = biomeSheets(bid).filter((n) => !atlas.has(n));
-        if (todo.some((n) => BIOME_GROUP.get(n) === bid)) for (const g of biomeCache.room(bid, curBid)) prepped.delete(g);
-        if (!todo.length) res(true); else atlas.bakeIdle(todo, () => res(true));
-      }));
-      prepped.set(bid, p);
-    }
-    return p;
-  }
+  const biomeCache = createBiomeCache(atlas, BIOME_KEEP, { ready, sheetsOf: biomeSheets, groupOf: biomeGroup, now: () => curBid });
+  let touchedBid = '';
+  const prepBiome = (bid) => biomeCache.prep(bid);
 
   /* 프레임 상태 */
   let time = 0, prevTime = 0, f60 = 0, camX = 0, dolly = 0, fitted = -1, trauma = 0;
@@ -2086,8 +2074,25 @@ export function createRenderer(cvs) {
     if (a < 1) ctx.globalAlpha = a;
     const white = flashFoe.on(p.id, p.hitT, s.t, time, reduce);
     const rr = atlas.draw(ctx, 'drum', ((time * 2.5 + p.id * 0.37) | 0) & 1, px, py, st, white ? 'white' : '');
-    if (!p.passed) font.draw(ctx, String(Math.max(1, Math.ceil(p.hp))), px, Math.round(py) - rr.ay - 4, { size: 'small', fill: '#FFD0C4', out: PANEL.bad.out });
+    if (!p.passed) {
+      const t = String(Math.max(1, Math.ceil(p.hp))), ty = Math.round(py) - rr.ay - 4;
+      // 옆 상자·철창 숫자와 겹치면 통 몸 가운데에(통이 숫자보다 크면), 아직 작으면 접는다(drumLabelClash)
+      const clash = drumLabelClash(s, p, px, ty, font.measure(t, 'small'));
+      if (!clash || rr.h >= font.height('small') + 4) font.draw(ctx, t, px, clash ? Math.round(py - rr.ay / 2) : ty, { size: 'small', fill: '#FFD0C4', out: PANEL.bad.out });
+    }
     ctx.globalAlpha = 1;
+  }
+  /* 드럼통은 때로 상자·철창 바로 옆에 놓인다(쏘면 상자를 잃는 고민). 위에 띄운 두 체력 숫자가 겹쳐 상자 숫자가 가려졌다 —
+     겹치면 드럼통 숫자를 내린다(얻을지 말지 정하는 상자 숫자가 먼저). 상자 숫자는 큰 글꼴 폭으로 넉넉히 잰다 */
+  function drumLabelClash(s, p, px, ty, tw) {
+    const fh = font.height('big');
+    for (const o of s.props) {
+      if (o === p || !o.alive || o.passed || (o.kind !== 'crate' && o.kind !== 'cage') || Math.abs(o.z - p.z) > 1.5) continue;
+      if (!project(view, (o.x0 + o.x1) / 2, o.kind === 'cage' ? 1.8 : 1.7, o.z)) continue;
+      const ow = font.measure(String(Math.max(1, Math.ceil(o.hp))), 'big');
+      if (Math.abs(P.x - px) < (tw + ow) / 2 + 2 && Math.abs(P.y - 6 - ty) < fh + 1) return true;
+    }
+    return false;
   }
   /* 폭발 반경(바닥, 실제 크기 — blastRing = core가 재는 원): 옅은 주황으로 채우고 주황·노랑 점선 테두리가 천천히 돈다.
      원 안에 좀비가 있으면 더 진하게 깜박인다(지금 쏘면 맞는다 — 노릴 때). 원에 걸친 상자·철창은 터지면 함께 부서진다(그 위로 테두리가 지나간다) */
@@ -2722,7 +2727,8 @@ export function createRenderer(cvs) {
     pill.on = false;
     if (q.n !== lastN) lastN = q.n;
     shownN += (q.n - shownN) * Math.min(1, dt * 9);
-    if (Math.abs(q.n - shownN) < 0.5) shownN = q.n;
+    // 멈춘 그림(일시정지·3택 1·결과 — dt 0)은 따라 세지 못한다: 이어하기(reset 뒤 0부터)로 연 카드 화면에 병력이 '0'으로 남지 않게 지금 값으로
+    if (Math.abs(q.n - shownN) < 0.5 || dt <= 0) shownN = q.n;
     countPop = Math.max(0, countPop - dt * 4);
     countTint *= Math.max(0, 1 - dt * 3);
     // 출발 전(레벨 카드 뒤)에는 그리지 않는다 — 카드 글자와 겹치지 않게(V6)
