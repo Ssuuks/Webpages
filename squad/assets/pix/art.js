@@ -1,7 +1,7 @@
 /* 도트 그림 데이터 — DOM 없음(노드 테스트에서 검사한다).
    격자는 한 글자 = 한 픽셀('.' 투명), 색은 시트마다 팔레트(한 글자 → '#rrggbb').
    큰 그림(거구·톱날·연기)은 같은 픽셀 밀도의 도형 명령(raster.js runOps)으로 그린다.
-   영웅(heroines.js)·지역 좀비 옷(foes.js)·지역 땅과 소품(biomes.js)·지역 보스(bosses.js)는 따로 모듈에 있고(art.js를 가져오지 않는다) 여기서 SHEETS·BIOME에 펼친다.
+   영웅(heroines.js)·지역 좀비 옷(foes.js)·지역 땅과 소품(biomes.js)·지역 보스(bosses.js)·무한모드 장애물(obstacles.js)은 따로 모듈에 있고(art.js를 가져오지 않는다) 여기서 SHEETS·BIOME에 펼친다.
    외곽선(1px, 자두색)은 굽는 단계에서 자동으로 붙는다. 세계 스프라이트는 줄이기만 한다(1, 0.75, 0.5 단계). */
 
 import { HEROINE_SHEETS } from './heroines.js';
@@ -9,6 +9,7 @@ import { PET_SHEETS, PET_ART } from './pets.js';
 import { buildFoeSkins, FOE_ALTS, FOE_SKIN, FOE_BURST } from './foes.js';
 import { BIOME_EXTRA, BIOME_PATCH, PROP_SHEETS, PROP_WORLD_H } from './biomes.js';
 import { BOSS_SHEETS, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TEXT, BOSS_TIER } from './bosses.js';
+import { OBST_SHEETS, OBST_WORLD_H } from './obstacles.js';
 
 export const OUT = '#2B1D2E';
 
@@ -741,6 +742,9 @@ export const WORLD_H = {
 Object.assign(SHEETS, buildFoeSkins(SHEETS), PROP_SHEETS);
 for (const k of Object.keys(FOE_ALTS)) SHEETS[k].alts = { ...(SHEETS[k].alts || {}), ...FOE_ALTS[k] };
 Object.assign(WORLD_H, PROP_WORLD_H);
+/* 무한모드 2단계 장애물(폭발 드럼통·방패 정예의 방패 — pix/obstacles.js): 사막 시트처럼 부팅 때 굽는다(작다) */
+Object.assign(SHEETS, OBST_SHEETS);
+Object.assign(WORLD_H, OBST_WORLD_H);
 for (const k of Object.keys(BIOME_PATCH)) Object.assign(BIOME[k], BIOME_PATCH[k]);
 Object.assign(BIOME, BIOME_EXTRA);
 /* 지역 → 종류 → 시트(보스는 아래에서 SKIN[bid].boss를 더한다). 시트가 없으면 기본 종류 이름 */

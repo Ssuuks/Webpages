@@ -3,9 +3,10 @@
    보스 뒤 3택 1(단계 해금 1단계): [--cards think,random,men,first,look] [--unl 1] [--ammo pierce,burst,rapid,frost]
    --cards가 없으면 예전 그대로(카드 없음). 있으면 (봇 × 카드 고르기)마다 한 줄 + 고른 카드 종류 분포. --unl은 --cards가 있으면 1이 기본
    (2: 탄 효과·탄종 상자·시너지 + 4구간부터 장애물(장갑문·폭발 드럼통·방패 정예) — core.CARD.stageMax까지. 장애물만 끄고 재려면 C.RUN_ORDER.obstacle = Infinity),
-   --ammo는 별로 열린 탄종(기본 넷 다 — 탄종 카드 후보) */
+   --ammo는 별로 열린 탄종(기본 넷 다 — 탄종 카드 후보).
+   3단계(유물 — 대왕 보스 뒤): --unl 3 [--relics all|compass,coil,…](열린 유물, 기본 all) [--hold heart,…](처음부터 가진 유물 — 유물마다 재 보기). --flame: 화염병 줄(4단계)을 연 판 */
 import * as C from '../assets/core.js';
-import { AMMO_IDS, FX_LV } from '../assets/roster.js';
+import { AMMO_IDS, FX_LV, RELICS, RELIC_IDS } from '../assets/roster.js';
 import { makeBot, rng } from '../tests/bots.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : process.argv[i + 1]; };
@@ -48,6 +49,8 @@ export const THINK = {
   // 속사만 식 그대로(화력 +15%), 나머지는 맞는 좀비가 늘 있지 않은 만큼 낮춰 어림했다]
   fx: { pierce: 0.08, burst: 0.08, rapid: 0.15, frost: 0.04 },
   combo: 0.05,
+  // 3단계(유물): 유물 하나가 남은 판에서 구간마다 화력 몇 배 몫인가 [초안 — 밸런스 때 재서 고칠 것. 심장은 한 번 더 사는 몫이라 크게, 가방은 화면 쪽 알이라 판에는 손해 쪽]
+  relic: { compass: 0.02, banner: 0.03, megaphone: 0.02, coil: 0.08, fourth: 0.05, heart: 0.3, bag: 0, pouch: 0.04 },
 };
 /* 'think'의 점수 = 다음 구간 하나의 화력 배수 몫 + 오래 남는 몫 × H.
    다음 구간은 고르기 전의 병력·무기 단계로 만들고(buildSegment: 위협 = WEAPON[tier] × segMul × 뒤처짐, 게이트는 그때 병력 기준),
@@ -58,7 +61,9 @@ export const THINK = {
    - 특수병: w = sp[병과](레벨 올리기는 × SP_UP_WORTH), ((1 + w)^0.8 − 1) × (1 + H)
    - 탄종: ammo × (1 + H)
    - 탄 효과(2단계): fx[탄종] × (FX_LV[to] − FX_LV[from]) × (1 + H) — 위협에 안 들어가 오래 남는다
-   - 시너지를 켜는 카드(특수병·탄 효과 — cardInfo의 combos): + combo × 켜지는 수 × (1 + H). 1단계 판의 카드에는 combos가 없다(점수 그대로) */
+   - 시너지를 켜는 카드(특수병·탄 효과 — cardInfo의 combos): + combo × 켜지는 수 × (1 + H). 1단계 판의 카드에는 combos가 없다(점수 그대로)
+   - 무기가 위협 식의 상한(core.THREAT_TIER = 3)을 넘는 몫(과부하 코일의 4단계)은 위협에 안 들어가 오래 남는다 → × (1 + H)
+   - 유물(3단계): relic[id] × (1 + H) */
 export function thinkScore(s, c, K = THINK) {
   const f = C.cardInfo(s, c);
   if (!f) return -1;
@@ -67,7 +72,7 @@ export function thinkScore(s, c, K = THINK) {
     const u = f.to > f.from ? clamp((C.segFloor(s.endless.seg + 1) - f.from) / (f.to - f.from), 0, 1) : 0;
     return d * (1 + K.H * u);
   }
-  if (c.k === 'gun') return C.WEAPON[f.to] / C.WEAPON[f.from] - 1;
+  if (c.k === 'gun') return (C.WEAPON[f.to] / C.WEAPON[f.from] - 1) * (f.to > C.THREAT_TIER ? 1 + K.H : 1);
   if (c.k === 'unit') {
     const w = (K.sp[c.u] || 0.1) * (f.from ? C.SP_UP_WORTH : 1);
     const v = (Math.pow(1 + w, 0.8) - 1) * (1 + K.H);
@@ -79,6 +84,7 @@ export function thinkScore(s, c, K = THINK) {
     const v = ((K.fx || THINK.fx)[c.a] || 0) * (lvK(f.to) - lvK(f.from)) * (1 + K.H);
     return f.combos ? v + (K.combo ?? THINK.combo) * f.combos.length * (1 + K.H) : v;
   }
+  if (c.k === 'relic') return ((K.relic || THINK.relic)[c.r] || 0) * (1 + K.H);
   return -1;
 }
 const argMax = (xs) => xs.reduce((bi, v, i) => (v > xs[bi] ? i : bi), 0);
@@ -146,6 +152,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const cards = (arg('cards', '') || '').split(',').filter(Boolean);
   const unl = +arg('unl', cards.length ? 1 : 0);
   const ammoOpen = (arg('ammo', AMMO_IDS.join(',')) || '').split(',').filter(Boolean);
+  const ids = (v) => (v === 'all' ? RELIC_IDS.slice() : (v || '').split(',').filter((id) => RELICS[id]));
+  const relicsOpen = ids(arg('relics', 'all'));
+  const hold = ids(arg('hold', ''));
   for (const name of bots) {
     for (const pk of cards.length ? cards : [null]) {
       const res = [];
@@ -153,7 +162,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       for (let i = 0; i < seeds; i++) {
         const pol = makeBot(name, 1000 + i, { skill: true });
         const o = { seed: 77 + i * 13, start: C.START_N + 2 * Math.min(up, +arg('startup', up)), fire: up, hero: hero === 'none' ? null : { id: hero, lv: heroLv } };
-        if (pk) { o.unl = unl; o.ammoOpen = ammoOpen; }
+        if (pk) { o.unl = unl; o.ammoOpen = ammoOpen; if (unl >= 3) { o.relicsOpen = relicsOpen; o.relics = hold; } if (flag('flame')) o.flame = true; }
         res.push(runEndless(o, pol, maxSeg, undefined, pk ? makePicker(pk, 2000 + i) : null));
       }
       const b = res.map((r) => r.bosses);

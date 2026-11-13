@@ -5,7 +5,7 @@ const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './assets/main.js', './assets/core.js', './assets/render.js', './assets/view.js',
   './assets/pix/art.js', './assets/pix/raster.js', './assets/pix/atlas.js', './assets/pix/font.js', './assets/pix/ground.js',
-  './assets/pix/heroines.js', './assets/pix/foes.js', './assets/pix/biomes.js', './assets/pix/bosses.js', './assets/pix/pets.js',
+  './assets/pix/heroines.js', './assets/pix/foes.js', './assets/pix/biomes.js', './assets/pix/bosses.js', './assets/pix/pets.js', './assets/pix/obstacles.js',
   './assets/audio.js', './assets/music.js', './assets/store.js', './assets/save.js', './assets/roster.js', './assets/caltable.js', './assets/cyctable.js', './assets/insight.js',
   './assets/icon.svg', './assets/icon-180.png', './assets/icon-192.png', './assets/icon-512.png', './assets/icon-512-maskable.png',
 ];

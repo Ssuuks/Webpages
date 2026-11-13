@@ -2,7 +2,7 @@
 import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
-  CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn,
+  CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
 } from './core.js';
 import { createRenderer } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -13,7 +13,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg , AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_MAX, fxText, COMBOS, RELICS, RELIC_IDS } from './roster.js';
+  FX_LV_MAX, fxText, COMBOS, RELICS, RELIC_IDS, OBSTACLES } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1908,9 +1908,10 @@ function resumeRun() {
 const tipQueue = [];
 let tipUntil = 0;
 let tipKey = '';
-function tip(key, text) {
+/* first: 줄 맨 앞에(다가오는 것을 알리는 안내 — 처음 보는 장애물은 45m 앞에서 와서, 밀린 안내 뒤에 서면 지나간 뒤에 뜬다) */
+function tip(key, text, first = false) {
   if (data.tips[key] || tipQueue.some((t) => t.key === key)) return;
-  tipQueue.push({ key, text });
+  if (first) tipQueue.unshift({ key, text }); else tipQueue.push({ key, text });
 }
 /* 안내는 플레이 중에만 넘기고, 실제로 보여 준 것만 '봤음'으로 저장한다 */
 function updateTips(now) {
@@ -1943,6 +1944,7 @@ function watchTips() {
   }
   for (const p of s.props) {
     if (!p.alive || p.passed || p.z - q.z > 32) continue;
+    if (p.kind === 'door' || p.kind === 'drum') continue;   // 장애물(무한모드 2단계)은 'obstacle' 이벤트가 45m 앞에서 따로 안내한다 — 상자 안내가 뜨지 않게
     if (p.key === true) tip('key', '열쇠 표시 상자: 다음 난관을 넘을 보급이에요. 꼭 쏴서 부수세요!');
     if (p.reward && p.reward.type === 'fx') tip('fxCrate', '탄종 상자: 무기가 3단계라 무기 대신 위에 뜬 탄 효과가 들었어요. 부수면 그 효과를 얻어요');
     if (p.kind === 'wall') tip('wall', '벽의 숫자는 체력이에요. 약한 벽을 쏴서 뚫고 지나가세요');
@@ -2054,8 +2056,28 @@ function handleEvents(ev) {
       case 'split': tip('split', '주황 좀비는 쓰러지면 질주 좀비로 갈라져요. 멀리 있을 때 잡으세요'); break;
       case 'fork':
         if (e.kind === 'horde') { tip('forkHorde', '갈림길! 좀비 떼가 막은 쪽을 뚫으면 보상 상자예요. 들어가면 옆으로 못 넘어가요'); toast('좀비 떼가 길을 막았어요!', 1400); }
-        else tip('fork', '갈림길! 벽 숫자를 보고 골라요. 들어가면 옆으로 못 넘어가요');
+        else if (e.kind === 'door') {
+          // 장갑문 갈림길(2단계 4구간부터): 문 숫자는 체력이고, 지금 총알이 문에 얼마나 드는지(doorMul — 보통 총알 50%, 관통·작렬이면 더)를 그때그때 한 줄로
+          tip('fork', '갈림길! 문 숫자를 보고 골라요. 들어가면 옆으로 못 넘어가요');
+          const k = doorMul(s);
+          toast(k < 1 ? `장갑문! 지금 총알은 ${Math.round(k * 100)}%만 들어가요` : k > 1 ? '장갑문! 지금 총알이 잘 뚫어요' : '장갑문이 길을 막았어요!', 1600);
+        } else tip('fork', '갈림길! 벽 숫자를 보고 골라요. 들어가면 옆으로 못 넘어가요');
         break;
+      case 'obstacle': {
+        // 처음 보는 장애물(무한모드 2단계, 4구간부터 — core가 그 판에서 종류마다 한 번 45m 앞에서 알린다): 이름과 규칙을 한 줄로, 저장에 한 번만
+        const O = OBSTACLES[e.kind];
+        if (O) tip('obs-' + e.kind, `${O.name}: ${O.text()}`, true);
+        break;
+      }
+      case 'blast': sfx.boom(); vibe(e.by === 'chain' ? 15 : 30); break;
+      case 'crateLost': {
+        // 폭발 드럼통 둘레의 상자·철창이 내용물째 부서졌다(보상 없음) — 왜 못 받았는지
+        const w = e.kind === 'cage' ? '철창' : '상자';
+        sfx.leave();
+        toast(`폭발에 ${w}${ga(w)} 부서졌어요`, 1400);
+        tip('crateLost', `드럼통이 터지면 둘레 ${OBSTACLES.drum.r}m의 상자·철창도 부서져요(보상 없음). 상자를 먼저 부수고 터뜨려요`);
+        break;
+      }
       case 'surge':
         // 몰이(보스 앞 좀비 떼, 양옆 가장자리에서도 파고든다): 글자 + 경보음 + 진동. 화면 양옆 붉은 화살표는 renderer가 그린다
         sfx.surge();

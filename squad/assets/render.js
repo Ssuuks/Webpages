@@ -2,8 +2,8 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan } from './core.js';
-import { HEROES, biomeOf, bossNameOf } from './roster.js';
+import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul } from './core.js';
+import { HEROES, biomeOf, bossNameOf, OBSTACLES } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, biomeSheets, PET_ART } from './pix/art.js';
 import { createAtlas, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
@@ -31,6 +31,21 @@ export function shotAmmo(s) {
   return best;
 }
 const SKILL_LINE = { mungchi: '#FFD84A', bori: '#FF8FB8', nabi: '#7FF0E2' };   // 스킬 중 화면 가장자리 속도선
+/* 충돌 크기 보기(?hitbox=1)의 색 — core.hitShapes가 돌려주는 모양 종류(k)마다 하나(tests/art.mjs가 장애물이 있는 판의 모든 k를 본다).
+   분대(하늘색) · 적·톱날(분홍 타원) · 벽·장갑문·상자·철창(주황 선 — 분대 앞 끝이 닿는 순간 옆으로 겹치면) · 드럼통(빨간 선 — 닿으면 터진다, 분대는 안 다친다) ·
+   폭발 반경(주황 원 — 가운데가 이 안인 좀비가 맞고, 이 원에 닿는 상자·철창이 부서진다) · 독침(연두) · 웅덩이(연보라) · 보스 몸통(노랑)·맞붙는 선(빨강) */
+export const HB_COL = {
+  squad: '#4FF3FF', foe: '#FF4FD8', saw: '#FF4FD8', wall: '#FFB347', door: '#FFB347', crate: '#FFB347', cage: '#FFB347', drum: '#FF6B5B', blast: '#FF9A3D',
+  spit: '#C8FF5A', pool: '#D9A6FF', bossHit: '#FFE34F', bossReach: '#FF5D5D', div: '#FFFFFF',
+};
+/* 폭발 드럼통(prop.kind 'drum')의 폭발 반경 — 땅 위 원의 꼭짓점 n개(x, z를 번갈아 out에). 가운데 = 드럼통 가운데, 반지름 = OBSTACLES.drum.r:
+   core의 drumBlast(가운데가 이 안인 좀비)·blastReach(이 원에 닿는 상자·철창)·hitShapes 'blast'와 같은 원이다(그린 원 = 맞는 원, 테스트) */
+export function blastRing(p, n = 24, out = []) {
+  const x = (p.x0 + p.x1) / 2, r = OBSTACLES.drum.r;
+  out.length = 0;
+  for (let i = 0; i < n; i++) { const a = (i / n) * 2 * Math.PI; out.push(x + r * Math.cos(a), p.z + r * Math.sin(a)); }
+  return out;
+}
 const PANEL = {
   good: { hex: '#3E8BEA', line: '#BFE2FF', out: '#1D3F8A', arrow: '#DDF3FF' },
   bad: { hex: '#E8384F', line: '#FFC2B3', out: '#6E1A33', arrow: '#FFD0C4' },
@@ -128,11 +143,13 @@ const FX_COL = {
   blood: ['#FF8FA8', '#E8607A'], gold: ['#FFF09A', '#FFD84A', '#D08A12'], dust: ['#E6D2B0', '#B89A70'], snowDust: ['#FFFFFF', '#DCE0EA'],
   confetti: ['#FFD84A', '#6CC0FF', '#FF8FB8', '#8FD16A', '#FFFFFF'], good: ['#6CC0FF', '#DDF3FF', '#3E8BEA'], bad: ['#FF8A7A', '#FFC2B3', '#E8384F'],
   unit: ['#FFD84A', '#FFF09A', '#D08A12'], boom: ['#FFF4B0', '#FFB347', '#FF7A45', '#9AA2B0'], heal: ['#7CE07A', '#C9F5B8'],
+  drum: ['#E8384F', '#A92644', '#FFD84A', '#6E1A33'], charred: ['#8E5A30', '#5E3B2E', '#3A2A2A', '#FFB347'],
 };
-/* 정예 좀비(무한모드) 표식 색: 오염 = 보라(독침의 연두와 다르게), 분열 = 주황 */
+/* 정예 좀비(무한모드) 표식 색: 오염 = 보라(독침의 연두와 다르게), 분열 = 주황, 방패(2단계 장애물) = 청록(roster OBSTACLES.shield.color) */
 const ELITE_COL = {
   toxic: { ring: '#B26BFF', glow: 'rgba(178,107,255,.35)', hi: '#F1DCFF', burst: ['#B26BFF', '#6B2FB8', '#F1DCFF'] },
   split: { ring: '#FF9A3D', glow: 'rgba(255,154,61,.32)', hi: '#FFE3B8', burst: ['#FF9A3D', '#FFD84A', '#E8607A'] },
+  shield: { ring: OBSTACLES.shield.color, glow: 'rgba(63,224,208,.30)', hi: '#D8FFF9', burst: [OBSTACLES.shield.color, '#9AA2B0', '#E8ECF2'] },
 };
 const MAX_PARTS = 320;
 const FLAG_X = [0, -0.55, 0.55];
@@ -620,11 +637,16 @@ export function createRenderer(cvs) {
   let spawnBudget = SPAWN_CAP;   // 그리기 한 번(+그 뒤 이벤트)에 새로 띄우는 파편 수 상한 — 폭발이 한꺼번에 터져도 프레임이 튀지 않게(V5)
   const sq = { x: 0, z: 0, vz: 0, vx: 0, n: 0, tier: 0, sp: [] };   // 그리는 순간의 분대(보간)
   /* 렌더러 전용 축소 단계(시뮬 객체에 쓰지 않는다). 종류마다 숫자 키 Map(문자열 키를 매 프레임 만들지 않게) */
-  const lodScen = new Map(), lodFoe = new Map(), lodSaw = new Map(), lodCage = new Map();
+  const lodScen = new Map(), lodFoe = new Map(), lodSaw = new Map(), lodCage = new Map(), lodDrum = new Map();
   let lodBoss;
   const flashFoe = createFlashLimiter(0.34, 0.034);   // 좀비: 초당 3회 이하
   const flashBoss = createFlashLimiter(0.5, 0.034);   // 보스: 초당 2회 이하, 반투명 덧칠(V9)
   const hitSeen = new Map();
+  const shieldSeen = new Map();   // 방패 정예 id → 마지막으로 본 hitT(막힌 총알 불똥)
+  /* 폭발에 휩쓸려 부서진 상자·철창의 잔해(crateLost): 그 자리 땅에 그을린 판자·휜 창살이 분대가 지나갈 때까지 남는다(무엇을 잃었는지 보이게) */
+  const wrecks = [];
+  for (let i = 0; i < 6; i++) wrecks.push({ on: false, x0: 0, x1: 0, z: 0, kind: 'crate', seed: 0 });
+  let lastBlast = null;           // 마지막 폭발 { x, z, t } — 같은 묶음의 'kill' by 'drum'이 가운데에서 바깥으로 튕겨 나간다
   const tickAt = new Map();
   const bruteStep = new Map();
   const spSeen = new Map();    // 특수병 id → { born, fx, fz }
@@ -653,7 +675,7 @@ export function createRenderer(cvs) {
   /* 로켓 Lv3 폭발 자리의 그을음(땅 위 어두운 타원, SCORCH_T초 동안 옅어진다) */
   const SCORCH_T = 0.8;
   const scorches = [];
-  for (let i = 0; i < 4; i++) scorches.push({ on: false, x: 0, z: 0, r: 1, t: 0 });
+  for (let i = 0; i < 4; i++) scorches.push({ on: false, x: 0, z: 0, r: 1, t: 0, T: SCORCH_T });   // T: 남는 초(드럼통 폭발은 더 오래)
   let splashT = -9;           // 작렬탄 고리를 마지막으로 그린 때
   let waveFront = 0;          // 맨 앞줄의 z(분대 기준 m)
   let waveT = -9;             // 좋은 게이트를 지난 때(분대가 앞줄부터 물결처럼 통 튄다)
@@ -774,6 +796,8 @@ export function createRenderer(cvs) {
     for (const f of flips) f.on = false;
     spUpAt.clear(); spBig.clear();
     for (const c of scorches) c.on = false;
+    for (const w of wrecks) w.on = false;
+    lodDrum.clear(); shieldSeen.clear(); lastBlast = null;
     waveT = -9; bossHpSeen = -1; bossDmgAcc = 0; bossDmgT = 0; bossMark = 4; bossMax = 0;
     lastS = null; stillFor = 0; dirty = true;
   }
@@ -803,7 +827,7 @@ export function createRenderer(cvs) {
     for (const f of fxs) if (!f.on) { slot = f; break; }
     if (!slot) return null;
     slot.on = true; slot.kind = kind; slot.x = x; slot.y = y; slot.z = z; slot.t = 0; slot.dur = dur;
-    slot.k = null; slot.n = 0; slot.vx = 0; slot.vz = 0; slot.sheet = null; slot.step = 0; slot.col = null;
+    slot.k = null; slot.n = 0; slot.vx = 0; slot.vz = 0; slot.sheet = null; slot.step = 0; slot.col = null; slot.x0 = 0; slot.x1 = 0;
     if (o) Object.assign(slot, o);
     return slot;
   }
@@ -922,7 +946,11 @@ export function createRenderer(cvs) {
           const big = e.kind === 'brute';
           fx('puff', e.x, big ? 0.9 : 0.5, e.z, big ? 0.4 : 0.3, { step: big ? 0 : 1 });
           const kc = e.elite ? ELITE_COL[e.elite].burst : e.kind === 'spit' ? FX_COL.purple : FOE_BURST[curBid] || FX_COL.green;
-          if (e.by === 'sniper' || e.by === 'hero') {
+          if (e.by === 'drum' && lastBlast) {
+            // 드럼통 폭발: 폭발 가운데에서 바깥으로 날아간다(위로 높이, 멀리)
+            const dx = e.x - lastBlast.x, dz = e.z - lastBlast.z, d = Math.max(0.3, Math.hypot(dx, dz));
+            for (let i = 0; i < (big ? 12 : 8); i++) part(e.x, (big ? 1.1 : 0.7) + Math.random() * 0.4, e.z, (dx / d) * (3 + Math.random() * 4) + (Math.random() - 0.5), 4 + Math.random() * 4, (dz / d) * (3 + Math.random() * 4) + (Math.random() - 0.5), 0.75 + Math.random() * 0.3, kc[i % kc.length], Math.random() < 0.4 ? 2 : 1);
+          } else if (e.by === 'sniper' || e.by === 'hero') {
             // 저격: 맞은 쪽 반대로(먼 쪽으로) 길게 튕겨 나간다
             for (let i = 0; i < (big ? 12 : 7); i++) part(e.x + (Math.random() - 0.5) * 0.3, (big ? 1.2 : 0.7) + Math.random() * 0.4, e.z, (Math.random() - 0.5) * 1.6, 1 + Math.random() * 2, 7 + Math.random() * 7, 0.5 + Math.random() * 0.25, kc[i % kc.length], Math.random() < 0.3 ? 2 : 1);
           } else if (e.by === 'rocket') {
@@ -947,12 +975,22 @@ export function createRenderer(cvs) {
           break;
         }
         case 'wallBreak':
+          if (e.kind === 'door') {
+            // 장갑문이 뚫렸다: 두 짝이 털썩 주저앉고(doorDrop) 쇳조각·불꽃·먼지 — 벽보다 묵직하게
+            const d = s.props.find((p) => p.kind === 'door' && p.z === e.z && Math.abs((p.x0 + p.x1) / 2 - e.x) < 0.01);
+            if (d) fx('doorDrop', e.x, 0, e.z, 0.4, { x0: d.x0, x1: d.x1 });
+            burst(e.x, 1, e.z, 30, FX_COL.iron, 5.5, 5, 0.8);
+            burst(e.x, 1.2, e.z, 10, ['#FFF4B0', '#FFB347'], 4, 4, 0.4);
+            fx('puff', e.x, 0.5, e.z, 0.4);
+            shake(0.4);
+            break;
+          }
           burst(e.x, 0.9, e.z, 26, FX_COL.stone, 5, 5, 0.7);
           fx('puff', e.x, 0.7, e.z, 0.35);
           shake(0.3);
           break;
         case 'wallCrash':
-          burst(e.x, 0.9, e.z, 22, FX_COL.stone, 4, 4, 0.7);
+          burst(e.x, 0.9, e.z, 22, e.kind === 'door' ? FX_COL.iron : FX_COL.stone, 4, 4, 0.7);
           burst(q.x, 0.8, q.z, 10, FX_COL.blood, 3, 3);
           screenFlash(0.28, '232,56,79');
           shake(0.45);
@@ -1157,9 +1195,41 @@ export function createRenderer(cvs) {
             ring(e.x, e.z, br * 0.45, br, 0.5, '#FFFFFF');
             let c = scorches[0];
             for (const k of scorches) { if (!k.on) { c = k; break; } if (k.t > c.t) c = k; }
-            c.on = true; c.x = e.x; c.z = e.z; c.r = br * 0.55; c.t = 0;
+            c.on = true; c.x = e.x; c.z = e.z; c.r = br * 0.55; c.t = 0; c.T = SCORCH_T;
           }
           shake(blv >= 3 ? 0.2 : 0.12);
+          break;
+        }
+        case 'blast': {
+          // 폭발 드럼통(무한모드 2단계): 큰 펑 셋 + 실제 반경(e.r)까지 번지는 불꽃 고리 두 겹 + 빨간 통 조각 + 오래 남는 그을음. 분대는 안 다친다(붉은 번쩍임 없이 주황)
+          const br = e.r || OBSTACLES.drum.r;
+          lastBlast = { x: e.x, z: e.z, t: time };
+          fx('boom', e.x, 0.9, e.z, 0.45);
+          fx('boom', e.x - br * 0.3, 0.6, e.z + br * 0.15, 0.36);
+          fx('boom', e.x + br * 0.3, 1.3, e.z - br * 0.1, 0.4);
+          ring(e.x, e.z, 0.3, br, 0.4, '#FFF4B0', { thick: 2 });
+          ring(e.x, e.z, br * 0.5, br, 0.6, '#FF7A45');
+          burst(e.x, 1, e.z, 30, FX_COL.boom, 6.5, 6, 0.75);
+          burst(e.x, 0.8, e.z, 10, FX_COL.drum, 5, 8, 0.95);
+          for (let k = 0; k < 5; k++) part(e.x + (Math.random() - 0.5) * br, 0.6, e.z + (Math.random() - 0.5) * br, (Math.random() - 0.5), 1.4 + Math.random(), (Math.random() - 0.5), 0.9, '#9AA2B0', 1, -0.5, 'smoke');
+          let c = scorches[0];
+          for (const k of scorches) { if (!k.on) { c = k; break; } if (k.t > c.t) c = k; }
+          c.on = true; c.x = e.x; c.z = e.z; c.r = br * 0.6; c.t = 0; c.T = 2.5;
+          screenFlash(e.by === 'chain' ? 0.14 : 0.22, '255,150,80');
+          shake(e.by === 'chain' ? 0.25 : 0.4);
+          break;
+        }
+        case 'crateLost': {
+          // 폭발에 휩쓸려 내용물째 부서진 상자·철창: 그을린 파편 + 그 자리에 잔해(분대가 지나갈 때까지). 철창의 포로는 울며 달아난다(합류 없음)
+          const cage = e.kind === 'cage';
+          burst(e.x, 1, e.z, 22, cage ? FX_COL.iron : FX_COL.charred, 5, 6, 0.8);
+          fx('puff', e.x, 0.6, e.z, 0.45, { step: 1 });
+          if (cage && e.reward && e.reward.k) fx('spRun', e.x, 0, e.z, 1.5, { k: e.reward.k, vx: e.x < 0 ? -2.4 : 2.4, vz: -1.2 });
+          const src = s.props.find((p) => (p.kind === 'crate' || p.kind === 'cage') && !p.alive && p.z === e.z && Math.abs((p.x0 + p.x1) / 2 - e.x) < 0.01);
+          let w = wrecks[0];
+          for (const k of wrecks) { if (!k.on) { w = k; break; } if (k.z < w.z) w = k; }
+          w.on = true; w.kind = cage ? 'cage' : 'crate'; w.z = e.z; w.seed = (Math.abs(Math.round(e.z * 7 + e.x * 13)) % 97) | 0;
+          w.x0 = src ? src.x0 : e.x - 0.8; w.x1 = src ? src.x1 : e.x + 0.8;
           break;
         }
         case 'heal': {
@@ -1781,6 +1851,187 @@ export function createRenderer(cvs) {
     ctx.globalAlpha = 1;
   }
 
+  /* ---------- 무한모드 2단계 장애물(단계 해금 기획서 4절 — 2단계를 연 판의 4구간부터) ---------- */
+  /* 장갑문(prop.kind 'door' — 갈림길 위험한 쪽의 셋째 패턴): 벽보다 높고 두꺼운 쇳빛 문. 리벳 박힌 문틀·가운데 이음매·아래 경고 띠, 숫자는 벽처럼 체력(p.hp).
+     폭은 벽처럼 x0~x1 그대로(boxFaces — 그린 폭 = 맞는 폭). 이 판의 총알이 덜 들면(doorMul < 1 — 보통 총알) 맞을 때 하얀 불똥이 카메라 쪽으로 튕기고,
+     잘 들면(관통·작렬 효과) 주황 불꽃이 튄다 — 숫자가 천천히 주는 까닭이 보이게(배수 숫자는 글꼴에 '.'이 없어 DOM 안내가 맡는다) */
+  const DOOR_H = 1.75, DOOR_D = 0.5;
+  function doorSparks(s, p) {
+    const prev = hitSeen.get(p.id);
+    if (prev === p.hitT) return;
+    hitSeen.set(p.id, p.hitT);
+    if (prev === undefined || Math.random() >= 0.6) return;
+    const x = p.x0 + 0.2 + Math.random() * (p.x1 - p.x0 - 0.4), y = 0.35 + Math.random() * (DOOR_H - 0.6), z = p.z - DOOR_D - 0.05;
+    if (doorMul(s) < 1) {
+      fx('glint', x, y, z, 0.06);
+      for (let i = 0; i < 2; i++) part(x, y, z, (Math.random() - 0.5) * 4, 1.5 + Math.random() * 2.5, -3 - Math.random() * 4, 0.28, i ? '#FFFFFF' : '#C9CED6');
+    } else {
+      fx('spark', x, y, z, 0.08);
+      burst(x, y, z, 3, ['#FFB347', '#FF7A45', '#FFF4B0'], 2.5, 2.5, 0.35);
+    }
+  }
+  function drawDoor(s, p) {
+    const top = boxFaces(p, DOOR_H, DOOR_D);
+    if (!top) return;
+    const a = fadeIn(face.d);
+    if (!a) return;
+    ctx.globalAlpha = a;
+    doorSparks(s, p);
+    const hit = s.t - p.hitT < 0.1;
+    ctx.fillStyle = '#8A93A6';
+    trap(face.dx, face.cx, face.dy, top.tL, top.tR, top.ty);
+    ctx.fillStyle = hit ? '#7C8494' : '#596277';
+    trap(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy);
+    const w = face.bx - face.ax, h = face.ay - face.dy;
+    const X0 = Math.round(face.ax), Y0 = Math.round(face.dy), W = Math.max(1, Math.round(w)), HH = Math.max(1, Math.round(h));
+    const post = Math.max(1, Math.round(w * 0.08)), lint = Math.max(1, Math.round(h * 0.15)), kick = Math.max(1, Math.round(h * 0.16));
+    // 문틀: 양옆 기둥·위 상인방(짙은 쇠), 상인방에 리벳(밝은 점)
+    ctx.fillStyle = '#3B3F55';
+    ctx.fillRect(X0, Y0, post, HH); ctx.fillRect(X0 + W - post, Y0, post, HH); ctx.fillRect(X0, Y0, W, lint);
+    if (lint >= 3 && W >= 10) {
+      ctx.fillStyle = '#C9CED6';
+      const n = Math.max(2, Math.round(W / 5));
+      for (let i = 0; i < n; i++) ctx.fillRect(Math.round(X0 + post + ((W - 2 * post - 1) * (i + 0.5)) / n), Y0 + (lint >> 1), 1, 1);
+    }
+    // 아래 발판: 경고 띠(벽과 같은 무늬 — 위험한 쪽의 막는 물건)
+    if (mtx) { mtx.e = X0; mtx.f = 0; hazard.setTransform(mtx); }
+    ctx.fillStyle = hazard;
+    ctx.fillRect(X0 + post, Y0 + HH - kick, W - 2 * post, kick);
+    // 가운데 이음매(두 짝 문)와 판마다 빗장 볼트
+    const mx = (face.ax + face.bx) / 2;
+    ctx.fillStyle = OUT;
+    if (HH > lint + kick + 2) ctx.fillRect(Math.round(mx), Y0 + lint, 1, HH - lint - kick);
+    if (W >= 12 && HH >= 14) {
+      ctx.fillStyle = '#9AA2B0';
+      const by = Y0 + lint + Math.round((HH - lint - kick) * 0.78);
+      ctx.fillRect(Math.round(X0 + W * 0.27) - 1, by, 2, 2); ctx.fillRect(Math.round(X0 + W * 0.73) - 1, by, 2, 2);
+    }
+    // 맞은 자국: 체력이 줄면 움푹 팬 탄흔, 많이 줄면 귀퉁이가 휘고 달아오른다
+    const dmg = 1 - p.hp / p.max;
+    if (dmg > 0.3 && W >= 8 && HH >= 8) {
+      const n = dmg > 0.65 ? 6 : 3;
+      for (let i = 0; i < n; i++) {
+        const u = ((p.id * 37 + i * 53) % 89) / 89, v = ((p.id * 13 + i * 71) % 61) / 61;
+        const dx = Math.round(X0 + post + 1 + u * (W - 2 * post - 3)), dy = Math.round(Y0 + lint + 1 + v * (HH - lint - kick - 3));
+        ctx.fillStyle = '#C9CED6'; ctx.fillRect(dx, dy, 1, 1);
+        ctx.fillStyle = '#2A2E3A'; ctx.fillRect(dx, dy + 1, 1, 1);
+      }
+      if (dmg > 0.65 && W >= 12) {
+        ctx.fillStyle = OUT; pline(X0 + W - post - 4, Y0 + lint, X0 + W - post - 1, Y0 + lint + 3);
+        ctx.fillStyle = '#FF9F43'; ctx.fillRect(X0 + W - post - 2, Y0 + lint + 1, 1, 1);
+      }
+    }
+    ctx.fillStyle = OUT;
+    trapLine(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy, 1);
+    // 체력 숫자(벽과 같은 규칙: 큰 글꼴이 들어가면 크게) — 문 가운데
+    const t = String(Math.max(1, Math.ceil(p.hp)));
+    const big = h > 14 && font.measure(t, 'big') <= w - 2 * post - 1;
+    if (big || font.measure(t, 'small') <= w) font.draw(ctx, t, mx, Y0 + lint + (HH - lint - kick) * 0.45, { size: big ? 'big' : 'small' });
+    ctx.globalAlpha = 1;
+  }
+  /* 장갑문이 부서질 때: 두 짝이 땅으로 털썩 주저앉는다(0.4초) — 그리기만, 문 자리(x0~x1)는 시뮬레이션 소품에서 찾는다 */
+  function doorDrop(f, u) {
+    const H = DOOR_H * (1 - u) * (1 - u);
+    if (H < 0.05) return;
+    const top = boxFaces(f, H, DOOR_D);
+    if (!top) return;
+    ctx.globalAlpha = 1 - u * 0.5;
+    ctx.fillStyle = '#8A93A6'; trap(face.dx, face.cx, face.dy, top.tL, top.tR, top.ty);
+    ctx.fillStyle = '#596277'; trap(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy);
+    const mx = (face.ax + face.bx) / 2;
+    ctx.fillStyle = OUT;
+    trapLine(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy, 1);
+    ctx.fillRect(Math.round(mx), Math.round(face.dy), 1, Math.max(1, Math.round(face.ay - face.dy)));
+    ctx.globalAlpha = 1;
+  }
+
+  /* 폭발 드럼통(prop.kind 'drum'): 빨간 통 도트(pix/obstacles.js), 위에 체력 숫자(상자처럼 — 작게, 연한 빨강). 쏘거나 닿으면 터진다 */
+  function drawDrum(s, p, bio) {
+    const x = (p.x0 + p.x1) / 2;
+    if (!project(view, x, 0, p.z)) return;
+    const a = fadeIn(P.d);
+    if (!a) return;
+    const sh = atlas.sheet('drum');
+    const want = (P.s * WORLD_H.drum) / (sh.frames[0][0].h - 2);
+    const st = lodStep(lodDrum, p.id, want, STEPS3);
+    const px = P.x, py = P.y;
+    ctx.fillStyle = bio.shadow;
+    ellipse(px, py, Math.max(2, 0.55 * P.s), Math.max(1, 0.2 * P.s));
+    if (a < 1) ctx.globalAlpha = a;
+    const white = flashFoe.on(p.id, p.hitT, s.t, time, reduce);
+    const rr = atlas.draw(ctx, 'drum', ((time * 2.5 + p.id * 0.37) | 0) & 1, px, py, st, white ? 'white' : '');
+    if (!p.passed) font.draw(ctx, String(Math.max(1, Math.ceil(p.hp))), px, Math.round(py) - rr.ay - 4, { size: 'small', fill: '#FFD0C4', out: PANEL.bad.out });
+    ctx.globalAlpha = 1;
+  }
+  /* 폭발 반경(바닥, 실제 크기 — blastRing = core가 재는 원): 옅은 주황으로 채우고 주황·노랑 점선 테두리가 천천히 돈다.
+     원 안에 좀비가 있으면 더 진하게 깜박인다(지금 쏘면 맞는다 — 노릴 때). 원에 걸친 상자·철창은 터지면 함께 부서진다(그 위로 테두리가 지나간다) */
+  const RING_N = 28, RING_B = 10;
+  const ringPts = [];
+  function drawBlastZone(s, p) {
+    const cx = (p.x0 + p.x1) / 2, r = OBSTACLES.drum.r;
+    const zN = view.camZ + 1.6;
+    if (p.z + r < zN || p.z - r > view.camZ + view.zFar) return;
+    if (!project(view, cx, 0, Math.max(p.z, zN))) return;
+    const a = fadeIn(P.d);
+    if (!a) return;
+    let hot = false;
+    for (const f of s.foes) if (f.alive && (f.x - cx) * (f.x - cx) + (f.z - p.z) * (f.z - p.z) <= r * r) { hot = true; break; }
+    const blink = hot && (((time * 5) | 0) & 1);
+    // 안: 깊이 띠(가까운 변·먼 변에서 원의 반폭)로 채운다
+    ctx.fillStyle = '#FF7A45';
+    ctx.globalAlpha = a * (hot ? (blink ? 0.24 : 0.17) : 0.1);
+    for (let k = 0; k < RING_B; k++) {
+      const za = p.z - r + (2 * r * k) / RING_B, zb = za + (2 * r) / RING_B;
+      if (zb <= zN) continue;
+      const z0 = Math.max(za, zN);
+      const ha = Math.sqrt(Math.max(0, r * r - (z0 - p.z) * (z0 - p.z))), hb = Math.sqrt(Math.max(0, r * r - (zb - p.z) * (zb - p.z)));
+      if (!project(view, cx - ha, 0.015, z0)) continue;
+      const aL = P.x, ay = P.y;
+      project(view, cx + ha, 0.015, z0);
+      const aR = P.x;
+      if (!project(view, cx - hb, 0.015, zb)) continue;
+      const bL = P.x, by = P.y;
+      project(view, cx + hb, 0.015, zb);
+      trap(aL, aR, ay, bL, P.x, by);
+    }
+    // 테두리: 점선(두 색이 번갈아 돈다)
+    ctx.globalAlpha = a;
+    blastRing(p, RING_N, ringPts);
+    const off = (time * 3) | 0;
+    for (let i = 0; i < RING_N; i++) {
+      const j = (i + 1) % RING_N;
+      const z0 = ringPts[2 * i + 1], z1 = ringPts[2 * j + 1];
+      if (z0 < zN || z1 < zN) continue;
+      if (!project(view, ringPts[2 * i], 0.03, z0)) continue;
+      const x0 = P.x, y0 = P.y;
+      if (!project(view, ringPts[2 * j], 0.03, z1)) continue;
+      ctx.fillStyle = (i + off) & 1 ? (blink ? '#FFF4B0' : '#FFD84A') : '#FF5D3A';
+      pline(x0, y0, P.x, P.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+  /* 폭발에 부서진 상자·철창의 잔해(crateLost): 그을린 땅 + 부러진 판자 토막(상자) · 휜 창살 토막(철창) — 원래 폭(x0~x1) 그대로 */
+  function drawWreck(w) {
+    if (!project(view, (w.x0 + w.x1) / 2, 0, w.z)) return;
+    const a = fadeIn(P.d);
+    if (!a) return;
+    ctx.globalAlpha = a * 0.55;
+    ctx.fillStyle = '#1A1210';
+    ellipse(P.x, P.y, ((w.x1 - w.x0) / 2 + 0.25) * P.s, Math.max(1, 0.32 * P.s));
+    ctx.globalAlpha = a;
+    const cage = w.kind === 'cage';
+    const n = Math.max(3, Math.min(7, Math.round((w.x1 - w.x0) * 2.2)));
+    for (let i = 0; i < n; i++) {
+      const u = (i + 0.5) / n, hh = 0.12 + (((w.seed + i * 7) % 5) / 5) * (cage ? 0.6 : 0.4);
+      const x = w.x0 + u * (w.x1 - w.x0), dz = (((w.seed + i * 3) % 3) - 1) * 0.12;
+      if (!vface(x - (cage ? 0.04 : 0.13), x + (cage ? 0.04 : 0.13), 0, hh, w.z + dz)) continue;
+      ctx.fillStyle = cage ? (i & 1 ? '#596277' : '#8A93A6') : i & 1 ? '#5E3B2E' : '#8E5A30';
+      trap(face.ax, Math.max(face.bx, face.ax + 1), face.ay, face.dx + (cage ? ((i & 1) ? 1 : -1) : 0), Math.max(face.cx, face.dx + 1) + (cage ? ((i & 1) ? 1 : -1) : 0), face.dy);
+      if (!cage) { ctx.fillStyle = '#3A2A2A'; ctx.fillRect(Math.round(face.dx), Math.round(face.dy), Math.max(1, Math.round(face.cx - face.dx)), 1); }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   /* ---------- 톱날 ---------- */
   function drawSaw(s, w, lag) {
     const x = clamp(w.x - w.dir * w.spd * lag, w.xa, w.xb);
@@ -1836,7 +2087,11 @@ export function createRenderer(cvs) {
       const sx = Math.round(pxs), sy = Math.round(pys);
       for (let i = 0; i < 3; i++) ctx.fillRect(sx - 5 + i * 4 + ((f.seed + i) & 1), sy - 22 - ((time * 40 + i * 5) % 6 | 0), 1, 3);
     }
-    const white = flashFoe.on(f.id, f.hitT, s.t, time, reduce);
+    let white = flashFoe.on(f.id, f.hitT, s.t, time, reduce);
+    // 방패 정예: 정면 총알이 방패에 막히는 판(shieldMul < 1 — 관통 효과가 없다)이면 번쩍임은 몸 대신 방패에(막힌 것이 보이게)
+    const shieldUp = f.elite === 'shield' && shieldMul(s) < 1;
+    const shieldWhite = shieldUp && white;
+    if (shieldWhite) white = false;
     const tell = f.kind === 'spit' && (fr === FR.spit.tell[0] || fr === FR.spit.tell[1]);
     if (tell) { ctx.fillStyle = '#B9F25B'; ellRing(pxs, pys, Math.max(4, f.r * 1.6 * ps), Math.max(2, f.r * 0.6 * ps), 1); }
     if (f.elite) {
@@ -1847,11 +2102,25 @@ export function createRenderer(cvs) {
       ctx.fillStyle = ec.ring; ellRing(pxs, pys, Math.max(4, f.r * 1.7 * ps * pu), Math.max(2, f.r * 0.62 * ps * pu), 1);
     }
     const rr = atlas.draw(ctx, sheet, fr, pxs, pys, st, white ? 'white' : ALT3[f.seed % 3]);
+    if (f.elite === 'shield') {
+      // 방패: 몸 앞(카메라 쪽)에 든 철판 — 머리는 위로 보인다. 걸음에 맞춰 1px 흔들리고, 막힌 총알은 방패에서 하얀 불똥으로 튄다
+      const k = STEPS3[st], bob = moving && (fr & 1) ? 1 : 0;
+      atlas.draw(ctx, 'riotShield', 0, pxs - Math.round(k), pys - Math.round((1 + bob) * k), st, shieldWhite ? 'white' : '');
+      const prev = shieldSeen.get(f.id);
+      if (prev !== f.hitT) {
+        shieldSeen.set(f.id, f.hitT);
+        if (prev !== undefined && shieldUp && st < 2 && Math.random() < 0.4) fx('glint', f.x + (Math.random() - 0.5) * 0.5, 0.5 + Math.random() * 0.4, z - 0.3, 0.05);
+      }
+    }
     if (f.elite) {
-      // 머리 위 표식: 오염 = 보라 방울이 보글보글, 분열 = 주황 두 점이 벌어졌다 모인다
+      // 머리 위 표식: 오염 = 보라 방울이 보글보글, 분열 = 주황 두 점이 벌어졌다 모인다, 방패 = 청록 방패꼴
       const ec = ELITE_COL[f.elite];
       const hx = Math.round(pxs), hy = Math.round(pys) - rr.ay - 4, ph = ((time * 6 + f.seed) | 0) & 3;
-      if (f.elite === 'toxic') {
+      if (f.elite === 'shield') {
+        ctx.fillStyle = OUT; ctx.fillRect(hx - 2, hy - 2, 5, 4); ctx.fillRect(hx - 1, hy + 2, 3, 1);
+        ctx.fillStyle = ec.ring; ctx.fillRect(hx - 1, hy - 1, 3, 2); ctx.fillRect(hx, hy + 1, 1, 1);
+        ctx.fillStyle = ec.hi; ctx.fillRect(hx - 1, hy - 1, 1, 1);
+      } else if (f.elite === 'toxic') {
         ctx.fillStyle = OUT; ctx.fillRect(hx - 2, hy - 2, 5, 5);
         ctx.fillStyle = ec.ring; ctx.fillRect(hx - 1, hy - 1, 3, 3);
         ctx.fillStyle = ec.hi; ctx.fillRect(hx - 1, hy - 1, 1, 1);
@@ -2521,6 +2790,8 @@ export function createRenderer(cvs) {
   /* ---------- 바닥 표시(조준 띠·그림자·독침 예고·내려찍기 구역·고리) ---------- */
   function drawDecals(s, bio, qx, lag) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
+    // 폭발 드럼통의 폭발 반경(맨 아래 — 분대 그림자·독침 고리가 위에). 지나친 통은 더 못 쏘므로 그리지 않는다
+    for (const p of s.props) if (p.kind === 'drum' && p.alive && !p.passed) drawBlastZone(s, p);
     if (q.n > 0) {
       const R = radius(q.n);
       ctx.fillStyle = bio.aim;
@@ -2624,7 +2895,7 @@ export function createRenderer(cvs) {
       if (!c.on) continue;
       if (!project(view, c.x, 0.02, c.z)) continue;
       ctx.fillStyle = '#1A1210';
-      ctx.globalAlpha = 0.5 * (1 - c.t / SCORCH_T);
+      ctx.globalAlpha = 0.5 * (1 - c.t / c.T);
       ellipse(P.x, P.y, c.r * P.s, c.r * P.s * 0.36);
       ctx.globalAlpha = 1;
     }
@@ -2664,9 +2935,9 @@ export function createRenderer(cvs) {
 
   /* ---------- 충돌 크기 보기(?hitbox=1 또는 __squad.hitbox = true) ----------
      core.hitShapes(s)가 돌려주는, 시뮬레이션이 실제로 재는 모양을 땅 위에 1px 선으로 그린다(그림과 같은 시간축으로 보간).
-     분대 몸(하늘색)과 겹치면 맞는다: 적·톱날(분홍 타원), 벽·상자·철창(주황 선 — 분대 앞 끝이 닿는 순간 옆으로 겹치면), 독침(연두 선 —
-     떨어지는 순간), 보스 몸통(노랑 — 이 띠를 지나는 총알만 피해)·맞붙는 선(빨강). 분대 가운데 세로선 = 게이트 칸을 고르는 점 */
-  const HB_COL = { squad: '#4FF3FF', foe: '#FF4FD8', saw: '#FF4FD8', wall: '#FFB347', crate: '#FFB347', cage: '#FFB347', spit: '#C8FF5A', pool: '#D9A6FF', bossHit: '#FFE34F', bossReach: '#FF5D5D' };
+     분대 몸(하늘색)과 겹치면 맞는다: 적·톱날(분홍 타원), 벽·장갑문·상자·철창(주황 선 — 분대 앞 끝이 닿는 순간 옆으로 겹치면), 독침(연두 선 —
+     떨어지는 순간), 보스 몸통(노랑 — 이 띠를 지나는 총알만 피해)·맞붙는 선(빨강), 드럼통(빨간 선)과 그 폭발 반경(주황 원). 색은 모듈 위 HB_COL.
+     분대 가운데 세로선 = 게이트 칸을 고르는 점 */
   function hbLine(x0, z0, x1, z1) {
     if (!project(view, x0, 0.03, z0)) return;
     const ax = P.x, ay = P.y;
@@ -2774,6 +3045,7 @@ export function createRenderer(cvs) {
           atlas.draw(ctx, sh, fr, P.x, P.y, 0, f.alt || '');
           break;
         }
+        case 'doorDrop': doorDrop(f, u); break;
         case 'sadCaptive': {
           if (!project(view, f.x, 0.1, f.z)) break;
           const st = P.s > 12 ? 0 : 1;
@@ -3122,6 +3394,7 @@ export function createRenderer(cvs) {
     const zMax = view.camZ + view.zFar;
     for (const row of s.rows) if (!row.done && row.z < zMax) push(row.z, 1, row);
     for (const p of s.props) if (p.alive && p.z < zMax && p.z > view.camZ + 1.5) push(p.z - 0.35, 2, p);
+    for (const w of wrecks) if (w.on) { if (w.z < view.camZ + 1.5) w.on = false; else if (w.z < zMax) push(w.z - 0.3, 14, w); }
     for (const w of s.saws) if (w.z < zMax && w.z > view.camZ + 2) push(w.z, 3, w);
     for (const f of s.foes) if (f.alive && f.z < zMax && f.z > view.camZ + 2) push(f.z, 4, f);
     if (s.boss && (s.boss.hp > 0 || bossDeath)) { push(s.boss.z, 5, s.boss); push(s.boss.z + 0.05, 11, null); }
@@ -3159,7 +3432,13 @@ export function createRenderer(cvs) {
       const it = items[sortKeys[j] & 1023];
       switch (it.k) {
         case 1: drawRow(s, it.o); break;
-        case 2: if (it.o.kind === 'wall') drawWall(s, it.o); else if (it.o.kind === 'cage') drawCage(s, it.o); else drawCrate(s, it.o); break;
+        case 2: {
+          const k = it.o.kind;
+          if (k === 'wall') drawWall(s, it.o); else if (k === 'door') drawDoor(s, it.o); else if (k === 'drum') drawDrum(s, it.o, bio);
+          else if (k === 'cage') drawCage(s, it.o); else drawCrate(s, it.o);
+          break;
+        }
+        case 14: drawWreck(it.o); break;
         case 3: drawSaw(s, it.o, lag); break;
         case 4: drawFoe(s, it.o, lag, bio); break;
         case 5: drawBoss(s, it.o, lag, bio); break;
@@ -3178,6 +3457,8 @@ export function createRenderer(cvs) {
     if (lodFoe.size > 600) lodFoe.clear();
     if (lodSaw.size > 200) lodSaw.clear();
     if (lodCage.size > 200) lodCage.clear();
+    if (lodDrum.size > 100) lodDrum.clear();
+    if (shieldSeen.size > 300) shieldSeen.clear();
     if (flashFoe.size > 300) flashFoe.clear();
     if (hitSeen.size > 300) hitSeen.clear();
     if (bruteStep.size > 300) bruteStep.clear();
@@ -3188,7 +3469,7 @@ export function createRenderer(cvs) {
     if (s.phase !== 'won' && s.phase !== 'lost') drawBullets(s, alpha);   // 끝난 판의 총알은 멈춰 있으니 그리지 않는다
     drawTracers(rdt);
     for (const r of rings) if (r.on) { r.t += rdt; if (r.t >= r.dur) r.on = false; }
-    for (const c of scorches) if (c.on) { c.t += rdt; if (c.t >= SCORCH_T) c.on = false; }
+    for (const c of scorches) if (c.on) { c.t += rdt; if (c.t >= c.T) c.on = false; }
     drawFx(s, rdt, qx);
     drawParts(rdt);
     if (hitboxOn) drawHitbox(s, qx, lag);
