@@ -2,12 +2,12 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, forkPeek, tierMax } from './core.js';
+import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, forkPeek, tierMax, nMax } from './core.js';
 import { HEROES, biomeOf, bossNameOf, OBSTACLES, unitVal } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, BIOME_GROUP, biomeSheets, PET_ART } from './pix/art.js';
 import { createAtlas, createBiomeCache, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
-import { createFont, opText, compactTexts } from './pix/font.js';
+import { createFont, opText, compactTexts, shortN } from './pix/font.js';
 import { createGround } from './pix/ground.js';
 import { frameRaster, outline } from './pix/raster.js';
 
@@ -26,6 +26,7 @@ const HEART_GLOW = 1.6;     // 불굴의 심장이 되살린 뒤 가장자리 �
 /* 유물(무한모드 3·5단계)의 색: 보라 테두리 + 금빛 — 카드(index.html .pick-card.relic)·HUD 줄·나침반 표시가 같은 짝 */
 export const RELIC_COL = '#9B6BFF', RELIC_GOLD = '#FFD84A';
 const GOLD_BULLET = '#FFD84A';
+const FORM_N_MAX = 9999;     // 대형으로 그리는 병력의 끝(전차 9대 몫) — 그 위는 숫자만 커진다
 const AMMO_COL = { pierce: '#F4F7FF', burst: '#FFB347', rapid: '#FFF4B0', frost: '#8FD3FF' };   // 탄종 머리 색(roster.AMMO와 같은 id)
 /* 총알 모양을 고를 탄종: 출격 탄종(s.ammo — 대신 쪽까지 진 탄), 없으면 무한모드 2단계 판의 탄 효과 중 가장 높은 레벨(같으면 위 순서).
    카드·상자로 얻은 효과도 모양으로 알린다(관통을 얻으면 바늘). 효과가 없는 판은 '' — 예전 그대로 */
@@ -881,9 +882,11 @@ export function createRenderer(cvs) {
     if (o) Object.assign(slot, o);
     return slot;
   }
+  const BIG_NUM = /^[+-]\d{5,}$/;
   function float(x, y, z, text, fill, o = {}) {
     let slot = floats[0];
     for (const f of floats) { if (!f.on) { slot = f; break; } if (f.life < slot.life) slot = f; }
+    if (typeof text === 'string' && BIG_NUM.test(text)) text = text[0] + shortN(+text.slice(1));   // 무한모드의 큰 수(+123456 → +123k)
     slot.on = true; slot.x = x; slot.y = y; slot.z = z; slot.text = text; slot.fill = fill; slot.out = o.out || OUT;
     slot.scale = o.scale || 1; slot.life = o.life || 1; slot.max = slot.life; slot.vz = o.vz || 0; slot.icon = o.icon || null; slot.rise = o.rise ?? 1.4;
     slot.pill = !!o.pill; slot.alpha = o.alpha ?? 1;
@@ -1816,8 +1819,8 @@ export function createRenderer(cvs) {
       // 파고들기(SIM 9)의 'MAX+끝' 표는 그리지 않는다(사용자 판단: 너무 노골적 — 어느 빨간 칸이 빨리 오르는지는 쏴 보고 알아낸다). 규칙은 그대로
       void maxTag; void beamY;
       if (preview && c.op && dz < 40 && dz > 0 && ph > 16) {
-        const r = Math.max(0, applyOp(q.n, c.op, c.v));
-        const t = '=' + r;
+        const r = Math.max(0, applyOp(q.n, c.op, c.v, nMax(s)));
+        const t = '=' + shortN(r);
         if (font.measure(t, 'small') <= pw - 2) font.draw(ctx, t, mx, face.ay + 5, { size: 'small', fill: '#FFFFFF', out: st.out });
       }
     }
@@ -2057,7 +2060,7 @@ export function createRenderer(cvs) {
     const t = String(Math.max(1, Math.ceil(p.hp)));
     const big = h > 14 && font.measure(t, 'big') <= w - 2;
     if (big || font.measure(t, 'small') <= w) font.draw(ctx, t, mx, face.ay - h * 0.22 - 1, { size: big ? 'big' : 'small' });
-    if (p.key === true) keyMark(mx, top.ty, w);
+    if (p.key === true) keyMark(mx, top.ty, w, crateIcon(p.reward, false));
     ctx.globalAlpha = 1;
   }
   /* 탄종 상자(무한모드 2단계, reward { type: 'fx', a })는 무기 아이콘 대신 그 탄 효과의 총알 — 무기 상자로 읽히지 않게.
@@ -2102,14 +2105,15 @@ export function createRenderer(cvs) {
     const big = h > 16;
     font.draw(ctx, t, mx, top.ty - (big ? 6 : 4), { size: big ? 'big' : 'small', fill: '#FFE08A' });
     let yTop = top.ty - (big ? 6 : 4) - font.height(big ? 'big' : 'small') / 2;
-    if (p.key === true) yTop = keyMark(mx, yTop, w);
-    // 탄종 상자: 내용물(탄 효과)이 상자 위에 떠 있다 — 부수기 전에 보고 고른다(숨은 난수 없음). 열쇠 상자면 열쇠 위에
-    if (fxOk) fxMark(mx, yTop, w, p.reward.a);
+    // 꼭 깨야 하는 보급 상자(prop.key): 금테 안에 내용물 — 탄종 상자는 그 탄 효과 표시가 금테를 두른다(표시는 하나만)
+    if (p.key === true && !fxOk) yTop = keyMark(mx, yTop, w, crateIcon(p.reward, false));
+    // 탄종 상자: 내용물(탄 효과)이 상자 위에 떠 있다 — 부수기 전에 보고 고른다(숨은 난수 없음)
+    if (fxOk) fxMark(mx, yTop, w, p.reward.a, p.key === true);
     ctx.globalAlpha = 1;
   }
   /* 탄종 상자 내용물 표시: 탄종 색 테두리 안에 그 탄 효과의 총알(글자 없이), 열쇠 표시와 같은 통통 — 멀리서도 '무엇이 든 상자'인지 */
-  function fxMark(cx, yTop, w, a) {
-    const col = AMMO_COL[a];
+  function fxMark(cx, yTop, w, a, must = false) {
+    const col = must ? '#FFD84A' : AMMO_COL[a];
     if (w < 4 || !col) return;
     const ic = atlas.icon('fx_' + a);
     const bob = ((time * 3 + 1) | 0) & 1;   // 열쇠와 반 박자 어긋나게(겹쳐 있어도 따로 보이게)
@@ -2149,11 +2153,12 @@ export function createRenderer(cvs) {
       ctx.fillStyle = RELIC_COL; ctx.fillRect(mx - 1, y + h + 2, 3, 1); ctx.fillRect(mx, y + h + 3, 1, 1);
     }
   }
-  /* 열쇠 상자 표시(prop.key): 체력 숫자 위에 금테 두른 열쇠가 살짝 통통 — 멀리서도 '이건 꼭 깨야 한다'가 보이게.
-     돌려주는 값: 표시 맨 위(그 위에 탄종 상자 내용물을 얹는다) */
-  function keyMark(cx, yTop, w) {
+  /* 꼭 깨야 하는 보급 상자 표시(prop.key): 체력 숫자 위에 금테 두른 내용물(무기 강화면 총, 지원병이면 병사)이 살짝 통통 —
+     멀리서도 '이건 꼭 깨야 한다'와 '무엇이 들었나'가 함께 보이게. 예전에는 열쇠 그림이었는데 열쇠로 여는 것이 없어 헷갈렸다(사용자 판단).
+     돌려주는 값: 표시 맨 위 */
+  function keyMark(cx, yTop, w, icon = 'gun') {
     if (w < 5) return yTop;
-    const ic = atlas.icon('key');
+    const ic = atlas.icon(icon);
     const bob = ((time * 3) | 0) & 1;
     const x = Math.round(cx - ic.w / 2), y = Math.round(yTop - ic.h - 4 - bob);
     ctx.fillStyle = OUT; ctx.fillRect(x - 2, y - 2, ic.w + 4, ic.h + 4);
@@ -2204,7 +2209,7 @@ export function createRenderer(cvs) {
     ctx.fillRect(Math.round(face.ax), Math.round(face.ay) - 1, Math.round(w), 1);
     const t = String(Math.max(1, Math.ceil(p.hp)));
     if (!p.passed) font.draw(ctx, t, (face.ax + face.bx) / 2, top.ty - (h > 16 ? 6 : 4), { size: h > 16 ? 'big' : 'small', fill: '#FFF09A' });
-    if (p.key === true && !p.passed) keyMark((face.ax + face.bx) / 2, top.ty - (h > 16 ? 6 : 4) - font.height(h > 16 ? 'big' : 'small') / 2, w);
+    if (p.key === true && !p.passed) keyMark((face.ax + face.bx) / 2, top.ty - (h > 16 ? 6 : 4) - font.height(h > 16 ? 'big' : 'small') / 2, w, crateIcon(p.reward, false));
     ctx.globalAlpha = 1;
   }
 
@@ -2655,7 +2660,7 @@ export function createRenderer(cvs) {
       if (project(view, qx, 0, q.z + D)) vf = Math.max(1, (y0 - P.y) / D);
       if (project(view, qx, 0, q.z - D)) { vb = Math.max(1, (P.y - y0) / D); pb = P.s; }
     }
-    const n = Math.max(0, q.n);
+    const n = Math.min(FORM_N_MAX, Math.max(0, q.n));   // 그리는 병사는 9999명 몫까지(무한모드는 상한이 없다 — 머리 위 숫자가 진짜 병력)
     // 병력·배율이 바뀔 때만 다시 짠다(프레임마다 쓰레기 없이)
     if (n !== fN || !fGeo || Math.abs(ppm - fGeo.ppm) > 0.01 || Math.abs(vf - fGeo.vf) > 0.01 || Math.abs(vb - fGeo.vb) > 0.01 || R !== fGeo.R) {
       const g = formGeom(R, ppm, vf, vb, pb);
@@ -3010,7 +3015,7 @@ export function createRenderer(cvs) {
     let gateNear = false;
     for (const row of s.rows) { const d = row.z - q.z; if (!row.done && d > 0 && d <= 6) { gateNear = true; break; } }
     const n = Math.round(shownN);
-    if (n !== countTextN) { countTextN = n; countText = n >= 9999 ? 'MAX' : String(n); }
+    if (n !== countTextN) { countTextN = n; countText = n >= nMax(s) ? 'MAX' : shortN(n); }   // 무한모드는 상한이 없다 — 만 명부터 12.3k처럼 줄여 적는다
     const text = countText;
     const pop = countPop > 0.5 ? 1 : 0;
     const tw = font.measure(text, 'big', 2);
@@ -3089,33 +3094,57 @@ export function createRenderer(cvs) {
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = 'source-over';
       }
-      if (ammo) {
-        // 탄종(ARSENAL.md 3절): 모양이 탄종을 알린다 — 몸은 무기 단계 색, 머리는 탄종 색
-        if (!project(view, b.x, 0.75, b.z + ext - (ammo === 'pierce' ? 2.6 : 1.4))) continue;
-        const len = Math.max(1, Math.round(P.y) - hy);
-        if (ammo === 'pierce') {            // 길고 가는 바늘
-          ctx.fillStyle = col; ctx.fillRect(hx, hy, 1, len);
-          ctx.fillStyle = ac; ctx.fillRect(hx, hy, 1, Math.max(2, len >> 1));
-        } else if (ammo === 'burst') {      // 둥근 탄
-          ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 1, 3, 4); ctx.fillRect(hx - 2, hy, 5, 2);
-          ctx.fillStyle = col; ctx.fillRect(hx - 1, hy, 3, 2); ctx.fillRect(hx, hy - 1, 1, 4);
-          ctx.fillStyle = ac; ctx.fillRect(hx, hy, 1, 2);
-        } else if (ammo === 'rapid') {      // 짧은 토막 둘
-          const seg = Math.max(1, len >> 1);
-          ctx.fillStyle = col; ctx.fillRect(hx, hy, wide, seg); ctx.fillRect(hx, hy + seg + 2, wide, seg);
-          ctx.fillStyle = ac; ctx.fillRect(hx, hy, wide, 1);
-        } else {                            // 빙결: 마름모 + 옅은 꼬리
-          ctx.fillStyle = ac; ctx.fillRect(hx - 1, hy, 3, 1); ctx.fillRect(hx, hy - 1, 1, 3);
-          ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx, hy, 1, 1);
-          ctx.fillStyle = col; ctx.fillRect(hx, hy + 2, 1, Math.max(1, len - 2));
-        }
-        if (b.c) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx - 1, hy, 3, 1); ctx.fillRect(hx, hy - 1, 1, 3); }
-        for (let k = 0; k < embers; k++) { ctx.fillStyle = EMBER[k]; ctx.fillRect(hx, hy + len + 1 + 2 * k + ((f60 + k) & 1), 1, 1); }
-        if (crackle) spark4(hx, hy, len, 1, b.x);
-        continue;
-      }
       const u = (Math.abs(b.x) * 37.73) % 1;
       const shape = u < shotCum[0] ? 0 : u < shotCum[1] ? 1 : u < shotCum[2] ? 2 : 3;
+      if (ammo) {
+        // 탄종(ARSENAL.md 3절): 모양이 탄종을 알린다 — 몸은 무기 단계 색, 머리는 탄종 색.
+        // 크기는 쏜 병사 몫(보통탄과 같은 shape): 분대장은 굵고 길게, 중장갑은 뒤에 한 발 더, 전차는 외곽선 두른 큰 탄
+        const big = shape >= 1, heavy = shape >= 2, tank = shape === 3;
+        const bw = big ? 2 : 1;
+        if (!project(view, b.x, 0.75, b.z + ext - (ammo === 'pierce' ? 2.6 : 1.4) * (big ? 1.4 : 1))) continue;
+        const len = Math.max(1, Math.round(P.y) - hy);
+        if (ammo === 'pierce') {            // 길고 가는 바늘
+          if (tank) { ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 1, bw + 2, len + 2); }
+          ctx.fillStyle = col; ctx.fillRect(hx, hy, bw, len);
+          ctx.fillStyle = ac; ctx.fillRect(hx, hy, bw, Math.max(2, len >> 1));
+          if (heavy) { ctx.fillStyle = col; ctx.fillRect(hx, hy + len + 2, bw, Math.max(1, len >> 1)); }
+        } else if (ammo === 'burst') {      // 둥근 탄
+          if (big) {
+            ctx.fillStyle = OUT; ctx.fillRect(hx - 2, hy - 2, 5, 7); ctx.fillRect(hx - 3, hy - 1, 7, 5);
+            ctx.fillStyle = col; ctx.fillRect(hx - 2, hy - 1, 5, 5); ctx.fillRect(hx - 1, hy - 2 + 1, 3, 5);
+            ctx.fillStyle = ac; ctx.fillRect(hx - 1, hy, 3, 3);
+            if (tank) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx - 1, hy, 1, 1); }
+          } else {
+            ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 1, 3, 4); ctx.fillRect(hx - 2, hy, 5, 2);
+            ctx.fillStyle = col; ctx.fillRect(hx - 1, hy, 3, 2); ctx.fillRect(hx, hy - 1, 1, 4);
+            ctx.fillStyle = ac; ctx.fillRect(hx, hy, 1, 2);
+          }
+          if (heavy) { ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy + 6, 3, 3); ctx.fillStyle = col; ctx.fillRect(hx, hy + 7, 1, 1); }
+        } else if (ammo === 'rapid') {      // 짧은 토막 둘(중장갑 셋, 전차 넷)
+          const cnt = tank ? 4 : heavy ? 3 : 2;
+          const seg = Math.max(1, len >> 1);
+          const sw = Math.max(wide, bw);
+          ctx.fillStyle = col;
+          for (let k = 0; k < cnt; k++) ctx.fillRect(hx, hy + k * (seg + 2), sw, seg);
+          ctx.fillStyle = ac; ctx.fillRect(hx, hy, sw, 1);
+        } else {                            // 빙결: 마름모 + 옅은 꼬리
+          if (big) {
+            if (tank) { ctx.fillStyle = OUT; ctx.fillRect(hx - 3, hy - 1, 7, 3); ctx.fillRect(hx - 2, hy - 2, 5, 5); ctx.fillRect(hx - 1, hy - 3, 3, 7); }
+            ctx.fillStyle = ac; ctx.fillRect(hx - 2, hy, 5, 1); ctx.fillRect(hx - 1, hy - 1, 3, 3); ctx.fillRect(hx, hy - 2, 1, 5);
+            ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx - (heavy ? 1 : 0), hy, heavy ? 3 : 1, 1);
+            ctx.fillStyle = col; ctx.fillRect(hx, hy + 3, heavy ? 2 : 1, Math.max(1, len - 3));
+          } else {
+            ctx.fillStyle = ac; ctx.fillRect(hx - 1, hy, 3, 1); ctx.fillRect(hx, hy - 1, 1, 3);
+            ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx, hy, 1, 1);
+            ctx.fillStyle = col; ctx.fillRect(hx, hy + 2, 1, Math.max(1, len - 2));
+          }
+        }
+        if (tank && !low) { ctx.fillStyle = '#C9CED6'; ctx.fillRect(hx, hy + len + 3 + (f60 & 1), 1, 1); }
+        if (b.c) { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx - 1, hy, 3, 1); ctx.fillRect(hx, hy - 1, 1, 3); }
+        for (let k = 0; k < embers; k++) { ctx.fillStyle = EMBER[k]; ctx.fillRect(hx, hy + len + 1 + 2 * k + ((f60 + k) & 1), 1, 1); }
+        if (crackle) spark4(hx, hy, len, bw, b.x);
+        continue;
+      }
       if (!project(view, b.x, 0.75, b.z + ext - 1.4 * lenK * (shape === 1 ? 1.5 : 1))) continue;
       const len = Math.max(1, Math.round(P.y) - hy);
       if (shape === 3) {

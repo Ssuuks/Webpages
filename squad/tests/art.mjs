@@ -184,7 +184,7 @@ test('축소 단계 고르기: 로그 거리 + ±10% 머뭇거림', () => {
 
 /* ---------------- 렌더러 순수 규칙(T12) ---------------- */
 import { pickBuffer, lensOpt, createFlashLimiter, sceneryHash, sceneryX, sceneryZ, SCENERY_STEP, FRAMES, GLYPH_PAIRS } from '../assets/render.js';
-import { createFont, compactTexts, opText, GLYPH_CHARS } from '../assets/pix/font.js';
+import { createFont, compactTexts, opText, shortN, GLYPH_CHARS } from '../assets/pix/font.js';
 import { makeView, fitView, project, P } from '../assets/view.js';
 import { ROAD, radius } from '../assets/core.js';
 
@@ -311,6 +311,10 @@ test('게이트 글자: 짧은 꼴 후보와 미리 굽는 글자(그리는 중�
   assert.deepEqual(compactTexts({ op: 'add', v: -100 }), ['-100']);
   assert.deepEqual(compactTexts({ op: 'add', v: 1240 }), ['+1240', '1240', '+1k', '1k']);
   assert.deepEqual(compactTexts({ op: 'add', v: -2500 }), ['-2500', '-2k']);
+  // 무한모드(병력 상한 없음): 만 단위부터 k·M·B에 유효숫자 셋, 좁은 칸의 마지막 꼴은 소수 없이
+  assert.deepEqual([9999, 10000, 12345, 123456, 1234567, 45600000, 1234567890].map((n) => shortN(n)), ['9999', '10k', '12.3k', '123k', '1.23M', '45.6M', '1.23B']);
+  assert.deepEqual(compactTexts({ op: 'add', v: 12345 }), ['+12.3k', '12.3k', '+12k', '12k']);
+  assert.deepEqual(compactTexts({ op: 'add', v: -1234567 }), ['-1.23M', '-1M']);
   assert.deepEqual(compactTexts({ op: 'mul', v: 2 }), ['x2']);
   // 가짜 아틀라스로: 닫힌 집합을 다 구운 뒤 게임에서 쓰는 글자를 그려도 새로 굽지 않는다
   const keys = new Set();
@@ -321,7 +325,7 @@ test('게이트 글자: 짧은 꼴 후보와 미리 굽는 글자(그리는 중�
   late = true;
   const ctx = { drawImage() {} };
   const strs = [];
-  for (const op of ['add', 'mul', 'div', 'unit']) for (const v of [-9999, -1240, -100, -15, -5, 0, 1, 2, 3, 5, 9, 10, 35, 100, 270, 710, 999, 1000, 1240, 9999]) strs.push(...compactTexts({ op, v }));
+  for (const op of ['add', 'mul', 'div', 'unit']) for (const v of [-9999, -1240, -100, -15, -5, 0, 1, 2, 3, 5, 9, 10, 35, 100, 270, 710, 999, 1000, 1240, 9999, 12345, 1234567, 1234567890]) strs.push(...compactTexts({ op, v }));
   strs.push('MAX', '=1234', '+0');
   for (const str of strs) for (const [fill, out, only] of GLYPH_PAIRS) for (const size of only || ['big', 'slim', 'small']) for (const scale of size === 'big' ? [1, 2] : [1]) font.draw(ctx, str, 10, 10, { size, scale, fill, out: out || undefined });
   for (const ch of strs.join('')) assert.ok(GLYPH_CHARS.includes(ch), `'${ch}' 가 미리 굽는 글자에 없다`);
@@ -919,11 +923,13 @@ test('탄 효과 아이콘: 탄종마다 fx_<id>(9×9 정사각), 가장 많은 
     masks.push(R.a.map((c) => (c ? 1 : 0)).join(''));
   }
   assert.equal(new Set(masks).size, masks.length, '탄 효과 아이콘 실루엣이 서로 다르다');
-  // 렌더러: 탄종 상자({ type: 'fx', a })는 무기 아이콘 대신 그 효과의 총알, 상자 위에 내용물 표시(열쇠 상자면 열쇠 위)
+  // 렌더러: 탄종 상자({ type: 'fx', a })는 무기 아이콘 대신 그 효과의 총알, 상자 위에 내용물 표시(꼭 깨야 하는 보급 상자(prop.key)면 그 표시가 금테 — 열쇠 그림은 쓰지 않는다)
   const src = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
   assert.match(src, /t === 'fx' \? \(fxOk && AMMO_COL\[r\.a\] \? 'fx_' \+ r\.a : 'men'\)/, '상자 몸 아이콘이 탄 효과 총알(얻을 수 없게 됐으면 병사 — core도 병사를 준다)');
   assert.match(src, /const fxOk = !!\(p\.reward && p\.reward\.type === 'fx' && fxCan\(s, p\.reward\.a\)\)/, '얻을 수 있는지는 core.fxCan으로');
-  assert.match(src, /if \(fxOk\) fxMark\(mx, yTop, w, p\.reward\.a\)/, '상자 위에 내용물 표시');
+  assert.match(src, /if \(fxOk\) fxMark\(mx, yTop, w, p\.reward\.a, p\.key === true\)/, '상자 위에 내용물 표시');
+  assert.match(src, /if \(p\.key === true && !fxOk\) yTop = keyMark\(mx, yTop, w, crateIcon\(p\.reward, false\)\)/, '보급 상자 표시는 금테 안의 내용물');
+  assert.doesNotMatch(src, /atlas\.icon\('key'\)/, '열쇠 그림은 그리지 않는다(열쇠로 여는 것이 없다)');
   // 떠오르는 'Lv2'는 미리 구운 글자 짝(특수병 레벨 업과 같은 색)만 쓴다 — 그리는 중 굽기 0
   for (const m of src.matchAll(/'Lv' \+ e\.(?:lv|to), '(#[0-9A-F]+)', \{[^}]*out: PANEL\.unit\.out/g)) assert.ok(GLYPH_PAIRS.some(([f, o]) => f === m[1] && o === GLYPH_PAIRS[4][1]), m[0]);
   // 총알 모양: 출격 탄종이 먼저(대신 쪽까지 진 탄), 없으면 가장 높은 탄 효과(같으면 탄종 순서), 효과가 없는 판(1단계·캠페인)은 예전 그대로
@@ -1204,10 +1210,10 @@ test('화염병 그림: 다른 특수병과 같은 격자·뒷모습(+던지기 
   assert.match(src, /\} else if \(e\.by === 'flame'\) \{/);
   assert.match(src, /if \(m\.k === 'flame'\) \{ const t = time - flameT;[^}]*FR\.flame\.throw\[0\]/);
   assert.match(src, /let white = burning \? false : flashFoe\.on\(/);
-  // 화면(main.js): 특수병 칩 열쇠는 병과 넷·레벨까지 겹치지 않게(32진), 2회차 엔딩 안내 줄 '화염병 합류'(store.endlessUnlocks의 flame),
+  // 화면(main.js): 칩 열쇠는 굴리는 해시(무한모드는 레벨 상한이 없어 자릿수로 못 쌓는다 — 병과·레벨마다 섞는다), 2회차 엔딩 안내 줄 '화염병 합류'(store.endlessUnlocks의 flame),
   // 캠페인 목록은 소개 레벨(unlock)로만 병과를 고른다 — 화염병에는 unlock이 없어 캠페인 화면에 안 나온다
-  assert.match(main, /for \(const m of sp\) key = key \* 32 \+ \(UNIT_IDS\.indexOf\(m\.k\) \+ 1\) \* 4 \+ \(m\.lv \|\| 1\);/);
-  assert.ok((UNIT_IDS.length + 1) * 4 + 3 < 32, '한 칸 값 < 32');
+  assert.match(main, /for \(const m of sp\) \{ mix\(UNIT_IDS\.indexOf\(m\.k\) \+ 1\); mix\(m\.lv \|\| 1\); \}/);
+  assert.match(main, /if \(fx\) for \(const a of AMMO_IDS\) mix\(fx\[a\] \| 0\);/, '탄 효과 레벨도 그대로(Lv4 이상도 칩이 바뀐다)');
   assert.match(main, /\$\('endEndlessInfo'\)\.textContent = c === 2 && endlessUnlocks\(data, CARD\.stageMax\)\.flame \? `화염병 합류!/);
   assert.equal(UNITS.flame.unlock, undefined, '화염병은 캠페인 소개 레벨이 없다');
   assert.ok(UNITS.flame.endless, '무한모드 전용 표시');

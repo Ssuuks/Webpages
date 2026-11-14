@@ -7,10 +7,14 @@ import { FONT, OUT } from './art.js';
 import { Raster, outline } from './raster.js';
 
 const MAP = { '−': '-', '×': 'x', '÷': '/', '→': '>' };
-/* art.js 글꼴에 없는 글자(천 단위 'k') */
+/* art.js 글꼴에 없는 글자(천 단위 'k', 무한모드의 큰 수 — 소수점 '.'과 십억 'B'. 백만은 art.js의 'M') */
 const EXTRA = {
-  big: { k: ['##...', '##...', '##.##', '####.', '###..', '####.', '##.##'] },
-  small: { k: ['#..', '#.#', '##.', '#.#', '#.#'] },
+  big: {
+    k: ['##...', '##...', '##.##', '####.', '###..', '####.', '##.##'],
+    B: ['####.', '##.##', '##.##', '####.', '##.##', '##.##', '####.'],
+    '.': ['..', '..', '..', '..', '..', '##', '##'],
+  },
+  small: { k: ['#..', '#.#', '##.', '#.#', '#.#'], B: ['##.', '#.#', '##.', '#.#', '##.'], '.': ['.', '.', '.', '.', '#'] },
 };
 
 function glyphRows(set, ch) {
@@ -21,7 +25,7 @@ function glyphRows(set, ch) {
 }
 
 /* 게임 화면에 쓰는 글자 전부(닫힌 집합) — 쉬는 틈에 미리 굽는다(게임 중 굽기 0) */
-export const GLYPH_CHARS = '0123456789+-x/=MAXkLv';
+export const GLYPH_CHARS = '0123456789+-x/=MAXkLv.B';
 
 export function createFont(atlas) {
   /* (채움 → 외곽 → 글꼴 → 글자) 기록. 문자열 키를 만들지 않아 그릴 때 쓰레기가 없다 */
@@ -99,9 +103,19 @@ export function createFont(atlas) {
   return { draw, measure, height, glyph, prebakeTasks };
 }
 
+/* 큰 수를 도트 글꼴로 짧게(무한모드 — 병력 상한이 없다): 9999까지는 그대로, 그 위는 k·M·B에 유효숫자 셋(12.3k, 123k, 1.23M).
+   coarse면 소수 없이(12k) — 좁은 칸의 마지막 꼴 */
+export function shortN(n, coarse = false) {
+  const a = Math.abs(Math.round(n));
+  if (a < 10000) return String(a);
+  const [d, u] = a >= 1e9 ? [1e9, 'B'] : a >= 1e6 ? [1e6, 'M'] : [1e3, 'k'];
+  const v = a / d;
+  const txt = coarse || v >= 100 ? String(Math.floor(v)) : v >= 10 ? String(Math.floor(v * 10) / 10) : String(Math.floor(v * 100) / 100);
+  return txt + u;
+}
 /* 게이트 칸 숫자 글자(+12, −5, ×2, ÷2) */
 export function opText(c) {
-  if (c.op === 'add' || c.op === 'unit') return (c.v >= 0 ? '+' : '-') + Math.abs(c.v);
+  if (c.op === 'add' || c.op === 'unit') return (c.v >= 0 ? '+' : '-') + shortN(c.v);
   if (c.op === 'mul') return 'x' + c.v;
   return '/' + c.v;
 }
@@ -115,7 +129,7 @@ export function compactTexts(c, out = []) {
   if (add && c.v >= 0) out.push(t.slice(1));
   const a = Math.abs(c.v);
   if (add && a >= 1000) {
-    const k = Math.floor(a / 1000) + 'k';
+    const k = a >= 10000 ? shortN(a, true) : Math.floor(a / 1000) + 'k';
     if (c.v < 0) out.push('-' + k);
     else { out.push('+' + k); out.push(k); }
   }
