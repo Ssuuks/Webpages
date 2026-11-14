@@ -4,8 +4,9 @@ import {
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, tierMax, spMax, spEscort, eggP, bannerOn, fxCan, flameOn,
+  nMax, fmtN, spLvMax,
 } from './core.js';
-import { createRenderer, RELIC_COL } from './render.js';
+import { createRenderer, RELIC_COL, WTIER } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
 import { createMusic } from './music.js';
 import {
@@ -14,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg , AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_MAX, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, OBSTACLES } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, OBSTACLES } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -370,7 +371,7 @@ function renderTitle() {
   if (r) {
     const st = r.state;
     const where = st.endless && st.endless.offer ? '카드 고르는 중' : st.boss ? '보스전' : `보스까지 ${Math.round(progress(st) * 100)}%`;
-    $('resumeInfo').textContent = `${runName(r)} · ${st.squad.n}명 · ${where} · ${ago(r.at)} 저장`;
+    $('resumeInfo').textContent = `${runName(r)} · ${fmtN(st.squad.n)}명 · ${where} · ${ago(r.at)} 저장`;
     // 첫 게이트를 지난 판만 진 판으로 센다(무한모드는 진 판이 없다 — 모은 코인을 받고 끝난다)
     $('resumeConfirm').querySelector('.warn').textContent = r.mode === 'endless' ? '이 판을 여기서 끝낼까요? 지금까지 모은 코인은 받아요.'
       : restartCounts(st) ? '이 판을 포기할까요? 진 판으로 기록돼요.' : '이 판을 포기할까요?';
@@ -560,7 +561,7 @@ function nextJoinNotice() {
 /* 규칙(SIM)이 바뀔 때마다 기존 플레이어에게 그 사이 바뀐 것만 한 번 알린다. 키 = 그 규칙이 들어온 SIM */
 const BALANCE_NOTES = [
   [5, '5레벨마다 불꽃 표시가 붙은 어려운 판이 있어요(코인을 더 줘요). 그 바로 다음 판은 쉬어 가요.'],
-  [6, '판 중간이 조여졌어요: 판돈 걸린 게이트 줄, 보스 앞 몰이(양옆에서도 와요), 어려운 판의 열쇠 상자. 못 부순 상자·철창에 부딪히면 병사를 잃어요.'],
+  [6, '판 중간이 조여졌어요: 판돈 걸린 게이트 줄, 보스 앞 몰이(양옆에서도 와요), 어려운 판의 금테 보급 상자. 못 부순 상자·철창에 부딪히면 병사를 잃어요.'],
   [7, '보스 내려찍기의 빨간 구역이 실제로 맞는 범위만큼 넓게 보여요. 몰이가 오면 알림이 뜨고, 3번 지면 받는 지원은 강화가 적을수록 커져요.'],
   [8, '보이는 대로 부딪혀요: 부대 모양이 실제로 맞는 크기와 같아졌고, 살짝 스치기만 한 좀비·톱날·독침·벽은 안 맞아요. 벽·상자에 걸치면 걸친 쪽 병사만 잃어요. 대신 제대로 부딪힌 거구는 더 아파요.'],
   [9, '빨간 게이트 가운데에는 쏘면 빨리 오르는 칸이 숨어 있어요 — 앞 줄을 지나자마자 그 칸 앞에서 몰아 쏘면 옆 파란 칸보다 많아지기도 해요. 같은 특수병을 또 구하면 병사 대신 그 특수병이 Lv2·Lv3로 강해져요.'],
@@ -833,7 +834,7 @@ function openEnding(c) {
     [`${cycName(c)} 별`, `★ ${cycleStars(data, c)} / ${CYCLE_LEVELS * 3}`],
     ['총 처치', `${compact(st.kills | 0)}`],
     ['잡은 보스', `${st.bossKills | 0}`],
-    ['최대 병력', `${st.maxN | 0}명`],
+    ['최대 병력', `${fmtN(Math.floor(st.maxN) || 0)}명`],
   ];
   $('endStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
   $('endNextInfo').textContent = `${cycName(c + 1)}: 레벨 1부터 다시! 적이 더 세지고, 강화는 ${10 * (c + 1)}단계·영웅은 Lv${HERO_MAX_LV + HERO_LV_PER_CYCLE * c}까지 더 올릴 수 있어요. 지난 회차 레벨은 레벨 화면에서 다시 할 수 있어요.`;
@@ -1312,7 +1313,7 @@ const testUnl = (() => {
 const endlessParam = testUnl.endless || testUnl.unl != null;
 const testRun = () => testUnl.unl != null || testUnl.relics != null || testUnl.hold != null;   // 시험 옵션으로 연 판(알림 기록을 올리지 않는다)
 function endlessOpen() { return endedCycles(data) >= 1 || endlessParam; }
-function endlessBest() { const e = data.endless || {}; return { best: e.best | 0, bestN: e.bestN | 0, runs: e.runs | 0 }; }
+function endlessBest() { const e = data.endless || {}; return { best: e.best | 0, bestN: Math.floor(Number(e.bestN) || 0), runs: e.runs | 0 }; }
 const isEndless = () => !!(run && run.mode === 'endless');
 /* 이번 판에 여는 무한모드 빌드 해금 { unl, flame, relics, next }(store.endlessUnlocks — 저장에서 셈, 시험 주소가 있으면 그 값).
    unl 0이면 예전 그대로(카드 없음). 주소 시험 옵션으로 연 무한모드(엔딩 전)도 1단계로 친다. next: 다음에 열 것과 조건(출발 카드의 '다음:' 한 줄) */
@@ -1414,7 +1415,7 @@ function startEndless(opts = {}) {
   const relNew = fresh ? '' : relicFreshText(relicsFresh(U), U) || (flameFresh(U) ? FLAME_GUIDE : '');
   $('cardNew').textContent = fresh ? STAGE_INFO[U.unl].guide : relNew || (U.unl ? STAGE_INFO[1].guide : '보스를 잡으면 곧바로 다음 지역! 병력·무기·특수병을 그대로 들고 가요');
   const eb = endlessBest();
-  $('cardBoss').textContent = eb.runs ? `최고 기록: 보스 ${eb.best} · 최대 병력 ${eb.bestN}명` : '죽을 때까지 몇 구간을 갈 수 있을까요?';
+  $('cardBoss').textContent = eb.runs ? `최고 기록: 보스 ${eb.best} · 최대 병력 ${fmtN(eb.bestN)}명` : '죽을 때까지 몇 구간을 갈 수 있을까요?';
   const nx = nextUnlockText(U.next);
   $('cardUnit').hidden = !nx;
   $('cardUnit').textContent = nx;
@@ -1502,7 +1503,7 @@ function settleEndless(st, id) {
     const rec = { ...data.endless, ...endlessBest() };
     out.record = out.bosses > rec.best;
     rec.best = Math.max(rec.best, out.bosses);
-    rec.bestN = Math.max(rec.bestN, st.squad.peak | 0);
+    rec.bestN = Math.max(rec.bestN, Math.floor(st.squad.peak) || 0);   // | 0은 21억에서 넘친다(무한모드는 병력 상한이 없다)
     rec.runs++;
     rec.unl = Math.max(rec.unl | 0, testUnl.unl != null ? 0 : e.unl | 0);   // 화면이 알린 가장 높은 해금 단계(시험 주소로 연 단계는 안 센다 — 진짜로 열 때 안내가 나오게)
     if (!testRun()) rec.rel = Math.max(rec.rel | 0, before.unl >= 3 ? before.relics.length : 0);   // 출발 카드가 알린 유물 수(relicsFresh — 이 판에 열려 있던 것)
@@ -1543,7 +1544,7 @@ function finishEndless() {
   const lines = [
     ['잡은 보스', `${got.bosses}` + (got.record ? ' · 최고 기록!' : got.paid && got.prev ? ` (최고 ${got.prev})` : '')],
     ['도달 지역', `${segName(e.seg)}${i.loop ? ` (${i.loop + 1}바퀴째)` : ''}`],
-    ['최대 병력', `${s.squad.peak}명`],
+    ['최대 병력', `${fmtN(s.squad.peak)}명`],
     ['처치', `${s.stats.kills}`],
     ['획득 코인', `+${got.coins}` + (got.lucky ? ' (줍줍! 두 배)' : '')],
   ];
@@ -1585,7 +1586,7 @@ const fxName = (a) => (AMMO[a] ? AMMO[a].name.replace(/탄$/, '') : '탄');
 const comboNames = (ids) => (ids || []).filter((id) => COMBOS[id]).map((id) => COMBOS[id].name).join(' · ');
 /* 카드 한 장의 글(cardInfo → 화면): kind 종류, lead·from·to 바뀌는 값(숫자로), det 풀이, col 강조 색, icon */
 function cardText(c) {
-  if (c.k === 'men') return { kind: '증원', lead: '병력', from: `${c.from}`, to: `${c.to}`, det: `병사 ${c.to - c.from}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
+  if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
   if (c.k === 'gun') return { kind: '무기', lead: '무기', from: c.from ? `${c.from}` : '기본', to: tierName(c.to), det: `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 ${tierMax(s)}단계`, col: '#FFC93C', icon: 'gun' };
   if (c.k === 'relic') {
     // 유물(3·5단계 — 대왕 보스 뒤): 이름, 좋은 점, '대신' 줄(대신 쪽이 있는 유물만 — 나침반·휘장은 없다). 글·수치는 roster.js RELICS
@@ -1613,7 +1614,7 @@ function cardText(c) {
 }
 /* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
 function cardDone(c) {
-  if (c.k === 'men') return `병력 +${c.to - c.from}`;
+  if (c.k === 'men') return `병력 +${fmtN(c.to - c.from)}`;
   if (c.k === 'gun') return `무기 ${tierName(c.to)}`;
   if (c.k === 'unit') { const nm = UNITS[c.u] ? UNITS[c.u].name : '특수병'; return c.from ? `${nm} Lv${c.to}` : `${nm} 합류`; }
   if (c.k === 'fx') return `${fxName(c.a)} 효과 Lv${c.to}`;
@@ -1628,7 +1629,7 @@ function peekText(r) {
   if (r.type === 'gun' && s.squad.tier < tierMax(s)) return '무기 +1단계';
   if (r.type === 'fx' && fxCan(s, r.a)) return `${fxName(r.a)} 효과`;
   if (r.type === 'coin') return `코인 +${r.v}`;
-  if (r.type === 'men' && r.v) return `병사 +${r.v}명`;
+  if (r.type === 'men' && r.v) return `병사 +${fmtN(r.v)}명`;
   return `병사 보상${r.mul ? ` ×${r.mul}` : ''}`;
 }
 /* 결과 화면의 긴 줄(고른 카드·유물)은 ' · ' 사이에서만 꺾인다 — '관통 효과 / 2번'처럼 한 항목이 쪼개지지 않게 항목 안의 빈칸은 붙은 빈칸으로 */
@@ -1881,7 +1882,7 @@ function renderPauseUnits() {
     t.append(lv > 1 ? `${U.role}. 지금 ${U.up(lv)}` : U.desc);
     // 짝 영웅과 함께면 그 짝 효과(화염병 + 뭉치: 돌격 나팔 동안 불 지대 폭 — 화염병 줄을 연 무한모드 판에만 화염병이 있다)
     if (U.pair && s.hero && HEROES[s.hero.id] && HEROES[s.hero.id].match === m.k) t.append(` · 짝 효과: ${U.pair(lv)}`);
-    if (lv < SP_LV_MAX) t.append(` · 또 구하면 Lv${lv + 1}`);
+    if (lv < spLvMax(s)) t.append(` · 또 구하면 Lv${lv + 1}`);
     row.appendChild(t);
     box.appendChild(row);
   }
@@ -1902,7 +1903,7 @@ function renderPauseUnits() {
   if (fx) for (const a of AMMO_IDS) {
     const lv = fx[a] | 0;
     if (!lv) continue;
-    addRow('fx_' + a, `${fxName(a)} 효과 Lv${lv}`, `${fxText(a, lv)}${s.ammo === a ? ' · 출격 탄종(대신 쪽 그대로)' : ''}${lv < FX_LV_MAX ? ` · 또 얻으면 Lv${lv + 1}` : ''}`);
+    addRow('fx_' + a, `${fxName(a)} 효과 Lv${lv}`, `${fxText(a, lv)}${s.ammo === a ? ' · 출격 탄종(대신 쪽 그대로)' : ''} · 또 얻으면 Lv${lv + 1}`);
   }
   if (fx) for (const id of combosOn(s)) addRow('star', `시너지 ${COMBOS[id].name}`, COMBOS[id].text());
   if (rl) for (const id of rl) {
@@ -2041,7 +2042,7 @@ function watchTips() {
   for (const p of s.props) {
     if (!p.alive || p.passed || p.z - q.z > 32) continue;
     if (p.kind === 'door' || p.kind === 'drum') continue;   // 장애물(무한모드 2단계)은 'obstacle' 이벤트가 45m 앞에서 따로 안내한다 — 상자 안내가 뜨지 않게
-    if (p.key === true) tip('key', '열쇠 표시 상자: 다음 난관을 넘을 보급이에요. 꼭 쏴서 부수세요!');
+    if (p.key === true) tip('key', '금테 표시 상자: 다음 난관을 넘을 무기 보급이에요. 꼭 쏴서 부수세요!');
     if (p.reward && p.reward.type === 'fx') tip('fxCrate', `탄종 상자: 무기가 ${tierMax(s)}단계라 무기 대신 위에 뜬 탄 효과가 들었어요. 부수면 그 효과를 얻어요`);
     if (p.kind === 'wall') tip('wall', '벽의 숫자는 체력이에요. 약한 벽을 쏴서 뚫고 지나가세요');
     else if (p.kind === 'cage') tip('cage', '철창을 쏴서 부수면 갇힌 특수병이 합류해요');
@@ -2088,7 +2089,7 @@ function handleEvents(ev) {
         break;
       case 'fxUp':
         // 탄 효과를 얻었다(카드·탄종 상자 — 소리·알림은 그쪽 이벤트가 낸다)
-        tip('fx', `탄 효과는 좋은 점만 있어요. 같은 효과를 또 얻으면 Lv${FX_LV_MAX}까지 세지고, 칸이 차면 가진 효과만 나와요`);
+        tip('fx', `탄 효과는 좋은 점만 있어요. 같은 효과를 또 얻으면 레벨이 끝없이 오르고, 칸이 차면 가진 효과만 나와요`);
         break;
       case 'combo':
         // 시너지가 켜졌다: 금빛 고리는 renderer가. 규칙 풀이는 시너지마다 처음 한 번 안내로
@@ -2108,7 +2109,7 @@ function handleEvents(ev) {
         const nm = UNITS[e.k] ? UNITS[e.k].name : '특수병';
         const cap = spMax(s);   // 넷째 자리(유물)면 4명
         const why = e.why === 'max' || (!e.why && sp.some((m) => m.k === e.k)) ? `${nm}${ga(nm)} 이미 Lv${SP_LV_MAX}라서` : e.why === 'full' || (!e.why && sp.length >= cap) ? `특수병 자리(${cap}명)가 꽉 차서` : '병사가 적어서';
-        toast(`${why} 병사 +${e.n}명이 대신 왔어요`, 1800);
+        toast(`${why} 병사 +${fmtN(e.n)}명이 대신 왔어요`, 1800);
         break;
       }
       case 'spUp': {
@@ -2117,7 +2118,7 @@ function handleEvents(ev) {
         vibe([15, 30, 15]);
         const U = UNITS[e.k];
         if (U) toast(`${U.name} Lv${e.lv}! ${U.up(e.lv)}`, 2000);
-        tip('spUp', `같은 특수병을 또 구하면 레벨이 올라요(Lv${SP_LV_MAX}까지). 영웅 짝(나비·저격수, 보리·의무병${flameOn(s) ? ', 뭉치·화염병' : ''})도 함께 세져요`);
+        tip('spUp', `같은 특수병을 또 구하면 레벨이 올라요(${s && s.endless ? '무한모드는 상한 없이' : `Lv${SP_LV_MAX}까지`}). 영웅 짝(나비·저격수, 보리·의무병${flameOn(s) ? ', 뭉치·화염병' : ''})도 함께 세져요`);
         break;
       }
       case 'flip':
@@ -2524,18 +2525,44 @@ function updateSpChips() {
   const rl = relicsOf(s), spent = (rl && s.endless.spent) || [];
   const ban = !!rl && bannerOn(s);   // 전장의 휘장(유물)이 지금 켜졌나 — 칩이 금빛으로
   // 병과·레벨(과 2단계 판의 탄 효과 레벨, 3단계 판의 유물·쓴 것·휘장)이 바뀔 때만 다시 만든다(매 프레임 문자열·배열을 만들지 않게 숫자 열쇠)
-  let key = 1;
-  for (const m of sp) key = key * 32 + (UNIT_IDS.indexOf(m.k) + 1) * 4 + (m.lv || 1);   // 병과 넷째(화염병)·자리 넷(넷째 자리)까지 겹치지 않게 32진
-  if (fx) for (const a of AMMO_IDS) key = key * 4 + Math.min(3, fx[a] | 0);
-  if (rl) for (const id of rl) key = key * 32 + (RELIC_IDS.indexOf(id) + 1) * 3 + (spent.includes(id) ? 1 : id === 'banner' && ban ? 2 : 0);
+  // 레벨에 상한이 없어(무한모드) 자릿수로 쌓지 않고 굴리는 해시로 — 값 하나가 바뀌면 열쇠가 바뀐다
+  const tier = s ? s.squad.tier | 0 : 0;
+  const ammoChip = s && !fx && AMMO[s.ammo] ? s.ammo : '';   // 탄 효과가 없는 판(캠페인·무한모드 1단계)의 출격 탄종
+  let key = 1 + tier;
+  const mix = (v) => { key = (key * 131 + v + 7) % 2147483647; };
+  for (const m of sp) { mix(UNIT_IDS.indexOf(m.k) + 1); mix(m.lv || 1); }
+  mix(-1);
+  if (fx) for (const a of AMMO_IDS) mix(fx[a] | 0);
+  mix(ammoChip ? AMMO_IDS.indexOf(ammoChip) + 1 : 0);
+  if (rl) for (const id of rl) mix((RELIC_IDS.indexOf(id) + 1) * 3 + (spent.includes(id) ? 1 : id === 'banner' && ban ? 2 : 0));
   if (key === spKey) return;
   spKey = key;
   if (ban) tip('banner', `전장의 휘장이 빛나요! ${RELICS.banner.text()}`);
   const box = $('spChips');
   box.textContent = '';
+  // 무기 단계(상자·카드로 얻은 총알 파워업): 1단계부터 칩으로 — 테두리·숫자는 그 단계의 총알 색
+  if (tier > 0) {
+    const chip = document.createElement('span');
+    chip.className = 'sp-chip fx-chip gun-chip' + (tier >= tierMax(s) ? ' lv3' : '');
+    chip.style.setProperty('--acc', WTIER[Math.min(WTIER.length - 1, tier)]);
+    chip.appendChild(iconEl('gun', 2));
+    chip.append('무기');
+    const b = document.createElement('b');
+    b.textContent = tier + '단계';
+    chip.appendChild(b);
+    box.appendChild(chip);
+  }
+  if (ammoChip) {
+    const chip = document.createElement('span');
+    chip.className = 'sp-chip fx-chip';
+    chip.style.setProperty('--acc', AMMO[ammoChip].color);
+    chip.appendChild(iconEl('fx_' + ammoChip, 2));
+    chip.append(ammoName(ammoChip));
+    box.appendChild(chip);
+  }
   for (const m of sp) {
     const chip = document.createElement('span');
-    chip.className = 'sp-chip' + ((m.lv || 1) > 1 ? ' up lv' + m.lv : '');
+    chip.className = 'sp-chip' + ((m.lv || 1) > 1 ? ' up lv' + Math.min(3, m.lv) : '');
     chip.appendChild(iconEl(m.k, 2));
     chip.append(UNITS[m.k] ? UNITS[m.k].name : m.k);
     if ((m.lv || 1) > 1) {
@@ -2552,7 +2579,7 @@ function updateSpChips() {
     if (!lv) continue;
     nfx++;
     const chip = document.createElement('span');
-    chip.className = 'sp-chip fx-chip' + (lv >= FX_LV_MAX ? ' lv3' : '');
+    chip.className = 'sp-chip fx-chip' + (lv >= FX_LV_SOFT ? ' lv3' : '');
     chip.style.setProperty('--acc', AMMO[a].color);
     chip.appendChild(iconEl('fx_' + a, 2));
     chip.append(fxName(a));
@@ -2578,7 +2605,7 @@ function updateSpChips() {
     chip.setAttribute('role', 'img');
     box.appendChild(chip);
   }
-  document.body.classList.toggle('has-sp', sp.length + nfx + (rl ? rl.length : 0) > 0);
+  document.body.classList.toggle('has-sp', sp.length + nfx + (rl ? rl.length : 0) + (tier > 0 ? 1 : 0) + (ammoChip ? 1 : 0) > 0);
   // 칩이 두 줄로 넘치면(특수병 셋 + 효과 둘) 위에 뜨는 알림을 한 줄만큼 더 내린다 — 세 줄(넷째 자리·넓은 탄낭·유물 칩)이면 한 줄 더
   const hh = box.offsetHeight;
   document.body.classList.toggle('sp-wrap', hh > 40);

@@ -131,7 +131,7 @@ export function naive(seed = 0, opt = {}) {
         let best = -Infinity;
         let bi = 0;
         row.cells.forEach((c, i) => {
-          const v = C.applyOp(q.n, c.op, c.v) + (c.op === 'unit' ? 0.5 : 0);
+          const v = C.applyOp(q.n, c.op, c.v, C.nMax(s)) + (c.op === 'unit' ? 0.5 : 0);
           if (v > best) { best = v; bi = i; }
         });
         tx = center(row.cells[bi]);
@@ -164,7 +164,7 @@ export function misjudge(seed, opt = {}) {
         let d = st.rows[row.id];
         if (d === undefined) {
           const n = s.squad.n;
-          const order = row.cells.map((c, i) => ({ v: C.applyOp(n, c.op, c.v), i })).sort((a, b) => b.v - a.v || a.i - b.i);
+          const order = row.cells.map((c, i) => ({ v: C.applyOp(n, c.op, c.v, C.nMax(s)), i })).sort((a, b) => b.v - a.v || a.i - b.i);
           const close = order[0].v > 0 && order[0].v - order[1].v <= within * Math.abs(order[0].v);
           d = -1;
           if (close) { st.close++; if (next(st) < wrong) { d = order[1].i; st.miss++; } }
@@ -216,7 +216,7 @@ export function worst(seed, opt = {}) {
     let i = st.pick[row.id];
     if (i === undefined) {
       const n = s.squad.n;
-      const val = opt.mode === 'true' ? (c) => fullValue(n, c) : (c) => C.applyOp(n, c.op, c.v);
+      const val = opt.mode === 'true' ? (c) => fullValue(n, c) : (c) => C.applyOp(n, c.op, c.v, C.nMax(s));
       const v = row.cells.map((c, k) => ({ v: val(c), k })).sort((a, b) => a.v - b.v || a.k - b.k);
       i = st.pick[row.id] = (opt.mode === 'second' ? v[v.length - 2] : v[0]).k;
     }

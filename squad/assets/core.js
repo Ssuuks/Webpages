@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, FX_LV, FX_LV_MAX, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, EGG, OBSTACLES, OBSTACLE_IDS } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, EGG, OBSTACLES, OBSTACLE_IDS } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -15,6 +15,19 @@ export const ROAD = 5;            // 도로 반폭
 export const EDGE = 4.4;          // 분대 중심이 갈 수 있는 끝
 export const SOLDIER_HP = 10;     // 부딪히면 남은 체력 10마다 병사 1명을 잃는다
 export const MAX_N = 9999;
+/* 병력 상한: 캠페인은 MAX_N, 무한모드는 ENDLESS.maxN(사실상 없음 — 9999에서 멈추면 게이트·증원 카드가 헛돌아 위협만 커진다).
+   NCAP: 레벨·구간을 만드는 동안의 상한(applyOp의 기본값 — buildSegment가 잠깐 올린다). 판 안에서는 nMax(s)를 넘긴다 */
+let NCAP = MAX_N;
+export const nMax = (s) => (s && s.endless ? ENDLESS.maxN : MAX_N);
+/* 큰 수를 짧게: 9999까지는 그대로, 그 위는 만·억·조(세 자리 유효숫자 — 1.23만, 45.6만, 789만, 1.23억) */
+export function fmtN(n) {
+  const a = Math.abs(n), sg = n < 0 ? '−' : '';
+  if (!(a >= 10000)) return sg + String(a);
+  const [d, u] = a >= 1e12 ? [1e12, '조'] : a >= 1e8 ? [1e8, '억'] : [1e4, '만'];
+  const v = a / d;
+  const txt = v >= 100 ? String(Math.floor(v)) : v >= 10 ? (Math.floor(v * 10) / 10).toFixed(1) : (Math.floor(v * 100) / 100).toFixed(2);
+  return sg + txt.replace(/\.?0+$/, (m) => (txt.includes('.') ? '' : m)) + u;
+}
 export const START_N = 12;
 export const VOLLEY_HZ = 10;
 export const BULLET_SPEED = 48;
@@ -123,7 +136,10 @@ export const UNLOCK = {
 /* 특수병과 수치(이름·소개·레벨별 수치는 roster.js — 여기 SP의 share·every·dmg·r은 Lv1 값) */
 export const SP_MAX = 3;      // 분대에 최대 3명
 export const SP_ESCORT = 4;   // 병사가 특수병 수 × 4보다 적으면 가장 늦게 온 특수병이 떠난다
-export { SP_LV_MAX };         // 같은 병과를 또 구하면 Lv2·Lv3(SIM 9) — 그 뒤로는 병사로
+export { SP_LV_MAX };         // 같은 병과를 또 구하면 Lv2·Lv3(SIM 9) — 그 뒤로는 병사로(캠페인)
+/* 특수병 레벨 상한: 캠페인은 SP_LV_MAX(3), 무한모드는 없다(Lv4부터는 roster.js의 over 규칙 — unitVal). LV_SANE: 저장을 읽을 때만 쓰는 울타리 */
+export const LV_SANE = 999;
+export const spLvMax = (s) => (s && s.endless ? LV_SANE : SP_LV_MAX);
 export const SP = {
   medic: { share: unitVal('medic', 'share', 1) },
   sniper: { every: unitVal('sniper', 'every', 1), dmg: unitVal('sniper', 'dmg', 1), near: 2, far: 36 },
@@ -185,15 +201,15 @@ export function nice(x) {
 }
 
 /* 게이트 연산. 결과가 0 이하면 전멸(덧셈만 가능, 나눗셈은 올림이라 0이 되지 않는다) */
-export function applyOp(n, op, v) {
+export function applyOp(n, op, v, max = NCAP) {
   let r;
   if (op === 'add' || op === 'unit') r = n + v;
   else if (op === 'mul') r = n * v;
   else r = Math.ceil(n / v);
-  return Math.min(MAX_N, r);
+  return Math.min(max, r);
 }
 export function cellLabel(c) {
-  if (c.op === 'add' || c.op === 'unit') return (c.v >= 0 ? '+' : '−') + Math.abs(c.v);
+  if (c.op === 'add' || c.op === 'unit') return (c.v >= 0 ? '+' : '−') + fmtN(Math.abs(c.v));
   if (c.op === 'mul') return '×' + c.v;
   return '÷' + c.v;
 }
@@ -1387,9 +1403,10 @@ export function buildLevel(L, attempt = 0, bare = false, cycle = 1) {
      병력이 바닥선(segFloor — 무난한 진행의 병력)보다 적으면 위협은 바닥선 병력 기준이다: 뒤처지면 적이 그만큼 약해지지 않아 손실이 쌓인다.
    - 예고는 캠페인 L30+ 값 그대로. 달리는 속도만 구간마다 조금씩 빨라진다(segSpeed — 상한 1.4배, ARSENAL.md 9절): 줄 사이에 고를 시간이 줄어든다.
      함정 줄(18m 뒤 ÷2)은 가장 빠를 때도 옆 칸으로 비킬 시간(이동 + 0.45초)이 남는다(테스트).
-   - 한 구간의 순성장: 보스 직전 줄의 ×2 하나 + 작은 덧셈(GK = ENDLESS.gk). 병력 상한은 캠페인과 같은 MAX_N(9999).
+   - 한 구간의 순성장: 보스 직전 줄의 ×2 하나 + 작은 덧셈(GK = ENDLESS.gk). 병력 상한은 ENDLESS.maxN(사실상 없음 — 캠페인만 MAX_N 9999).
    - 상태는 평범한 JSON(s.endless) — 다음 구간은 상태와 시드만으로 정해진다. 캠페인 판에는 s.endless가 없다(stateHash 그대로) */
 export const ENDLESS = {
+  maxN: 999999999999,       // 병력 상한(9999억 — 화면은 만·억으로 줄여 적는다, fmtN). 구간당 ×2 안팎이라 30구간을 넘겨도 닿지 않는다
   fire: 10,                 // 위협을 만드는 기준 화력 단계(1회차 끝의 기대 강화) — 화력 강화가 이보다 높으면 그만큼 더 멀리 간다
   floor0: START_N + 20,     // 바닥선의 밑(시작 병력 강화 10단계의 출발 병력)
   floorGrow: 1.6,           // 바닥선은 구간마다 이만큼(무난한 진행의 순성장 아래쪽)
@@ -1421,7 +1438,7 @@ export const segKings = (bosses) => Math.floor(Math.max(0, bosses | 0) / 6);
 export const segSpeed = (k) => Math.min(ENDLESS.speedMax, 1 + ENDLESS.speedStep * (Math.max(1, k) - 1));
 export const segMul = (k) => ENDLESS.mul0 * Math.pow(ENDLESS.mulStep, Math.max(1, k) - 1);
 /* 바닥선: 1구간에는 없다(누구나 제 병력 기준으로 출발한다), 2구간부터 floor0 × floorGrow^(k−1) */
-export const segFloor = (k) => (k <= 1 ? 0 : Math.min(MAX_N, Math.round(ENDLESS.floor0 * Math.pow(ENDLESS.floorGrow, k - 1))));
+export const segFloor = (k) => (k <= 1 ? 0 : Math.min(ENDLESS.maxN, Math.round(ENDLESS.floor0 * Math.pow(ENDLESS.floorGrow, k - 1))));
 /* 구간 k의 보스를 잡으면 적립되는 코인: 그 지역의 기본 몫 × 등급 × (1 + 0.25·바퀴 수). 죽어도·포기해도 받는다 */
 export function segCoins(k) {
   const i = segInfo(k);
@@ -1454,7 +1471,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   const p = segParams(k);
   const E = ENDLESS;
   const g = { rs: hash(VERSION, 'endless', seed >>> 0, p.seg, attempt) };
-  const n0 = clamp(Math.floor(n), 1, MAX_N);
+  const n0 = clamp(Math.floor(n), 1, E.maxN);
   // 뒤처진 분대(바닥선 아래)에게는 위협이 바닥선 병력 기준(화력 ∝ 병력^0.8)
   const behind = Math.pow(Math.max(1, segFloor(p.seg) / n0), 0.8);
   const base = WEAPON[clamp(tier | 0, 0, THREAT_TIER)] * segMul(p.seg) * behind;   // 코일의 넷째 단계는 위협에 넣지 않는다(THREAT_TIER)
@@ -1466,6 +1483,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   };
   if (opt && opt.obs && p.seg >= RUN_ORDER.obstacle) lv.og = { rs: hash(VERSION, 'obstacle', seed >>> 0, p.seg, attempt) };
   GK = E.gk;
+  NCAP = E.maxN;
   try {
     const plan = planChunks(p, g);
     lv.plan = plan;
@@ -1498,7 +1516,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
     lv.arenaZ = z + 12;
     placeSpecials(lv, p, false, hash(VERSION, 'endless-sp', seed >>> 0, p.seg, attempt), !!(opt && opt.flame));
     if (lv.og) { placeDrums(lv); obstacleMarks(lv); }
-  } finally { GK = 1; delete lv.og; }
+  } finally { GK = 1; NCAP = MAX_N; delete lv.og; }
   // MAX 칸(높인 끝)은 쓰지 않는다 — 몰아 쏘기 확인(redFast)을 판 중간에 돌릴 수 없다
   for (const r of lv.rows) for (const c of r.cells) if (c.cap0 != null) { c.cap = c.cap0; delete c.cap0; }
   // 코인 상자는 구간 번호만큼(가상 레벨 61~120의 값을 그대로 주지 않는다)
@@ -1580,7 +1598,7 @@ export function doorMul(s) {
   const fx = fxOf(s);
   let k = D.gun;
   if (fx && fx.pierce) k = Math.max(k, D.pierce);
-  if (fx && fx.burst) k = Math.max(k, D.gun + (D.burst - D.gun) * Math.min(1, FX_LV[Math.min(FX_LV_MAX, fx.burst) - 1]));
+  if (fx && fx.burst) k = Math.max(k, D.gun + (D.burst - D.gun) * Math.min(1, fxK(fx.burst)));
   return k;
 }
 /* 방패 정예가 총알에서 받는 피해 배수(관통 효과가 있으면 방패를 무시한다) */
@@ -1650,10 +1668,10 @@ function cardPool(s) {
   const e = s.endless;
   const units = spKindsOf(s).filter((k) => {
     const m = q.sp.find((o) => o.k === k);
-    return m ? (m.lv || 1) < SP_LV_MAX : q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1);
+    return m ? (m.lv || 1) < spLvMax(s) : q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1);
   });
   const ammo = (e.ammo || []).filter((a) => a !== (s.ammo || ''));
-  const kinds = CARD.kinds.filter((k) => (k === 'men' ? q.n < MAX_N : k === 'gun' ? q.tier < tierMax(s) : k === 'unit' ? units.length > 0 : ammo.length > 0));
+  const kinds = CARD.kinds.filter((k) => (k === 'men' ? q.n < nMax(s) : k === 'gun' ? q.tier < tierMax(s) : k === 'unit' ? units.length > 0 : ammo.length > 0));
   return { kinds, units, ammo };
 }
 /* 카드 고르기: 대왕 보스 뒤(3단계 판)는 유물(relicOffer — 없으면 카드), 2단계를 연 판은 makeOffer2, 1단계 판은 예전 그대로(1단계 지문) */
@@ -1674,17 +1692,17 @@ function makeOffer1(s) {
 export function cardInfo(s, c) {
   const q = s.squad;
   if (!c) return null;
-  if (c.k === 'men') return { k: 'men', from: q.n, to: Math.min(MAX_N, q.n + cardMen(q.n)) };
+  if (c.k === 'men') return { k: 'men', from: q.n, to: Math.min(nMax(s), q.n + cardMen(q.n)) };
   if (c.k === 'gun') return { k: 'gun', from: q.tier, to: Math.min(tierMax(s), q.tier + 1) };
   if (c.k === 'unit') {
     const m = q.sp.find((o) => o.k === c.u);
-    const o = { k: 'unit', u: c.u, from: m ? m.lv || 1 : 0, to: m ? Math.min(SP_LV_MAX, (m.lv || 1) + 1) : 1 };
+    const o = { k: 'unit', u: c.u, from: m ? m.lv || 1 : 0, to: m ? Math.min(spLvMax(s), (m.lv || 1) + 1) : 1 };
     const cb = combosBy(s, c.u);   // 2단계 판: 이 특수병으로 켜지는 시너지(화면이 카드에 적는다 — 1단계 판은 늘 빈 목록이라 필드가 없다)
     if (cb.length) o.combos = cb;
     return o;
   }
   if (c.k === 'ammo') return { k: 'ammo', a: c.a, from: s.ammo || '', to: c.a };
-  if (c.k === 'fx') { const lv = fxLv(s, c.a); const o = { k: 'fx', a: c.a, from: lv, to: Math.min(FX_LV_MAX, lv + 1) }; const cb = combosBy(s, c.a); if (cb.length) o.combos = cb; return o; }
+  if (c.k === 'fx') { const lv = fxLv(s, c.a); const o = { k: 'fx', a: c.a, from: lv, to: lv + 1 }; const cb = combosBy(s, c.a); if (cb.length) o.combos = cb; return o; }
   if (c.k === 'relic') return RELICS[c.r] ? { k: 'relic', r: c.r } : null;   // 유물 카드(3단계): 글은 roster.js RELICS[r].text()·cost()
   return null;
 }
@@ -1706,11 +1724,11 @@ export const fxLv = (s, a) => { const fx = fxOf(s); return fx ? fx[a] | 0 : 0; }
 /* 슬롯 수 — 넓은 탄낭(유물)이면 RELICS.pouch.slots */
 export const fxSlots = (s) => (relicOn(s, 'pouch') ? RELICS.pouch.slots : FX_SLOTS);
 const fxCount = (fx) => AMMO_IDS.reduce((n, a) => n + (fx[a] ? 1 : 0), 0);
-/* 효과 a를 지금 얻을 수 있나: 가진 효과면 Lv3 아래, 새 효과면 빈 칸이 있을 때 */
+/* 효과 a를 지금 얻을 수 있나: 가진 효과면 늘(레벨 상한 없음), 새 효과면 빈 칸이 있을 때 */
 export function fxCan(s, a) {
   const fx = fxOf(s);
   if (!fx || !AMMO[a]) return false;
-  return fx[a] ? fx[a] < FX_LV_MAX : fxCount(fx) < fxSlots(s);
+  return fx[a] ? true : fxCount(fx) < fxSlots(s);
 }
 /* 시너지 재료: 탄종 id = 그 탄 효과(출격 탄종이든 카드든), 병과 = 그 특수병(레벨 상관없이), 영웅 id = 출격 영웅 */
 function hasPart(s, id) {
@@ -1747,11 +1765,11 @@ function cardPool2(s) {
   const calm = (id) => up || !combosBy(s, id).length;
   const units = spKindsOf(s).filter((k) => {
     const m = q.sp.find((o) => o.k === k);
-    return (m ? (m.lv || 1) < SP_LV_MAX : q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1)) && calm(k);
+    return (m ? (m.lv || 1) < spLvMax(s) : q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1)) && calm(k);
   });
   const fx = AMMO_IDS.filter((a) => ((e.ammo || []).includes(a) || s.ammo === a) && fxCan(s, a) && (up || !e.fx[a]) && calm(a));
   // 넓은 탄낭(유물)의 대신 쪽: 증원 카드가 나오지 않는다
-  const kinds = CARD.kinds2.filter((k) => (k === 'men' ? q.n < MAX_N && !relicOn(s, 'pouch') : k === 'gun' ? q.tier < tierMax(s) : k === 'unit' ? units.length > 0 : fx.length > 0));
+  const kinds = CARD.kinds2.filter((k) => (k === 'men' ? q.n < nMax(s) && !relicOn(s, 'pouch') : k === 'gun' ? q.tier < tierMax(s) : k === 'unit' ? units.length > 0 : fx.length > 0));
   return { kinds, units, fx, up };
 }
 /* 2단계 카드: 범주(증원·무기·특수병·탄 효과) 중 서로 다른 것을 시드 순서로 CARD.count개(1단계와 범주 분포가 같다), 범주가 모자라면 다른 탄 효과로 채운다.
@@ -1885,7 +1903,7 @@ function relicSeg(s) {
    1구간은 처음부터 쥐여 주는 시험·측정에서만). 'relicUse' { id, n, cause }. 호위 병사가 모자라면 가장 늦게 온 특수병이 떠난다 */
 function heartRevive(s, cause) {
   const q = s.squad, e = s.endless;
-  const n = clamp(Math.round(RELICS.heart.v * (segFloor(e.seg) || ENDLESS.floor0)), 1, MAX_N);
+  const n = clamp(Math.round(RELICS.heart.v * (segFloor(e.seg) || ENDLESS.floor0)), 1, nMax(s));
   e.spent.push('heart');
   q.n = n;
   q.peak = Math.max(q.peak, n);
@@ -2027,7 +2045,7 @@ export function restore(o) {
   if (!Array.isArray(o.marks)) o.marks = [];
   if (!Array.isArray(q.sp)) q.sp = [];
   // SIM 8까지의 스냅숏에는 특수병 레벨이 없다(Lv1로 본다)
-  for (const m of q.sp) m.lv = Math.max(1, Math.min(SP_LV_MAX, Number.isFinite(m.lv) ? Math.floor(m.lv) : 1));
+  for (const m of q.sp) m.lv = Math.max(1, Math.min(spLvMax(o), Number.isFinite(m.lv) ? Math.floor(m.lv) : 1));
   num0(q, ['pool', 'healAcc', 'recent', 'lossFrac']);
   if (o.stats && typeof o.stats === 'object') num0(o.stats, ['spUp', 'flips']);
   if (o.hero === undefined) o.hero = null;
@@ -2058,13 +2076,13 @@ export function restore(o) {
         e.spent = relicList(e.spent).filter((id) => e.relics.includes(id));
         for (const p of o.props) if (p.reward && p.reward.mul !== undefined && !(typeof p.reward.mul === 'number' && p.reward.mul > 0 && p.reward.mul < 10)) delete p.reward.mul;
       } else { delete e.relicsOpen; delete e.relics; delete e.spent; }
-      // 2단계 탄 효과: 아는 탄종만 Lv1..3, 슬롯 수까지(AMMO_IDS 순서로 — 출격 탄종 먼저). 없으면 출격 탄종 Lv2에서 다시. 2단계 아래 판에는 없다
+      // 2단계 탄 효과: 아는 탄종만 Lv1 이상, 슬롯 수까지(AMMO_IDS 순서로 — 출격 탄종 먼저). 없으면 출격 탄종 Lv2에서 다시. 2단계 아래 판에는 없다
       if (e.unl >= 2) {
         const src = e.fx && typeof e.fx === 'object' && !Array.isArray(e.fx) ? e.fx : o.ammo ? { [o.ammo]: FX_BASE_LV } : {};
         const fx = {};
         for (const a of [o.ammo, ...AMMO_IDS]) {
           const lv = Math.floor(Number(src[a]));
-          if (AMMO[a] && !fx[a] && lv >= 1 && Object.keys(fx).length < fxSlots(o)) fx[a] = Math.min(FX_LV_MAX, lv);
+          if (AMMO[a] && !fx[a] && lv >= 1 && Object.keys(fx).length < fxSlots(o)) fx[a] = Math.min(LV_SANE, lv);
         }
         e.fx = fx;
         for (const p of o.props) if (p.reward && p.reward.type === 'fx' && !AMMO[p.reward.a]) p.reward = { type: 'gun' };
@@ -2137,7 +2155,7 @@ function lose(s, k, cause, x, z, sub) {
     // 짓밟기(보스가 닿은 뒤)로 잃은 병사는 회복 풀로 가지 않는다 — 닿기 전에 잡는 것이 보스전의 목표
     // 의무병은 레벨만큼(Lv1 60%·Lv2 70%·Lv3 80%), 보리의 응급처치는 의무병 레벨만큼 더(짝 효과 — 의무병이 없거나 Lv1이면 그대로)
     const med = spLv(q, 'medic');
-    const share = sub === 'stomp' ? 0 : Math.min(SHARE_MAX, (med ? unitVal('medic', 'share', med) : 0) + (h && h.id === 'bori' ? heroVal('bori', 'share', h.lv) * (med ? synergyOf(med) : 1) : 0));
+    const share = sub === 'stomp' ? 0 : Math.min(Math.max(SHARE_MAX, med ? unitVal('medic', 'share', med) : 0), (med ? unitVal('medic', 'share', med) : 0) + (h && h.id === 'bori' ? heroVal('bori', 'share', h.lv) * (med ? synergyOf(med) : 1) : 0));
     q.pool += real * share;
   }
   if (soft && q.sp.length && (sub === 'slam' || real >= Math.max(3, Math.ceil(0.15 * before)))) spDrop(s, 'hit');
@@ -2177,7 +2195,7 @@ function addSpecial(s, k, via, x, z, mul = 0) {
   const q = s.squad;
   const h = s.hero;
   const m = q.sp.find((o) => o.k === k);
-  if (m && (m.lv || 1) < SP_LV_MAX) {
+  if (m && (m.lv || 1) < spLvMax(s)) {
     m.lv = (m.lv || 1) + 1;
     s.stats.spUp++;
     emit(s, { t: 'spUp', k, lv: m.lv, id: m.id, via, x: x ?? q.x, z: z ?? q.z });
@@ -2203,7 +2221,7 @@ function addSpecial(s, k, via, x, z, mul = 0) {
 function gain(s, k, x, z, why) {
   const q = s.squad;
   const before = q.n;
-  q.n = Math.min(MAX_N, q.n + k);
+  q.n = Math.min(nMax(s), q.n + k);
   s.stats.gained += q.n - before;
   q.peak = Math.max(q.peak, q.n);
   emit(s, { t: 'gain', n: q.n - before, why, x: x ?? q.x, z: z ?? q.z });
@@ -2345,10 +2363,10 @@ function rowsUpdate(s) {
     row.chosen = idx;
     const c = row.cells[idx];
     const before = q.n;
-    const after = applyOp(before, c.op, c.v);
+    const after = applyOp(before, c.op, c.v, nMax(s));
     s.stats.gates++;
     // alt: 이 순간 줄의 칸마다 결과(쏴서 올린 값 그대로) — 근소한 패배 화면의 '다른 칸이었다면'
-    emit(s, { t: 'gate', op: c.op, v: c.v, k: c.k, before, after, good: after >= before, x: (c.x0 + c.x1) / 2, z: row.z, row: row.id, alt: row.cells.map((d) => applyOp(before, d.op, d.v)) });
+    emit(s, { t: 'gate', op: c.op, v: c.v, k: c.k, before, after, good: after >= before, x: (c.x0 + c.x1) / 2, z: row.z, row: row.id, alt: row.cells.map((d) => applyOp(before, d.op, d.v, nMax(s))) });
     if (after > before) gain(s, after - before, q.x, row.z, 'gate');
     else if (after < before) {
       if (after <= 0) { lose(s, before, 'gate'); }
@@ -3409,7 +3427,7 @@ export function botTarget(s, opt = {}) {
         const shoot = Math.max(0, tReach - travel - 0.2);
         v = Math.min(c.cap, c.v + Math.floor((D * cover(at, c.x0, c.x1) * shoot / c.step) * 0.9));
       }
-      const after = applyOp(q.n, c.op, v);
+      const after = applyOp(q.n, c.op, v, nMax(s));
       val += after <= 0 ? -q.n * 2 : after - q.n;
       if (c.op === 'unit' && opt.specials !== false) val += spWorth(s, c.k);
     }
@@ -3554,7 +3572,7 @@ export function spWorth(s, k) {
   const q = s.squad;
   const lv = spLv(q, k);
   const men = Math.max(5, nice(0.12 * q.n));
-  if (lv && lv < SP_LV_MAX) return Math.max(men, 3 + q.n * SP_WORTH[k] * SP_UP_WORTH);
+  if (lv && lv < spLvMax(s)) return Math.max(men, 3 + q.n * SP_WORTH[k] * SP_UP_WORTH);
   if (lv || q.sp.length >= spMax(s) || q.n < spEscort(s) * (q.sp.length + 1)) return men;
   return 3 + q.n * SP_WORTH[k];
 }

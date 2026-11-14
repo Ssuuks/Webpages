@@ -2,7 +2,12 @@
 
 /* 특수병과: 판 안에서만 얻는다(철창 구출, 금색 게이트). 분대에 최대 3명, 병과마다 1명.
    SIM 9: 이미 있는 병과를 또 구하면 그 특수병의 레벨이 오른다(Lv1 → Lv2 → Lv3, Lv3에서 또 구하면 병사로).
-   lv: 레벨별 수치 [Lv1, Lv2, Lv3] — 시뮬레이션(core.js의 SP·unitVal)과 소개 글이 함께 읽는다 */
+   lv: 레벨별 수치 [Lv1, Lv2, Lv3] — 시뮬레이션(core.js의 SP·unitVal)과 소개 글이 함께 읽는다.
+   무한모드에는 레벨 상한이 없다(core.spLvMax) — Lv4부터는 over의 규칙으로 Lv3 값에서 이어 간다(unitVal):
+     ['mul', k, 바닥]  레벨마다 × k(간격 — 바닥 아래로는 안 내려간다)
+     ['add', d, 끝]    레벨마다 + d(끝이 있으면 거기까지)
+     ['to', 끝, k]     끝까지 남은 거리가 레벨마다 × k(끝에 닿지는 않는다)
+   캠페인은 Lv3까지라 over를 읽지 않는다 */
 export const SP_LV_MAX = 3;
 export const UNITS = {
   medic: {
@@ -12,6 +17,7 @@ export const UNITS = {
     tip: '의무병 합류! 잃은 병사 일부가 다시 일어나요',
     role: '좀비·벽·독침·톱날·보스에게 잃은 병사를 몇 초 뒤 되살려요',
     lv: { share: [0.6, 0.7, 0.8] },
+    over: { share: ['to', 0.95, 0.7] },
     up: (lv) => `잃은 병사의 ${pc(unitVal('medic', 'share', lv))}%를 되살려요`,
   },
   sniper: {
@@ -21,6 +27,7 @@ export const UNITS = {
     tip: '저격수 합류! 독침 좀비와 거구를 먼저 노려요',
     role: '독침 좀비·거구를 먼저 저격해요. 보스전에서는 보스를 쏴요',
     lv: { every: [1.2, 0.9, 0.7], dmg: [0.35, 0.42, 0.5] },
+    over: { every: ['mul', 0.88, 0.25], dmg: ['add', 0.08] },
     up: (lv) => `${unitVal('sniper', 'every', lv)}초마다 저격(위력 ${pc(unitVal('sniper', 'dmg', lv))}%)`,
   },
   rocket: {
@@ -30,6 +37,7 @@ export const UNITS = {
     tip: '로켓병 합류! 몰려온 좀비 떼를 한 번에 날려요',
     role: '가장 큰 무리나 앞을 막은 벽에 범위 로켓을 쏴요',
     lv: { every: [2.4, 2, 1.7], r: [2.2, 2.6, 3] },
+    over: { every: ['mul', 0.88, 0.5], r: ['add', 0.3, 5] },
     up: (lv) => `${unitVal('rocket', 'every', lv)}초마다 로켓(폭발 반경 ${unitVal('rocket', 'r', lv)}m)`,
   },
   /* 화염병(단계 해금 4단계 — 2회차 엔딩으로 열린다): 무한모드에서 화염병 줄을 연 판에만(특수병 카드·철창·금색 칸). unlock(캠페인 소개 레벨)이 없다 —
@@ -43,17 +51,30 @@ export const UNITS = {
     tip: '화염병 합류! 좀비 떼가 지나갈 자리에 불을 깔아요',
     role: '좀비가 가장 많이 지나갈 자리에 불 지대를 깔아요. 보스전에서는 보스 발밑에',
     lv: { every: [2, 1.7, 1.4], w: [2, 2, 2.6], len: [4, 4, 4], T: [2, 2.5, 3], dmg: [0.25, 0.3, 0.35] },
+    over: { every: ['mul', 0.88, 0.5], w: ['add', 0.3, 5], T: ['add', 0.5, 6], dmg: ['add', 0.05] },
     horn: 0.5,
     up: (lv) => `${unitVal('flame', 'every', lv)}초마다 불 지대(폭 ${unitVal('flame', 'w', lv)}m, ${unitVal('flame', 'T', lv)}초 동안 초당 위력 ${pc(unitVal('flame', 'dmg', lv))}%)`,
     pair: (lv) => `뭉치의 돌격 나팔 동안 불 지대 폭 +${pc(UNITS.flame.horn * synergyOf(lv))}%`,
   },
 };
 export const UNIT_IDS = Object.keys(UNITS);
-/* 특수병 수치 lv[k]의 그 레벨 값(1..SP_LV_MAX) */
-export function unitVal(k, key, lv) { const t = UNITS[k].lv[key]; return t[Math.max(1, Math.min(SP_LV_MAX, lv | 0 || 1)) - 1]; }
+/* 특수병 수치 lv[k]의 그 레벨 값. Lv1..SP_LV_MAX는 표 그대로, 그 위(무한모드)는 over의 규칙으로 Lv3 값에서 이어 간다(소수 셋째 자리까지) */
+const r3 = (x) => Math.round(x * 1000) / 1000;
+export function unitVal(k, key, lv) {
+  const t = UNITS[k].lv[key];
+  const l = Math.max(1, Math.floor(lv) || 1);
+  if (l <= SP_LV_MAX) return t[l - 1];
+  const base = t[SP_LV_MAX - 1], n = l - SP_LV_MAX, o = UNITS[k].over && UNITS[k].over[key];
+  if (!o) return base;
+  if (o[0] === 'mul') return Math.round(Math.max(o[2] ?? 0, base * Math.pow(o[1], n)) * 100) / 100;
+  if (o[0] === 'add') return r3(Math.min(o[2] ?? Infinity, base + o[1] * n));
+  return r3(o[1] - (o[1] - base) * Math.pow(o[2], n));
+}
 /* 영웅 짝 특수병(나비 ↔ 저격수, 보리 ↔ 의무병)의 레벨에 따른 짝 효과 배수 [Lv1, Lv2, Lv3] — 나비의 저격수 위력 보너스, 보리의 응급처치·괜찮아 주사 */
 export const SYNERGY = [1, 1.25, 1.5];
-export const synergyOf = (lv) => SYNERGY[Math.max(1, Math.min(SP_LV_MAX, lv | 0 || 1)) - 1];
+/* Lv4부터(무한모드)는 레벨마다 +0.25, SYNERGY_MAX까지 */
+export const SYNERGY_MAX = 3;
+export const synergyOf = (lv) => { const l = Math.max(1, Math.floor(lv) || 1); return l <= SP_LV_MAX ? SYNERGY[l - 1] : Math.min(SYNERGY_MAX, SYNERGY[SP_LV_MAX - 1] + 0.25 * (l - SP_LV_MAX)); };
 
 /* 영웅: 한 판에 한 명 출격. 합류는 진행 조건으로 무료, 레벨(1~5)은 코인으로 올린다.
    스킬은 게이지가 차면 버튼(또는 자동)으로 쓴다. 수치는 Lv1→Lv5 선형 — num의 [Lv1, Lv5]를 시뮬레이션(core.js)과 소개 글이 함께 읽는다.
@@ -225,14 +246,16 @@ export const AMMO_IDS = Object.keys(AMMO);
 /* 그 별 수로 열린 탄종 */
 export const ammoOpen = (id, stars) => !!AMMO[id] && stars >= AMMO[id].stars;
 
-/* 탄 효과(무한모드 빌드 단계 해금 2단계 — 무한모드에서만): 탄종의 '좋은 점'만 떼어 낸 것. 보스 뒤 카드·탄종 상자로 얻고, 같은 효과를 또 얻으면 레벨 +1(Lv3까지).
-   Lv1·2·3 = 그 탄종 값의 FX_LV배(50·100·150%) [초안]. 대신 쪽(피해·사거리)은 없다 — 출격 때 고른 탄종(s.ammo)만 Lv2로 한 칸을 차지하고 대신 쪽을 그대로 진다.
+/* 탄 효과(무한모드 빌드 단계 해금 2단계 — 무한모드에서만): 탄종의 '좋은 점'만 떼어 낸 것. 보스 뒤 카드·탄종 상자로 얻고, 같은 효과를 또 얻으면 레벨 +1(상한 없음).
+   LvN = 그 탄종 값의 fxK(N) = 0.5·N배(Lv1·2·3 = 50·100·150% — FX_LV, 그 위로도 레벨마다 +50%p) [초안].
+   빙결만 Lv4부터 느려지는 몫이 1(멈춤)에 닿지 않게 남은 거리를 레벨마다 × FROST_OVER로 줄인다(Lv3 37.5% → Lv4 46.9% → Lv5 54.8% …). 대신 쪽(피해·사거리)은 없다 — 출격 때 고른 탄종(s.ammo)만 Lv2로 한 칸을 차지하고 대신 쪽을 그대로 진다.
    슬롯 FX_SLOTS칸(같은 효과는 한 칸). 수치는 AMMO에서 — 탄종 수치를 고치면 효과도 따라간다 */
 export const FX_LV = [0.5, 1, 1.5];
-export const FX_LV_MAX = 3;
+export const FX_LV_SOFT = FX_LV.length;   // 표(FX_LV)가 있는 끝 레벨 — 상한이 아니다(화면이 Lv3부터 칩을 금빛으로 칠할 때·빙결의 꺾이는 자리)
+export const FROST_OVER = 0.85;
 export const FX_SLOTS = 2;
 export const FX_BASE_LV = 2;   // 출격 탄종이 차지하는 레벨
-const fxK = (lv) => FX_LV[Math.max(1, Math.min(FX_LV_MAX, lv | 0 || 1)) - 1];
+export const fxK = (lv) => 0.5 * Math.max(1, Math.floor(lv) || 1);
 /* 그 레벨의 좋은 점: { pierce } | { splash, r } | { dmg }(화력 배수) | { slow, T } */
 export function fxVal(id, lv) {
   const A = AMMO[id];
@@ -240,7 +263,10 @@ export function fxVal(id, lv) {
   if (!A) return {};
   if (A.pierce) return { pierce: A.pierce * k };
   if (A.splash) return { splash: A.splash * k, r: A.r };
-  if (A.slow) return { slow: A.slow * k, T: A.T };
+  if (A.slow) {
+    const top = A.slow * fxK(FX_LV_SOFT);
+    return { slow: k <= fxK(FX_LV_SOFT) ? A.slow * k : 1 - (1 - top) * Math.pow(FROST_OVER, Math.max(1, Math.floor(lv)) - FX_LV_SOFT), T: A.T };
+  }
   return { dmg: 1 + (A.dmg - 1) * k };
 }
 /* 소개 글(카드·일시정지 판) — '뒤의 좀비 하나에 30%'처럼 수치에서. 반올림은 소수 넷째 자리에서 먼저 끊는다

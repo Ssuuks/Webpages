@@ -7,7 +7,7 @@
    3단계(유물 — 대왕 보스 뒤): --unl 3 [--relics all|compass,coil,…](열린 유물, 기본 all) [--hold heart,…](처음부터 가진 유물 — 유물마다 재 보기).
    --flame: 화염병 줄(4단계)을 연 판(특수병 카드·철창·금색 칸에 화염병이 나온다 — think는 화염병을 THINK.sp.flame으로 본다. '그 병과 우선' 고르기는 밸런스 때 더한다) */
 import * as C from '../assets/core.js';
-import { AMMO_IDS, FX_LV, RELICS, RELIC_IDS } from '../assets/roster.js';
+import { AMMO_IDS, fxK, RELICS, RELIC_IDS } from '../assets/roster.js';
 import { makeBot, rng } from '../tests/bots.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : process.argv[i + 1]; };
@@ -62,7 +62,7 @@ export const THINK = {
    - 무기: WEAPON[to]/WEAPON[from] − 1(한 구간만)
    - 특수병: w = sp[병과](레벨 올리기는 × SP_UP_WORTH), ((1 + w)^0.8 − 1) × (1 + H)
    - 탄종: ammo × (1 + H)
-   - 탄 효과(2단계): fx[탄종] × (FX_LV[to] − FX_LV[from]) × (1 + H) — 위협에 안 들어가 오래 남는다
+   - 탄 효과(2단계): fx[탄종] × (fxK(to) − fxK(from)) × (1 + H) — 위협에 안 들어가 오래 남는다
    - 시너지를 켜는 카드(특수병·탄 효과 — cardInfo의 combos): + combo × 켜지는 수 × (1 + H). 1단계 판의 카드에는 combos가 없다(점수 그대로)
    - 무기가 위협 식의 상한(core.THREAT_TIER = 3)을 넘는 몫(과부하 코일의 4단계)은 위협에 안 들어가 오래 남는다 → × (1 + H)
    - 유물(3단계): relic[id] × (1 + H) */
@@ -82,7 +82,7 @@ export function thinkScore(s, c, K = THINK) {
   }
   if (c.k === 'ammo') return K.ammo * (1 + K.H);
   if (c.k === 'fx') {
-    const lvK = (lv) => (lv > 0 ? FX_LV[lv - 1] : 0);
+    const lvK = (lv) => (lv > 0 ? fxK(lv) : 0);
     const v = ((K.fx || THINK.fx)[c.a] || 0) * (lvK(f.to) - lvK(f.from)) * (1 + K.H);
     return f.combos ? v + (K.combo ?? THINK.combo) * f.combos.length * (1 + K.H) : v;
   }
