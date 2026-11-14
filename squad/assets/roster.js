@@ -265,7 +265,7 @@ export function fxVal(id, lv) {
   if (A.splash) return { splash: A.splash * k, r: A.r };
   if (A.slow) {
     const top = A.slow * fxK(FX_LV_SOFT);
-    return { slow: k <= fxK(FX_LV_SOFT) ? A.slow * k : 1 - (1 - top) * Math.pow(FROST_OVER, Math.max(1, Math.floor(lv)) - FX_LV_SOFT), T: A.T };
+    return { slow: k <= fxK(FX_LV_SOFT) ? A.slow * k : Math.min(0.95, 1 - (1 - top) * Math.pow(FROST_OVER, Math.max(1, Math.floor(lv)) - FX_LV_SOFT)), T: A.T };   // 0.95에서 멈춘다(완전히 얼지 않게)
   }
   return { dmg: 1 + (A.dmg - 1) * k };
 }

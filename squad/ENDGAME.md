@@ -337,7 +337,7 @@ CI(`.github/workflows/squad-tests.yml`)가 같은 것을 돌린다. 기존 테�
 | 병력 | 9999 | 사실상 없음(9999억) | `core.nMax(s)` · `ENDLESS.maxN` — 구간을 만드는 동안은 `NCAP` |
 | 바닥선(`segFloor`) | 9999에서 멈춤 | 구간마다 ×1.6 그대로 | 뒤처진 분대의 위협 기준도 함께 큰다 |
 | 탄 효과 레벨 | Lv3 | 없음 — LvN = 탄종 값의 0.5·N배 | `roster.fxK` · `core.fxCan` |
-| 빙결 Lv4+ | — | 멈춤(100%)까지 남은 거리가 레벨마다 ×0.85(37.5 → 46.9 → 54.8 → 61.6%…) | `roster.FROST_OVER` |
+| 빙결 Lv4+ | — | 멈춤(100%)까지 남은 거리가 레벨마다 ×0.85(37.5 → 46.9 → 54.8 → 61.6%…), 95%에서 멈춘다 | `roster.FROST_OVER` |
 | 특수병 레벨 | Lv3(그 뒤는 병사로) | 없음 — Lv4부터 `UNITS[k].over` 규칙 | `core.spLvMax(s)` · `roster.unitVal` |
 | 영웅 짝 배수(`SYNERGY`) | ×1.5까지 | 레벨마다 +0.25, ×3까지 | `roster.synergyOf` |
 | 의무병 몫의 끝 | `SHARE_MAX` 0.9 | max(0.9, 의무병 몫) — Lv4+ 의무병은 0.95에 다가간다 | `core.lose` |
