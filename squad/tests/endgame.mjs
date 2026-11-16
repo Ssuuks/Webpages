@@ -2943,8 +2943,8 @@ test('펫 알: 꽝이 없다 — 새 펫 아니면 가진 펫의 조각, 알 다
   for (let lv = 1; lv < R.PET_MAX_LV; lv++) { const c = R.petCost(lv); assert.ok(c.coins > 0 && c.shards >= 1); if (lv > 1) assert.ok(c.coins > R.petCost(lv - 1).coins); }
   // 저장: 모르는 펫은 버리고 범위를 고친다, 백업에 그대로 실린다(필드 추가)
   const d = S.normalize({ pets: { own: { fox: { lv: 4, sh: 7 }, dragon: { lv: 2 } }, sel: 'dragon', eggs: 2.9, pity: 3, got: 1 } });
-  assert.deepEqual(d.pets, { own: { fox: { lv: 4, sh: 7 } }, sel: '', eggs: 2, pity: 3, got: 1 });
-  assert.deepEqual(S.normalize({}).pets, { own: {}, sel: '', eggs: 0, pity: 0, got: 0 });
+  assert.deepEqual(d.pets, { own: { fox: { lv: 4, sh: 7 } }, sel: '', eggs: 2, pity: 3, got: 1, slots: 1, team: [] });
+  assert.deepEqual(S.normalize({}).pets, { own: {}, sel: '', eggs: 0, pity: 0, got: 0, slots: 1, team: [] });
   assert.deepEqual(S.normalize(JSON.parse(JSON.stringify(d))).pets, d.pets);
 });
 
@@ -3558,6 +3558,7 @@ test('빌드 개편: 게이트 방패는 빨간 게이트 손실을 구간마다
   assert.equal(s.endless.bld.shieldLeft, 0);
   // 쓰러진 특수병
   const u = bldRun(45, 1);
+  u.squad.sp = [];
   u.endless.bld.down = [{ k: 'rocket', lv: 6 }];
   u.endless.offer = null; u.boss.dead = true; u.endless.wait = 0.001;
   C.step(u, { dir: 0 });
