@@ -3441,3 +3441,161 @@ test('캠페인 정예와 난이도(SIM 10): 기대 강화로 집중한 사람(s
   assert.equal(idleWins, 0, `가만히 서서 이긴 레벨 ${idleWins}/${idleGames}`);
 });
 const WIN_BAND = [0.55, 0.98];
+
+/* ---------- 빌드 개편(ENDGAME.md 16절 — opt.build === 2) ---------- */
+const BLD = { ...UP10, unl: 3, ammoOpen: R.AMMO_IDS, relicsOpen: R.RELIC_IDS.slice(), flame: true, build: 2 };
+/* 보스를 n마리 잡을 때까지(카드는 pick이 고른다 — 없으면 첫 장) 돌린다. 카드가 떠 있으면 멈춘다(stopAtOffer) */
+function bldRun(seed, bosses, opt = {}) {
+  const s = C.newEndless({ seed, ...BLD, ...(opt.co || {}) });
+  const pol = makeBot('strong', 1000 + seed, { skill: true });
+  s.squad.n = opt.n || 4000;   // 넉넉한 병력(규칙을 보는 판 — 죽지 않게)
+  let guard = 0;
+  while (s.phase !== 'lost' && guard++ < 400000) {
+    const of = C.offerOf(s);
+    if (of) { if (s.endless.bosses >= bosses && !opt.through) break; C.pickCard(s, opt.pick ? opt.pick(s, of) : 0); if (opt.after) opt.after(s); continue; }
+    if (s.endless.bosses >= bosses && opt.through) break;
+    C.step(s, pol(s));
+    if (opt.each) opt.each(s);
+  }
+  return s;
+}
+test('빌드 개편: 안 연 판에는 bld가 없고, 연 판의 카드에는 증원이 없다 — 무기 개조·특수병·탄 효과·영웅·생존(등급 1~3), 같은 시드는 같은 카드', () => {
+  assert.equal(C.newEndless({ seed: 5, ...UP10, unl: 3 }).endless.bld, undefined);
+  const a = bldRun(31, 1), b = bldRun(31, 1);
+  const of = C.offerOf(a);
+  assert.ok(of && of.length === 3, JSON.stringify(of));
+  assert.deepEqual(of, C.offerOf(b));
+  for (const c of of) {
+    assert.ok(['gun', 'unit', 'fx', 'hero', 'guard', 'spec'].includes(c.k), c.k);
+    if (c.k !== 'spec') assert.ok(c.n >= 1 && c.n <= 3, `등급 ${c.n}`);
+    assert.ok(C.cardInfo(a, c), '카드 글을 만들 값이 있다');
+  }
+  assert.equal(C.stateHash(a), C.stateHash(b));
+});
+test('빌드 개편: 다시 뽑기는 카드를 바꾸고 횟수를 쓴다 — 다 쓰면 못 뽑는다. 대왕을 잡으면 +1', () => {
+  const s = bldRun(31, 1);
+  const before = JSON.stringify(C.offerOf(s));
+  assert.equal(C.rerollsOf(s), R.BUILD.reroll);
+  assert.equal(C.rerollCards(s), true);
+  assert.notEqual(JSON.stringify(C.offerOf(s)), before);
+  assert.equal(C.rerollsOf(s), R.BUILD.reroll - 1);
+  assert.equal(C.rerollCards(s), false);
+  const k = bldRun(32, 6, { n: 9000 });
+  assert.ok(k.endless.bosses >= 6 && C.rerollsOf(k) >= 1, `대왕 뒤 다시 뽑기 ${C.rerollsOf(k)}`);
+});
+test('빌드 개편: 카드를 고르면 그만큼 오르고(무기 개조는 화력에), 다음 구간이 시작되며 자동 보급(+20%)을 받는다', () => {
+  const s = bldRun(40, 1);
+  const of = C.offerOf(s);
+  const i = Math.max(0, of.findIndex((c) => c.k === 'gun'));
+  const c = of[i], info = C.cardInfo(s, c), n0 = s.squad.n;
+  C.pickCard(s, i);
+  assert.equal(C.offerOf(s), null);
+  assert.equal(s.endless.seg, 2);
+  const sup = s.ev.find((e) => e.t === 'supply');
+  assert.ok(sup && sup.n === Math.round(n0 * R.BUILD.supply['']), JSON.stringify(sup));
+  if (c.k === 'gun') assert.equal(s.endless.bld.gun, info.to);
+  assert.ok(s.endless.picks.length === 1);
+});
+test('빌드 개편: 정예(3구간) 보스 뒤에는 유물을 먼저 고르고 이어서 카드를 고른다 — 유물은 5개까지', () => {
+  const s = bldRun(41, 3, { n: 6000 });
+  const of = C.offerOf(s);
+  assert.ok(of.every((c) => c.k === 'relic'), JSON.stringify(of));
+  C.pickCard(s, 0);
+  assert.equal(s.endless.relics.length, 1);
+  const of2 = C.offerOf(s);
+  assert.ok(of2 && of2.every((c) => c.k !== 'relic'), '유물 뒤에 카드');
+  assert.ok(of2.filter((c) => c.k !== 'spec').every((c) => c.n >= 2), '정예 뒤 카드는 희귀부터');
+  assert.equal(s.endless.seg, 3, '아직 다음 구간이 아니다');
+  C.pickCard(s, 0);
+  assert.equal(s.endless.seg, 4);
+  assert.equal(C.relicMax(s), R.BUILD.relicMax);
+});
+test('빌드 개편: 위험한 계약 — 카드를 더 고르고 다음 구간의 위협이 그만큼 세다', () => {
+  let got = null;
+  for (let seed = 50; seed < 90 && !got; seed++) {
+    const s = bldRun(seed, 2, { n: 5000 });
+    if (s.phase === 'lost') continue;
+    const i = C.offerOf(s).findIndex((c) => c.k === 'curse');
+    if (i >= 0) got = { s, i };
+  }
+  assert.ok(got, '계약 카드가 나오는 시드가 있다');
+  const { s, i } = got;
+  const plain = structuredClone(s);
+  C.pickCard(plain, C.offerOf(plain).findIndex((c) => c.k !== 'curse'));
+  C.pickCard(s, i);
+  let picks = 0;
+  while (C.offerOf(s)) { assert.ok(!C.offerOf(s).some((c) => c.k === 'curse')); C.pickCard(s, 0); picks++; }
+  assert.equal(picks, R.BUILD.curse.more);
+  assert.ok(Math.abs(s.refMul / plain.refMul - R.BUILD.curse.mul) < 1e-9, `${s.refMul} / ${plain.refMul}`);
+});
+test('빌드 개편: 저장·복원해도 같은 판이고, 깨진 빌드 상태는 고쳐 읽는다', () => {
+  const s = bldRun(31, 2);
+  const o = C.restore(C.snapshot(s));
+  assert.equal(C.stateHash(o), C.stateHash(s));
+  assert.deepEqual(C.offerOf(o), C.offerOf(s));
+  const bad = C.snapshot(s);
+  bad.endless.bld = { gun: -3, spec: { rocket: 'nope', sniper: 'multi' }, down: [{ k: 'x' }, { k: 'medic', lv: 4 }], rr: 'a', curse: 99 };
+  const fixed = C.restore(bad);
+  assert.equal(fixed.endless.bld.gun, 0);
+  assert.deepEqual(fixed.endless.bld.spec, { sniper: 'multi' });
+  assert.deepEqual(fixed.endless.bld.down, [{ k: 'medic', lv: 4 }]);
+  assert.equal(fixed.endless.bld.curse, 0);
+  assert.ok(C.offerOf(fixed), '카드는 다시 뜬다');
+});
+test('빌드 개편: 게이트 방패는 빨간 게이트 손실을 구간마다 그 횟수만큼 막고, 쓰러진 특수병은 보스를 잡으면 절반 레벨로 돌아온다', () => {
+  const s = bldRun(44, 1);
+  s.endless.bld.shield = 1; s.endless.bld.shieldLeft = 1;
+  const row = { id: 999999, z: s.squad.z + 0.01, cells: [{ x0: -6, x1: 6, op: 'div', v: 2, k: 0, acc: 0, step: 1, cap: 2, v0: 2 }], done: false };
+  C.pickCard(s, 0);
+  s.endless.bld.shieldLeft = 1;
+  row.z = s.squad.z + 0.5;
+  s.rows.unshift(row);
+  const n0 = s.squad.n;
+  let saw = false;
+  for (let t = 0; t < 30 && !saw; t++) { C.step(s, { dir: 0 }); saw = s.ev.some((e) => e.t === 'shield'); }
+  assert.ok(saw, '방패가 터졌다');
+  assert.ok(s.squad.n >= n0, `병력 ${n0} → ${s.squad.n}`);
+  assert.equal(s.endless.bld.shieldLeft, 0);
+  // 쓰러진 특수병
+  const u = bldRun(45, 1);
+  u.endless.bld.down = [{ k: 'rocket', lv: 6 }];
+  u.endless.offer = null; u.boss.dead = true; u.endless.wait = 0.001;
+  C.step(u, { dir: 0 });
+  const m = u.squad.sp.find((x) => x.k === 'rocket');
+  assert.ok(m && m.lv === 3, JSON.stringify(u.squad.sp));
+  assert.deepEqual(u.endless.bld.down, []);
+});
+test('빌드 개편: 깊이 보상 — 같은 레벨 수라도 한 가지에 몰면 값이 더 크다. 탄 효과는 Lv5에 진화한다', () => {
+  assert.ok(R.deep(6) > 2 * R.deep(3));
+  for (const a of R.AMMO_IDS) {
+    assert.equal(!!R.fx2Val(a, R.BUILD.evo - 1).evo, false);
+    assert.equal(R.fx2Val(a, R.BUILD.evo).evo, true);
+    assert.ok(R.fx2Text(a, R.BUILD.evo).includes(R.FX_EVO[a]));
+  }
+  assert.ok(R.fx2Val('rapid', 5).dmg > R.fx2Val('rapid', 4).dmg * 1.25);
+  assert.equal(R.fx2Val('pierce', 5).n, 99);
+});
+test('펫 여러 마리: 첫 마리는 예전 그대로(s.pet — 한 마리 판의 해시 그대로), 나머지는 s.pets — 효과가 모두 든다. 저장은 자리 수만큼만 출격 목록에', () => {
+  const lv = C.prepareLevel(12);
+  const one = C.newGame(lv, { pet: { id: 'fox', lv: 5 } });
+  const same = C.newGame(lv, { pets: [{ id: 'fox', lv: 5 }] });
+  assert.equal(same.pets, undefined);
+  const pol = makeBot('strong', 7);
+  for (let t = 0; t < 600; t++) { C.step(one, pol(one)); C.step(same, pol(same)); }
+  assert.equal(C.stateHash(one), C.stateHash(same));
+  const three = C.newGame(lv, { pets: [{ id: 'fox', lv: 10 }, { id: 'cat', lv: 10 }, { id: 'fox', lv: 3 }, { id: 'sprite', lv: 10 }, { id: 'newt', lv: 10 }] });
+  assert.deepEqual(C.petsOf(three).map((p) => p.id), ['fox', 'cat', 'sprite']);
+  const fx = new Set();
+  const p3 = makeBot('strong', 7);
+  for (let t = 0; t < 3000 && three.phase === 'run'; t++) { C.step(three, p3(three)); for (const e of three.ev) if (e.t === 'pet') fx.add(e.fx); }
+  assert.ok(fx.has('crit') && fx.has('wide'), [...fx].join(','));
+  const back = C.restore(C.snapshot(three));
+  assert.equal(C.stateHash(back), C.stateHash(three));
+  // 저장
+  const d = S.normalize({ pets: { own: { fox: { lv: 2 }, cat: { lv: 1 }, newt: { lv: 1 } }, sel: 'cat' } });
+  assert.deepEqual(d.pets.team, ['cat']);
+  assert.equal(d.pets.slots, 1);
+  const d2 = S.normalize({ pets: { own: { fox: { lv: 2 }, cat: { lv: 1 }, newt: { lv: 1 } }, team: ['newt', 'fox', 'cat', 'zzz'], slots: 2 } });
+  assert.deepEqual(d2.pets.team, ['newt', 'fox']);
+  assert.equal(d2.pets.sel, 'newt');
+});

@@ -330,6 +330,97 @@ export const RELICS = {
 export const RELIC_IDS = Object.keys(RELICS);
 for (const id of RELIC_IDS) Object.defineProperties(RELICS[id], { good: { get() { return this.text(); } }, bad: { get() { return this.cost(); } } });
 
+/* ---------- 무한모드 빌드 개편(ENDGAME.md 16절 — s.endless.bld가 있는 판에만) ----------
+   카드가 곱으로 쌓인다: 화력 = 병력 × 무기 개조 × 탄 효과 × 특수병. 증원은 카드가 아니라 보스마다 자동 보급(BUILD.supply).
+   수치는 모두 초안 — 봇으로 잰 값은 ENDGAME.md 16절 */
+export const BUILD = {
+  supply: { '': 0.2, hard: 0.2, super: 0.5 },   // 보스를 잡으면 자동 보급: 병력 +이만큼(대왕은 더)
+  deep: 0.35,           // 깊이 보상(deep())
+  gun: 0.03,            // 무기 개조: 총알 화력 +3% × 유효 레벨(위협 식에 안 들어간다)
+  w: { gun: 1, unit: 1, fx: 1, hero: 0.7, guard: 0.7 },   // 카드 종류가 나올 가중치
+  shieldMax: 3,
+  thr: { from: 4, step: 1.12 },   // 위협 곡선: from구간 뒤로 구간마다 ×step 더(카드가 곱으로 쌓이는 만큼)         // 게이트 방패 상한(구간마다 이 횟수까지)
+  evo: 5,               // 탄 효과가 진화하는 레벨
+  rare: [0.72, 0.23, 0.05],   // 카드 등급(일반·희귀·전설 = 한 번에 +1·+2·+3레벨) 확률
+  own: 3,               // 이미 가진 것(탄 효과·특수병)의 카드가 나올 가중치
+  reroll: 1,            // 판마다 다시 뽑기 횟수(대왕을 잡을 때마다 +1)
+  curse: { p: 0.18, mul: 1.25, more: 2, from: 2 },   // 위험한 계약: from번째 보스 뒤부터 p 확률로 한 장 — 다음 구간 위협 ×mul, 대신 카드 more장 더
+  relicMax: 5,          // 한 판 유물 수(예전 3)
+  relicFrom: 3,         // 이 구간부터 정예·대왕 보스 뒤에 유물(예전 6 — 대왕만)
+  pouch: 4,             // 넓은 탄낭의 슬롯(예전 3 — 증원 카드가 없어 대신 쪽도 없다)
+  // 특수병 위력(쉽게 쓰러지는 만큼 세게): dmg 배수 × (1 + lv·(레벨 − 1)). 의무병은 레벨마다 좀비·보스에게 잃는 병사 ÷(1 + med·레벨), 회복 +50%
+  sp: { sniper: { dmg: 3, lv: 0.35 }, rocket: { dmg: 1, lv: 0.03 }, flame: { dmg: 2, lv: 0.15 } },
+  med: 0.02,
+  spBoss: 0.06,         // 특수병 레벨 1당 보스전 추가 피해 한도(예전 0.02)
+  spBack: 0.5,          // 쓰러진 특수병은 다음 구간에 이 몫의 레벨로 돌아온다(내림, 최소 Lv1)
+  specAt: 3,            // 전문화를 고르는 레벨
+  hero: { chg: 0.5, dur: 0.25, pow: 0.045 },   // 영웅 카드 1레벨: 전투 함성 — 게이지 충전 +50% · 끈기 — 스킬 지속 +25%, 스킬이 켜진 동안 총알 화력 +4.5% × 유효 레벨
+  armor: 0.035,         // 방탄복 n레벨: 좀비·보스에게 잃는 병사 ÷(1 + 0.035 × 유효 레벨)
+};
+export const RARITY = ['', '일반', '희귀', '전설'];
+/* 깊이 보상: n레벨의 유효 레벨 = n × (1 + deep × (n − 1)) — 한 가지를 깊게 팔수록 한 레벨의 값이 커진다(얕게 고루 고르는 것보다 빌드를 정한 쪽이 세다) */
+export const deep = (n) => { const l = Math.max(0, n); return l * (1 + BUILD.deep * (l - 1)); };
+/* 탄 효과의 값(개편 판): 레벨마다 세지고 BUILD.evo에서 진화한다.
+   관통 — 뒤의 좀비 n마리에 share(Lv3부터 둘, 진화: 일직선 모두에 100%) · 작렬 — 둘레 r에 splash(진화: 반경 ×1.5)
+   속사 — 화력 ×dmg(진화: ×1.3 더) · 빙결 — T초 동안 slow 느리게 + 언 적이 받는 총알 피해 ×amp(진화: +30%p, 시간 2배) */
+export function fx2Val(id, lv) {
+  const A = AMMO[id];
+  const l = Math.max(1, Math.floor(lv) || 1);
+  const evo = l >= BUILD.evo;
+  if (!A) return {};
+  if (A.pierce) return { pierce: Math.min(1, 0.5 + 0.1 * l), n: evo ? 99 : l >= 3 ? 3 : 2, evo };
+  if (A.splash) return { splash: Math.round(100 * deep(l)) / 1000, r: Math.round((A.r + 0.15 * (l - 1)) * (evo ? 1.5 : 1) * 100) / 100, evo };
+  if (A.slow) return { slow: fxVal(id, l).slow, T: A.T * (evo ? 2 : 1), amp: Math.round((1 + 0.12 * deep(l) + (evo ? 0.3 : 0)) * 100) / 100, evo };
+  return { dmg: Math.round((1 + 0.07 * deep(l)) * (evo ? 1.3 : 1) * 1000) / 1000, evo };
+}
+export const FX_EVO = { pierce: '끝까지 관통', burst: '대폭발', rapid: '과열', frost: '깨지는 얼음' };
+export function fx2Text(id, lv) {
+  const v = fx2Val(id, lv);
+  const e = v.evo ? `진화 ‘${FX_EVO[id]}’ · ` : '';
+  return e + (v.pierce ? (v.n > 3 ? '일직선의 좀비 모두에 100%' : `뒤의 좀비 ${['', '하나', '둘', '셋'][v.n]}에 ${apc(v.pierce)}%`)
+    : v.splash ? `둘레 ${v.r}m에 ${apc(v.splash)}%`
+      : v.slow ? `${v.T}초 동안 ${apc(v.slow)}% 느리게 · 언 적 피해 +${apc(v.amp - 1)}%`
+        : `화력 +${apc(v.dmg - 1)}%`);
+}
+/* 특수병 전문화(개편 판 — Lv3이 되면 둘 중 하나, 판 끝까지). v: 수치(글이 읽는다) */
+export const SPECS = {
+  sniper: {
+    boss: { name: '거물 사냥', v: 5, cap: 0.5, text: () => `보스·정예·거구·독침 좀비에게 저격 위력 ×${SPECS.sniper.boss.v}, 보스전 추가 피해 한도 +${apc(SPECS.sniper.boss.cap)}%` },
+    multi: { name: '2연발', v: 2, text: () => `한 번에 ${SPECS.sniper.multi.v}발을 쏴요` },
+  },
+  rocket: {
+    big: { name: '대구경', v: 1.5, text: () => `폭발 반경·위력 ×${SPECS.rocket.big.v}` },
+    fast: { name: '연사', v: 0.5, text: () => `쏘는 간격 ×${SPECS.rocket.fast.v}` },
+  },
+  medic: {
+    guard: { name: '경호', text: () => '특수병이 맞아서 쓰러지지 않아요(호위 병사가 모자랄 때만 떠나요)' },
+    revive: { name: '소생', v: 2, text: () => `좀비에게 잃은 병사가 모두 돌아오고(게이트·짓밟기 제외) 회복이 ${SPECS.medic.revive.v}배 빨라요` },
+  },
+  flame: {
+    wide: { name: '불바다', v: 1.6, text: () => `불 지대 폭·길이 ×${SPECS.flame.wide.v}` },
+    hot: { name: '백열', v: 2.2, text: () => `불 지대 위력 ×${SPECS.flame.hot.v}` },
+  },
+};
+/* 영웅 카드 · 생존 카드(개편 판) */
+export const HERO_CARDS = {
+  chg: { name: '전투 함성', text: (n) => `영웅 게이지 충전 +${apc(BUILD.hero.chg * n)}%` },
+  dur: { name: '끈기', text: (n) => `영웅 스킬 지속 +${apc(BUILD.hero.dur * n)}%, 스킬이 켜진 동안 화력 +${apc(BUILD.hero.pow * deep(n))}%` },
+};
+export const GUARD_CARDS = {
+  shield: { name: '게이트 방패', text: (n) => `구간마다 ${n}번, 빨간 게이트로 잃는 병사를 막아요` },
+  armor: { name: '방탄복', text: (n) => `좀비·보스에게 잃는 병사 −${apc(1 - 1 / (1 + BUILD.armor * deep(n)))}%` },
+};
+/* 개편 판에 더해지는 시너지(COMBOS와 같은 모양 — 앞 단계 판은 COMBO_IDS 여섯만 본다) */
+Object.assign(COMBOS, {
+  rapidRocket: { need: ['rapid', 'rocket'], name: '속사 포격', v: 0.7, g2: true, text: () => `로켓 쏘는 간격 ×${COMBOS.rapidRocket.v}` },
+  rapidSniper: { need: ['rapid', 'sniper'], name: '속사 저격', v: 0.7, g2: true, text: () => `저격 간격 ×${COMBOS.rapidSniper.v}` },
+  burstFlame: { need: ['burst', 'flame'], name: '기름불', v: 2, g2: true, text: () => `불 지대가 ${COMBOS.burstFlame.v}초 더 타요` },
+  frostRocket: { need: ['frost', 'rocket'], name: '빙결 포격', v: 0.5, g2: true, text: () => `느려진 적에게 로켓 위력 +${apc(COMBOS.frostRocket.v)}%` },
+});
+export const COMBO_IDS2 = Object.keys(COMBOS);
+/* 펫 자리(여러 마리 출격): n번째 자리를 여는 코인 — 첫 자리는 처음부터 */
+export const PET_SLOTS = [0, 3000, 8000];
+
 /* 지역 */
 export const BIOMES = [
   { id: 'desert', name: '모래 고개', boss: { name: '우락이', kind: '모래 도깨비', title: '모래 고개의 골목대장', line: '내 방망이 맛 좀 볼래?' } },

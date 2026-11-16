@@ -4,7 +4,7 @@ import {
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, tierMax, spMax, spEscort, eggP, bannerOn, fxCan, flameOn,
-  nMax, fmtN, spLvMax,
+  nMax, fmtN, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg , AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, OBSTACLES } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SPECS, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -361,7 +361,7 @@ function renderTitle() {
   $('storeChip').textContent = storageMode() === 'full' ? '저장 공간이 가득 찼어요' : '저장 꺼짐 · 눌러서 확인';
   // 무한모드·펫: 엔딩 뒤(또는 시험용 주소 ?endless=1)에 열린다
   $('endRow').hidden = !endlessOpen();
-  $('tPet').textContent = data.pets.eggs > 0 ? `알 ${data.pets.eggs}개!` : data.pets.sel && PETS[data.pets.sel] ? PETS[data.pets.sel].name : '알에서 태어나요';
+  $('tPet').textContent = data.pets.eggs > 0 ? `알 ${data.pets.eggs}개!` : data.pets.team.length > 1 ? `${PETS[data.pets.team[0]].name} 외 ${data.pets.team.length - 1}` : data.pets.sel && PETS[data.pets.sel] ? PETS[data.pets.sel].name : '알에서 태어나요';
   $('btnPet').classList.toggle('glow', data.pets.eggs > 0);
   const eb = endlessBest();
   $('tEndless').textContent = eb.runs ? `최고 기록 · 보스 ${eb.best}` : '죽을 때까지 이어지는 한 판';
@@ -626,6 +626,21 @@ function petForRun() {
   if (!petOpen() || !id || !data.pets.own[id] || !PETS[id]) return null;
   return { id, lv: data.pets.own[id].lv };
 }
+/* 여러 마리 출격: 출격 목록(team — 첫 마리가 petForRun)의 펫들 */
+function petsForRun() {
+  if (!petOpen()) return [];
+  return data.pets.team.filter((id) => data.pets.own[id] && PETS[id]).slice(0, PET_TEAM_MAX).map((id) => ({ id, lv: data.pets.own[id].lv }));
+}
+/* 출격 목록에 넣거나 뺀다(자리가 차 있으면 false) */
+function togglePet(id) {
+  const P = data.pets;
+  const i = P.team.indexOf(id);
+  if (i >= 0) P.team.splice(i, 1);
+  else if (P.team.length < P.slots) P.team.push(id);
+  else return false;
+  P.sel = P.team[0] || '';
+  return true;
+}
 /* 탄종(ARSENAL.md 3절): 고른 탄종이 지금 모은 별로 열려 있으면 그 id, 아니면 ''(보통탄) */
 function ammoForRun() {
   const id = data.ammo && data.ammo.sel;
@@ -726,10 +741,30 @@ function renderPet() {
     }
     const sel = document.createElement('button');
     sel.className = 'btn primary';
-    const isSel = P.sel === id;
-    sel.textContent = isSel ? '두고 가기' : '이 펫과 출격';
-    sel.addEventListener('click', () => { P.sel = isSel ? '' : id; save(data); sfx.click(); renderPet(); renderTitle(); });
+    const isSel = P.team.includes(id);
+    const full = !isSel && P.team.length >= P.slots;
+    sel.textContent = isSel ? '두고 가기' : full ? `자리가 찼어요 (${P.team.length}/${P.slots})` : `이 펫과 출격 (${P.team.length}/${P.slots})`;
+    sel.disabled = full;
+    sel.addEventListener('click', () => { if (!togglePet(id)) { sfx.deny(); return; } save(data); sfx.click(); renderPet(); renderTitle(); });
     actions.appendChild(sel);
+    // 펫 자리: 코인으로 더 열면 여러 마리가 함께 출격한다(효과가 모두 든다)
+    if (P.slots < PET_SLOTS.length) {
+      const cost = PET_SLOTS[P.slots];
+      const slot = document.createElement('button');
+      slot.className = 'btn';
+      slot.innerHTML = `펫 자리 ${P.slots + 1}번째 열기 · <span class="coinchip">${cost.toLocaleString('ko')}</span>`;
+      slot.disabled = data.coins < cost;
+      slot.addEventListener('click', () => {
+        if (data.coins < cost) { sfx.deny(); return; }
+        data.coins -= cost;
+        P.slots++;
+        save(data);
+        sfx.buy();
+        renderPet();
+        renderTitle();
+      });
+      actions.appendChild(slot);
+    }
   }
   box.appendChild(actions);
   const list = $('petList');
@@ -743,7 +778,7 @@ function renderPet() {
     nm.textContent = o ? `${PETS[pid].name} Lv${o.lv}` : '???';
     b.appendChild(nm);
     const sm = document.createElement('small');
-    sm.textContent = o ? (P.sel === pid ? '출격 중' : PETS[pid].fxName) : PETS[pid].fxName;
+    sm.textContent = o ? (P.team.includes(pid) ? '출격 중' : PETS[pid].fxName) : PETS[pid].fxName;
     b.appendChild(sm);
     b.addEventListener('click', () => { sfx.click(); petView = pid; renderPet(); });
     list.appendChild(b);
@@ -772,8 +807,24 @@ function renderPet() {
     renderPet();
     renderTitle();
   });
+  // 알 여러 개 한꺼번에(코인이 남을 때): 5개 값 그대로
+  const buy5 = document.createElement('button');
+  buy5.className = 'btn';
+  buy5.innerHTML = `알 5개 · <span class="coinchip">${(EGG.price * 5).toLocaleString('ko')}</span>`;
+  buy5.disabled = data.coins < EGG.price * 5;
+  buy5.addEventListener('click', () => {
+    if (data.coins < EGG.price * 5) { sfx.deny(); return; }
+    data.coins -= EGG.price * 5;
+    P.eggs += 5;
+    save(data);
+    sfx.buy();
+    renderPet();
+    renderTitle();
+  });
+  buy5.style.cssText = 'width:100%;margin-top:8px';
   row.append(open, buy);
   egg.appendChild(row);
+  egg.appendChild(buy5);
   const odds = document.createElement('p');
   odds.className = 'muted';
   odds.textContent = missing
@@ -786,7 +837,7 @@ function hatchEgg() {
   if (P.eggs <= 0) { sfx.deny(); return; }
   P.eggs--;
   const r = openEgg(P);
-  if (r.fresh && !P.sel) P.sel = r.id;
+  if (r.fresh && P.team.length < P.slots) togglePet(r.id);
   save(data);
   petView = r.id;
   renderPet();
@@ -1266,7 +1317,7 @@ function prepareRun(L) {
   const ammo = ammoForRun();
   run = { id: Math.random().toString(36).slice(2, 10), L, cycle: runCycle, start: base + support, fire, support, hero, pet, ammo, worst: null, arenaN: 0 };
   par = parFor(lv, base, fire, hero, pet, ammo);   // 별 기준에는 펫의 기대 효과도 넣는다(펫 때문에 별이 쉬워지지 않게)
-  s = newGame(lv, { start: run.start, fire: run.fire, hero, pet, ammo });
+  s = newGame(lv, { start: run.start, fire: run.fire, hero, pets: petsForRun(), ammo });
   prevZ = s.squad.z;
   renderer.reset();
   const g = starGoals(par, lv);
@@ -1466,7 +1517,7 @@ function prepareEndless() {
   // 그 단계가 아닌 값은 newEndless가 버린다(1단계 판은 예전 그대로). 이어하기는 모두 스냅숏에서 온다
   const U = endlessUnlocksNow();
   const ammoList = AMMO_IDS.filter((id) => ammoOpen(id, totalStars(data)));
-  s = newEndless({ seed, start, fire: run.fire, hero, pet, ammo: run.ammo, unl: U.unl, ammoOpen: ammoList, flame: U.flame, relicsOpen: U.relics, ...(testUnl.hold ? { relics: testUnl.hold } : {}) });
+  s = newEndless({ seed, start, fire: run.fire, hero, pets: petsForRun(), build: 2, ammo: run.ammo, unl: U.unl, ammoOpen: ammoList, flame: U.flame, relicsOpen: U.relics, ...(testUnl.hold ? { relics: testUnl.hold } : {}) });
   lv = levelOfSeg();
   run.L = s.L;
   par = 0;
@@ -1573,11 +1624,15 @@ function finishEndless() {
    보스가 쓰러지고 연출이 끝나면 판이 멈추고(core: offer) 카드가 뜬다. 고르면 다음 구간이 이어진다(pickCard).
    카드는 엄지가 닿는 화면 아래쪽에 세로로. 보스가 쓰러질 때 대개 손가락으로 길을 잡고 있으므로 그 손가락이 카드를 고르지 않게:
    뜬 지 PICK_GRACE 안의 누름은 버리고, 카드 위에서 새로 눌러 같은 카드에서 뗐을 때만 고른다(누르고 있던 손가락은 캔버스에 붙잡혀 있다) */
+let lastCard = '';        // 방금 고른 카드의 알림 글(개편 판 — 보급 알림이 이어 붙인다)
 const PICK_GRACE = 500;   // ms
 const PICK_AUTO = 600;    // __squad.auto(봇)가 고르기까지 ms
 let pickAt = 0;           // 카드가 뜬 시각(performance.now)
 let pickArm = null;       // 카드 위에서 새로 누른 손가락 { id, i }
 let pickSel = -1;         // 키보드로 고른 카드(-1: 아직)
+/* 유물의 좋은 점·대신 쪽 글 — 개편 판에서 달라진 것(넓은 탄낭: 슬롯 BUILD.pouch, 증원 카드가 없어 대신 쪽도 없다) */
+const relicGood = (id) => (id === 'pouch' && bldOf(s) ? `탄 효과 슬롯 ${FX_SLOTS} → ${BUILD.pouch}` : RELICS[id].text());
+const relicBad = (id) => (id === 'pouch' && bldOf(s) ? '' : RELICS[id].cost());
 const tierName = (t) => (t > 0 ? `${t}단계` : '기본');
 const ammoName = (a) => (a && AMMO[a] ? AMMO[a].name : '보통탄');
 /* 탄 효과 이름(무한모드 2단계): 탄종 이름에서 '탄'을 뺀 것 — '관통'·'작렬'·'속사'·'빙결' */
@@ -1585,18 +1640,37 @@ const fxName = (a) => (AMMO[a] ? AMMO[a].name.replace(/탄$/, '') : '탄');
 /* 시너지 이름들: '연쇄 폭발 · 꿰뚫는 저격' */
 const comboNames = (ids) => (ids || []).filter((id) => COMBOS[id]).map((id) => COMBOS[id].name).join(' · ');
 /* 카드 한 장의 글(cardInfo → 화면): kind 종류, lead·from·to 바뀌는 값(숫자로), det 풀이, col 강조 색, icon */
+const fxT = (a, lv) => (bldOf(s) ? fx2Text(a, lv) : fxText(a, lv));
+const pct = (x) => Math.round(x * 100);
+/* 개편 판 특수병의 위력 글(그 레벨): 저격·로켓·불 지대 위력 배수, 의무병은 덜 잃는 몫 */
+function spPowText(u, lv) {
+  const P = BUILD.sp[u];
+  if (P) return ` · 위력 ×${(P.dmg * (1 + P.lv * deep(lv - 1))).toFixed(1)}`;
+  return u === 'medic' ? ` · 좀비·보스에게 잃는 병사 −${pct(1 - 1 / (1 + BUILD.med * deep(lv)))}%, 회복 +${50 * lv}%` : '';
+}
 function cardText(c) {
+  if (c.k === 'gun' && c.g2) return { kind: '무기 개조', lead: '무기 개조', from: `Lv${c.from}`, to: `Lv${c.to}`, det: `총알 화력 +${pct(BUILD.gun * deep(c.from))}% → +${pct(BUILD.gun * deep(c.to))}% · 깊게 팔수록 한 레벨이 세져요`, col: '#FFC93C', icon: 'gun', n: c.n };
+  if (c.k === 'spec') { const U = UNITS[c.u], S = SPECS[c.u][c.b]; return { kind: '전문화', lead: U.name, from: '', to: S.name, det: `${S.text()} · 이 판 끝까지`, col: U.color, icon: c.u }; }
+  if (c.k === 'hero') { const H = HERO_CARDS[c.h]; return { kind: '영웅', lead: H.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: H.text(c.to), col: s && s.hero && HEROES[s.hero.id] ? HEROES[s.hero.id].color : '#FF9F43', icon: 'star', n: c.n }; }
+  if (c.k === 'guard') { const G = GUARD_CARDS[c.g]; return { kind: '생존', lead: G.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: G.text(c.to), col: '#7BE0A0', icon: 'medic', n: c.n }; }
+  if (c.k === 'curse') return { kind: '위험한 계약', lead: '', from: '', to: `카드 ${c.more}장 더`, det: `지금 카드를 ${c.more}장 더 골라요`, cost: `다음 구간 위협 ×${c.mul}`, col: '#FF5E7A', icon: 'star', curse: true };
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
   if (c.k === 'gun') return { kind: '무기', lead: '무기', from: c.from ? `${c.from}` : '기본', to: tierName(c.to), det: `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 ${tierMax(s)}단계`, col: '#FFC93C', icon: 'gun' };
   if (c.k === 'relic') {
     // 유물(3·5단계 — 대왕 보스 뒤): 이름, 좋은 점, '대신' 줄(대신 쪽이 있는 유물만 — 나침반·휘장은 없다). 글·수치는 roster.js RELICS
     const Rl = RELICS[c.r];
-    return { kind: '유물', lead: '', from: '', to: Rl.name, det: Rl.text(), cost: Rl.cost(), col: RELIC_COL, icon: 'relic_' + c.r, relic: true };
+    return { kind: '유물', lead: '', from: '', to: Rl.name, det: relicGood(c.r), cost: relicBad(c.r), col: RELIC_COL, icon: 'relic_' + c.r, relic: true };
   }
   if (c.k === 'unit') {
     const U = UNITS[c.u];
     // 짝 영웅과 함께 출격했으면 그 짝 효과도(화염병 + 뭉치 — 화염병 카드는 화염병 줄을 연 무한모드 판에만 나온다)
     const pair = U.pair && s && s.hero && HEROES[s.hero.id] && HEROES[s.hero.id].match === c.u ? ` · ${U.pair(c.to || 1)}` : '';
+    if (c.n) {
+      // 개편 판: 등급만큼 한 번에 오른다(합류도 Lv n으로). 위력 배수·전문화 안내
+      const hint = c.to < BUILD.specAt ? ` · Lv${BUILD.specAt}에 전문화` : '';
+      return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}${spPowText(c.u, c.to)}${pair}${hint}`, col: U.color, icon: c.u, n: c.n }
+        : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${U.desc}${spPowText(c.u, c.to)}${pair}${hint}`, col: U.color, icon: c.u, n: c.n };
+    }
     return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}${pair}`, col: U.color, icon: c.u }
       : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류`, det: U.desc + pair, col: U.color, icon: c.u };
   }
@@ -1604,16 +1678,22 @@ function cardText(c) {
     // 탄 효과(2단계): 가진 효과면 '관통 효과 Lv1 → Lv2', 새것이면 '새 효과: 작렬'(빈 칸 수와 함께) — 풀이는 그 레벨의 값(fxText).
     // 출격 탄종이 오르면 좋은 점만 세지고 대신 쪽(피해·사거리)은 그대로다
     const nm = fxName(c.a), col = AMMO[c.a] ? AMMO[c.a].color : '#fff';
-    if (c.from) return { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${fxText(c.a, c.to)}${s && s.ammo === c.a ? ' · 대신 쪽은 그대로' : ''}`, col, icon: 'fx_' + c.a };
+    const evo = c.n && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 진화` : '';
+    if (c.from) return { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${fxT(c.a, c.to)}${s && s.ammo === c.a ? ' · 대신 쪽은 그대로' : ''}${evo}`, col, icon: 'fx_' + c.a, n: c.n };
     const fx = fxOf(s) || {};
     const used = AMMO_IDS.filter((a) => fx[a]).length;
-    return { kind: '탄 효과', lead: '새 효과:', from: '', to: nm, det: `Lv1: ${fxText(c.a, 1)} · 칸 ${used + 1}/${fxSlots(s)}`, col, icon: 'fx_' + c.a };
+    return { kind: '탄 효과', lead: '새 효과:', from: '', to: c.to > 1 ? `${nm} Lv${c.to}` : nm, det: `Lv${c.to}: ${fxT(c.a, c.to)} · 칸 ${used + 1}/${fxSlots(s)}${evo}`, col, icon: 'fx_' + c.a, n: c.n };
   }
   const A = ammoText(c.to);
   return { kind: '탄종 바꾸기', lead: '', from: ammoName(c.from), to: ammoName(c.to), det: A.bad ? `${A.good} · 대신 ${A.bad}` : A.good, col: AMMO[c.to] ? AMMO[c.to].color : '#fff', icon: '' };
 }
 /* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
 function cardDone(c) {
+  if (c.k === 'gun' && c.g2) return `무기 개조 Lv${c.to}`;
+  if (c.k === 'spec') return `${UNITS[c.u].name} 전문화 ‘${SPECS[c.u][c.b].name}’`;
+  if (c.k === 'hero') return `${HERO_CARDS[c.h].name} Lv${c.to}`;
+  if (c.k === 'guard') return `${GUARD_CARDS[c.g].name} Lv${c.to}`;
+  if (c.k === 'curse') return `위험한 계약 — 카드 ${c.more}장 더`;
   if (c.k === 'men') return `병력 +${fmtN(c.to - c.from)}`;
   if (c.k === 'gun') return `무기 ${tierName(c.to)}`;
   if (c.k === 'unit') { const nm = UNITS[c.u] ? UNITS[c.u].name : '특수병'; return c.from ? `${nm} Lv${c.to}` : `${nm} 합류`; }
@@ -1639,10 +1719,13 @@ const nb = (t) => t.replace(/ /g, '\u00a0');
 function pickSummary(picks) {
   const n = new Map();
   for (const p of picks) n.set(p, (n.get(p) | 0) + 1);
-  const name = (p) => (p === 'men' ? '증원' : p === 'gun' ? '무기' : p.startsWith('unit:') ? (UNITS[p.slice(5)] || { name: '특수병' }).name
+  const part = (p, i) => p.split(':')[i];
+  const name = (p) => (p.startsWith('spec:') ? `${(UNITS[part(p, 1)] || { name: '특수병' }).name} ${((SPECS[part(p, 1)] || {})[part(p, 2)] || { name: '전문화' }).name}`
+    : p.startsWith('hero:') ? (HERO_CARDS[part(p, 1)] || { name: '영웅' }).name : p.startsWith('guard:') ? (GUARD_CARDS[part(p, 1)] || { name: '생존' }).name
+      : p === 'curse' ? '위험한 계약' : p === 'men' ? '증원' : p === 'gun' ? (s && bldOf(s) ? '무기 개조' : '무기') : p.startsWith('unit:') ? (UNITS[p.slice(5)] || { name: '특수병' }).name
     : p.startsWith('fx:') ? `${fxName(p.slice(3))} 효과` : ammoName(p.slice(5)));
   // 종류 순서: 1단계(…·탄종)와 2단계(…·탄 효과)를 합친 카드 순서 — 'fx:관통'처럼 고른 효과는 같은 효과끼리 '2번'으로 묶인다
-  const order = [...new Set([...CARD.kinds, ...(CARD.kinds2 || [])])];
+  const order = [...new Set([...CARD.kinds, ...(CARD.kinds2 || []), 'spec', 'hero', 'guard', 'curse'])];
   const rank = (p) => order.indexOf(p.split(':')[0]);
   return [...n.keys()].sort((a, b) => rank(a) - rank(b)).map((p) => nb(n.get(p) > 1 ? `${name(p)} ${n.get(p)}번` : name(p))).join(' · ');
 }
@@ -1653,15 +1736,22 @@ function renderPick() {
   // 유물 고르기(3·5단계 — 대왕 보스 뒤, core가 카드 대신 유물만 낸다): 화면 전체가 보라·금빛(index.html #scrPick.relic), 머리글은 '유물', 몇 번째 유물인지
   const relic = offer.length > 0 && offer.every((c) => c.k === 'relic');
   $('scrPick').classList.toggle('relic', relic);
-  $('pickTitle').textContent = relic ? '대왕 격파! 유물 하나를 골라요' : '보스 격파! 카드 하나를 골라요';
-  $('pickSub').textContent = relic ? `유물은 이 판 끝까지 규칙을 바꿔요 · 가진\u00a0유물\u00a0${(relicsOf(s) || []).length}/${RELIC.max}` : '다음 구간이 시작되기 전에 하나를 골라요';
+  const B = bldOf(s);
+  const king = segInfo(s.endless.seg).tag === 'super';
+  $('pickTitle').textContent = relic ? `${king ? '대왕' : '정예'} 격파! 유물 하나를 골라요` : B && B.pi > 0 ? '한 장 더! 카드를 골라요' : '보스 격파! 카드 하나를 골라요';
+  $('pickSub').textContent = relic ? `유물은 이 판 끝까지 규칙을 바꿔요 · 가진\u00a0유물\u00a0${(relicsOf(s) || []).length}/${relicMax(s)}${B ? ' · 이어서 카드도 골라요' : ''}`
+    : B && B.more > 0 ? `이 뒤로 ${B.more}장 더 골라요` : '다음 구간이 시작되기 전에 하나를 골라요';
+  // 다시 뽑기(개편 판): 남은 횟수가 있을 때만
+  const rr = $('pickReroll');
+  rr.hidden = !(B && rerollsOf(s) > 0);
+  if (!rr.hidden) rr.textContent = `다시 뽑기 (${rerollsOf(s)}번 남음)${FINE ? ' · R' : ''}`;
   list.setAttribute('aria-label', relic ? '유물 카드' : '보상 카드');
   offer.forEach((c, i) => {
     const info = cardInfo(s, c);
     if (!info) return;
     const T = cardText(info);
     const b = document.createElement('button');
-    b.className = 'pick-card' + (T.relic ? ' relic' : '');
+    b.className = 'pick-card' + (T.relic ? ' relic' : '') + (T.n === 2 ? ' rare' : T.n >= 3 ? ' legend' : '') + (T.curse ? ' curse' : '');
     b.dataset.i = i;
     b.style.setProperty('--acc', T.col);
     b.style.animationDelay = `${i * 70}ms`;
@@ -1673,6 +1763,8 @@ function renderPick() {
     const kind = document.createElement('span');
     kind.className = 'pick-kind';
     kind.textContent = T.kind;
+    // 등급(개편 판 — 희귀·전설): 한 번에 오르는 레벨 수
+    if (T.n >= 2) { const rk = document.createElement('span'); rk.className = 'pick-rank'; rk.textContent = `${RARITY[Math.min(3, T.n)]} +${T.n}`; kind.appendChild(rk); }
     const chg = document.createElement('span');
     chg.className = 'pick-chg';
     if (T.lead) chg.append(T.lead + ' ');
@@ -1735,6 +1827,7 @@ function markPickSel() {
 /* 글쇠: 1·2·3 바로 고르기, ←/→(↑/↓) 옮기고 Enter·Space로 고르기, Esc는 일시정지. 누르고 있던 글쇠(반복)와 뜬 직후는 무시 */
 function pickKey(e) {
   if (e.key === 'Escape' || e.code === 'KeyP') { pause(); return; }
+  if (e.code === 'KeyR' && !e.repeat) { e.preventDefault(); rerollPick(); return; }
   const cards = $('pickList').children;
   const n = cards.length;
   const d = /^(?:Digit|Numpad)([1-9])$/.exec(e.code || '');
@@ -1754,6 +1847,17 @@ function pickKey(e) {
     if (i >= 0) choosePick(i);
     else { pickSel = 0; markPickSel(); }   // 아무것도 안 골랐으면 첫 카드에 불만 켠다(Space 연타로 바로 고르지 않게)
   }
+}
+/* 다시 뽑기(개편 판): 떠 있는 카드를 다른 것으로 — 뜬 직후의 누름은 버린다(카드와 같은 규칙) */
+function rerollPick() {
+  if (mode !== 'pick' || !s || !offerOf(s) || performance.now() - pickAt < PICK_GRACE) return;
+  if (!rerollCards(s)) { sfx.deny(); return; }
+  sfx.click();
+  pickArm = null;
+  pickSel = -1;
+  pickAt = performance.now() - PICK_GRACE + 150;   // 새 카드가 같은 손가락에 바로 눌리지 않게 잠깐
+  renderPick();
+  saveRunNow();
 }
 /* 카드 i를 고른다: 다음 구간을 잇고 효과를 준다 → 이벤트(구간 시작·증원·특수병·카드)는 평소대로 알림·소리 */
 function choosePick(i) {
@@ -1889,7 +1993,8 @@ function renderPauseUnits() {
   // 무한모드 2단계: 가진 탄 효과(지금 값)와 켜진 시너지 — 같은 목록에(특수병과 함께 '지금 내 부대'를 한눈에). 3단계: 유물(좋은 점 · 대신 쪽)
   const fx = fxOf(s);
   const rl = relicsOf(s);
-  if (!fx && !rl) return;
+  const Bd = bldOf(s);
+  if (!fx && !rl && !Bd) return;
   const addRow = (icon, name, text) => {
     const row = document.createElement('div');
     row.appendChild(iconEl(icon, 2));
@@ -1903,14 +2008,23 @@ function renderPauseUnits() {
   if (fx) for (const a of AMMO_IDS) {
     const lv = fx[a] | 0;
     if (!lv) continue;
-    addRow('fx_' + a, `${fxName(a)} 효과 Lv${lv}`, `${fxText(a, lv)}${s.ammo === a ? ' · 출격 탄종(대신 쪽 그대로)' : ''} · 또 얻으면 Lv${lv + 1}`);
+    addRow('fx_' + a, `${fxName(a)} 효과 Lv${lv}`, `${fxT(a, lv)}${s.ammo === a ? ' · 출격 탄종(대신 쪽 그대로)' : ''} · 또 얻으면 Lv${lv + 1}`);
+  }
+  // 빌드 개편: 무기 개조·영웅·생존 카드·전문화
+  if (Bd) {
+    if (Bd.gun) addRow('gun', `무기 개조 Lv${Bd.gun}`, `총알 화력 +${pct(BUILD.gun * deep(Bd.gun))}%`);
+    for (const k of Object.keys(HERO_CARDS)) if (Bd[k]) addRow('star', `${HERO_CARDS[k].name} Lv${Bd[k]}`, HERO_CARDS[k].text(Bd[k]));
+    for (const k of Object.keys(GUARD_CARDS)) if (Bd[k]) addRow('medic', `${GUARD_CARDS[k].name} Lv${Bd[k]}`, GUARD_CARDS[k].text(Bd[k]) + (k === 'shield' ? ` · 이번 구간 ${Bd.shieldLeft}번 남음` : ''));
+    for (const k of Object.keys(Bd.spec)) if (SPECS[k] && SPECS[k][Bd.spec[k]]) addRow(k, `${UNITS[k].name} 전문화 ${SPECS[k][Bd.spec[k]].name}`, SPECS[k][Bd.spec[k]].text());
+    for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * BUILD.spBack))}로 돌아와요`);
+    addRow('star', '다시 뽑기', `${Bd.rr}번 남음 · 대왕을 잡으면 +1`);
   }
   if (fx) for (const id of combosOn(s)) addRow('star', `시너지 ${COMBOS[id].name}`, COMBOS[id].text());
   if (rl) for (const id of rl) {
     const Rl = RELICS[id];
     if (!Rl) continue;
     const used = (s.endless.spent || []).includes(id);
-    addRow('relic_' + id, `유물 ${Rl.name}${used ? '(썼어요)' : id === 'banner' && bannerOn(s) ? '(켜짐)' : ''}`, `${Rl.text()}${Rl.cost() ? ` · 대신 ${Rl.cost()}` : ''}`);
+    addRow('relic_' + id, `유물 ${Rl.name}${used ? '(썼어요)' : id === 'banner' && bannerOn(s) ? '(켜짐)' : ''}`, `${relicGood(id)}${relicBad(id) ? ` · 대신 ${relicBad(id)}` : ''}`);
   }
   box.hidden = !box.childNodes.length;
 }
@@ -2254,7 +2368,16 @@ function handleEvents(ev) {
         updateMusic();
         break;
       }
-      case 'offer': openPick(); break;   // 무한모드 보스 뒤 3택 1: 판이 멈췄다 — 고를 때까지
+      case 'offer': openPick(); break;
+      case 'supply':
+        // 개편 판: 보스를 잡으면 자동 보급(증원 카드 대신) — 고른 카드와 다음 구간을 한 줄로
+        toast(`${lastCard ? lastCard + ' · ' : ''}보급 +${fmtN(e.n)}명 · ${segToast(s.endless.seg)}`, 2800);
+        lastCard = '';
+        break;
+      case 'shield':
+        sfx.power(1); vibe(20);
+        toast(`게이트 방패가 막았어요! 병사 ${fmtN(e.n)}명을 지켰어요${e.left ? ` · 이번 구간 ${e.left}번 남음` : ''}`, 2000);
+        break;   // 무한모드 보스 뒤 3택 1: 판이 멈췄다 — 고를 때까지
       case 'relic':
         // 유물을 얻었다(대왕 보스 뒤 — 알림은 같은 틱의 'card'가). 처음 한 번: 유물이 무엇이고 어디서 보는지
         tip('relic', '유물은 이 판 끝까지 규칙을 바꿔요. 위쪽 보라 칩에 보이고, 일시정지에서 풀이를 볼 수 있어요');
@@ -2277,7 +2400,8 @@ function handleEvents(ev) {
         else if (e.k !== 'unit') { sfx.levelUp(); vibe(20); }
         if (music) music.boost(4);
         const cb = combos || e.combos;
-        toast(`${cardDone(e)}${cb && cb.length ? ` · 시너지 ${comboNames(cb)}!` : ''} · ${segToast(s.endless.seg)}`, 2600);
+        lastCard = `${cardDone(e)}${cb && cb.length ? ` · 시너지 ${comboNames(cb)}!` : ''}`;
+        toast(bldOf(s) ? lastCard : `${lastCard} · ${segToast(s.endless.seg)}`, 2600);
         combosShown = true;
         break;
       }
@@ -2528,7 +2652,8 @@ function updateSpChips() {
   // 레벨에 상한이 없어(무한모드) 자릿수로 쌓지 않고 굴리는 해시로 — 값 하나가 바뀌면 열쇠가 바뀐다
   const tier = s ? s.squad.tier | 0 : 0;
   const ammoChip = s && !fx && AMMO[s.ammo] ? s.ammo : '';   // 탄 효과가 없는 판(캠페인·무한모드 1단계)의 출격 탄종
-  let key = 1 + tier;
+  const gmod = s && bldOf(s) ? bldOf(s).gun | 0 : 0;   // 무기 개조(개편 판)
+  let key = 1 + tier + 31 * gmod;
   const mix = (v) => { key = (key * 131 + v + 7) % 2147483647; };
   for (const m of sp) { mix(UNIT_IDS.indexOf(m.k) + 1); mix(m.lv || 1); }
   mix(-1);
@@ -2549,6 +2674,17 @@ function updateSpChips() {
     chip.append('무기');
     const b = document.createElement('b');
     b.textContent = tier + '단계';
+    chip.appendChild(b);
+    box.appendChild(chip);
+  }
+  if (gmod > 0) {
+    const chip = document.createElement('span');
+    chip.className = 'sp-chip fx-chip gun-chip' + (gmod >= BUILD.evo ? ' lv3' : '');
+    chip.style.setProperty('--acc', '#FFC93C');
+    chip.appendChild(iconEl('gun', 2));
+    chip.append('개조');
+    const b = document.createElement('b');
+    b.textContent = 'Lv' + gmod;
     chip.appendChild(b);
     box.appendChild(chip);
   }
@@ -2795,6 +2931,7 @@ on('btnPlay', () => tryStart(curProg().cur));
 on('cycPrev', () => { sfx.click(); levelsCycle--; renderLevels(); });
 on('cycNext', () => { sfx.click(); levelsCycle++; renderLevels(); });
 on('btnEndless', () => tryEndless());
+on('pickReroll', () => rerollPick());
 on('btnPet', () => { sfx.click(); mode = 'pet'; petView = data.pets.sel; renderPet(); show('scrPet'); armHistory(); });
 on('endNext', () => { sfx.click(); mode = 'title'; startCycle(endingCycle + 1); });
 on('endEndless', () => { sfx.click(); mode = 'title'; goTitle(); tryEndless(); });

@@ -2938,12 +2938,12 @@ export function createRenderer(cvs) {
     if (m.k === 'sniper' && typeof m.cd === 'number' && m.cd < 0.18 && m.cd > 0 && (f60 & 2)) atlas.draw(ctx, 'glint', 0, P.x + 6, py - 14);
   }
   /* 펫: 영웅 뒤 오른쪽을 따라다닌다(영웅이 없으면 그 자리). 효과가 터지면(core 'pet' 이벤트) 통 튀며 반짝인다 */
-  function drawPet(s, pet, qx, R) {
+  function drawPet(s, pet, qx, R, i = 0) {
     const art = PET_ART[pet.id];
     if (!art || !atlas.has(art.back)) return;
     const q = sq;
-    const z = heroZ(q, R) - 0.55;
-    const x = qx + (s.hero ? 0.95 : 0);
+    const z = heroZ(q, R) - 0.55 - 0.3 * i;   // 여러 마리(i번째)는 한 줄로 조금씩 뒤·옆에
+    const x = qx + (s.hero ? 0.95 : 0) + 0.7 * i;
     if (!project(view, x, 0, z)) return;
     const moving = q.vz > 0.5 && s.phase !== 'won' && s.phase !== 'lost';
     const fr = moving ? ((time * 8) | 0) & 1 : 0;
@@ -3965,7 +3965,7 @@ export function createRenderer(cvs) {
     const sp = sq.sp;
     if (q.n > 0) for (let i = 0; i < sp.length; i++) push(slotPos(sq, i, R, qx).z, 7, sp[i], i);
     if (s.hero && (q.n > 0 || s.phase === 'lost')) push(heroZ(sq, R), 8, s.hero);
-    if (s.pet && (q.n > 0 || s.phase === 'lost')) push(heroZ(sq, R) - 0.55, 13, s.pet);
+    if (s.pet && (q.n > 0 || s.phase === 'lost')) { push(heroZ(sq, R) - 0.55, 13, s.pet, 0); if (s.pets) for (let i = 0; i < s.pets.length; i++) push(heroZ(sq, R) - 0.55 - 0.3 * (i + 1), 13, s.pets[i], i + 1); }
     const nOrd = sortItems();
     // 길가 소품은 먼저(가까운 나무가 게이트 숫자를 가리지 않게)
     for (let j = 0; j < nOrd; j++) { const it = items[sortKeys[j] & 1023]; if (it.k === 10) drawScenery(it.o, it.i, it.x, it.z); }
@@ -3987,7 +3987,7 @@ export function createRenderer(cvs) {
         case 12: drawMember(s, it.o, qx, true); break;
         case 7: drawSpecial(s, it.o, it.i, qx, R); break;
         case 8: drawHero(s, it.o, qx, R); break;
-        case 13: drawPet(s, it.o, qx, R); break;
+        case 13: drawPet(s, it.o, qx, R, it.i | 0); break;
         case 9: drawFlag(s, it.i, qx, R, it.z); break;
         case 11: if (s.phase !== 'won' && s.phase !== 'lost') drawBullets(s, alpha, true); break;
         default:
