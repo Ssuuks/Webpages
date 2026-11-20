@@ -124,6 +124,18 @@ export function makePicker(name, seed = 1, opt = {}) {
     const order = name.slice(5).split('>');
     return (s, of) => { for (const k of order) { const i = of.findIndex((c) => c.k === k); if (i >= 0) return i; } return 0; };
   }
+  // 빌드 개편 판(--build): 'b:fx:rapid>gun' — 적힌 순서로 먼저 맞는 카드(이름의 앞부분: gun · unit:rocket · fx:rapid · spec:rocket:big · hero · guard:armor · relic:heart · curse),
+  // 같은 것이 여럿이면 등급 높은 것. 맞는 카드가 없으면 다시 뽑기(남았으면) 한 번, 그래도 없으면 계약이 아닌 첫 장
+  if (name.startsWith('b:')) {
+    const order = name.slice(2).split('>');
+    const key = (c) => (c.k === 'unit' ? 'unit:' + c.u : c.k === 'fx' ? 'fx:' + c.a : c.k === 'spec' ? 'spec:' + c.u + ':' + c.b : c.k === 'hero' ? 'hero:' + c.h : c.k === 'guard' ? 'guard:' + c.g : c.k === 'relic' ? 'relic:' + c.r : c.k);
+    const find = (of) => { for (const t of order) { let bi = -1, bn = 0; of.forEach((c, i) => { if (key(c).startsWith(t) && (c.n || 1) > bn) { bn = c.n || 1; bi = i; } }); if (bi >= 0) return bi; } return -1; };
+    return (s, of) => {
+      let i = find(of);
+      if (i < 0 && of[0].k !== 'relic' && C.rerollCards(s)) { of = C.offerOf(s); i = find(of); }
+      return i >= 0 ? i : Math.max(0, of.findIndex((c) => c.k !== 'curse'));
+    };
+  }
   throw new Error(`모르는 카드 고르기: ${name}`);
 }
 
@@ -139,6 +151,7 @@ export function cardRun(i, bot, picker, co, maxSeg = 30) {
 export function pickHist(picks) {
   const h = {};
   for (const k of C.CARD.kinds) h[k] = 0;
+  if (picks.some((p) => /^(spec|hero|guard|curse)/.test(p))) { delete h.men; delete h.ammo; }
   for (const p of picks) { const k = p.split(':')[0]; h[k] = (h[k] | 0) + 1; }
   return h;
 }
@@ -171,6 +184,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       for (let i = 0; i < seeds; i++) {
         const pol = makeBot(name, 1000 + i, { skill: true });
         const o = { seed: 77 + i * 13, start: C.START_N + 2 * Math.min(up, +arg('startup', up)), fire: up, hero: hero === 'none' ? null : { id: hero, lv: heroLv } };
+        if (pk && flag('build')) o.build = 2;
         if (pk) { o.unl = unl; o.ammoOpen = ammoOpen; if (unl >= 3) { o.relicsOpen = relicsOpen; o.relics = hold; } if (flag('flame')) o.flame = true; }
         res.push(runEndless(o, pol, maxSeg, undefined, pk ? makePicker(pk, 2000 + i) : null));
       }

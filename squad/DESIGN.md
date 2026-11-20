@@ -132,6 +132,10 @@ segInfo(k) → { k, loop, biome, tag, L }  // 구간 k(1부터)의 지역·등�
 segMul(k), segFloor(k), segCoins(k), segParams(k)
 buildSegment(seed, k, n, tier, attempt)  // 그 순간 병력 n·무기 단계로 만든 구간(레벨 한 판과 같은 모양, z는 0부터). 보정 없음 — 식으로만
 newEndless({ seed, start, fire, hero, pet, ammo, unl, ammoOpen })   // unl ≥ 1: 보스 뒤 3택 1(단계 해금 1단계), ammoOpen: 별로 열린 탄종
+newEndless({ …, build: 2, pets: [{ id, lv }] })   // 빌드 개편(ENDGAME.md 16절 — 지금 게임이 여는 판): s.endless.bld가 생긴다. pets: 여러 마리(첫 마리 s.pet, 나머지 s.pets)
+s.endless.bld = { gun, chg, dur, shield, armor, shieldLeft, spec{ 병과: 갈래 }, down[{ k, lv }], rr, rrn, pi, more, curse, rel }   // 개편 판에만(없으면 해시·동작 예전 그대로)
+rerollCards(s) · rerollsOf(s) · bldOf(s) · relicMax(s) · bldThreat(k) · petsOf(s)   // 다시 뽑기, 빌드 상태, 유물 수, 구간 k의 위협 덧배수, 이 판의 펫들
+// 개편 판의 카드: { k: 'gun'|'unit'|'fx'|'hero'|'guard', n(등급 1~3), u?|a?|h?|g? } · { k: 'spec', u, b } · { k: 'curse' } · { k: 'relic', r }. 이벤트: supply { n }, shield { n, left }, offer { more: true }(이어서 고르는 카드)
 s.endless = { seed, seg, bosses, bank, wait, z0 }   // 평범한 JSON. 캠페인 판에는 없다
 s.endless.unl, .ammo, .picks, .offer      // 3택 1을 연 판에만(없으면 해시·동작 예전 그대로): 연 단계, 열린 탄종, 고른 카드('men'|'gun'|'unit:<병과>'|'ammo:<탄종>'),
                                          // 떠 있는 카드 null | [{ k:'men'|'gun' } | { k:'unit', u } | { k:'ammo', a }] — 떠 있으면 step()은 틱을 세지 않는다

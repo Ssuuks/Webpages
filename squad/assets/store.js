@@ -1,6 +1,6 @@
 /* 진행 저장 — 키는 'squad.v1' 그대로, v2는 필드를 더하기만 한다(옛 탭이 저장해도 새 필드가 남는다).
    localStorage가 막혀 있으면(사생활 보호 모드 등) 메모리로 계속 돈다. */
-import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap, PETS, PET_MAX_LV, AMMO, RELICS, RELIC_IDS } from './roster.js';
+import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap, PETS, PET_MAX_LV, PET_SLOTS, AMMO, RELICS, RELIC_IDS } from './roster.js';
 
 const KEY = 'squad.v1';
 const BAK = 'squad.bak';
@@ -35,7 +35,7 @@ export function defaults() {
     upgX: { start: 0, fire: 0, coin: 0 },   // 10단계 위로 산 강화(upg는 옛 탭이 0~10으로 자르므로 따로 둔다)
     heroX: {},                       // 영웅마다 Lv5 위로 올린 레벨(heroes.lv는 옛 탭이 5로 자른다)
     endless: { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0, rel: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수, 알린 해금 단계, 대왕 누적 처치, 출발 카드가 알린 유물 수
-    pets: { own: {}, sel: '', eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
+    pets: { own: {}, sel: '', team: [], slots: 1, eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
     ammo: { sel: '', seen: 0 },      // 탄종(ARSENAL.md 3절): 고른 탄종('' = 보통탄), 열림 안내를 본 별 문턱. 열림은 저장하지 않고 모은 별로 센다
   };
 }
@@ -170,6 +170,10 @@ export function normalize(o) {
     pets.own[id] = { lv: clampInt(ps.own[id].lv, 1, PET_MAX_LV), sh: Math.max(0, Math.floor(num(ps.own[id].sh))) };
   }
   pets.sel = pets.own[ps.sel] ? ps.sel : '';
+  // 여러 마리 출격: slots(연 자리 수 1..PET_SLOTS.length), team(출격하는 펫 — 가진 것만 한 번씩, 자리 수까지). 예전 저장은 고른 한 마리로. sel은 늘 team의 첫 마리
+  pets.slots = clampInt(ps.slots, 1, PET_SLOTS.length);
+  pets.team = (Array.isArray(ps.team) ? ps.team : pets.sel ? [pets.sel] : []).filter((id, i, l) => pets.own[id] && l.indexOf(id) === i).slice(0, pets.slots);
+  pets.sel = pets.team[0] || '';
   out.pets = pets;
   // 탄종: 모르는 id는 보통탄으로(열렸는지는 쓸 때 모은 별로 본다)
   const am = o.ammo && typeof o.ammo === 'object' ? o.ammo : {};
