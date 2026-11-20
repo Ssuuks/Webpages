@@ -3600,3 +3600,53 @@ test('펫 여러 마리: 첫 마리는 예전 그대로(s.pet — 한 마리 판
   assert.deepEqual(d2.pets.team, ['newt', 'fox']);
   assert.equal(d2.pets.sel, 'newt');
 });
+test('빌드 세트: 같은 결의 레벨을 모으면 단계가 켜진다 — 카드가 세트 진행(from → to, 다음 단계까지)을 알려 주고, 단계가 오르면 set 이벤트. 탄막은 화력, 지휘는 보급을 올린다', () => {
+  for (const id of R.SET_IDS) {
+    const S0 = R.SETS[id];
+    assert.ok(S0.at[0] < S0.at[1] && S0.at[1] < S0.at[2] && S0.v.length === 3);
+    for (const t of [1, 2, 3]) assert.ok(S0.text(t).length > 4);
+    assert.equal(R.setTier(id, S0.at[0] - 1), 0);
+    assert.equal(R.setTier(id, S0.at[2]), 3);
+  }
+  assert.equal(R.setOf('gun'), 'barrage');
+  assert.equal(R.setOf('rocket'), 'blast');
+  const s = bldRun(40, 1);
+  const B = s.endless.bld;
+  B.gun = R.SETS.barrage.at[0] - 1;
+  s.endless.offer = [{ k: 'gun', n: 1 }];
+  const info = C.cardInfo(s, s.endless.offer[0]);
+  assert.deepEqual(info.set, { id: 'barrage', from: C.setLv(s, 'barrage'), to: C.setLv(s, 'barrage') + 1, tier: 1, up: true, next: R.SETS.barrage.at[1] - R.SETS.barrage.at[0] });
+  assert.equal(C.setOn(s, 'barrage'), 0);
+  B.chg = R.SETS.command.at[0];   // 지휘 1단계(다음 동기화에 켜진다)
+  const n0 = s.squad.n;
+  C.pickCard(s, 0);
+  assert.equal(C.setOn(s, 'barrage'), 1);
+  assert.equal(C.setOn(s, 'command'), 1);
+  assert.ok(s.ev.some((e) => e.t === 'set' && e.id === 'barrage' && e.tier === 1));
+  const sup = s.ev.find((e) => e.t === 'supply');
+  assert.equal(sup.n, Math.round(n0 * (R.BUILD.supply[''] + R.SETS.command.v[0].supply)));
+  // 탄막이 켜진 판의 총알이 그만큼 세다
+  const off = structuredClone(s);
+  delete off.endless.bld.sets.barrage;
+  C.step(s, { dir: 0 }); C.step(off, { dir: 0 });
+  for (let t = 0; t < 30 && !s.bullets.length; t++) { C.step(s, { dir: 0 }); C.step(off, { dir: 0 }); }
+  const last = (g) => g.bullets[g.bullets.length - 1];   // 가장 늦게 쏜 총알(단계를 끈 뒤에 쏜 것)
+  for (let t = 0; t < 20; t++) { C.step(s, { dir: 0 }); C.step(off, { dir: 0 }); }
+  assert.ok(s.bullets.length && Math.abs(last(s).dmg / last(off).dmg - (1 + R.SETS.barrage.v[0].fire)) < 1e-9, `${last(s).dmg} / ${last(off).dmg}`);
+  // 저장·복원: 단계는 레벨에서 다시 센다
+  const o = C.restore(C.snapshot(s));
+  assert.deepEqual(o.endless.bld.sets, s.endless.bld.sets);
+  assert.equal(C.stateHash(o), C.stateHash(s));
+});
+test('빌드 세트 정밀: 치명타는 난수 없이 확률만큼 고르게 터진다. 짝 시너지는 개편 판에서 더 세다', () => {
+  const s = bldRun(40, 1);
+  C.pickCard(s, 0);
+  s.endless.bld.sets.precise = 2;
+  const V = R.SETS.precise.v[1];
+  let crit = 0, all = 0;
+  for (let t = 0; t < 600; t++) { C.step(s, { dir: 0 }); for (const b of s.bullets) if (b.d <= C.BULLET_SPEED * C.DT + 1e-9) { all++; if (b.c) crit++; } if (s.phase === 'lost') break; }
+  assert.ok(all > 50 && Math.abs(crit / all - V.p) < 0.03, `${crit}/${all}`);
+  assert.ok(R.comboV('frostSniper', true) > R.comboV('frostSniper', false));
+  assert.equal(R.comboV('frostSniper', false), R.COMBOS.frostSniper.v);
+  assert.ok(R.comboText('burstRocket', true).includes(String(R.COMBO_V2.burstRocket)));
+});

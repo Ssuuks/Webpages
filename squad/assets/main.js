@@ -4,7 +4,7 @@ import {
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, tierMax, spMax, spEscort, eggP, bannerOn, fxCan, flameOn,
-  nMax, fmtN, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX,
+  nMax, fmtN, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, setLv, setOn,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg , AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SPECS, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SPECS, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS, SETS, SET_IDS, TIER_MARK, comboText } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1624,6 +1624,7 @@ function finishEndless() {
    보스가 쓰러지고 연출이 끝나면 판이 멈추고(core: offer) 카드가 뜬다. 고르면 다음 구간이 이어진다(pickCard).
    카드는 엄지가 닿는 화면 아래쪽에 세로로. 보스가 쓰러질 때 대개 손가락으로 길을 잡고 있으므로 그 손가락이 카드를 고르지 않게:
    뜬 지 PICK_GRACE 안의 누름은 버리고, 카드 위에서 새로 눌러 같은 카드에서 뗐을 때만 고른다(누르고 있던 손가락은 캔버스에 붙잡혀 있다) */
+let setNote = '';         // 방금 오른 빌드 세트 알림(보급 알림이 덮지 않게 이어 붙인다)
 let lastCard = '';        // 방금 고른 카드의 알림 글(개편 판 — 보급 알림이 이어 붙인다)
 const PICK_GRACE = 500;   // ms
 const PICK_AUTO = 600;    // __squad.auto(봇)가 고르기까지 ms
@@ -1791,14 +1792,26 @@ function renderPick() {
       if (cb.length) {
         const syn = document.createElement('span');
         syn.className = 'pick-syn';
-        synText = cb.map((id) => `${COMBOS[id].name}: ${COMBOS[id].text()}`).join(' · ');
+        synText = cb.map((id) => `${COMBOS[id].name}: ${comboText(id, !!bldOf(s))}`).join(' · ');
         syn.textContent = `시너지 ${synText}`;
         body.appendChild(syn);
       }
     }
+    // 빌드 세트(개편 판): 이 카드가 올리는 세트의 레벨 합과 다음 단계 — 단계가 오르는 카드는 반짝인다
+    let setText = '';
+    if (info.set && SETS[info.set.id]) {
+      const st = info.set, S = SETS[st.id];
+      const el = document.createElement('span');
+      el.className = 'pick-set' + (st.up ? ' up' : '');
+      el.style.setProperty('--set', S.color);
+      setText = `세트 ${S.name} ${st.from} → ${st.to}` + (st.up ? ` · ${TIER_MARK[st.tier]}단계 발동! ${S.text(st.tier)}` : st.next ? ` · ${TIER_MARK[st.tier + 1]}단계까지 ${st.next}` : ' · 최고 단계');
+      el.textContent = setText;
+      body.appendChild(el);
+      if (st.up) b.classList.add('setup');
+    }
     b.append(ic, body);
     if (FINE) { const k = document.createElement('kbd'); k.className = 'pick-key'; k.textContent = i + 1; b.appendChild(k); }
-    b.setAttribute('aria-label', `${i + 1}번 ${T.kind}: ${chg.textContent}. ${T.det}${T.cost ? `. 대신 ${T.cost}` : ''}${synText ? `. 시너지 ${synText}` : ''}`);
+    b.setAttribute('aria-label', `${i + 1}번 ${T.kind}: ${chg.textContent}. ${T.det}${T.cost ? `. 대신 ${T.cost}` : ''}${synText ? `. 시너지 ${synText}` : ''}${setText ? `. ${setText}` : ''}`);
     list.appendChild(b);
   });
   $('pickNext').textContent = `다음: ${segToast(s.endless.seg + 1)}`;
@@ -2012,6 +2025,11 @@ function renderPauseUnits() {
   }
   // 빌드 개편: 무기 개조·영웅·생존 카드·전문화
   if (Bd) {
+    for (const id of SET_IDS) {
+      const n = setLv(s, id), t = setOn(s, id), S = SETS[id];
+      if (!n) continue;
+      addRow('star', `세트 ${S.name}${t ? ' ' + TIER_MARK[t] : ''} (${n}레벨)`, `${t ? S.text(t) : '아직 꺼짐'}${t < 3 ? ` · ${S.at[t]}레벨에 ${TIER_MARK[t + 1]}단계: ${S.text(t + 1)}` : ''}`);
+    }
     if (Bd.gun) addRow('gun', `무기 개조 Lv${Bd.gun}`, `총알 화력 +${pct(BUILD.gun * deep(Bd.gun))}%`);
     for (const k of Object.keys(HERO_CARDS)) if (Bd[k]) addRow('star', `${HERO_CARDS[k].name} Lv${Bd[k]}`, HERO_CARDS[k].text(Bd[k]));
     for (const k of Object.keys(GUARD_CARDS)) if (Bd[k]) addRow('medic', `${GUARD_CARDS[k].name} Lv${Bd[k]}`, GUARD_CARDS[k].text(Bd[k]) + (k === 'shield' ? ` · 이번 구간 ${Bd.shieldLeft}번 남음` : ''));
@@ -2019,7 +2037,7 @@ function renderPauseUnits() {
     for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * BUILD.spBack))}로 돌아와요`);
     addRow('star', '다시 뽑기', `${Bd.rr}번 남음 · 대왕을 잡으면 +1`);
   }
-  if (fx) for (const id of combosOn(s)) addRow('star', `시너지 ${COMBOS[id].name}`, COMBOS[id].text());
+  if (fx) for (const id of combosOn(s)) addRow('star', `시너지 ${COMBOS[id].name}`, comboText(id, !!bldOf(s)));
   if (rl) for (const id of rl) {
     const Rl = RELICS[id];
     if (!Rl) continue;
@@ -2208,7 +2226,7 @@ function handleEvents(ev) {
       case 'combo':
         // 시너지가 켜졌다: 금빛 고리는 renderer가. 규칙 풀이는 시너지마다 처음 한 번 안내로
         (combos || (combos = [])).push(e.id);
-        if (COMBOS[e.id]) tip('combo-' + e.id, `시너지 ${COMBOS[e.id].name}: ${COMBOS[e.id].text()}`);
+        if (COMBOS[e.id]) tip('combo-' + e.id, `시너지 ${COMBOS[e.id].name}: ${comboText(e.id, !!bldOf(s))}`);
         break;
       case 'cageOpen': sfx.crate(); break;
       case 'spGet':
@@ -2369,10 +2387,15 @@ function handleEvents(ev) {
         break;
       }
       case 'offer': openPick(); break;
+      case 'set':
+        // 빌드 세트의 단계가 올랐다 — 빌드가 완성되어 가는 순간이라 시너지처럼 크게
+        if (SETS[e.id]) { sfx.combo(); vibe([20, 30, 20, 30, 50]); setNote = `세트 ${SETS[e.id].name} ${TIER_MARK[e.tier]}단계! ${SETS[e.id].text(e.tier)}`; toast(setNote, 3200); }
+        break;
       case 'supply':
         // 개편 판: 보스를 잡으면 자동 보급(증원 카드 대신) — 고른 카드와 다음 구간을 한 줄로
-        toast(`${lastCard ? lastCard + ' · ' : ''}보급 +${fmtN(e.n)}명 · ${segToast(s.endless.seg)}`, 2800);
+        toast(setNote ? `${setNote} · 보급 +${fmtN(e.n)}명` : `${lastCard ? lastCard + ' · ' : ''}보급 +${fmtN(e.n)}명 · ${segToast(s.endless.seg)}`, setNote ? 3600 : 2800);
         lastCard = '';
+        setNote = '';
         break;
       case 'shield':
         sfx.power(1); vibe(20);
@@ -2654,6 +2677,7 @@ function updateSpChips() {
   const ammoChip = s && !fx && AMMO[s.ammo] ? s.ammo : '';   // 탄 효과가 없는 판(캠페인·무한모드 1단계)의 출격 탄종
   const gmod = s && bldOf(s) ? bldOf(s).gun | 0 : 0;   // 무기 개조(개편 판)
   let key = 1 + tier + 31 * gmod;
+  if (s && bldOf(s)) for (const id of SET_IDS) key = (key * 7 + setOn(s, id)) % 2147483647;
   const mix = (v) => { key = (key * 131 + v + 7) % 2147483647; };
   for (const m of sp) { mix(UNIT_IDS.indexOf(m.k) + 1); mix(m.lv || 1); }
   mix(-1);
@@ -2685,6 +2709,19 @@ function updateSpChips() {
     chip.append('개조');
     const b = document.createElement('b');
     b.textContent = 'Lv' + gmod;
+    chip.appendChild(b);
+    box.appendChild(chip);
+  }
+  // 빌드 세트(개편 판): 켜진 단계만 — 세트 색 테두리
+  if (s && bldOf(s)) for (const id of SET_IDS) {
+    const t = setOn(s, id);
+    if (!t) continue;
+    const chip = document.createElement('span');
+    chip.className = 'sp-chip fx-chip set-chip' + (t >= 3 ? ' lv3' : '');
+    chip.style.setProperty('--acc', SETS[id].color);
+    chip.append(SETS[id].name);
+    const b = document.createElement('b');
+    b.textContent = TIER_MARK[t];
     chip.appendChild(b);
     box.appendChild(chip);
   }

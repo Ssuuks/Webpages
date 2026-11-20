@@ -339,9 +339,10 @@ export const BUILD = {
   gun: 0.03,            // 무기 개조: 총알 화력 +3% × 유효 레벨(위협 식에 안 들어간다)
   w: { gun: 1, unit: 1, fx: 1, hero: 0.7, guard: 0.7 },   // 카드 종류가 나올 가중치
   shieldMax: 3,
-  thr: { from: 4, step: 1.12 },   // 위협 곡선: from구간 뒤로 구간마다 ×step 더(카드가 곱으로 쌓이는 만큼)         // 게이트 방패 상한(구간마다 이 횟수까지)
+  thr: { from: 4, step: 1.14 },   // 위협 곡선: from구간 뒤로 구간마다 ×step 더(카드가 곱으로 쌓이는 만큼)         // 게이트 방패 상한(구간마다 이 횟수까지)
   evo: 5,               // 탄 효과가 진화하는 레벨
   rare: [0.72, 0.23, 0.05],   // 카드 등급(일반·희귀·전설 = 한 번에 +1·+2·+3레벨) 확률
+  setPull: 0.1,         // 쌓은 세트 레벨 1당 그 세트 카드의 가중치 +10%(12레벨까지)
   own: 3,               // 이미 가진 것(탄 효과·특수병)의 카드가 나올 가중치
   reroll: 1,            // 판마다 다시 뽑기 횟수(대왕을 잡을 때마다 +1)
   curse: { p: 0.18, mul: 1.25, more: 2, from: 2 },   // 위험한 계약: from번째 보스 뒤부터 p 확률로 한 장 — 다음 구간 위협 ×mul, 대신 카드 more장 더
@@ -418,6 +419,42 @@ Object.assign(COMBOS, {
   frostRocket: { need: ['frost', 'rocket'], name: '빙결 포격', v: 0.5, g2: true, text: () => `느려진 적에게 로켓 위력 +${apc(COMBOS.frostRocket.v)}%` },
 });
 export const COMBO_IDS2 = Object.keys(COMBOS);
+/* 빌드 세트(개편 판): 같은 결의 카드 레벨을 모으면 단계마다 켜지는 큰 보너스 — '무슨 빌드인가'가 여기서 정해진다.
+   parts: 세는 것(gun 무기 개조 · 탄 효과 id · 병과 id(쓰러진 특수병도 그 레벨로) · chg/dur 영웅 카드 · shield/armor 생존 카드), at: 단계가 켜지는 레벨 합 [1·2·3단계].
+   v: 단계마다의 수치(글과 core가 함께 읽는다)
+   - barrage 탄막: 총알 화력 +fire
+   - blast 폭발: 작렬·로켓·불 지대의 범위 +r, 위력 +dmg
+   - precise 정밀: 총알·저격이 p 확률로 치명타(피해 ×mul)
+   - frost 한파: 좀비·보스에게 잃는 병사 −loss, 느려진 적이 받는 모든 피해 +amp
+   - command 지휘: 자동 보급 +supply(병력의 몫), 영웅 게이지 충전 +chg */
+export const SETS = {
+  barrage: { name: '탄막', color: '#FFC93C', parts: ['gun', 'rapid'], at: [8, 14, 20], v: [{ fire: 0.12 }, { fire: 0.45 }, { fire: 1 }],
+    text: (t) => `총알 화력 +${apc(SETS.barrage.v[t - 1].fire)}%` },
+  blast: { name: '폭발', color: '#FF8A3C', parts: ['burst', 'rocket', 'flame'], at: [8, 14, 20], v: [{ r: 0.1, dmg: 0.15 }, { r: 0.25, dmg: 0.55 }, { r: 0.5, dmg: 1.2 }],
+    text: (t) => `작렬·로켓·불 지대 범위 +${apc(SETS.blast.v[t - 1].r)}%, 위력 +${apc(SETS.blast.v[t - 1].dmg)}%` },
+  precise: { name: '정밀', color: '#4FD1C5', parts: ['pierce', 'sniper'], at: [8, 14, 20], v: [{ p: 0.1, mul: 2.5 }, { p: 0.25, mul: 3 }, { p: 0.4, mul: 4 }],
+    text: (t) => `총알·저격이 ${apc(SETS.precise.v[t - 1].p)}% 확률로 치명타(피해 ×${SETS.precise.v[t - 1].mul}) — 벽·보스에도` },
+  frost: { name: '한파', color: '#8FD3FF', parts: ['frost', 'medic', 'shield', 'armor'], at: [8, 14, 20], v: [{ loss: 0.1, amp: 0.15 }, { loss: 0.25, amp: 0.45 }, { loss: 0.45, amp: 1 }],
+    text: (t) => `좀비·보스에게 잃는 병사 −${apc(SETS.frost.v[t - 1].loss)}%, 느려진 적이 받는 피해 +${apc(SETS.frost.v[t - 1].amp)}%` },
+  command: { name: '지휘', color: '#FF9F43', parts: ['chg', 'dur'], at: [4, 7, 10], v: [{ supply: 0.1, chg: 0.3 }, { supply: 0.2, chg: 0.6 }, { supply: 0.4, chg: 1 }],
+    text: (t) => `자동 보급 +${apc(SETS.command.v[t - 1].supply)}%p, 영웅 게이지 충전 +${apc(SETS.command.v[t - 1].chg)}%` },
+};
+export const SET_IDS = Object.keys(SETS);
+/* 카드가 세는 세트(없으면 '') — part: 'gun' · 탄종 id · 병과 id · 'chg'/'dur' · 'shield'/'armor' */
+export const setOf = (part) => SET_IDS.find((id) => SETS[id].parts.includes(part)) || '';
+/* 레벨 합 n의 단계(0~3) */
+export const setTier = (id, n) => { const at = SETS[id].at; return n >= at[2] ? 3 : n >= at[1] ? 2 : n >= at[0] ? 1 : 0; };
+export const TIER_MARK = ['', 'Ⅰ', 'Ⅱ', 'Ⅲ'];
+/* 개편 판에서 더 세진 짝 시너지 수치(v2 — 없는 것은 v 그대로) */
+export const COMBO_V2 = { frostSniper: 1.5, burstRocket: 1, rapidMungchi: 9, frostFlame: 0.75 };
+export const comboV = (id, g2) => (g2 && COMBO_V2[id] != null ? COMBO_V2[id] : COMBOS[id].v);
+/* 짝 시너지의 글(개편 판은 v2 수치로) */
+export function comboText(id, g2) {
+  if (!g2 || COMBO_V2[id] == null) return COMBOS[id].text();
+  const v = COMBO_V2[id];
+  return id === 'frostSniper' ? `느려진 적에게 저격 위력 +${apc(v)}%` : id === 'burstRocket' ? `로켓 폭발 반경 +${v}m`
+    : id === 'rapidMungchi' ? `돌격 나팔 ${HEROES.mungchi.skill.dur} → ${v}초` : `언 적이 불 지대에서 받는 피해 +${apc(v)}%`;
+}
 /* 펫 자리(여러 마리 출격): n번째 자리를 여는 코인 — 첫 자리는 처음부터 */
 export const PET_SLOTS = [0, 3000, 8000];
 
