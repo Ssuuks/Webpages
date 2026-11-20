@@ -317,7 +317,10 @@ test('3택 1을 안 연 무한모드(opt.unl 없음·0·이상한 값)는 예전
 });
 
 /* 단계 지문: 시드 셋 × (보통탄·작렬탄 출격) × (think·돌려 고르기 — 보스 수 % 장 수, 탄종 카드도 고른다) × 7구간까지, 250틱마다·카드 앞뒤의 stateHash 묶음.
-   그 단계를 다 만든 직후의 코드로 잰 값을 박아 두고, 다음 단계를 더해도 앞 단계를 연 판은 바이트 하나까지 같아야 한다 */
+   그 단계를 다 만든 직후의 코드로 잰 값을 박아 두고, 다음 단계를 더해도 앞 단계를 연 판은 바이트 하나까지 같아야 한다.
+   무한모드 상한 해제(ENDGAME.md 15절 — 병력 9999·탄 효과 Lv3·특수병 Lv3 상한을 무한모드에서 없앰)로 무한모드 규칙이 일부러 바뀌어 다섯 지문을 모두 다시 쟀다.
+   다시 잴 때 확인한 것: 지금 코드에 세 상한(nMax·ENDLESS.maxN = 9999, spLvMax = 3, fxCan Lv3)만 되돌려 넣으면 다섯 지문이 예전 값
+   (1831468219 · 1312263951 · 2959427486 · 434098057 · 2175899401)과 똑같이 나온다 — 달라진 까닭은 15절 규칙뿐이다 */
 function stageFP(unl, extra = {}) {
   const out = [];
   for (const seed of [5, 21, 40]) for (const ammo of ['', 'burst']) for (const pk of ['think', 'turn']) {
@@ -334,26 +337,30 @@ function stageFP(unl, extra = {}) {
   }
   return C.hash(...out);
 }
-/* 1단계(3택 1 기본 카드)만 연 판의 지문 — 2단계(탄 효과·시너지)를 시작하기 직전 코드(f3b7b85)로 잰 값 */
-const STAGE1_FP = 1831468219;
-test('1단계만 연 판(unl 1)은 2단계를 넣기 전과 바이트 하나까지 같다 — STAGE1_FP(시드 × 탄종 × 카드 고르기 × 7구간의 stateHash 묶음)', () => {
+/* 1단계(3택 1 기본 카드)만 연 판의 지문 — 처음에는 2단계(탄 효과·시너지)를 시작하기 직전 코드(f3b7b85)로 잰 값(1831468219)이었다.
+   15절 규칙(병력 상한 해제)으로 다시 쟀다: 표본 열두 판 중 다섯 판이 병력 9999를 넘긴다(가장 큰 판 23900명) — 그 판들만 달라졌다 */
+const STAGE1_FP = 3151975423;
+test('1단계만 연 판(unl 1)은 뒤 단계를 더해도 바이트 하나까지 같다 — STAGE1_FP(시드 × 탄종 × 카드 고르기 × 7구간의 stateHash 묶음, 무한모드 상한 해제(15절) 규칙으로 다시 잰 값)', () => {
   assert.equal(stageFP(1), STAGE1_FP);
   // 앞으로 열 줄의 옵션(화염병 false, 유물 — 3단계가 아니면 뜻이 없다)을 받아도 1단계 판 그대로
   assert.equal(stageFP(1, { flame: false, relicsOpen: R.RELIC_IDS, relics: ['heart', 'coil', 'banner'] }), STAGE1_FP);
 });
 /* 2단계(탄 효과·탄종 상자·시너지·장애물)까지 연 판의 지문 — 장애물(기획서 4절)을 넣은 직후 코드로 잰 값. 3단계(유물)를 더해도 2단계 판은 그대로여야 한다
-   (밸런스 조정으로 2단계 수치를 일부러 바꾸면 다시 잰다). 표본 열두 판 중 여덟 판이 4구간(장애물)에 닿는다 */
-const STAGE2_FP = 1312263951;
-test('2단계까지 연 판(unl 2)의 지문 — STAGE2_FP(장애물까지, 1단계와 같은 식). 앞으로 열 줄의 옵션(화염병 false·유물)을 받아도 그대로', () => {
+   (밸런스 조정으로 2단계 수치를 일부러 바꾸면 다시 잰다). 표본 열두 판 중 여덟 판이 4구간(장애물)에 닿는다.
+   15절 규칙(병력·탄 효과 레벨 상한 해제)으로 다시 쟀다(예전 값 1312263951): 표본 중 세 판이 탄 효과 Lv4 이상을 얻고 한 판이 병력 9999를 넘긴다 */
+const STAGE2_FP = 251749539;
+test('2단계까지 연 판(unl 2)의 지문 — STAGE2_FP(장애물까지, 1단계와 같은 식, 무한모드 상한 해제(15절) 규칙으로 다시 잰 값). 앞으로 열 줄의 옵션(화염병 false·유물)을 받아도 그대로', () => {
   assert.equal(stageFP(2), STAGE2_FP);
   assert.equal(stageFP(2, { flame: false, relicsOpen: R.RELIC_IDS, relics: ['heart', 'coil', 'banner'] }), STAGE2_FP);
 });
 /* 3단계(유물)까지 연 판의 지문 — 유물(기획서 5절)을 넣은 직후 코드로 잰 값. 표본 열두 판 중 일곱 판이 6구간(대왕) 보스 뒤 유물 카드에 닿는다(심장·나침반·코일을 고른다).
    STAGE3_HELD_FP: 유물을 처음부터 쥔 판(시험·측정 옵션 relics — 확성기·코일·나침반 / 휘장·심장·탄낭 / 가방·넷째 자리가 판 내내 듣는다) 세 묶음의 지문.
-   4단계(화염병 — flame: true인 판만)를 더해도 3단계 판은 그대로여야 한다(밸런스 조정으로 3단계 수치를 일부러 바꾸면 다시 잰다) */
-const STAGE3_FP = 2959427486;
-const STAGE3_HELD_FP = 434098057;
-test('3단계까지 연 판(unl 3)의 지문 — STAGE3_FP(대왕 보스 뒤 유물 카드까지, 1·2단계와 같은 식), STAGE3_HELD_FP(유물을 처음부터 쥔 판 세 묶음). 화염병 false를 받아도 그대로', () => {
+   4단계(화염병 — flame: true인 판만)를 더해도 3단계 판은 그대로여야 한다(밸런스 조정으로 3단계 수치를 일부러 바꾸면 다시 잰다).
+   15절 규칙(병력·탄 효과 레벨 상한 해제)으로 둘 다 다시 쟀다(예전 값 2959427486 · 434098057): 유물 카드에 닿는 판 수(일곱)와 고르는 유물은 그대로이고,
+   탄 효과 Lv4 이상을 얻는 판·병력 9999를 넘기는 판(쥔 판 묶음에서 가장 큰 판 29644명)이 달라졌다 */
+const STAGE3_FP = 2471891591;
+const STAGE3_HELD_FP = 1423259991;
+test('3단계까지 연 판(unl 3)의 지문 — STAGE3_FP(대왕 보스 뒤 유물 카드까지, 1·2단계와 같은 식), STAGE3_HELD_FP(유물을 처음부터 쥔 판 세 묶음) — 둘 다 무한모드 상한 해제(15절) 규칙으로 다시 잰 값. 화염병 false를 받아도 그대로', () => {
   assert.equal(stageFP(3, { relicsOpen: R.RELIC_IDS }), STAGE3_FP);
   assert.equal(stageFP(3, { relicsOpen: R.RELIC_IDS, flame: false }), STAGE3_FP);
   const held = [['megaphone', 'coil', 'compass'], ['banner', 'heart', 'pouch'], ['bag', 'fourth']];
@@ -402,7 +409,7 @@ test('3택 1(opt.unl 1): 첫 보스가 쓰러지고 연출(ENDLESS.wait)이 끝�
   assert.deepEqual([...kinds].sort(), [...C.CARD.kinds].sort(), '네 종류가 다 나온다');
 });
 
-test('카드 고르기(pickCard): 다음 구간은 고르기 전의 병력·무기 단계로 만든 그 구간 그대로이고, 그 뒤에 카드가 듣는다 — 증원 ×1.3(상한 9999), 무기 +1단계, 특수병 합류(Lv1) 또는 Lv+1, 탄종 바꾸기. 고른 카드는 기록되고 card 이벤트(from → to)를 낸다', () => {
+test('카드 고르기(pickCard): 다음 구간은 고르기 전의 병력·무기 단계로 만든 그 구간 그대로이고, 그 뒤에 카드가 듣는다 — 증원 ×1.3(무한모드는 9999를 넘어 ENDLESS.maxN까지 — 15절), 무기 +1단계, 특수병 합류(Lv1) 또는 Lv+1, 탄종 바꾸기. 고른 카드는 기록되고 card 이벤트(from → to)를 낸다', () => {
   assert.equal(C.CARD.men, 1.3);
   const seen = {};
   // 구간을 지금 자리 앞에 이어 붙인 모양(nextSegment가 하는 id·z 옮기기) — 뭉치(영웅)가 바꾸는 덧셈 칸 step은 빼고 본다
@@ -437,7 +444,9 @@ test('카드 고르기(pickCard): 다음 구간은 고르기 전의 병력·무�
     }
     // 그 뒤에 카드가 듣는다 — 고른 것만 바뀐다
     if (c.k === 'men') {
-      assert.equal(q.n, Math.min(C.MAX_N, before.n + Math.max(1, Math.round(before.n * (C.CARD.men - 1)))), lab);
+      assert.equal(q.n, Math.min(C.nMax(s), before.n + Math.max(1, Math.round(before.n * (C.CARD.men - 1)))), lab);
+      if (before.n === C.MAX_N - 9) assert.ok(q.n > C.MAX_N, `${lab}: 무한모드 증원은 9999에서 멈추지 않는다`);
+      if (before.n === C.ENDLESS.maxN - 9) assert.equal(q.n, C.ENDLESS.maxN, `${lab}: 무한모드 상한에서 멈춘다`);
       assert.ok(s.ev.some((e) => e.t === 'gain' && e.why === 'card' && e.n === q.n - before.n));
     } else assert.equal(q.n, before.n, lab);
     assert.equal(q.tier, c.k === 'gun' ? before.tier + 1 : before.tier, lab);
@@ -470,11 +479,16 @@ test('카드 고르기(pickCard): 다음 구간은 고르기 전의 병력·무�
     const { s } = toOffer(seed);
     const of = C.offerOf(s);
     for (let i = 0; i < of.length; i++) check(s, i);
-    // 가진 병과의 카드면 Lv+1, 증원은 9999에서 멈춘다
+    // 가진 병과의 카드면 Lv+1. 증원은 9999를 넘고(15절) 무한모드 상한 ENDLESS.maxN에서 멈춘다
     const iu = of.findIndex((c) => c.k === 'unit');
     if (iu >= 0 && !s.squad.sp.some((m) => m.k === of[iu].u)) check(s, iu, (t) => { t.squad.sp = [{ id: t.nextId++, k: of[iu].u, cd: 0.6, lv: 2 }]; });
     const im = of.findIndex((c) => c.k === 'men');
-    if (im >= 0) check(s, im, (t) => { t.squad.n = C.MAX_N - 9; });
+    if (im >= 0) { check(s, im, (t) => { t.squad.n = C.MAX_N - 9; }); check(s, im, (t) => { t.squad.n = C.ENDLESS.maxN - 9; }); }
+    // 무한모드에서 Lv3 특수병의 카드는 Lv4로(15절 — 캠페인은 Lv3까지)
+    if (iu >= 0) {
+      const t3 = check(s, iu, (t) => { t.squad.sp = [{ id: t.nextId++, k: of[iu].u, cd: 0.6, lv: 3 }]; });
+      assert.equal(t3.squad.sp.find((m) => m.k === of[iu].u).lv, 4);
+    }
     // 범위 밖 번호는 가까운 끝 카드
     const last = structuredClone(s);
     C.pickCard(last, 99);
@@ -487,30 +501,40 @@ test('카드 고르기(pickCard): 다음 구간은 고르기 전의 병력·무�
   assert.equal(C.pickCard(fresh, 0), false);
   assert.equal(C.pickCard(C.newEndless({ seed: 1, ...UP10 }), 0), false);
   assert.equal(C.stateHash(fresh), h);
+  // 캠페인은 상한 그대로
+  const camp = C.newGame(C.prepareLevel(5));
+  assert.equal(C.nMax(camp), C.MAX_N);
+  assert.equal(C.spLvMax(camp), C.SP_LV_MAX);
+  assert.equal(C.nMax(fresh), C.ENDLESS.maxN);
+  assert.equal(C.spLvMax(fresh), C.LV_SANE);
 });
 
-test('3택 1에 나오지 않는 카드: 병력 9999면 증원, 무기 3단계면 무기, 특수병 자리가 차고 모두 Lv3이거나 호위 병사가 모자라면 그 특수병, 바꿀 탄종이 없으면 탄종 — 빈 카드는 없다(아무것도 못 고르면 멈추지 않고 이어진다)', () => {
+test('3택 1에 나오지 않는 카드(무한모드 상한 해제 — 15절): 병력이 ENDLESS.maxN이면 증원, 무기 3단계면 무기, 특수병 자리가 차고 모두 레벨 울타리(LV_SANE)이거나 호위 병사가 모자라면 그 특수병, 바꿀 탄종이 없으면 탄종 — 빈 카드는 없다(아무것도 못 고르면 멈추지 않고 이어진다)', () => {
   const { s, dead } = toOffer(1);
   const sp3 = (lv) => C.SP_KINDS.map((k, i) => ({ id: 90000 + i, k, cd: 0.6, lv }));
   // 기대하는 후보(규칙을 테스트 쪽에서 다시 적는다)
   const pool = (o) => {
     const q = o.squad;
-    const units = C.SP_KINDS.filter((k) => { const m = q.sp.find((x) => x.k === k); return m ? m.lv < 3 : q.sp.length < C.SP_MAX && q.n >= C.SP_ESCORT * (q.sp.length + 1); });
+    const units = C.SP_KINDS.filter((k) => { const m = q.sp.find((x) => x.k === k); return m ? m.lv < C.spLvMax(o) : q.sp.length < C.SP_MAX && q.n >= C.SP_ESCORT * (q.sp.length + 1); });
     const ammo = o.endless.ammo.filter((a) => a !== (o.ammo || ''));
-    const kinds = [q.n < C.MAX_N && 'men', q.tier < 3 && 'gun', units.length && 'unit', ammo.length && 'ammo'].filter(Boolean);
+    const kinds = [q.n < C.nMax(o) && 'men', q.tier < 3 && 'gun', units.length && 'unit', ammo.length && 'ammo'].filter(Boolean);
     return { kinds, units, ammo };
   };
   const cases = [
     ['무기 3단계', (o) => { o.squad.tier = 3; }, ['gun']],
-    ['병력 9999', (o) => { o.squad.n = C.MAX_N; }, ['men']],
-    ['특수병 셋 모두 Lv3', (o) => { o.squad.sp = sp3(3); o.squad.n = 200; }, ['unit']],
-    ['특수병 셋, 하나만 Lv3 아래', (o) => { o.squad.sp = sp3(3); o.squad.sp[1].lv = 2; o.squad.n = 200; }, []],
+    ['병력 상한(ENDLESS.maxN)', (o) => { o.squad.n = C.ENDLESS.maxN; }, ['men']],
+    ['특수병 셋 모두 레벨 울타리', (o) => { o.squad.sp = sp3(C.LV_SANE); o.squad.n = 200; }, ['unit']],
+    ['특수병 셋, 하나만 울타리 아래', (o) => { o.squad.sp = sp3(C.LV_SANE); o.squad.sp[1].lv = 2; o.squad.n = 200; }, []],
     ['호위 병사 모자람(의무병 하나, 병사 7)', (o) => { o.squad.sp = [{ id: 90009, k: 'medic', cd: 0.6, lv: 1 }]; o.squad.n = 7; }, []],
     ['열린 탄종 없음', (o) => { o.endless.ammo = []; }, ['ammo']],
     ['열린 탄종이 지금 탄종뿐', (o) => { o.endless.ammo = ['frost']; o.ammo = 'frost'; }, ['ammo']],
     ['둘만 남음', (o) => { o.squad.tier = 3; o.endless.ammo = []; }, ['gun', 'ammo']],
-    ['하나만 남음', (o) => { o.squad.tier = 3; o.squad.n = C.MAX_N; o.squad.sp = sp3(3); o.endless.ammo = ['pierce']; }, ['men', 'gun', 'unit']],
+    ['하나만 남음', (o) => { o.squad.tier = 3; o.squad.n = C.ENDLESS.maxN; o.squad.sp = sp3(C.LV_SANE); o.endless.ammo = ['pierce']; }, ['men', 'gun', 'unit']],
   ];
+  // 15절: 병력 9999·특수병 모두 Lv3이어도 무한모드에서는 증원·특수병 카드가 그대로 나온다
+  const still = regen(s, (o) => { o.squad.n = C.MAX_N; o.squad.sp = sp3(3); });
+  assert.ok(still.some((r) => r.of.some((c) => c.k === 'men')), '병력 9999에서도 증원');
+  assert.ok(still.some((r) => r.of.some((c) => c.k === 'unit')), '모두 Lv3이어도 특수병(Lv4로)');
   for (const [name, mod, out] of cases) {
     for (const { t, of } of regen(s, mod)) {
       const p = pool(t);
@@ -528,7 +552,7 @@ test('3택 1에 나오지 않는 카드: 병력 9999면 증원, 무기 3단계�
   assert.ok(only.length >= 5 && only.every((c) => c.u === 'medic'), `의무병만 ${only.length}번`);
   // 아무것도 못 고르는 판: 카드 없이(멈추지 않고) 다음 구간이 이어진다 — 쓰러지는 연출 중인 판을 고쳐 그대로 흘린다
   const o = structuredClone(dead);
-  o.squad.tier = 3; o.squad.n = C.MAX_N; o.squad.sp = sp3(3); o.endless.ammo = [];
+  o.squad.tier = 3; o.squad.n = C.ENDLESS.maxN; o.squad.sp = sp3(C.LV_SANE); o.endless.ammo = [];
   const t = C.restore(o);
   let start = null;
   while (!start && t.tick < dead.tick + 300) {
@@ -592,10 +616,11 @@ const pool2 = (o) => {
   const up = e.bosses >= 3;
   const has = (id) => (R.AMMO[id] ? (fx[id] | 0) > 0 : C.SP_KINDS.includes(id) ? q.sp.some((m) => m.k === id) : !!(o.hero && o.hero.id === id));
   const completes = (id) => !has(id) && R.COMBO_IDS.some((c) => R.COMBOS[c].need.includes(id) && R.COMBOS[c].need.every((x) => x === id || has(x)));
-  const units = C.SP_KINDS.filter((k) => { const m = q.sp.find((x) => x.k === k); return (m ? m.lv < 3 : q.sp.length < C.SP_MAX && q.n >= C.SP_ESCORT * (q.sp.length + 1)) && (up || !completes(k)); });
+  // 15절: 무한모드에는 특수병·탄 효과 레벨 상한이 없다(특수병은 저장 울타리 LV_SANE까지), 병력은 ENDLESS.maxN까지
+  const units = C.SP_KINDS.filter((k) => { const m = q.sp.find((x) => x.k === k); return (m ? m.lv < C.spLvMax(o) : q.sp.length < C.SP_MAX && q.n >= C.SP_ESCORT * (q.sp.length + 1)) && (up || !completes(k)); });
   const nFx = R.AMMO_IDS.filter((a) => fx[a]).length;
-  const fxs = R.AMMO_IDS.filter((a) => (e.ammo.includes(a) || o.ammo === a) && (fx[a] ? up && fx[a] < 3 : nFx < 2) && (up || !completes(a)));
-  const kinds = [q.n < C.MAX_N && 'men', q.tier < 3 && 'gun', units.length && 'unit', fxs.length && 'fx'].filter(Boolean);
+  const fxs = R.AMMO_IDS.filter((a) => (e.ammo.includes(a) || o.ammo === a) && (fx[a] ? up : nFx < 2) && (up || !completes(a)));
+  const kinds = [q.n < C.nMax(o) && 'men', q.tier < 3 && 'gun', units.length && 'unit', fxs.length && 'fx'].filter(Boolean);
   return { up, units, fxs, kinds, completes };
 };
 const ORDER2 = ['men', 'gun', 'unit', ...R.AMMO_IDS.map((a) => 'fx:' + a)];
@@ -719,8 +744,9 @@ test('2단계 옵션: s.endless에는 그 단계가 열려 뜻이 있을 때만 
   assert.deepEqual(keys(snap(UP10, (e) => { e.fx = { pierce: 2 }; e.flame = true; e.relicsOpen = []; })), PLAIN_KEYS);
   assert.ok(!('flame' in snap(CARD2, (e) => { e.flame = 'yes'; }).endless));
   assert.equal(snap(CARD2, (e) => { e.flame = true; }).endless.flame, true);
-  // 탄 효과: 아는 탄종만 Lv1..3, 슬롯 수까지(출격 탄종 먼저, 그다음 AMMO_IDS 순서), 깨졌으면 출격 탄종 Lv2에서 다시
-  assert.deepEqual(snap({ ...CARD2, ammo: 'rapid' }, (e) => { e.fx = { pierce: 7, nope: 2, burst: 'x', frost: 1, rapid: 2 }; }).endless.fx, { rapid: 2, pierce: 3 });
+  // 탄 효과: 아는 탄종만 Lv1 이상(15절 — Lv3 상한은 없고 저장 울타리 LV_SANE까지), 슬롯 수까지(출격 탄종 먼저, 그다음 AMMO_IDS 순서), 깨졌으면 출격 탄종 Lv2에서 다시
+  assert.deepEqual(snap({ ...CARD2, ammo: 'rapid' }, (e) => { e.fx = { pierce: 7, nope: 2, burst: 'x', frost: 1, rapid: 2 }; }).endless.fx, { rapid: 2, pierce: 7 });
+  assert.deepEqual(snap(CARD2, (e) => { e.fx = { pierce: 1e9 }; }).endless.fx, { pierce: C.LV_SANE });
   assert.deepEqual(snap(CARD2, (e) => { e.fx = { frost: 1.8, burst: 0, pierce: -1 }; }).endless.fx, { frost: 1 });
   for (const bad of [undefined, null, 'x', [], 7]) {
     assert.deepEqual(snap({ ...CARD2, ammo: 'burst' }, (e) => { e.fx = bad; }).endless.fx, { burst: 2 }, `깨진 fx ${JSON.stringify(bad)}`);
@@ -728,9 +754,10 @@ test('2단계 옵션: s.endless에는 그 단계가 열려 뜻이 있을 때만 
   }
 });
 
-test('탄 효과 수치(roster.fxVal·fxText): Lv1·2·3 = 그 탄종의 좋은 점 50·100·150% — 관통 30·60·90%, 작렬 둘레 1m 18·35·53%, 속사 화력 +8·15·23%, 빙결 0.8초 13·25·38% 느림. 대신 쪽은 없다', () => {
+test('탄 효과 수치(roster.fxVal·fxText): Lv1·2·3 = 그 탄종의 좋은 점 50·100·150% — 관통 30·60·90%, 작렬 둘레 1m 18·35·53%, 속사 화력 +8·15·23%, 빙결 0.8초 13·25·38% 느림. 대신 쪽은 없다. Lv4부터(15절) 레벨마다 +50%p, 빙결은 멈춤까지 남은 거리 ×0.85', () => {
   assert.deepEqual(R.FX_LV, [0.5, 1, 1.5]);
-  assert.equal(R.FX_LV_MAX, 3);
+  assert.equal(R.FX_LV_SOFT, 3);
+  assert.equal(R.FROST_OVER, 0.85);
   assert.equal(R.FX_SLOTS, 2);
   const near = (a, b) => Math.abs(a - b) < 1e-9;
   const want = { pierce: ['pierce', [0.3, 0.6, 0.9]], burst: ['splash', [0.175, 0.35, 0.525]], rapid: ['dmg', [1.075, 1.15, 1.225]], frost: ['slow', [0.125, 0.25, 0.375]] };
@@ -740,10 +767,14 @@ test('탄 효과 수치(roster.fxVal·fxText): Lv1·2·3 = 그 탄종의 좋은 
       assert.ok(near(v[k], vs[lv - 1]), `${id} Lv${lv} ${k} ${v[k]}`);
       assert.deepEqual(Object.keys(v).sort(), (id === 'burst' ? ['r', 'splash'] : id === 'frost' ? ['T', 'slow'] : [k]).sort(), `${id}: 좋은 점만(피해·사거리 없음)`);
     }
-    // 레벨은 1..3으로 자른다
+    // 0 이하는 Lv1, 위로는 자르지 않는다(15절)
     assert.deepEqual(R.fxVal(id, 0), R.fxVal(id, 1));
-    assert.deepEqual(R.fxVal(id, 9), R.fxVal(id, 3));
+    assert.ok(R.fxVal(id, 9)[k] > R.fxVal(id, 4)[k] && R.fxVal(id, 4)[k] > R.fxVal(id, 3)[k], `${id}: Lv3 위로도 오른다`);
   }
+  const lv4 = { pierce: ['pierce', 1.2], burst: ['splash', 0.7], rapid: ['dmg', 1.3], frost: ['slow', 1 - 0.625 * 0.85] };
+  for (const [id, [k, v]] of Object.entries(lv4)) assert.ok(near(R.fxVal(id, 4)[k], v), `${id} Lv4 ${R.fxVal(id, 4)[k]}`);
+  assert.ok(near(R.fxVal('frost', 5).slow, 1 - 0.625 * 0.85 * 0.85) && R.fxVal('frost', 99).slow < 1, '빙결은 멈춤(100%)에 닿지 않는다');
+  assert.equal(R.fxText('pierce', 4), '뒤의 좀비 하나에 120%');
   assert.equal(R.fxVal('burst', 2).r, 1);
   assert.equal(R.fxVal('frost', 3).T, 0.8);
   assert.deepEqual(R.fxVal('nope', 2), {});
@@ -776,14 +807,15 @@ test('2단계 카드(판 안 순서 포함): 증원·무기·특수병·탄 효�
     ['보스 7, 저격수와 빙결 Lv1', (o) => { setFx(o, { frost: 1 }); o.squad.sp = [{ id: 90020, k: 'sniper', cd: 0.6, lv: 1 }]; o.endless.bosses = 7; }, (p) => { assert.ok(p.completes('pierce') && !p.completes('frost')); }],
     ['보스 2, 저격수와 빙결 Lv1(슬롯 하나 남음)', (o) => { setFx(o, { frost: 1 }); o.squad.sp = [{ id: 90020, k: 'sniper', cd: 0.6, lv: 1 }]; o.endless.bosses = 2; }, (p) => { assert.deepEqual(p.fxs, ['burst']); }],
     ['보스 2, 슬롯이 참', (o) => { setFx(o, { burst: 2, frost: 1 }, 'burst'); o.endless.bosses = 2; }, (p) => { assert.deepEqual(p.fxs, []); }],
-    ['보스 4, 슬롯이 참(빙결 Lv3)', (o) => { setFx(o, { pierce: 1, frost: 3 }); o.endless.bosses = 4; }, (p) => { assert.deepEqual(p.fxs, ['pierce']); }],
-    ['보스 4, 슬롯이 참(둘 다 Lv3)', (o) => { setFx(o, { pierce: 3, frost: 3 }); o.endless.bosses = 4; }, (p) => { assert.deepEqual(p.fxs, []); }],
+    ['보스 4, 슬롯이 참(빙결 Lv3 — 15절: Lv4로 오른다)', (o) => { setFx(o, { pierce: 1, frost: 3 }); o.endless.bosses = 4; }, (p) => { assert.deepEqual(p.fxs, ['pierce', 'frost']); }],
+    ['보스 4, 슬롯이 참(둘 다 Lv3 — 15절: 둘 다 오른다)', (o) => { setFx(o, { pierce: 3, frost: 3 }); o.endless.bosses = 4; }, (p) => { assert.deepEqual(p.fxs, ['pierce', 'frost']); }],
+    ['보스 2, 슬롯이 참(둘 다 Lv3 — 3구간 보스 전에는 레벨 업이 없다)', (o) => { setFx(o, { pierce: 3, frost: 3 }); o.endless.bosses = 2; }, (p) => { assert.deepEqual(p.fxs, []); }],
     ['열린 탄종 없음', (o) => { setFx(o, {}); o.endless.ammo = []; o.endless.bosses = 5; }, (p) => { assert.deepEqual(p.fxs, []); }],
     ['열린 탄종이 빙결뿐', (o) => { setFx(o, {}); o.endless.ammo = ['frost']; o.endless.bosses = 5; }, (p) => { assert.deepEqual(p.fxs, ['frost']); }],
     ['출격 탄종은 별 목록에 없어도 레벨 업', (o) => { setFx(o, { rapid: 2 }, 'rapid'); o.endless.ammo = []; o.endless.bosses = 3; }, (p) => { assert.deepEqual(p.fxs, ['rapid']); }],
-    ['범주 하나(탄 효과뿐) — 세 장 다 탄 효과', (o) => { setFx(o, {}); o.squad.tier = 3; o.squad.n = C.MAX_N; o.squad.sp = sp3(3); o.endless.bosses = 3; }, (p, of) => { assert.equal(of.length, 3); assert.ok(of.every((c) => c.k === 'fx')); }],
-    ['범주 둘(특수병·탄 효과) — 탄 효과 두 장', (o) => { setFx(o, {}); o.squad.tier = 3; o.squad.n = C.MAX_N; o.endless.bosses = 3; }, (p, of) => { assert.deepEqual(of.map((c) => c.k), ['unit', 'fx', 'fx']); }],
-    ['범주 둘, 효과 하나뿐', (o) => { setFx(o, { pierce: 2, burst: 3 }); o.squad.tier = 3; o.squad.n = C.MAX_N; o.endless.bosses = 3; }, (p, of) => { assert.deepEqual(of.map(fxKey), ['unit:' + of[0].u, 'fx:pierce']); }],
+    ['범주 하나(탄 효과뿐) — 세 장 다 탄 효과', (o) => { setFx(o, {}); o.squad.tier = 3; o.squad.n = C.ENDLESS.maxN; o.squad.sp = sp3(C.LV_SANE); o.endless.bosses = 3; }, (p, of) => { assert.equal(of.length, 3); assert.ok(of.every((c) => c.k === 'fx')); }],
+    ['범주 둘(특수병·탄 효과) — 탄 효과 두 장', (o) => { setFx(o, {}); o.squad.tier = 3; o.squad.n = C.ENDLESS.maxN; o.endless.bosses = 3; }, (p, of) => { assert.deepEqual(of.map((c) => c.k), ['unit', 'fx', 'fx']); }],
+    ['범주 둘, 효과 둘(슬롯이 참 — 가진 둘만)', (o) => { setFx(o, { pierce: 2, burst: 3 }); o.squad.tier = 3; o.squad.n = C.ENDLESS.maxN; o.endless.bosses = 3; }, (p, of) => { assert.deepEqual(of.map(fxKey), ['unit:' + of[0].u, 'fx:pierce', 'fx:burst']); }],
   ];
   for (const [name, mod, more] of cases) {
     for (const { t, of } of regen(s, mod)) {
@@ -795,13 +827,13 @@ test('2단계 카드(판 안 순서 포함): 증원·무기·특수병·탄 효�
   for (const k of ['men', 'gun', ...R.AMMO_IDS.map((a) => 'fx:' + a), 'unit:medic', 'unit:sniper', 'unit:rocket', 'syn:unit:rocket', 'syn:fx:pierce', 'syn:fx:rapid']) assert.ok(seen[k], `${k}를 봤다: ${Object.keys(seen).join(' ')}`);
 });
 
-test('2단계 카드 고르기: 탄 효과 카드는 레벨 +1(새 효과는 Lv1, Lv3까지) — fxUp·card 이벤트(from → to), 고른 기록 fx:탄종. 시너지를 완성하는 카드(특수병·탄 효과)를 고르면 그 시너지가 켜지고 combo 이벤트', () => {
+test('2단계 카드 고르기: 탄 효과 카드는 레벨 +1(새 효과는 Lv1, 15절부터 Lv3 위로도) — fxUp·card 이벤트(from → to), 고른 기록 fx:탄종. 시너지를 완성하는 카드(특수병·탄 효과)를 고르면 그 시너지가 켜지고 combo 이벤트', () => {
   const { s } = toOffer(4, CARD2);
   let n = 0;
   const combos = new Set();
   const states = [
     ...regen(s, (o) => { setFx(o, { burst: 2 }, 'burst'); o.squad.sp = []; o.endless.bosses = 3; }, 20),
-    ...regen(s, (o) => { setFx(o, { pierce: 2 }); o.squad.tier = 3; o.squad.n = C.MAX_N; o.squad.sp = []; o.endless.bosses = 4; }, 20),
+    ...regen(s, (o) => { setFx(o, { pierce: 2 }); o.squad.tier = 3; o.squad.n = C.ENDLESS.maxN; o.squad.sp = []; o.endless.bosses = 4; }, 20),
   ];
   for (const { t, of } of states) {
     for (let i = 0; i < of.length; i++) {
@@ -833,13 +865,19 @@ test('2단계 카드 고르기: 탄 효과 카드는 레벨 +1(새 효과는 Lv1
   }
   assert.ok(n >= 10, `탄 효과 카드 ${n}번`);
   for (const id of ['pierceBurst', 'burstRocket', 'rapidMungchi', 'pierceSniper']) assert.ok(combos.has(id), `${id}가 켜졌다: ${[...combos]}`);
-  // Lv3에서 멈춘다: 가진 효과가 Lv3이면 그 효과 카드는 나오지 않는다(위 후보 규칙) — 억지로 고르게 해도 넘지 않는다
+  // 15절: Lv3에서 멈추지 않는다 — Lv3 효과 카드를 고르면 Lv4(fxUp)
   const t = regen(s, (o) => { setFx(o, { pierce: 2 }); o.endless.bosses = 4; }, 1)[0].t;
   t.endless.offer = [{ k: 'fx', a: 'pierce' }];
   t.endless.fx.pierce = 3;
   C.pickCard(t, 0);
-  assert.equal(t.endless.fx.pierce, 3);
-  assert.ok(!t.ev.some((e) => e.t === 'fxUp'));
+  assert.equal(t.endless.fx.pierce, 4);
+  assert.deepEqual(t.ev.filter((e) => e.t === 'fxUp').map((e) => e.lv), [4]);
+  // 슬롯이 찼는데 새 효과를 억지로 고르게 하면 얻지 못한다(슬롯 규칙은 그대로)
+  const f = regen(s, (o) => { setFx(o, { pierce: 2, frost: 1 }); o.endless.bosses = 4; }, 1)[0].t;
+  f.endless.offer = [{ k: 'fx', a: 'burst' }];
+  C.pickCard(f, 0);
+  assert.equal(C.fxLv(f, 'burst'), 0);
+  assert.ok(!f.ev.some((e) => e.t === 'fxUp'));
 });
 
 /* 탄 효과의 세기를 정해진 판에서: 무한모드 2단계 판을 비우고 좀비·총알을 손으로 놓는다 */
@@ -1056,7 +1094,13 @@ test('탄종 상자: 무기 단계가 이미 3이면 구간의 무기 강화 상
   const c = open({ pierce: 1 }, 'burst');
   assert.deepEqual(c.fx, { pierce: 1, burst: 1 });
   assert.deepEqual(c.ev.filter((e) => e.t === 'combo').map((e) => e.id), ['pierceBurst'], '상자로 켜진 시너지도 combo');
-  for (const [fx, ax, why] of [[{ pierce: 3 }, 'pierce', 'Lv3'], [{ pierce: 1, frost: 2 }, 'burst', '슬롯이 참']]) {
+  // 15절: Lv3 효과의 탄종 상자는 Lv4로(상한이 없다)
+  const l4 = open({ pierce: 3 }, 'pierce');
+  assert.deepEqual(l4.fx, { pierce: 4 });
+  assert.equal(l4.gain, 0);
+  assert.ok(l4.ev.some((e) => e.t === 'fxUp' && e.lv === 4));
+  // 얻을 수 없는 것은 슬롯이 찬 새 효과뿐 — 병사로
+  for (const [fx, ax, why] of [[{ pierce: 1, frost: 2 }, 'burst', '슬롯이 참'], [{ pierce: 9, frost: 9 }, 'burst', '슬롯이 참(높은 레벨)']]) {
     const r = open(fx, ax);
     assert.deepEqual(r.fx, fx, `${why}: 그대로`);
     assert.ok(r.gain >= 5 && r.ev.some((e) => e.t === 'crate' && e.type === 'men'), `${why}: 병사로(+${r.gain})`);
@@ -1768,7 +1812,8 @@ test('나침반(정해진 판): 갈림길 위험한 쪽 보상 상자의 병사 
   assert.deepEqual(openBox(['compass'], { type: 'gun', mul: 1.5 }, (s) => { s.squad.tier = 2; }).ev, [{ t: 'crate', type: 'gun', tier: 3 }], '무기 단계는 한 칸 그대로');
   assert.equal(openBox(['compass'], { type: 'fx', a: 'pierce', mul: 1.5 }, (s) => { s.endless.fx = { burst: 3, frost: 3 }; }).n, 130);
   assert.deepEqual(openBox(['compass'], { type: 'fx', a: 'pierce', mul: 1.5 }).ev.map((e) => e.t), ['fxUp', 'crate'], '탄 효과는 한 레벨 그대로');
-  const full = (s) => { s.squad.sp = sp3(3); };
+  const full = (s) => { s.squad.sp = sp3(C.LV_SANE); };   // 15절: 무한모드 특수병은 Lv3 위로도 오르므로 '얻을 수 없는 철창'은 레벨 울타리에서만
+  assert.deepEqual(openBox([], { type: 'unit', k: 'sniper' }, (s) => { s.squad.sp = sp3(3); }).ev.map((e) => e.t), ['spUp'], 'Lv3 저격수의 철창은 Lv4로');
   const cage0 = openBox([], { type: 'unit', k: 'sniper' }, full);
   assert.deepEqual(cage0.ev, [{ t: 'gain', n: 12, why: 'spFull' }, { t: 'spFull', k: 'sniper', n: 12, why: 'max' }]);
   assert.deepEqual(openBox(['compass'], { type: 'unit', k: 'sniper', mul: 1.5 }, full).ev, [{ t: 'gain', n: 18, why: 'spFull' }, { t: 'spFull', k: 'sniper', n: 18, why: 'max' }]);
@@ -1822,10 +1867,10 @@ test('빨간 확성기(정해진 판): 구간이 시작될 때 빨간 덧셈 칸
     const z = C.restore(JSON.parse(JSON.stringify(C.snapshot(y))));
     assert.deepEqual(z.rows.map((r) => r.cells.map((c) => c.step)), y.rows.map((r) => r.cells.map((c) => c.step)), '이어하기로 다시 걸리지 않는다');
   }
-  // 고를 카드가 하나도 없어(병력 9999·무기 3단계·특수병 셋 다 Lv3·탄 효과 두 칸 다 Lv3) 카드 없이 곧바로 다음 구간으로 갈 때도 구간이 시작될 때 건다
+  // 고를 카드가 하나도 없어(병력 상한·무기 3단계·특수병 셋 다 레벨 울타리·열린 탄종 없음 — 15절부터 Lv3은 상한이 아니다) 카드 없이 곧바로 다음 구간으로 갈 때도 구간이 시작될 때 건다
   const noCard = (relics) => {
     const o = C.snapshot(first3(2).s);
-    o.endless.relics = relics; o.squad.n = C.MAX_N; o.squad.tier = 3; o.squad.sp = sp3(3); o.endless.fx = { pierce: 3, burst: 3 }; o.endless.offer = null;
+    o.endless.relics = relics; o.squad.n = C.ENDLESS.maxN; o.squad.tier = 3; o.squad.sp = sp3(C.LV_SANE); o.endless.fx = { pierce: 3, burst: 3 }; o.endless.ammo = []; delete o.ammo; o.endless.offer = null;
     const t = C.restore(o);
     assert.equal(C.offerOf(t), null, '고를 카드가 없다');
     const seg = t.endless.seg;
@@ -2516,8 +2561,10 @@ test('화염병 판의 결정성·이어하기·해시: 같은 시드·같은 �
 
 /* 화염병 줄(4단계)을 연 판의 지문 — 화염병을 넣은 직후 코드로 잰 값(1단계 판 + 유물까지 다 연 3단계 판에 flame: true, 앞 단계와 같은 식).
    화염병 줄을 안 연 판은 앞 단계 지문(STAGE1~3_FP — 위 테스트) 그대로다. 밸런스 조정으로 화염병·앞 단계 수치를 일부러 바꾸면 다시 잰다 */
-const FLAME_FP = 2175899401;   // 밸런스 정리에서 think의 화염병 몫(THINK.sp.flame)을 0.1 → 0.05로 — 고르는 카드가 달라져 다시 쟀다(규칙은 그대로)
-test('화염병 줄(4단계)을 연 판의 지문 — FLAME_FP(1단계 판·3단계 판에 flame: true). 넷째 자리(유물)는 화염병 줄을 연 판에만 유물 카드로 나온다(병과 넷 > 자리 셋)', () => {
+// 밸런스 정리에서 think의 화염병 몫(THINK.sp.flame)을 0.1 → 0.05로 — 고르는 카드가 달라져 다시 쟀다(규칙은 그대로, 2175899401).
+// 그 뒤 15절 규칙(병력·탄 효과 레벨 상한 해제)으로 또 다시 쟀다: 1단계 묶음은 열두 판 중 여덟 판이 병력 9999를 넘기고(가장 큰 판 38090명), 3단계 묶음은 세 판이 탄 효과 Lv4 이상을 얻는다
+const FLAME_FP = 784506671;
+test('화염병 줄(4단계)을 연 판의 지문 — FLAME_FP(1단계 판·3단계 판에 flame: true, 무한모드 상한 해제(15절) 규칙으로 다시 잰 값). 넷째 자리(유물)는 화염병 줄을 연 판에만 유물 카드로 나온다(병과 넷 > 자리 셋)', () => {
   assert.equal(C.hash(stageFP(1, { flame: true }), stageFP(3, { relicsOpen: R.RELIC_IDS, flame: true })), FLAME_FP);
   const k6 = (s, relicsOpen) => { const o = C.snapshot(s); o.endless.seg = 6; o.endless.relicsOpen = relicsOpen; o.endless.offer = null; return C.restore(o); };
   const f = k6(toOffer(4, FLAME3).s, ['fourth', 'heart']);
@@ -2546,10 +2593,10 @@ test('넷째 자리와 화염병 줄(정해진 판): 병과가 넷인 판에서�
   // 봇의 특수병 값: 합류할 수 있을 때만 병사 몫보다 크다
   const w = (relics, n) => { const t = bare3(relics, { flame: true }); t.squad.n = n; t.squad.sp = sp3(1); return C.spWorth(t, 'flame') !== Math.max(5, C.nice(0.12 * n)); };
   assert.deepEqual([w(['fourth'], 24), w(['fourth'], 23), w([], 100)], [true, false, false]);
-  // 카드: 셋이 모두 Lv3이면 특수병 카드는 넷째 병과 합류뿐 — 넷째 자리가 있을 때만 나온다(대왕이 아닌 2구간 보스 뒤)
+  // 카드: 셋이 모두 레벨 울타리면(15절 — Lv3은 이제 상한이 아니다) 특수병 카드는 넷째 병과 합류뿐 — 넷째 자리가 있을 때만 나온다(대왕이 아닌 2구간 보스 뒤)
   let with4 = 0, without = 0;
   for (let x = 1; x <= 20; x++) {
-    const of = (relics) => { const o = C.snapshot(toOffer(4, FLAME3).s); o.endless.seed = x; o.endless.seg = 2; o.endless.relics = relics; o.squad.n = 200; o.squad.sp = sp3(3); o.endless.offer = null; return C.offerOf(C.restore(o)); };
+    const of = (relics) => { const o = C.snapshot(toOffer(4, FLAME3).s); o.endless.seed = x; o.endless.seg = 2; o.endless.relics = relics; o.squad.n = 200; o.squad.sp = sp3(C.LV_SANE); o.endless.offer = null; return C.offerOf(C.restore(o)); };
     with4 += of(['fourth']).some((c) => c.k === 'unit' && c.u === 'flame') ? 1 : 0;
     without += of([]).some((c) => c.k === 'unit') ? 1 : 0;
   }
