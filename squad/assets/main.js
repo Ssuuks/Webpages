@@ -3,7 +3,7 @@ import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
-  RELIC, relicsOf, tierMax, spMax, spEscort, eggP, bannerOn, fxCan, flameOn,
+  RELIC, relicsOf, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
   nMax, fmtN, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, setLv, setOn,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
@@ -1433,7 +1433,7 @@ function relicFreshText(ids, U) {
   if (!ids.length) return '';
   const nm = ids.map((r) => RELICS[r].name).join(' · ');
   const waitOf = (id) => (id === 'fourth' && !U.flame ? '화염병이 열리면' : id === 'pouch' && AMMO_IDS.filter((a) => ammoOpen(a, totalStars(data))).length <= FX_SLOTS ? '탄종이 더 열리면' : '');
-  // 조건은 유물마다(대왕 둘을 한 판에 잡으면 둘이 함께 열린다 — 마지막 것의 조건만 보면 '넷째 자리 · 불굴의 심장! 대왕을 잡으면…'처럼 틀린 말이 됐다)
+  // 조건은 유물마다(대왕 둘을 한 판에 잡으면 둘이 함께 열린다 — 마지막 것의 조건만 보면 '넷째 자리 · 부활 서약! 대왕을 잡으면…'처럼 틀린 말이 됐다)
   const later = ids.filter(waitOf), w0 = later.length ? waitOf(later[0]) : '';
   if (later.length === ids.length && later.every((id) => waitOf(id) === w0)) return `새 유물 ${nm}! ${w0} 대왕 뒤 유물 카드에 나와요`;
   const eun = (w) => (ga(w) === '이' ? '은' : '는');
@@ -1686,7 +1686,7 @@ function cardText(c) {
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
   if (c.k === 'gun') return { kind: '무기', lead: '무기', from: c.from ? `${c.from}` : '기본', to: tierName(c.to), det: `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 ${tierMax(s)}단계`, col: '#FFC93C', icon: 'gun' };
   if (c.k === 'relic') {
-    // 유물(3·5단계 — 대왕 보스 뒤): 이름, 좋은 점, '대신' 줄(대신 쪽이 있는 유물만 — 나침반·휘장은 없다). 글·수치는 roster.js RELICS
+    // 유물(3·5단계 — 대왕 보스 뒤): 이름, 좋은 점, '대신' 줄(대신 쪽이 있는 유물만 — 나침반·주사위·서약·방패막은 없다). 글·수치는 roster.js RELICS
     const Rl = RELICS[c.r];
     return { kind: '유물', lead: '', from: '', to: Rl.name, det: relicGood(c.r), cost: relicBad(c.r), col: RELIC_COL, icon: 'relic_' + c.r, relic: true };
   }
@@ -2070,7 +2070,7 @@ function renderPauseUnits() {
     const Rl = RELICS[id];
     if (!Rl) continue;
     const used = (s.endless.spent || []).includes(id);
-    addRow('relic_' + id, `유물 ${Rl.name}${used ? '(썼어요)' : id === 'banner' && bannerOn(s) ? '(켜짐)' : ''}`, `${relicGood(id)}${relicBad(id) ? ` · 대신 ${relicBad(id)}` : ''}`);
+    addRow('relic_' + id, `유물 ${Rl.name}${used ? '(썼어요)' : ''}`, `${relicGood(id)}${relicBad(id) ? ` · 대신 ${relicBad(id)}` : ''}`);
   }
   box.hidden = !box.childNodes.length;
 }
@@ -2434,13 +2434,11 @@ function handleEvents(ev) {
         tip('relic', '유물은 이 판 끝까지 규칙을 바꿔요. 위쪽 보라 칩에 보이고, 일시정지에서 풀이를 볼 수 있어요');
         break;
       case 'relicUse':
-        // 불굴의 심장(유물)이 전멸을 무효로 했다 — 판이 끝날 뻔한 순간이라 가장 크게: 소리 둘·긴 진동·잠깐 느리게(그림은 renderer, HUD의 심장은 흐려진다)
-        if (e.id === 'heart') {
-          sfx.revive();
-          if (music) music.duck(1.6, 0.3);
-          vibe([80, 40, 80, 40, 160]);
-          slow(0.3, 1100);
-          toast(`불굴의 심장! 병력 ${e.n}명으로 다시 일어났어요 · 심장은 사라졌어요`, 3000);
+        // 방패막(유물)이 톱날·독침의 피해를 막았다(그림은 renderer): 구간마다 한 번이라 짧게 알린다
+        if (e.id === 'ward') {
+          sfx.power(1);
+          vibe(30);
+          toast(`방패막이 ${e.cause === 'saw' ? '톱날' : '독침'}을 막았어요 · 이번 구간은 한 번뿐이에요`, 2200);
         }
         break;
       case 'card': {
@@ -2698,8 +2696,7 @@ function updateSpChips() {
   const sp = (s && s.squad.sp) || [];
   const fx = fxOf(s);
   const rl = relicsOf(s), spent = (rl && s.endless.spent) || [];
-  const ban = !!rl && bannerOn(s);   // 전장의 휘장(유물)이 지금 켜졌나 — 칩이 금빛으로
-  // 병과·레벨(과 2단계 판의 탄 효과 레벨, 3단계 판의 유물·쓴 것·휘장)이 바뀔 때만 다시 만든다(매 프레임 문자열·배열을 만들지 않게 숫자 열쇠)
+  // 병과·레벨(과 2단계 판의 탄 효과 레벨, 3단계 판의 유물·쓴 것)이 바뀔 때만 다시 만든다(매 프레임 문자열·배열을 만들지 않게 숫자 열쇠)
   // 레벨에 상한이 없어(무한모드) 자릿수로 쌓지 않고 굴리는 해시로 — 값 하나가 바뀌면 열쇠가 바뀐다
   const tier = s ? s.squad.tier | 0 : 0;
   const ammoChip = s && !fx && AMMO[s.ammo] ? s.ammo : '';   // 탄 효과가 없는 판(캠페인·무한모드 1단계)의 출격 탄종
@@ -2711,10 +2708,9 @@ function updateSpChips() {
   mix(-1);
   if (fx) for (const a of AMMO_IDS) mix(fx[a] | 0);
   mix(ammoChip ? AMMO_IDS.indexOf(ammoChip) + 1 : 0);
-  if (rl) for (const id of rl) mix((RELIC_IDS.indexOf(id) + 1) * 3 + (spent.includes(id) ? 1 : id === 'banner' && ban ? 2 : 0));
+  if (rl) for (const id of rl) mix((RELIC_IDS.indexOf(id) + 1) * 3 + (spent.includes(id) ? 1 : 0));
   if (key === spKey) return;
   spKey = key;
-  if (ban) tip('banner', `전장의 휘장이 빛나요! ${RELICS.banner.text()}`);
   const box = $('spChips');
   box.textContent = '';
   // 무기 단계(상자·카드로 얻은 총알 파워업): 1단계부터 칩으로 — 테두리·숫자는 그 단계의 총알 색
@@ -2789,18 +2785,18 @@ function updateSpChips() {
     chip.appendChild(b);
     box.appendChild(chip);
   }
-  // 유물(무한모드 3·5단계): 아이콘만 든 칩 하나(보라 테두리) — 얻은 순서대로, 쓴 것(불굴의 심장)은 흐리게, 켜진 휘장은 금빛. 풀이는 일시정지 목록에
+  // 유물(무한모드 3·5단계): 아이콘만 든 칩 하나(보라 테두리) — 얻은 순서대로, 쓴 것은 흐리게. 풀이는 일시정지 목록에
   if (rl && rl.length) {
     const chip = document.createElement('span');
     chip.className = 'sp-chip relic-chip';
     const names = [];
     for (const id of rl) {
-      const off = spent.includes(id), on = id === 'banner' && ban;
+      const off = spent.includes(id);
       const i = document.createElement('i');
-      if (off || on) i.className = off ? 'off' : 'on';
+      if (off) i.className = 'off';
       i.appendChild(iconEl('relic_' + id, 2));
       chip.appendChild(i);
-      names.push((RELICS[id] ? RELICS[id].name : id) + (off ? '(썼어요)' : on ? '(켜짐)' : ''));
+      names.push((RELICS[id] ? RELICS[id].name : id) + (off ? '(썼어요)' : ''));
     }
     chip.setAttribute('aria-label', `유물: ${names.join(', ')}`);
     chip.setAttribute('role', 'img');

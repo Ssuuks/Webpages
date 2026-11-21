@@ -22,7 +22,6 @@ const biomeGroup = (n) => BIOME_GROUP.get(n) || '';   // 지역 시트 → 그 �
 /* 무기 단계 색. 다섯째(4단계)는 과부하 코일(무한모드 유물)로만 닿는다 — 전기 보라(총알 옆에 튀는 불꽃, drawBullets). core WEAPON과 같은 길이(tests/art.mjs) */
 export const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9', '#B98CFF'];
 const SPARK4 = '#F2E8FF';   // 4단계 총알 옆 전기 불꽃
-const HEART_GLOW = 1.6;     // 불굴의 심장이 되살린 뒤 가장자리 금빛 번짐(초)
 /* 유물(무한모드 3·5단계)의 색: 보라 테두리 + 금빛 — 카드(index.html .pick-card.relic)·HUD 줄·나침반 표시가 같은 짝 */
 export const RELIC_COL = '#9B6BFF', RELIC_GOLD = '#FFD84A';
 const GOLD_BULLET = '#FFD84A';
@@ -667,7 +666,6 @@ export function createRenderer(cvs) {
   let shownN = 0, countPop = 0, countTint = 0, lastN = -1, pillA = 1;
   let lastS = null, lastT = -1, stillFor = 0;
   let hurtAt = -9, bossImpactT = -9, roarT = -9, bossIntroT = -9, bossDeath = null, enrageT = -9;
-  let heartAt = -9;   // 불굴의 심장(유물)이 되살린 시각 — 가장자리 금빛 번짐
   let petT = -9;       // 펫 효과가 터진 때(core 'pet' 이벤트)
   let surgeT = -9;   // 몰이 알림(core 'surge' 이벤트): 화면 양옆에서 안쪽을 가리키는 붉은 화살표가 잠깐 깜박인다
   let stompT = -9;     // 보스 짓밟기(길 전체 땅 흔들림 표시)
@@ -836,7 +834,7 @@ export function createRenderer(cvs) {
     for (const r of rings) r.on = false;
     trauma = 0; flashA = 0; camX = 0; units.length = 0; fading.length = 0; fComp = null; fArr = null; fGeo = null; fN = -1; formS = null; pendingLoss = 0; lastN = -1; countTint = 0; countPop = 0; shownN = 0; pillA = 1;
     dolly = 0; layout();   // 보스전 렌즈를 되돌린다(R1)
-    hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9; surgeT = -9; stompT = -9; heartAt = -9;
+    hurtAt = -9; bossImpactT = -9; roarT = -9; bossIntroT = -9; bossDeath = null; enrageT = -9; surgeT = -9; stompT = -9;
     castT = -9; castRun = false; castArena = false; healT = -9; rocketT = -9; snipeT = -9; readyT = -9; healSum = 0; healShown = -9; flameT = -9;
     cut = null; bossCut = null; clearOverlay();
     lodScen.clear(); lodFoe.clear(); lodSaw.clear(); lodCage.clear(); lodBoss = undefined;
@@ -1375,19 +1373,13 @@ export function createRenderer(cvs) {
           break;
         }
         case 'relicUse': {
-          // 불굴의 심장(유물)이 전멸을 무효로 했다 — 판이 끝날 뻔한 순간이라 가장 크게: 진홍 번쩍임·흔들림, 분대를 따라 번지는 고리 셋,
-          // 솟는 하트와 '+n'(심장 아이콘 — 되살아난 병력). 글자 풀이는 DOM 알림(main.js), HUD의 심장은 그 뒤 흐려진다
+          // 방패막(유물)이 톱날·독침의 피해를 막았다: 분대를 따라 번지는 청록 고리 둘, 튀는 불꽃, 위로 뜨는 방패 아이콘(글자 풀이는 DOM 알림 — main.js)
           const cx = e.x ?? q.x, cz = e.z ?? q.z;
-          heartAt = time;
-          powerSurge('#FF6B7F', true);
-          screenFlash(0.5, '255,96,120');
-          shake(0.7);
-          ring(cx, cz, 0.2, 5, 0.75, '#E8384F', { follow: 'sq', thick: 2 });
-          ring(cx, cz, 0.4, 3.2, 0.6, RELIC_GOLD, { follow: 'sq', thick: 2 });
-          ring(cx, cz, 0.1, 1.8, 0.45, '#FFFFFF', { follow: 'sq' });
-          for (let k = 0; k < 14; k++) part(cx + (Math.random() - 0.5) * 3, 0.6 + Math.random(), cz, (Math.random() - 0.5) * 3, 3 + Math.random() * 3, q.vz || 0, 1.2, '#FF6B7F', 1, 1.5, 'heart');
-          burst(cx, 1.2, cz, 28, ['#E8384F', RELIC_GOLD, '#FFFFFF'], 5, 5, 0.85);
-          float(cx, 2.9, cz, '+' + e.n, '#DDF3FF', { icon: 'relic_heart', out: PANEL.good.out, life: 1.9, scale: 2, vz: q.vz });
+          ring(cx, cz, 0.2, 3.6, 0.55, '#4FD1C5', { follow: 'sq', thick: 2 });
+          ring(cx, cz, 0.1, 1.8, 0.4, '#FFFFFF', { follow: 'sq' });
+          burst(cx, 1.2, cz, 14, ['#4FD1C5', '#A6F0E6', '#FFFFFF'], 4, 4, 0.6);
+          if (ICONS['relic_' + e.id]) float(cx, 2.7, cz, '', '#FFFFFF', { icon: 'relic_' + e.id, life: 1.2, vz: q.vz });
+          screenFlash(0.1, '79,209,197');
           break;
         }
         case 'card': {
@@ -4058,20 +4050,7 @@ export function createRenderer(cvs) {
       }
       ctx.globalAlpha = 1;
     }
-    const revived = time - heartAt < HEART_GLOW;
-    if (revived) {
-      // 불굴의 심장(유물)이 막 되살렸다: 가장자리가 금빛·진홍 띠를 번갈아 네 겹으로 번졌다가 사라진다(이 동안은 위기 붉은 맥동 대신 — 살아났다는 신호가 먼저)
-      const W = Math.floor(VW), Hh = Math.floor(VH), u = (time - heartAt) / HEART_GLOW;
-      for (let i = 0; i < 4; i++) {
-        const m = i * 3;
-        ctx.fillStyle = i & 1 ? '#E8384F' : RELIC_GOLD;
-        ctx.globalAlpha = (0.75 - i * 0.14) * (1 - u * u);
-        ctx.fillRect(m, m, W - 2 * m, 3); ctx.fillRect(m, Hh - m - 3, W - 2 * m, 3);
-        ctx.fillRect(m, m + 3, 3, Hh - 2 * m - 6); ctx.fillRect(W - m - 3, m + 3, 3, Hh - 2 * m - 6);
-      }
-      ctx.globalAlpha = 1;
-    }
-    const crisis = !revived && q.n >= 8 && q.peak > 0 && q.n < 0.4 * q.peak && time - hurtAt < 2.5 && (s.phase === 'run' || s.phase === 'arena');
+    const crisis = q.n >= 8 && q.peak > 0 && q.n < 0.4 * q.peak && time - hurtAt < 2.5 && (s.phase === 'run' || s.phase === 'arena');
     if (crisis) {
       // 위기: 방금 맞았고 병력이 이 판 최고치의 40% 아래 — 가장자리가 붉게 맥동한다(숫자를 안 봐도 위험을 알게)
       const W = Math.floor(VW), Hh = Math.floor(VH);

@@ -1034,7 +1034,7 @@ test('장애물 그림: 드럼통(빨강, 길가 통과 다르게, 총알 받는
 });
 
 /* 무한모드 3·5단계(유물): 유물 아이콘, 무기 4단계(과부하 코일) 색·칸·총알, 나침반 표시(그린 것 = 받는 것), 유물 화면·이벤트·HUD의 연결 */
-test('유물 그림: relic_<id> 아이콘(9×9, 실루엣이 서로·다른 아이콘과 다르다) · 무기 4단계 색·칸·불꽃 · 나침반 상자 표시 · 유물 카드·HUD·불굴의 심장·알 확률', async () => {
+test('유물 그림: relic_<id> 아이콘(9×9, 실루엣이 서로·다른 아이콘과 다르다) · 무기 4단계 색·칸·불꽃 · 나침반 상자 표시 · 유물 카드·HUD·방패막·알 확률', async () => {
   const fs = await import('node:fs');
   const R_ = await import('../assets/render.js');
   const { AMMO_IDS } = await import('../assets/roster.js');
@@ -1056,9 +1056,6 @@ test('유물 그림: relic_<id> 아이콘(9×9, 실루엣이 서로·다른 아�
     mine.push(m);
   }
   assert.equal(new Set(mine).size, mine.length, '유물 아이콘 실루엣이 서로 다르다');
-  // 불굴의 심장은 펫 하트(분홍)와 다른 진홍 — 가장 많은 색
-  const top = (rows) => { const n = new Map(); for (const c of frameRaster(rows, ICON_PAL_EXPORT).a) if (c) n.set(c, (n.get(c) | 0) + 1); return [...n.entries()].sort((a, b) => b[1] - a[1])[0][0]; };
-  assert.ok(deltaE(top(ICONS.relic_heart), top(ICONS.heart)) >= 12, '심장 유물 vs 펫 하트 색');
   // 무기 단계 색: core WEAPON의 단계마다 하나(과부하 코일의 4단계 포함), 서로 ΔE 15 이상. 단계 칸은 WTIER 끝까지(예전 3칸 자르기 없음)
   assert.equal(R_.WTIER.length, Core.WEAPON.length, '무기 단계마다 색');
   for (let i = 0; i < R_.WTIER.length; i++) for (let j = i + 1; j < R_.WTIER.length; j++) assert.ok(deltaE(R_.WTIER[i], R_.WTIER[j]) >= 15, `무기 색 ${i}·${j}`);
@@ -1095,21 +1092,22 @@ test('유물 그림: relic_<id> 아이콘(9×9, 실루엣이 서로·다른 아�
   }
   assert.match(src, /function drawPeeks\(s\) \{\s*for \(const d of s\.divs\) \{\s*const p = forkPeek\(s, d\);/, '표시는 core.forkPeek가 돌려주는 상자만');
   assert.match(src, /if \(s\.divs\) drawPeeks\(s\);/, '모든 소품 다음(벽 위)');
-  // 유물 이벤트 그림: 얻을 때(보라·금빛) · 불굴의 심장(번쩍임·흔들림·고리·하트·'+n' — 가장 크게, 가장자리 금빛 번짐이 위기 맥동 대신)
-  for (const re of [/case 'relic': \{/, /case 'relicUse': \{[\s\S]*?screenFlash\(0\.5,[\s\S]*?shake\(0\.7\)[\s\S]*?'heart'\);[\s\S]*?float\(cx, 2\.9, cz, '\+' \+ e\.n,/, /const crisis = !revived && /]) assert.match(src, re);
-  // 화면(main.js): 유물 카드(이름·좋은 점·대신 줄, 보라·금빛), 머리글, HUD 유물 칩(쓴 것 흐리게·켜진 휘장), 알 확률은 core.eggP, 결과 줄, 무기 카드의 상한
+  // 유물 이벤트 그림: 얻을 때(보라·금빛) · 방패막이 막았을 때(청록 고리 둘·불꽃·방패 아이콘)
+  for (const re of [/case 'relic': \{/, /case 'relicUse': \{[\s\S]*?ring\(cx, cz, 0\.2, 3\.6, 0\.55, '#4FD1C5'[\s\S]*?float\(cx, 2\.7, cz, '', '#FFFFFF', \{ icon: 'relic_' \+ e\.id,/, /const crisis = q\.n >= 8 && /]) assert.match(src, re);
+  assert.doesNotMatch(src, /heartAt|HEART_GLOW/, '불굴의 심장이 빠져 되살림 번짐은 없다');
+  // 화면(main.js): 유물 카드(이름·좋은 점·대신 줄, 보라·금빛), 머리글, HUD 유물 칩(쓴 것 흐리게), 알 확률은 core.eggP, 결과 줄, 무기 카드의 상한
   assert.match(main, /if \(c\.k === 'relic'\) \{[\s\S]*?det: relicGood\(c\.r\), cost: relicBad\(c\.r\), col: RELIC_COL, icon: 'relic_' \+ c\.r, relic: true/);
   assert.match(main, /cs\.textContent = `대신 \$\{T\.cost\}`;/);
   assert.match(main, /\$\('scrPick'\)\.classList\.toggle\('relic', relic\);/);
   assert.match(main, /Math\.random\(\) < eggP\(s\)/, '수집가의 가방: 알 확률은 core.eggP');
   assert.doesNotMatch(main, /Math\.random\(\) < EGG\.pEndless/);
   assert.match(main, /chip\.className = 'sp-chip relic-chip';/);
-  assert.match(main, /const ban = !!rl && bannerOn\(s\);/, '휘장이 켜지면 칩이 금빛');
-  assert.match(main, /case 'relicUse':\s*[^]*?if \(e\.id === 'heart'\) \{[^]*?slow\(/, '심장: 소리·진동·느리게·알림');
+  assert.doesNotMatch(main, /bannerOn|const ban\b/, '휘장이 빠져 칩이 금빛이 되는 일은 없다');
+  assert.match(main, /case 'relicUse':\s*[^]*?if \(e\.id === 'ward'\) \{[^]*?sfx\.power\(1\);[^]*?toast\(/, '방패막: 소리·진동·알림');
   assert.match(main, /lines\.push\(\['유물', /, '결과 화면 유물 줄');
   assert.match(main, /최대 \$\{tierMax\(s\)\}단계/, '무기 카드 상한은 core.tierMax');
   assert.doesNotMatch(main, /최대 3단계|특수병 자리\(3명\)|병사가 4명은/, '자리·호위·무기 상한은 core 값으로(넷째 자리·코일)');
-  for (const sel of ['#scrPick.relic', '.pick-card.relic', '.pick-cost', '.relic-chip', '.relic-chip i.off', '.relic-chip i.on']) assert.ok(html.includes(sel), `index.html ${sel}`);
+  for (const sel of ['#scrPick.relic', '.pick-card.relic', '.pick-cost', '.relic-chip', '.relic-chip i.off']) assert.ok(html.includes(sel), `index.html ${sel}`);
   assert.match(html, /id="pickTitle"/);
   // 유물 글은 해요체 한 줄(카드·일시정지 목록·HUD 이름)
   for (const id of RELIC_IDS) { const t = RELICS[id].text(); assert.ok(t.length > 8 && t.length < 60, `${id}: ${t}`); }

@@ -404,7 +404,7 @@ export const sfx = {
       tone(b, i === 3 ? 0.5 : 0.11, { type: 'triangle', vol: 0.08, delay: i * 0.09, rev: i === 3 ? 0.5 : 0 });
     });
   },
-  /* 불굴의 심장이 되살렸다: 심장 박동 둘 → 솟아오르는 화음 */
+  /* 되살아났다(지금은 쓰는 곳이 없다): 심장 박동 둘 → 솟아오르는 화음 */
   revive() {
     if (!ready('revive', 600)) return;
     for (let i = 0; i < 2; i++) {

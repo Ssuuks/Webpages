@@ -1638,7 +1638,7 @@ export function newEndless(opt = {}) {
     // 2단계(탄 효과·시너지): 효과마다 레벨 { 탄종: Lv }(해시는 AMMO_IDS 순서). 출격 탄종은 한 칸을 Lv2로 차지한다 — 대신 쪽은 s.ammo 그대로
     if (unl >= 2) { s.endless.fx = {}; if (s.ammo) s.endless.fx[s.ammo] = FX_BASE_LV; s.endless.obsSeen = []; }   // obsSeen: 이 판에서 알린 장애물 종류(처음 한 번씩)
     // 3단계(유물): 열린 유물 중 아는 것만 한 번씩(열리는 순서 그대로). 3단계 아래 판에는 필드가 없다
-    // relics: 이 판에서 얻은 유물(얻은 순서), spent: 그중 써서 사라진 것(불굴의 심장) — 얻은 수(RELIC.max)에는 그대로 든다
+    // relics: 이 판에서 얻은 유물(얻은 순서), spent: 그중 써서 사라진 것(지금은 쓰는 유물이 없다 — 이어하기 호환) — 얻은 수(RELIC.max)에는 그대로 든다
     if (unl >= 3) {
       const e = s.endless;
       e.relicsOpen = relicList(opt.relicsOpen);
@@ -1889,8 +1889,8 @@ function fxCrates(s) {
      시드·구간 번호로 정한 순서에서 앞의 것(보이는 순서는 RELIC_IDS 순). 남은 게 모자라면 그만큼, 없거나 이미 RELIC.max개면 보통 카드.
      그 판에서 좋은 점이 들 수 없는 유물(relicFits — 대신 쪽만 남는다)은 내지 않는다.
    - 유물은 수치가 아니라 규칙을 바꾼다(roster.js RELICS — 보이는 수치·글). 규칙은 relicOn(s, id)를 보는 곳들:
-     나침반 relicSeg·forkPeek·openCrate, 휘장 fire(bannerOn), 확성기 relicSeg, 코일 tierMax·relicSeg, 넷째 자리 spMax·spEscort,
-     심장 lose(heartRevive), 가방 cardCount·eggP(화면), 탄낭 fxSlots·cardPool2.
+     나침반 relicSeg·forkPeek·openCrate, 주사위 relicAdd·보스 처치(다시 뽑기 횟수), 확성기 relicSeg, 코일 tierMax·relicSeg, 넷째 자리 spMax·spEscort,
+     서약 spBack, 방패막 wardBlock(sawsUpdate·spitsUpdate), 가방 cardCount·eggP(화면), 탄낭 fxSlots·cardPool2.
    - 구간을 바꾸는 유물(확성기·코일·나침반)은 구간이 시작될 때 한 번 건다(relicSeg — 고른 카드·유물이 든 뒤, 탄종 상자를 정한 뒤).
      바뀐 숫자는 상태(덧셈 칸 step, 상자 reward)에 실려 이어하기로 다시 걸리지 않는다 */
 export const RELIC = { max: 3, show: 3 };
@@ -1909,10 +1909,17 @@ export const spEscort = (s) => (relicOn(s, 'fourth') ? RELICS.fourth.escort : SP
 export const cardCount = (s) => (relicOn(s, 'bag') ? RELICS.bag.cards : CARD.count);
 /* 대왕이 아닌 무한모드 보스를 잡을 때 펫 알이 나올 확률(뽑기는 화면 쪽 — 시뮬레이션 밖의 난수). 대왕은 늘 하나 */
 export const eggP = (s) => (relicOn(s, 'bag') ? RELICS.bag.egg : EGG.pEndless);
-/* 전장의 휘장이 지금 켜졌나: 병력이 이 판 최고치(q.peak)의 at 아래(화면의 위기 신호와 같은 문턱) */
-export const bannerOn = (s) => relicOn(s, 'banner') && s.squad.n < RELICS.banner.at * s.squad.peak;
-/* 총알 화력 배수(휘장이 켜졌으면 1 + v, 아니면 1 — 봇의 화력 어림도 이 값을 곱한다: x × 1 = x라 유물 없는 판은 그대로) */
-export const relicFire = (s) => (bannerOn(s) ? 1 + RELICS.banner.v : 1);
+/* 방패막(유물): 구간마다 톱날·독침의 피해를 한 번 막는다 — 그 구간에서 처음 닿은 톱날(닿아 있는 동안 계속)이나 처음 맞은 독침 중 먼저 온 것.
+   막았으면 true('relicUse' { id: 'ward' }는 막기 시작한 순간 한 번), 아니면 false. 상태: e.wardAt(막은 구간 번호)·e.wardId(막은 것) */
+function wardBlock(s, kind, id, x, z) {
+  if (!relicOn(s, 'ward')) return false;
+  const e = s.endless, key = kind + ':' + id;
+  if (e.wardAt === e.seg) return kind === 'saw' && e.wardId === key;
+  e.wardAt = e.seg;
+  e.wardId = key;
+  emit(s, { t: 'relicUse', id: 'ward', cause: kind, x, z });
+  return true;
+}
 /* 갈림길 d의 보상 상자(위험한 쪽 — 철창이 됐을 수도) */
 export function forkCrate(s, d) {
   for (const p of s.props) if (p.fork && (p.kind === 'crate' || p.kind === 'cage') && p.z > d.z0 && p.z < d.z1 && Math.sign(p.x0 + p.x1) === d.risk) return p;
@@ -1934,6 +1941,7 @@ export const spKindsOf = (s) => (flameOn(s) ? SP_FLAME : SP_KINDS);
    넓은 탄낭은 얻을 수 있는 탄 효과 종류(별로 열린 탄종 + 출격 탄종)가 슬롯(FX_SLOTS)보다 많을 때만 */
 export function relicFits(s, id) {
   const e = s.endless;
+  if (id === 'dice' || id === 'pledge') return !!e.bld;   // 다시 뽑기·쓰러진 특수병의 복귀는 빌드 개편 판에만 있다
   if (id === 'fourth') return spKindsOf(s).length > SP_MAX;
   if (id === 'pouch') return AMMO_IDS.filter((a) => (e.ammo || []).includes(a) || s.ammo === a).length > FX_SLOTS;
   return !!RELICS[id];
@@ -1956,6 +1964,7 @@ function relicAdd(s, id) {
   s.endless.relics.push(id);
   emit(s, { t: 'relic', id, x: q.x, z: q.z });
   if (id === 'fourth') escort(s);
+  if (id === 'dice' && s.endless.bld) s.endless.bld.rr += RELICS.dice.n;
 }
 /* 구간이 시작될 때 유물이 구간에 거는 규칙(한 구간에 한 번 — 고른 카드·유물이 든 뒤):
    확성기 — 덧셈 칸의 오르는 빠르기(−로 시작한 빨간 칸은 red배 빨리, 파란 칸은 blue배 — step을 나눈다. 역전한 칸도 처음 색대로),
@@ -1977,19 +1986,6 @@ function relicSeg(s) {
     else if (risky.has(p.id) && (r.type === 'gun' || r.type === 'fx' || r.type === 'unit')) r.mul = RELICS.compass.v;
   }
 }
-/* 불굴의 심장: 전멸한 순간(lose가 병력을 0으로 만든 그 자리) 병력이 그 구간 바닥선(segFloor)의 v로 돌아오고 유물은 사라진다(spent — 얻은 수에는 그대로 든다).
-   바닥선이 없는 1구간은 바닥선의 밑(ENDLESS.floor0 — 시작 병력 강화 10단계의 출발 병력)을 쓴다(구현 판단 — 유물은 대왕(6구간) 뒤에 얻으므로 판에서는 늘 바닥선이 있고,
-   1구간은 처음부터 쥐여 주는 시험·측정에서만). 'relicUse' { id, n, cause }. 호위 병사가 모자라면 가장 늦게 온 특수병이 떠난다 */
-function heartRevive(s, cause) {
-  const q = s.squad, e = s.endless;
-  const n = clamp(Math.round(RELICS.heart.v * (segFloor(e.seg) || ENDLESS.floor0)), 1, nMax(s));
-  e.spent.push('heart');
-  q.n = n;
-  q.peak = Math.max(q.peak, n);
-  emit(s, { t: 'relicUse', id: 'heart', n, cause, x: q.x, z: q.z });
-  escort(s);
-}
-
 /* 지금 떠 있는 카드(없으면 null) */
 export const offerOf = (s) => (s && s.endless && s.endless.offer) || null;
 /* 카드 i를 고른다: 다음 구간을 만들어 이어 붙이고(고르기 전의 병력·무기 단계로) 카드를 적용한다. 고른 것이 없으면 false */
@@ -2148,7 +2144,8 @@ function spBack(s) {
   for (const d of down) {
     if (q.sp.some((m) => m.k === d.k) || q.sp.length >= spMax(s) || q.n < spEscort(s) * (q.sp.length + 1)) continue;
     const sp = setV(s, 'precise');   // 정밀 세트: 쓰러진 특수병이 더 높은 레벨로 돌아온다
-    const lv = Math.max(1, Math.floor(d.lv * (sp && sp.back > BUILD.spBack ? sp.back : BUILD.spBack)));
+    const back = relicOn(s, 'pledge') ? 1 : sp && sp.back > BUILD.spBack ? sp.back : BUILD.spBack;   // 부활 서약(유물): 제 레벨로
+    const lv = Math.max(1, Math.floor(d.lv * back));
     q.sp.push({ id: s.nextId++, k: d.k, cd: 0.6, lv });
     emit(s, { t: 'spGet', k: d.k, via: 'back', lv, x: q.x, z: q.z });
   }
@@ -2293,7 +2290,7 @@ export function restore(o) {
     if (o.endless.seg < 1) return null;
     const e = o.endless;
     // 3택 1을 안 연 판에 카드가 들어 있으면(손댄 저장) 버린다 — 남기면 step이 멈춘 채로 풀리지 않는다
-    if (e.unl == null) { delete e.bld; delete e.offer; delete e.picks; delete e.ammo; delete e.fx; delete e.flame; delete e.relicsOpen; delete e.relics; delete e.spent; delete e.obsSeen; } else {
+    if (e.unl == null) { delete e.bld; delete e.offer; delete e.picks; delete e.ammo; delete e.fx; delete e.flame; delete e.relicsOpen; delete e.relics; delete e.spent; delete e.wardAt; delete e.wardId; delete e.obsSeen; } else {
       e.unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(e.unl) || 0)));
       // 빌드 개편 상태: 숫자는 0 이상 정수(curse만 배수), 전문화는 아는 병과·갈래만, 쓰러진 특수병은 아는 병과 한 번씩
       if (e.bld !== undefined) {
@@ -2316,8 +2313,9 @@ export function restore(o) {
         e.relicsOpen = relicList(e.relicsOpen);
         e.relics = relicList(e.relics).slice(0, e.bld ? BUILD.relicMax : RELIC.max);
         e.spent = relicList(e.spent).filter((id) => e.relics.includes(id));
+        if (!(Number.isFinite(e.wardAt) && typeof e.wardId === 'string')) { delete e.wardAt; delete e.wardId; }
         for (const p of o.props) if (p.reward && p.reward.mul !== undefined && !(typeof p.reward.mul === 'number' && p.reward.mul > 0 && p.reward.mul < 10)) delete p.reward.mul;
-      } else { delete e.relicsOpen; delete e.relics; delete e.spent; }
+      } else { delete e.relicsOpen; delete e.relics; delete e.spent; delete e.wardAt; delete e.wardId; }
       // 2단계 탄 효과: 아는 탄종만 Lv1 이상, 슬롯 수까지(AMMO_IDS 순서로 — 출격 탄종 먼저). 없으면 출격 탄종 Lv2에서 다시. 2단계 아래 판에는 없다
       if (e.unl >= 2) {
         const src = e.fx && typeof e.fx === 'object' && !Array.isArray(e.fx) ? e.fx : o.ammo ? { [o.ammo]: FX_BASE_LV } : {};
@@ -2407,8 +2405,7 @@ function lose(s, k, cause, x, z, sub) {
   s.stats.lost += real;
   emit(s, { t: 'loss', n: real, cause, x: x ?? q.x, z: z ?? q.z });
   if (q.n <= 0) {
-    if (relicOn(s, 'heart')) heartRevive(s, cause);   // 불굴의 심장(유물): 한 번은 전멸하지 않는다 — 같은 틱의 나머지도 되살아난 병력으로 흐른다
-    else s.cause = cause;
+    s.cause = cause;
     return;
   }
   if (cause !== 'gate') {
@@ -2715,6 +2712,7 @@ function sawsUpdate(s, R) {
     if (w.x > w.xb) { w.x = w.xb; w.dir = -1; }
     if (w.x < w.xa) { w.x = w.xa; w.dir = 1; }
     if (touches(w.x - q.x, w.z - q.z, hitHalf(R), SQUAD_DEPTH * R, w.w / 2, SAW_HD)) {
+      if (wardBlock(s, 'saw', w.id, w.x, w.z)) continue;   // 방패막(유물): 구간마다 처음 닿은 톱날 하나
       q.lossAcc += (4 + 0.35 * q.n) * DT;
       if (q.lossAcc >= 1) {
         const k = Math.floor(q.lossAcc);
@@ -2851,7 +2849,7 @@ function spitsUpdate(s, R) {
     const ov = overlap(q.x - H, q.x + H, sp.x - SPIT_R, sp.x + SPIT_R) / (2 * H);
     const hit = ov > 0 && Math.abs(sp.z - q.z) < R + 1.5;
     emit(s, { t: 'spitHit', x: sp.x, z: sp.z, hit });
-    if (hit) lose(s, Math.max(1, Math.ceil(0.3 * ov * q.n)), 'spit', sp.x, sp.z);
+    if (hit && !wardBlock(s, 'spit', sp.id ?? 0, sp.x, sp.z)) lose(s, Math.max(1, Math.ceil(0.3 * ov * q.n)), 'spit', sp.x, sp.z);   // 방패막(유물): 구간마다 처음 맞은 독침
   }
   if (s.spits.length) s.spits = s.spits.filter((sp) => sp.t > 0);
 }
@@ -2940,7 +2938,6 @@ function fire(s, R) {
     const sBar = B ? setV(s, 'barrage') : null, sPre = B ? setV(s, 'precise') : null;   // 빌드 세트: 탄막(화력), 정밀(치명타 — 난수 없이 확률만큼 고르게)
     if (sBar) dmg *= 1 + sBar.fire;
     if (B && B.dur && s.hero && s.hero.act > 0) dmg *= 1 + BUILD.hero.pow * deep(B.dur);   // 영웅 카드 '끈기': 스킬이 켜진 동안   // 무기 개조(개편 판): 위협 식에 들지 않는 화력
-    if (bannerOn(s)) dmg *= 1 + RELICS.banner.v;   // 전장의 휘장(유물): 병력이 이 판 최고치의 40% 아래면 총알 화력 +40%
     const rng = A && A.range ? A.range : 0;   // 탄종의 사거리(없으면 기본)
     const span = R + 0.3;
     // 펫의 확률 효과(크리티컬은 총알마다, 멀리·넓게 쏘기는 일제 사격마다 굴린다 — 펫 전용 난수). avg면 기대값만큼 피해를 고르게 올린다
@@ -3267,7 +3264,7 @@ function bossUpdate(s, R) {
       b.slam = null;
       e.wait = ENDLESS.wait;
       e.bosses++;
-      if (e.bld) { const B = e.bld; B.pi = 0; B.rrn = 0; B.more = 0; B.rel = 1; if (p.tag === 'super') B.rr++; }
+      if (e.bld) { const B = e.bld; B.pi = 0; B.rrn = 0; B.more = 0; B.rel = 1; if (p.tag === 'super') B.rr += 1 + (relicOn(s, 'dice') ? RELICS.dice.king : 0); }
       const coins = segCoins(e.seg);
       e.bank += coins;
       s.stats.bossT += b.t;
@@ -3715,7 +3712,7 @@ function divSteer(s, tx) {
   let side;
   if (q.z >= dv.z0) side = q.x >= 0 ? 1 : -1;
   else {
-    const can = dps(q.n, q.tier, s.fireLv) * relicFire(s) * heroDmg(s) * 0.9 * ((BULLET_RANGE - 2) / Math.max(1, q.vz));
+    const can = dps(q.n, q.tier, s.fireLv) * heroDmg(s) * 0.9 * ((BULLET_RANGE - 2) / Math.max(1, q.vz));
     if (dv.kind === 'horde') {
       // 좀비 떼: 위험한 쪽 차선에 남은 체력 합을 벽처럼 견준다(다가오는 적이라 쏠 시간이 짧다 — FORK_HORDE의 위쪽 끝이 벽 한 장 몫)
       let H = 0;
@@ -3753,7 +3750,7 @@ export function botTarget(s, opt = {}) {
   const R = radius(q.n);
   const sight = opt.sight ?? 40;
   if (s.phase === 'arena' && s.boss) return bossDodge(s, R);
-  const D = dps(q.n, q.tier, s.fireLv) * relicFire(s);   // 휘장(유물)이 켜졌으면 그만큼 더 쏜다(× 1이면 그대로)
+  const D = dps(q.n, q.tier, s.fireLv);
   const vz = Math.max(1, q.vz);
   const span = R + 0.3;
   const cover = (x, x0, x1) => overlap(x - span, x + span, x0, x1) / (2 * span);
@@ -4546,10 +4543,11 @@ export function stateHash(s) {
   }
   if (s.endless && s.endless.flame) h = hash(h, 'flame');
   if (s.endless && s.endless.relicsOpen) h = hash(h, 'relics', s.endless.relicsOpen.join(','));
-  // 3단계 유물(연 판에만): 얻은 것·쓴 것, 최고 병력(휘장의 문턱), 유물이 바꾼 상자 병력·덧셈 칸 빠르기
+  // 3단계 유물(연 판에만): 얻은 것·쓴 것, 최고 병력(화면의 위기 신호 문턱), 방패막이 막은 구간, 유물이 바꾼 상자 병력·덧셈 칸 빠르기
   if (s.endless && s.endless.relics) {
     const e = s.endless;
     h = hash(h, e.relics.join(','), e.spent.join(','), q.peak);
+    if (e.wardAt !== undefined) h = hash(h, 'ward', e.wardAt, e.wardId);
     if (e.relics.length) {
       for (const p of s.props) if (p.reward && (p.reward.type === 'men' || p.reward.mul)) h = hash(h, p.id, p.reward.v | 0, p.reward.mul || 0);
       for (const r of s.rows) for (const c of r.cells) if (c.op === 'add') h = hash(h, c.step.toFixed(6));

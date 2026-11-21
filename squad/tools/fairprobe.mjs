@@ -1,7 +1,7 @@
 /* 한 손 조작 공정성 갈라 보기(P14, 3단계): node squad/tools/fairprobe.mjs [--levels 5-60] [--seeds 2] [--rho 0.3] [--json out.json]
    무한모드: --endless 8 [--unl 2] [--segs 9] [--relics all|id,…] [--flame] — 판 8개(시드 77 + 13i, 강화 10단계·뭉치 Lv5, think 카드 고르기)를 그 해금 단계로 돌며 같은 갈라 보기
    (단계 해금 2단계의 장애물 — 장갑문·폭발 드럼통·방패 정예 — 이 피할 길을 막지 않는지. 기록의 L은 구간 번호. --relics는 3단계에서 열린 유물 — 대왕 보스 뒤에 think로 고른다.
-   불굴의 심장이 전멸을 무효로 한 갈래도 전멸로 센다. --flame은 화염병 줄(4단계)을 연 판 — 불 지대는 분대를 다치게 하지 않으니 피할 길을 바꾸지 않는지만 본다)
+   --flame은 화염병 줄(4단계)을 연 판 — 불 지대는 분대를 다치게 하지 않으니 피할 길을 바꾸지 않는지만 본다)
    사람 흉내 봇(sloppy0.1, 기대 강화)으로 돌다가 위협이 예고되는 틱(독침 발사 spit, 내려찍기 예고 slam, 보스 소환 summon, 톱날이 26m 안에 들어옴 saw)마다
    판을 갈라, rho초 늦게 반응하는 한 손 조작 — 그대로 서 있기 / 왼쪽·오른쪽을 0.15·0.3·0.5초·끝까지 누르기(반응 전에는 하던 쪽으로 계속) — 을 모두 돌린다.
    - 피할 수 없음: 어느 손으로도 그 위협(독침·내려찍기)에 맞는다, 톱날은 어느 손으로도 max(2명, 병력 5%) 넘게 잃는다
@@ -26,17 +26,15 @@ function forkLoss(s0, rho, d, h, T, mutate, watch, sawOnly, wait = 0) {
   const end = f.tick + Math.round(T / C.DT);
   let hit = false;
   let saw = 0;
-  let revived = false;   // 불굴의 심장(유물)이 전멸을 무효로 했다 — 갈라 보기에서는 전멸로 센다
   while (f.tick < end && (f.phase === 'run' || f.phase === 'arena') && !(f.endless && f.endless.offer)) {   // 무한모드: 카드가 뜨면 판이 멈춘다(그 창은 거기까지)
     const t = (f.tick - s0.tick) * C.DT;
     // 반응 전에는 하던 쪽, wait초 서 있다가, h초 동안 d쪽
     C.step(f, { dir: t < rho ? vdir : t < rho + wait ? 0 : d && t < rho + wait + h ? d : 0, tx: null });
     if (watch) for (const e of f.ev) if (watch(e)) { hit = true; if (e.t === 'loss') saw += e.n; }
-    for (const e of f.ev) if (e.t === 'relicUse' && e.id === 'heart') revived = true;
   }
   // 톱날: 큰 분대(반지름이 길 폭에 가까운)는 스치기만 해도 몇 명 잃는다 — max(2명, 병력 5%) 넘게 잃을 때만 '맞았다'
   if (sawOnly) hit = saw >= Math.max(2, 0.05 * s0.squad.n);
-  return { lost: f.stats.lost - l0 + (f.phase === 'lost' || revived ? 1e6 : 0), hit };
+  return { lost: f.stats.lost - l0 + (f.phase === 'lost' ? 1e6 : 0), hit };
 }
 /* 한 위협: 손마다 갈라 '맞지 않은 손이 있나'와 억지 손해를 잰다 */
 function probe(s, rho, T, mutate, watch, iso, sawOnly) {
