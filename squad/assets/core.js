@@ -1475,11 +1475,12 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   // 뒤처진 분대(바닥선 아래)에게는 위협이 바닥선 병력 기준(화력 ∝ 병력^0.8)
   const behind = Math.pow(Math.max(1, segFloor(p.seg) / n0), 0.8);
   const base = WEAPON[clamp(tier | 0, 0, THREAT_TIER)] * segMul(p.seg) * behind * (opt && opt.mul > 1 ? opt.mul : 1);   // 코일의 넷째 단계는 위협에 넣지 않는다(THREAT_TIER)
+  const FE = opt && opt.fe > E.fire ? opt.fe : E.fire;   // 위협을 만드는 화력 단계(개편 판의 앞 구간은 실제 강화를 따라간다 — bldFe)
   const lv = {
     L: p.L, attempt, seed: hash(VERSION, 'endless-run', seed >>> 0), speed: p.speed, params: p, tag: p.tag,
     rows: [], foes: [], props: [], saws: [], plan: [], golden: [], chunks: [], nextId: 1,
     arenaZ: 0, bossHp: 0, par: 0, arrive: 0, helpStart: 0,
-    startE: n0, fireE: E.fire, heroE: null, marks: [], bare: true, refMul: base,
+    startE: n0, fireE: FE, heroE: null, marks: [], bare: true, refMul: base,
   };
   if (opt && opt.obs && p.seg >= RUN_ORDER.obstacle) lv.og = { rs: hash(VERSION, 'obstacle', seed >>> 0, p.seg, attempt) };
   GK = E.gk;
@@ -1528,7 +1529,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   delete lv.gh;
   const Gn = lv.golden[lv.golden.length - 1] || n0;
   lv.arrive = Gn;
-  lv.bossHp = Math.max(30, Math.round(dps(Gn * p.boss.m, 0, E.fire) * (base / segMul(p.seg)) * E.bossMul0 * Math.pow(E.bossStep, p.seg - 1) * p.bossKill * bossHitFrac(Gn)));
+  lv.bossHp = Math.max(30, Math.round(dps(Gn * p.boss.m, 0, FE) * (base / segMul(p.seg)) * E.bossMul0 * Math.pow(E.bossStep, p.seg - 1) * p.bossKill * bossHitFrac(Gn)));
   return lv;
 }
 /* 2단계 장애물의 자리·개수(보이는 수치는 roster.js OBSTACLES) [초안].
@@ -1617,12 +1618,15 @@ export function blastReach(d, o) {
    relics(시험·측정용 — 화면은 주지 않는다): 처음부터 가진 유물(열린 것 중, RELIC.max까지). 판에서는 대왕 보스 뒤에만 얻는다 */
 /* 개편 판의 구간 k 위협 덧배수 */
 export const bldThreat = (k) => Math.pow(BUILD.thr.step, Math.max(0, k - BUILD.thr.from));
+/* 개편 판의 앞 구간은 위협을 '실제 강화(fire)'의 화력으로 만든다(기준은 ENDLESS.fire) — 강화가 높아도 처음 보스·좀비가 같은 시간을 버틴다(가만히 서 있는 분대가 첫 보스를 넘지 못한다).
+   BUILD.early구간에 걸쳐 기준으로 돌아간다(1구간 전부 → early구간에 0) — 그 뒤로는 강화가 높은 만큼 더 멀리 간다 */
+export const bldFe = (k, fire) => ENDLESS.fire + Math.max(0, (fire | 0) - ENDLESS.fire) * BUILD.earlyK * clamp(1 - (Math.max(1, k) - 1) / BUILD.early, 0, 1);
 const newBld = () => ({ sets: {}, crit: 0, gun: 0, chg: 0, dur: 0, shield: 0, armor: 0, shieldLeft: 0, spec: {}, down: [], rr: BUILD.reroll, rrn: 0, pi: 0, more: 0, curse: 0, rel: 0 });
 export function newEndless(opt = {}) {
   const seed = (opt.seed >>> 0) || 1;
   const unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(opt.unl) || 0)));
   const flame = unl >= 1 && opt.flame === true;   // 화염병 줄(4단계): 첫 구간의 철창·금색 칸부터 화염병이 나온다
-  const seg = buildSegment(seed, 1, opt.start ?? START_N, 0, 0, flame ? FLAME_ON : null);
+  const seg = buildSegment(seed, 1, opt.start ?? START_N, 0, 0, opt.build === 2 && unl >= 1 ? { ...(flame ? FLAME_ON : {}), fe: bldFe(1, opt.fire) } : flame ? FLAME_ON : null);
   const s = newGame(seg, opt);
   s.endless = { seed, seg: 1, bosses: 0, bank: 0, wait: 0, z0: 0 };
   // 보스 뒤 3택 1(opt.unl ≥ 1): 연 단계·별로 열린 탄종·고른 카드·지금 떠 있는 카드. 안 연 판에는 필드가 없다(해시 그대로)
@@ -2143,7 +2147,8 @@ function spBack(s) {
   B.down = [];
   for (const d of down) {
     if (q.sp.some((m) => m.k === d.k) || q.sp.length >= spMax(s) || q.n < spEscort(s) * (q.sp.length + 1)) continue;
-    const lv = Math.max(1, Math.floor(d.lv * BUILD.spBack));
+    const sp = setV(s, 'precise');   // 정밀 세트: 쓰러진 특수병이 더 높은 레벨로 돌아온다
+    const lv = Math.max(1, Math.floor(d.lv * (sp && sp.back > BUILD.spBack ? sp.back : BUILD.spBack)));
     q.sp.push({ id: s.nextId++, k: d.k, cd: 0.6, lv });
     emit(s, { t: 'spGet', k: d.k, via: 'back', lv, x: q.x, z: q.z });
   }
@@ -2158,7 +2163,7 @@ function nextSegment(s) {
   const e = s.endless;
   e.seg++;
   // 개편 판: 위협 배수 = 계약(curse) × 빌드가 쌓이는 만큼 더 가파른 곡선(BUILD.thr — from구간 뒤로 구간마다 ×step)
-  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg) } : segOpt(e));
+  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv) } : segOpt(e));
   const dz = q.z + ENDLESS.lead;
   const off = s.nextId;
   for (const r of seg.rows) { r.id += off; r.z += dz; }
@@ -2174,7 +2179,7 @@ function nextSegment(s) {
   delete s.flames;   // 불 지대(화염병)도 지나간 것과 함께
   s.L = seg.L; s.params = seg.params; s.speed = seg.speed;
   s.arenaZ = seg.arenaZ + dz; s.stopZ = s.arenaZ + 6;
-  s.bossHp = seg.bossHp; s.bossRef = seg.arrive; s.refFire = ENDLESS.fire; s.refMul = seg.refMul;
+  s.bossHp = seg.bossHp; s.bossRef = seg.arrive; s.refFire = e.bld ? seg.fireE : ENDLESS.fire; s.refMul = seg.refMul;
   s.boss = null;
   s.phase = 'run';
   e.z0 = q.z;
@@ -2415,7 +2420,7 @@ function lose(s, k, cause, x, z, sub) {
     // 의무병 전문화(개편 판): 소생 — 좀비에게 잃은 병사가 모두 돌아온다, 경호 — 특수병이 맞아서 쓰러지지 않는다
     q.pool += real * (B && med && B.spec.medic === 'revive' && soft && sub !== 'stomp' ? 1 : share);
   }
-  if (soft && q.sp.length && (sub === 'slam' || real >= Math.max(3, Math.ceil(0.15 * before))) && !(B && B.spec.medic === 'guard' && hasSp(q, 'medic'))) spDrop(s, 'hit');
+  if (soft && q.sp.length && (sub === 'slam' || real >= Math.max(3, Math.ceil(0.15 * before))) && !(B && B.spec.medic === 'guard' && hasSp(q, 'medic')) && !(B && B.sets.precise && SETS.precise.v[B.sets.precise - 1].guard)) spDrop(s, 'hit');
   escort(s);
 }
 

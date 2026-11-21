@@ -340,6 +340,8 @@ export const BUILD = {
   w: { gun: 1, unit: 1, fx: 1, hero: 0.7, guard: 0.7 },   // 카드 종류가 나올 가중치
   shieldMax: 3,
   thr: { from: 4, step: 1.14 },   // 위협 곡선: from구간 뒤로 구간마다 ×step 더(카드가 곱으로 쌓이는 만큼)         // 게이트 방패 상한(구간마다 이 횟수까지)
+  early: 1,             // 앞 구간의 위협을 실제 강화(ENDLESS.fire를 넘는 몫)로 만드는 구간 수(bldFe — 1구간은 전부, early구간에 기준으로 돌아간다. ENDGAME.md 19.1)
+  earlyK: 0.75,         // 그 구간에서 강화가 기준을 넘는 몫을 얼마나 따라가나(1 = 전부 — 첫 구간이 너무 빡빡해 집중한 사람도 무너진 값)
   evo: 5,               // 탄 효과가 진화하는 레벨
   rare: [0.72, 0.23, 0.05],   // 카드 등급(일반·희귀·전설 = 한 번에 +1·+2·+3레벨) 확률
   setPull: 0.1,         // 쌓은 세트 레벨 1당 그 세트 카드의 가중치 +10%(12레벨까지)
@@ -424,7 +426,7 @@ export const COMBO_IDS2 = Object.keys(COMBOS);
    v: 단계마다의 수치(글과 core가 함께 읽는다)
    - barrage 탄막: 총알 화력 +fire
    - blast 폭발: 작렬·로켓·불 지대의 범위 +r, 위력 +dmg
-   - precise 정밀: 총알·저격이 p 확률로 치명타(피해 ×mul)
+   - precise 정밀: 총알·저격이 p 확률로 치명타(피해 ×mul), 쓰러진 특수병이 레벨의 back 몫으로 돌아온다(BUILD.spBack은 0.5), guard면 큰 피해를 맞아도 특수병이 쓰러지지 않는다(병사가 모자라 떠나는 것은 그대로)
    - frost 한파: 좀비·보스에게 잃는 병사 −loss, 느려진 적이 받는 모든 피해 +amp
    - command 지휘: 자동 보급 +supply(병력의 몫), 영웅 게이지 충전 +chg */
 export const SETS = {
@@ -432,9 +434,9 @@ export const SETS = {
     text: (t) => `총알 화력 +${apc(SETS.barrage.v[t - 1].fire)}%` },
   blast: { name: '폭발', color: '#FF8A3C', parts: ['burst', 'rocket', 'flame'], at: [8, 14, 20], v: [{ r: 0.1, dmg: 0.15 }, { r: 0.25, dmg: 0.55 }, { r: 0.5, dmg: 1.2 }],
     text: (t) => `작렬·로켓·불 지대 범위 +${apc(SETS.blast.v[t - 1].r)}%, 위력 +${apc(SETS.blast.v[t - 1].dmg)}%` },
-  precise: { name: '정밀', color: '#4FD1C5', parts: ['pierce', 'sniper'], at: [8, 14, 20], v: [{ p: 0.1, mul: 2.5 }, { p: 0.25, mul: 3 }, { p: 0.4, mul: 4 }],
-    text: (t) => `총알·저격이 ${apc(SETS.precise.v[t - 1].p)}% 확률로 치명타(피해 ×${SETS.precise.v[t - 1].mul}) — 벽·보스에도` },
-  frost: { name: '한파', color: '#8FD3FF', parts: ['frost', 'medic', 'shield', 'armor'], at: [8, 14, 20], v: [{ loss: 0.1, amp: 0.15 }, { loss: 0.25, amp: 0.45 }, { loss: 0.45, amp: 1 }],
+  precise: { name: '정밀', color: '#4FD1C5', parts: ['pierce', 'sniper'], at: [8, 14, 20], v: [{ p: 0.1, mul: 2.5, back: 0.6 }, { p: 0.25, mul: 3, back: 0.8 }, { p: 0.4, mul: 4, back: 1, guard: 1 }],
+    text: (t) => `총알·저격이 ${apc(SETS.precise.v[t - 1].p)}% 확률로 치명타(피해 ×${SETS.precise.v[t - 1].mul}) — 벽·보스에도 · ${SETS.precise.v[t - 1].guard ? '특수병은 맞아도 쓰러지지 않아요' : `쓰러진 특수병이 레벨의 ${apc(SETS.precise.v[t - 1].back)}%로 돌아와요`}` },
+  frost: { name: '한파', color: '#8FD3FF', parts: ['frost', 'medic', 'shield', 'armor'], at: [8, 14, 20], v: [{ loss: 0.15, amp: 0.15 }, { loss: 0.35, amp: 0.45 }, { loss: 0.55, amp: 1 }],
     text: (t) => `좀비·보스에게 잃는 병사 −${apc(SETS.frost.v[t - 1].loss)}%, 느려진 적이 받는 피해 +${apc(SETS.frost.v[t - 1].amp)}%` },
   command: { name: '지휘', color: '#FF9F43', parts: ['chg', 'dur'], at: [4, 7, 10], v: [{ supply: 0.1, chg: 0.3 }, { supply: 0.2, chg: 0.6 }, { supply: 0.4, chg: 1 }],
     text: (t) => `자동 보급 +${apc(SETS.command.v[t - 1].supply)}%p, 영웅 게이지 충전 +${apc(SETS.command.v[t - 1].chg)}%` },

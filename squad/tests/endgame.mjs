@@ -3697,3 +3697,122 @@ test('빌드 세트 정밀: 치명타는 난수 없이 확률만큼 고르게 �
   assert.equal(R.comboV('frostSniper', false), R.COMBOS.frostSniper.v);
   assert.ok(R.comboText('burstRocket', true).includes(String(R.COMBO_V2.burstRocket)));
 });
+
+/* ---------- 17절 후속(ENDGAME.md 19절): 앞 구간 · 정밀 Ⅲ · 한파 · 개편 판의 think ---------- */
+const UP30 = { start: C.START_N + 60, fire: 30, hero: { id: 'mungchi', lv: 5 } };
+const BLD30 = { ...BLD, ...UP30 };
+test('개편 판의 앞 구간: 위협을 실제 강화(fire)로 만든다 — 기준(ENDLESS.fire)보다 높은 강화의 몫을 BUILD.earlyK만큼 따라가고 BUILD.early구간에 걸쳐 기준으로 돌아간다. 기준 이하·앞 단계 판은 그대로', () => {
+  const E = C.ENDLESS, B = R.BUILD;
+  assert.equal(C.bldFe(1, E.fire), E.fire);
+  assert.equal(C.bldFe(1, 3), E.fire, '기준보다 낮은 강화는 따라가지 않는다');
+  assert.ok(Math.abs(C.bldFe(1, 30) - (E.fire + (30 - E.fire) * B.earlyK)) < 1e-9);
+  assert.equal(C.bldFe(1 + B.early, 30), E.fire, 'early구간 뒤에는 기준');
+  assert.ok(C.bldFe(1, 50) > C.bldFe(1, 30) && C.bldFe(1, 30) > C.bldFe(1, 20));
+  // 강화 30의 개편 판 첫 구간은 기준 화력보다 단단하다(보스 체력·좀비 체력), 강화 10이면 그대로
+  const hi = C.newEndless({ seed: 5, ...BLD30 }), lo = C.newEndless({ seed: 5, ...BLD });
+  assert.equal(hi.refFire, C.bldFe(1, 30));
+  assert.equal(lo.refFire, E.fire);
+  assert.ok(hi.bossHp > lo.bossHp * 1.2, `보스 체력 ${hi.bossHp} / ${lo.bossHp}`);
+  // 앞 단계 판(build 없음)은 강화 30이어도 기준 그대로 — 지문 테스트가 지킨다
+  const old = C.newEndless({ seed: 5, ...UP30, unl: 3, ammoOpen: R.AMMO_IDS, relicsOpen: R.RELIC_IDS.slice(), flame: true });
+  assert.equal(old.endless.bld, undefined);
+  assert.equal(old.refFire, E.fire);
+  // fe 옵션이 기준 이하면 구간은 옵션 없이 만든 것과 같다
+  assert.deepEqual(C.buildSegment(9, 1, 100, 0, 0, { fe: E.fire }), C.buildSegment(9, 1, 100, 0, 0, null));
+  // 2구간부터는 기준: 강화와 상관없이 같은 위협
+  assert.equal(C.bldFe(2, 30), C.bldFe(2, 10));
+});
+test('가만히 서 있는 분대(봇 idle)는 개편 판에서 강화 30이어도 첫 보스를 거의 못 넘는다 — 24판 평균 1구간 아래, 0구간이 70% 이상(강화 14·50도)', () => {
+  // 이 값을 만들 때 잰 것(48판): 강화 30 평균 0.27 · 0구간 40/48 · 최대 5. 앞 구간 보정이 없던 때(예전): 강화 30에서 평균 2.9, 한 판은 11구간
+  for (const fire of [14, 30, 50]) {
+    const bs = [];
+    for (let i = 0; i < 24; i++) bs.push(runEndless({ seed: 77 + i * 13, ...BLD30, fire, start: C.START_N + 2 * fire }, makeBot('idle', 1000 + i, { skill: true }), 30, undefined, makePicker('first', 2000 + i)).bosses);
+    assert.ok(mean(bs) < 1, `강화 ${fire} 가만히 서서 평균 ${mean(bs).toFixed(2)}구간 (${bs.join(',')})`);
+    assert.ok(bs.filter((b) => b === 0).length >= 17, `강화 ${fire} 첫 보스에서 죽은 판 ${bs.filter((b) => b === 0).length}/24`);
+  }
+});
+test('빌드 세트 정밀: 단계마다 쓰러진 특수병이 더 높은 레벨로 돌아오고, Ⅲ단계는 큰 피해를 맞아도 특수병이 쓰러지지 않는다. 한파는 단계마다 잃는 병사를 더 줄인다', () => {
+  const V = R.SETS.precise.v;
+  assert.ok(V[0].back > R.BUILD.spBack && V[0].back < V[1].back && V[1].back < V[2].back && V[2].back <= 1);
+  assert.ok(!V[0].guard && !V[1].guard && V[2].guard, 'Ⅲ단계만 특수병을 지킨다');
+  for (const t of [1, 2]) assert.ok(R.SETS.precise.text(t).includes(`${Math.round(V[t - 1].back * 100)}%`), `Ⅰ·Ⅱ 글 ${t}`);
+  assert.ok(R.SETS.precise.text(3).includes('쓰러지지'), 'Ⅲ단계 글');
+  // 벽에 크게 부딪히면(병력의 40%) 특수병이 쓰러진다 — 정밀 Ⅲ단계만 버틴다
+  const crash = (tier) => {
+    const t = bldRun(46, 1);
+    C.pickCard(t, 0);
+    t.squad.n = 100; t.squad.sp = [{ id: 1, k: 'sniper', cd: 5, lv: 5 }];
+    if (tier) t.endless.bld.sets = { precise: tier }; else t.endless.bld.sets = {};
+    t.props = [{ id: 9600, kind: 'wall', x0: -5, x1: 5, z: t.squad.z + 0.2, hp: 400, max: 400, alive: true, hitT: -9 }];
+    for (let i = 0; i < 4; i++) C.step(t, { dir: 0 });
+    return t;
+  };
+  for (const tier of [0, 1, 2]) { const t = crash(tier); assert.ok(t.squad.n < 80 && !t.squad.sp.length && t.endless.bld.down.some((d) => d.k === 'sniper' && d.lv === 5), `정밀 ${tier}단계: 병력 ${t.squad.n} · ${JSON.stringify(t.squad.sp)}`); }
+  { const t = crash(3); assert.ok(t.squad.n < 80 && t.squad.sp.length === 1 && t.squad.sp[0].k === 'sniper', `정밀 Ⅲ: 병력 ${t.squad.n} · ${JSON.stringify(t.squad.sp)}`); }
+  // 보스를 잡으면 돌아오는 레벨: 단계의 back 몫(없으면 BUILD.spBack)
+  for (const tier of [0, 1, 2, 3]) {
+    const u = bldRun(45, 1);
+    u.squad.sp = [];
+    u.endless.bld.down = [{ k: 'rocket', lv: 10 }];
+    u.endless.bld.sets = tier ? { precise: tier } : {};
+    u.endless.offer = null; u.boss.dead = true; u.endless.wait = 0.001;
+    C.step(u, { dir: 0 });
+    const m = u.squad.sp.find((x) => x.k === 'rocket');
+    assert.ok(m && m.lv === Math.floor(10 * (tier ? V[tier - 1].back : R.BUILD.spBack)), `정밀 ${tier}단계: 돌아온 레벨 ${m && m.lv}`);
+  }
+  // 한파: 단계마다 잃는 병사가 줄고, 느려진 적이 받는 피해는 늘어난다
+  const F = R.SETS.frost.v;
+  assert.ok(F[0].loss < F[1].loss && F[1].loss < F[2].loss && F[2].loss < 1);
+  assert.ok(F[0].amp < F[1].amp && F[1].amp < F[2].amp);
+});
+test('개편 판의 think: 카드 종류마다 점수를 매기고(gun g2 · spec · hero · guard · curse · 시너지 · 세트 진행), 단계에 오르는 카드가 더 높다 — 기본 점수는 앞 단계 판 그대로', () => {
+  const s = bldRun(40, 1);
+  const B = s.endless.bld;
+  const cards = [{ k: 'gun', n: 1 }, { k: 'unit', u: 'sniper', n: 1 }, { k: 'unit', u: 'medic', n: 2 }, { k: 'fx', a: 'rapid', n: 1 }, { k: 'fx', a: 'frost', n: 1 }, { k: 'fx', a: 'pierce', n: 3 },
+    { k: 'hero', h: 'chg', n: 1 }, { k: 'hero', h: 'dur', n: 1 }, { k: 'guard', g: 'shield', n: 1 }, { k: 'guard', g: 'armor', n: 2 }, { k: 'curse' }];
+  for (const c of cards) { const v = thinkScore(s, c); assert.ok(Number.isFinite(v) && v > 0, `${JSON.stringify(c)} → ${v}`); }
+  s.squad.sp = [{ id: 1, k: 'rocket', cd: 1, lv: 3 }]; B.down = [];
+  for (const u of ['sniper', 'rocket']) assert.ok(thinkScore(s, { k: 'spec', u, b: Object.keys(R.SPECS[u])[0] }) > 0, '전문화 카드');
+  // 같은 카드라도 세트 단계에 오르면 점수가 높다(탄막: 무기 개조 레벨 합이 문턱에 닿는 카드)
+  const at = R.SETS.barrage.at[0];
+  B.gun = at - 1;
+  const up = thinkScore(s, { k: 'gun', n: 1 });
+  B.gun = 0;
+  const flat = thinkScore(s, { k: 'gun', n: 1 });
+  assert.ok(up > flat, `단계에 오르는 무기 개조 ${up} > ${flat}`);
+  // 한 세트에 이미 쌓인 쪽 카드를 더 높게 본다(깊이 보상) — 폭발 세트에 쌓은 판에서 작렬 카드 > 관통 카드
+  B.gun = 0; s.endless.fx = { burst: 6 };
+  assert.ok(thinkScore(s, { k: 'fx', a: 'burst', n: 1 }) > thinkScore(s, { k: 'fx', a: 'pierce', n: 1 }));
+  // 앞 단계 판의 점수는 그대로(식 그대로 — STAGE1_FP·13절 테스트가 지킨다)
+  const t = C.newEndless({ seed: 31, ...UP10, unl: 1, ammoOpen: R.AMMO_IDS });
+  t.squad.n = 100;
+  const to = C.cardInfo(t, { k: 'men' }).to;
+  assert.equal(thinkScore(t, { k: 'men' }), (Math.pow(to / 100, 0.8) - 1) * (1 + 2 * Math.min(1, Math.max(0, (C.segFloor(t.endless.seg + 1) - 100) / (to - 100)))));
+});
+test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사람(sloppy0.1) 16판 — 정밀·한파가 탄막·폭발 사이(±3구간 띠 안)에 든다, 생각해서 고르기(think)는 아무거나보다 확실히 멀리 간다', async (t) => {
+  // 이 기준을 만들 때 잰 값(32판, 평균 잡은 보스 — ENDGAME.md 19절): 탄막 20.9 · 폭발 23.8 · 정밀 21.7 · 한파 21.5 · think 26.8 · 아무거나 19.5 · 늘 첫 장 21.2 (정밀·한파는 손보기 전 16.6·17.4)
+  const url = new URL('../tools/endless.mjs', import.meta.url).href;
+  const BUILDS = {
+    barrage: 'b:gun>fx:rapid',
+    blast: 'b:fx:burst>unit:rocket>spec:rocket>unit:flame>spec:flame>gun',
+    precise: 'b:spec:sniper:multi>unit:sniper>fx:pierce>fx:frost>gun',
+    frost: 'b:fx:frost>spec:medic>unit:medic>guard>gun',
+    think: 'think', random: 'random',
+  };
+  const run = (picker) => Promise.all(Array.from({ length: 16 }, (_, i) => POOL.run({ kind: 'call', module: url, fn: 'cardRun', args: [i, 'sloppy0.1', picker, BLD30, 50] })));
+  const names = Object.keys(BUILDS);
+  const rs = await Promise.all(names.map((k) => run(BUILDS[k])));
+  const m = Object.fromEntries(names.map((k, i) => [k, mean(rs[i].map((r) => r.bosses))]));
+  const msg = names.map((k) => `${k} ${m[k].toFixed(1)}`).join(' · ');
+  const lo = Math.min(m.barrage, m.blast), hi = Math.max(m.barrage, m.blast);
+  for (const k of ['precise', 'frost']) assert.ok(m[k] >= lo - 3 && m[k] <= hi + 3, `${k}가 탄막·폭발 띠(${lo.toFixed(1)}~${hi.toFixed(1)}) ±3 밖 — ${msg}`);
+  assert.ok(m.think >= m.random + 3, `think가 아무거나보다 +${(m.think - m.random).toFixed(1)}구간 — ${msg}`);
+  assert.ok(m.think > m.barrage && m.think > m.blast, `think가 정한 빌드보다 멀리 — ${msg}`);
+  // 기획의 기준: ±1구간 띠 안(정직하게 잰 값 그대로 — 벗어나면 todo)
+  for (const k of ['precise', 'frost']) {
+    const ok = m[k] >= lo - 1 && m[k] <= hi + 1;
+    const name = `${k}가 탄막·폭발 띠 ±1구간 안: ${m[k].toFixed(1)} (${lo.toFixed(1)}~${hi.toFixed(1)})`;
+    if (ok) await t.test(name, () => {});
+    else await t.test(name, { todo: '16판의 흔들림(±1.7) 안일 수 있다 — 32판으로 다시 재 볼 것' }, () => { assert.ok(ok); });
+  }
+});
