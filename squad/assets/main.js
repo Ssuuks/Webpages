@@ -14,7 +14,7 @@ import {
   prog, endedCycles, maxCycle, upgLv, addUpg, heroLvOf, addHeroLv, cycleStars, CYCLE_LEVELS, endlessUnlocks,
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
-import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg , AMMO, AMMO_IDS, ammoOpen, ammoText,
+import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText,
   FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SPECS, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS, SETS, SET_IDS, TIER_MARK, comboText } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
@@ -794,6 +794,12 @@ function renderPet() {
   open.textContent = `알 열기 (${P.eggs}개)`;
   open.disabled = P.eggs <= 0;
   open.addEventListener('click', () => hatchEgg());
+  // 알이 둘 이상이면 한꺼번에: 결과는 한 번에 모아 보여 준다
+  const openAll = document.createElement('button');
+  openAll.className = 'btn' + (P.eggs > 1 ? ' glow' : '');
+  openAll.textContent = `모두 열기 (${P.eggs}개)`;
+  openAll.disabled = P.eggs <= 1;
+  openAll.addEventListener('click', () => hatchAllEggs());
   const buy = document.createElement('button');
   buy.className = 'btn';
   buy.innerHTML = `알 사기 · <span class="coinchip">${EGG.price}</span>`;
@@ -824,6 +830,8 @@ function renderPet() {
   buy5.style.cssText = 'width:100%;margin-top:8px';
   row.append(open, buy);
   egg.appendChild(row);
+  openAll.style.cssText = 'width:100%;margin-top:8px';
+  egg.appendChild(openAll);
   egg.appendChild(buy5);
   const odds = document.createElement('p');
   odds.className = 'muted';
@@ -848,6 +856,26 @@ function hatchEgg() {
   notice(r.fresh ? `${T.name}${ga(T.name)} 태어났어요!` : `${T.name} 조각 +${r.shards}`,
     r.fresh ? `“${T.line}” — ${T.fxName}: ${T.text(1)}` : `이미 함께하는 펫이라 조각 ${r.shards}개가 됐어요. 조각과 코인으로 레벨을 올리면 효과가 더 자주 터져요.`,
     [{ label: '좋아요!', primary: true }]);
+}
+
+/* 알을 가진 만큼 한꺼번에 연다 — 한 개씩 연 것과 같은 확률·천장, 결과는 알림 하나로(새 펫 · 조각 합) */
+function hatchAllEggs() {
+  const P = data.pets;
+  if (P.eggs <= 1) { hatchEgg(); return; }
+  const r = openEggs(P, P.eggs);
+  P.eggs = 0;
+  for (const id of r.fresh) if (P.team.length < P.slots) togglePet(id);
+  save(data);
+  petView = r.fresh[0] || Object.keys(r.shards)[0] || petView;
+  renderPet();
+  renderTitle();
+  sfx.join();
+  vibe([20, 40, 20, 40, 20]);
+  const parts = [];
+  if (r.fresh.length) parts.push(`새 펫: ${r.fresh.map((id) => PETS[id].name).join(', ')}`);
+  const sh = Object.keys(r.shards).map((id) => `${PETS[id].name} +${r.shards[id]}`);
+  if (sh.length) parts.push(`조각: ${sh.join(', ')}`);
+  notice(`알 ${r.n}개를 열었어요!`, parts.join('\n'), [{ label: '좋아요!', primary: true }]);
 }
 
 /* ---------- 엔딩 · 회차(ENDGAME.md 3·4절) ---------- */

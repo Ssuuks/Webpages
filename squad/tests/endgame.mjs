@@ -2986,6 +2986,23 @@ test('펫 알: 꽝이 없다 — 새 펫 아니면 가진 펫의 조각, 알 다
   for (let i = 0; i < 6; i++) assert.equal(R.openEgg(Q, good).fresh, true);
   assert.equal(R.openEgg(Q, good).fresh, false);
   assert.equal(Q.pity, 0);
+  // 한꺼번에 열기: 같은 난수 순서면 하나씩 연 것과 같은 결과(새 펫 순서·조각 합·천장)
+  {
+    const rs = [0.1, 0.9, 0.5, 0.95, 0.2, 0.7, 0.99, 0.3, 0.6, 0.8, 0.05, 0.4];
+    const mk = () => { let i = 0; return () => rs[i++ % rs.length]; };
+    const A = { own: {}, pity: 0 };
+    const B = { own: {}, pity: 0 };
+    const one = mk();
+    const fresh = [];
+    const sh = {};
+    for (let i = 0; i < 12; i++) { const r = R.openEgg(A, one); if (r.fresh) fresh.push(r.id); else sh[r.id] = (sh[r.id] | 0) + r.shards; }
+    const all = R.openEggs(B, 12, mk());
+    assert.equal(all.n, 12);
+    assert.deepEqual(all.fresh, fresh);
+    assert.deepEqual(all.shards, sh);
+    assert.deepEqual(B, A);
+    assert.deepEqual(R.openEggs({ own: {}, pity: 0 }, 0), { n: 0, fresh: [], shards: {} });
+  }
   // 키우기 값: 레벨마다 코인과 조각이 는다
   for (let lv = 1; lv < R.PET_MAX_LV; lv++) { const c = R.petCost(lv); assert.ok(c.coins > 0 && c.shards >= 1); if (lv > 1) assert.ok(c.coins > R.petCost(lv - 1).coins); }
   // 저장: 모르는 펫은 버리고 범위를 고친다, 백업에 그대로 실린다(필드 추가)

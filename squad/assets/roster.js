@@ -219,6 +219,18 @@ export function openEgg(pets, rnd = Math.random) {
   pets.pity = missing.length ? (pets.pity | 0) + 1 : 0;
   return { id, fresh: false, shards: EGG.shards };
 }
+/* 알 n개를 한꺼번에 열기 — openEgg를 n번 차례로 부른 것과 같다(천장·확률 그대로, 같은 난수 순서면 결과도 같다).
+   돌려주는 것: { n, fresh: [새 펫 id를 나온 순서대로], shards: { id: 조각 합 }(조각이 나온 펫만, 나온 순서) } */
+export function openEggs(pets, n, rnd = Math.random) {
+  const out = { n: 0, fresh: [], shards: {} };
+  for (let i = 0; i < n; i++) {
+    const r = openEgg(pets, rnd);
+    out.n++;
+    if (r.fresh) out.fresh.push(r.id);
+    else out.shards[r.id] = (out.shards[r.id] | 0) + r.shards;
+  }
+  return out;
+}
 
 /* 탄종(ARSENAL.md 3절 '별 무기고'): 모은 별(모든 회차 합)이 stars를 넘으면 열리고, 출격 전에 하나를 고른다. 별은 쓰지 않는다.
    강화가 아니라 맞바꿈이다 — 어느 탄종이든 전체 승률은 보통탄과 비슷하고 잘 맞는 상황이 다르다(tools/ammobench.mjs).
