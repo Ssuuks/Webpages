@@ -7,7 +7,8 @@
    3단계(유물 — 대왕 보스 뒤): --unl 3 [--relics all|compass,coil,…](열린 유물, 기본 all) [--hold heart,…](처음부터 가진 유물 — 유물마다 재 보기).
    --flame: 화염병 줄(4단계)을 연 판(특수병 카드·철창·금색 칸에 화염병이 나온다 — think는 화염병을 THINK.sp.flame으로 본다. '그 병과 우선' 고르기는 밸런스 때 더한다) */
 import * as C from '../assets/core.js';
-import { AMMO_IDS, fxK, RELICS, RELIC_IDS } from '../assets/roster.js';
+import * as R from '../assets/roster.js';
+import { AMMO_IDS, fxK, RELICS, RELIC_IDS, BUILD, SETS, deep, fx2Val } from '../assets/roster.js';
 import { makeBot, rng } from '../tests/bots.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : process.argv[i + 1]; };
@@ -53,6 +54,18 @@ export const THINK = {
   combo: 0.05,
   // 3단계(유물): 유물 하나가 남은 판에서 구간마다 화력 몇 배 몫인가 [초안 — 밸런스 때 재서 고칠 것. 심장은 한 번 더 사는 몫이라 크게, 가방은 화면 쪽 알이라 판에는 손해 쪽]
   relic: { compass: 0.02, banner: 0.03, megaphone: 0.02, coil: 0.08, fourth: 0.05, heart: 0.3, bag: 0, pouch: 0.04 },
+  // 빌드 개편 판(thinkScoreB — 아래 식): 값은 '화력이 이만큼(자연로그) 는다'로 어림한 것 [초안 — 잰 값은 ENDGAME.md 19절]
+  b: {
+    w: { pierce: 0.02, burst: 0.03, frost: 0.03, sniper: 0.05, rocket: 0.025, flame: 0.03, medic: 0.025, shield: 0.06, chg: 0.01, dur: 0.02 },   // 유효 레벨(deep) 하나의 몫
+    first: 0.08,    // 새 특수병·탄 효과를 처음 얻는 몫(레벨 1이 나머지보다 얼마나 더 값진가 — 자리를 잡는 일)
+    tier: {         // 세트가 단계마다 더하는 몫(누적이 아니라 그 단계에 오를 때 더해지는 값)
+      barrage: [0.11, 0.26, 0.32], blast: [0.17, 0.33, 0.4], precise: [0.2, 0.3, 0.4], frost: [0.15, 0.3, 0.45], command: [0.1, 0.1, 0.15],
+    },
+    prog: 0.5,      // 다음 단계를 향한 걸음의 몫(그 단계 몫 × 이 값 × 걸음 비율) — 한 세트에 모으게 한다
+    spec: 0.12,     // 전문화 한 장(둘 중 어느 쪽이든 — 전문화를 미루면 그만큼 카드 한 장을 놓친다)
+    curse: 0.1,     // 위험한 계약(카드 +2장 vs 다음 구간 위협 ×1.25)
+    reroll: 0.08,   // 이 점수 아래면 다시 뽑기(남았으면)
+  },
 };
 /* 'think'의 점수 = 다음 구간 하나의 화력 배수 몫 + 오래 남는 몫 × H.
    다음 구간은 고르기 전의 병력·무기 단계로 만들고(buildSegment: 위협 = WEAPON[tier] × segMul × 뒤처짐, 게이트는 그때 병력 기준),
@@ -69,6 +82,7 @@ export const THINK = {
 export function thinkScore(s, c, K = THINK) {
   const f = C.cardInfo(s, c);
   if (!f) return -1;
+  if (C.bldOf(s)) return thinkScoreB(s, c, f, K.b || THINK.b);
   if (c.k === 'men') {
     const d = Math.pow(f.to / Math.max(1, f.from), 0.8) - 1;
     const u = f.to > f.from ? clamp((C.segFloor(s.endless.seg + 1) - f.from) / (f.to - f.from), 0, 1) : 0;
@@ -89,6 +103,38 @@ export function thinkScore(s, c, K = THINK) {
   if (c.k === 'relic') return ((K.relic || THINK.relic)[c.r] || 0) * (1 + K.H);
   return -1;
 }
+/* 개편 판(s.endless.bld)의 카드 점수 = 직접 값(총·탄 효과·특수병·생존·영웅 레벨의 깊이 보상 deep() 몫) + 세트 진행(cardInfo의 set: from·to·tier·up·next — 단계에 오르는 몫과 다음 단계를 향한 걸음).
+   - 무기 개조: 화력 ln((1 + gun·deep(to)) / (1 + gun·deep(from)))
+   - 속사: 화력 ln(dmg(to) / dmg(from)) (fx2Val)
+   - 그 밖의 탄 효과·특수병·영웅·게이트 방패: w[부품] × (deep(to) − deep(from)), 처음 얻으면 first를 더
+   - 방탄복: ln((1 + armor·deep(to)) / (1 + armor·deep(from)))
+   - 전문화 spec · 위험한 계약 curse: 정한 값
+   - 세트: 오르는 단계의 tier[세트][단계] 합 + prog × (다음 단계의 tier × 그 단계까지의 걸음 비율)의 차. 정한 한 세트에 모을수록 단계가 빨리 켜지고 deep()이 커진다 */
+function thinkScoreB(s, c, f, K) {
+  const g = (a, b) => Math.log(a / b);
+  if (f.k === 'spec') return K.spec;
+  if (f.k === 'curse') return K.curse;
+  if (f.k === 'relic') return ((THINK.relic)[c.r] || 0) * (1 + THINK.H);
+  let v = 0;
+  const part = f.k === 'gun' ? 'gun' : f.k === 'unit' ? f.u : f.k === 'fx' ? f.a : f.k === 'hero' ? f.h : f.g;
+  if (f.k === 'gun') v = g(1 + BUILD.gun * deep(f.to), 1 + BUILD.gun * deep(f.from));
+  else if (f.k === 'fx' && f.a === 'rapid') v = g(fx2Val('rapid', f.to).dmg, f.from ? fx2Val('rapid', f.from).dmg : 1);
+  else if (f.k === 'guard' && f.g === 'armor') v = g(1 + BUILD.armor * deep(f.to), 1 + BUILD.armor * deep(f.from));
+  else v = (K.w[part] || 0.02) * (deep(f.to) - deep(f.from)) + (f.from ? 0 : K.first);
+  if (f.combos) v += (K.combo ?? THINK.combo) * f.combos.length;
+  const st = f.set;
+  if (st) {
+    const T = K.tier[st.id], at = SETS[st.id].at;
+    const phi = (lv) => {   // 레벨 합 lv의 퍼텐셜: 지난 단계 몫의 합 + prog × 다음 단계 몫 × 걸음 비율
+      let sum = 0, t = 0;
+      while (t < 3 && lv >= at[t]) sum += T[t++];
+      if (t < 3) sum += K.prog * T[t] * (lv - (t ? at[t - 1] : 0)) / (at[t] - (t ? at[t - 1] : 0));
+      return sum;
+    };
+    v += phi(st.to) - phi(st.from);
+  }
+  return v;
+}
 const argMax = (xs) => xs.reduce((bi, v, i) => (v > xs[bi] ? i : bi), 0);
 /* 'look'의 점수: 카드 i를 고른 판을 다음 카드(또는 전멸·cap틱)까지 돌린다 */
 function lookScore(s, i, pol, cap) {
@@ -104,7 +150,13 @@ export function makePicker(name, seed = 1, opt = {}) {
   if (name === 'first') return () => 0;
   if (name === 'men') return (s, of) => Math.max(0, of.findIndex((c) => c.k === 'men'));
   if (name === 'random') { const r = rng(seed); return (s, of) => Math.floor(r() * of.length); }
-  if (name === 'think') return (s, of) => argMax(of.map((c) => thinkScore(s, c, opt.think || THINK)));
+  if (name === 'think') return (s, of) => {
+    const K = opt.think || THINK;
+    let sc = of.map((c) => thinkScore(s, c, K));
+    // 개편 판: 점수가 낮으면 다시 뽑는다(남았을 때 한 번 — 유물 카드는 뽑지 않는다)
+    if (C.bldOf(s) && of[0].k !== 'relic' && Math.max(...sc) < (K.b || THINK.b).reroll && C.rerollCards(s)) { of = C.offerOf(s); sc = of.map((c) => thinkScore(s, c, K)); }
+    return argMax(sc);
+  };
   if (name === 'look') {
     const cap = opt.cap ?? 60 * 60 * 4;
     return (s, of, pol) => {
@@ -157,11 +209,12 @@ export function pickHist(picks) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  // --set mul0=0.8,mulStep=1.1,bossM.=0.5 : ENDLESS 상수를 바꿔 본다(실험용)
+  // --set mul0=0.8,mulStep=1.1,bossM.=0.5 : ENDLESS 상수를 바꿔 본다(실험용). 'BUILD.early=2' · 'SETS.precise.v.2.p=0.3' 처럼 roster.js 표 이름으로 시작하면 그 표(개편 판의 수치)를 바꾼다
   for (const kv of (arg('set', '') || '').split(',').filter(Boolean)) {
     const [k, v] = kv.split('=');
-    const path = k.split('.');
+    let path = k.split('.');
     let o = C.ENDLESS;
+    if (R[path[0]] && typeof R[path[0]] === 'object') { o = R[path[0]]; path = path.slice(1); }
     for (let i = 0; i < path.length - 1; i++) o = o[path[i]];
     o[path[path.length - 1]] = Number(v);
   }
