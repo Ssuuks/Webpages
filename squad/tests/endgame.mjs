@@ -358,7 +358,7 @@ test('2단계까지 연 판(unl 2)의 지문 — STAGE2_FP(장애물까지, 1단
    4단계(화염병 — flame: true인 판만)를 더해도 3단계 판은 그대로여야 한다(밸런스 조정으로 3단계 수치를 일부러 바꾸면 다시 잰다).
    15절 규칙(병력·탄 효과 레벨 상한 해제)으로 둘 다 다시 쟀다(예전 값 2959427486 · 434098057): 유물 카드에 닿는 판 수(일곱)와 고르는 유물은 그대로이고,
    탄 효과 Lv4 이상을 얻는 판·병력 9999를 넘기는 판(쥔 판 묶음에서 가장 큰 판 29644명)이 달라졌다 */
-const STAGE3_FP = 2933700556;
+const STAGE3_FP = 66640338;
 const STAGE3_HELD_FP = 2162370369;
 test('3단계까지 연 판(unl 3)의 지문 — STAGE3_FP(대왕 보스 뒤 유물 카드까지, 1·2단계와 같은 식), STAGE3_HELD_FP(유물을 처음부터 쥔 판 세 묶음) — 둘 다 무한모드 상한 해제(15절) 규칙으로 다시 잰 값. 화염병 false를 받아도 그대로', () => {
   assert.equal(stageFP(3, { relicsOpen: R.RELIC_IDS }), STAGE3_FP);
@@ -1773,7 +1773,7 @@ test('유물 카드(3단계 판): 대왕 구간(6·12·18…) 보스 뒤에 카�
   // think: 유물 카드도 점수를 매긴다(THINK.relic × (1 + H) — 초안)
   const t = at3(4, (o) => { o.endless.seg = 6; });
   for (const c of C.offerOf(t)) assert.ok(thinkScore(t, c) >= 0, c.r);
-  assert.equal(thinkScore(t, { k: 'relic', r: 'pledge' }), 0.3 * 3);
+  assert.equal(thinkScore(t, { k: 'relic', r: 'pledge' }), 0.05 * 3);
 });
 
 test('나침반(정해진 판): 갈림길 위험한 쪽 보상 상자의 병사 ×1.5(지원병 상자는 숫자에, 무기·탄종 상자·철창은 얻을 수 없어 병사로 바뀔 때 — reward.mul). 속은 갈림길 알림(45m 앞)부터 보인다(fork 이벤트의 reward, forkPeek). 다른 상자와 나침반이 없는 판은 그대로', () => {
@@ -2587,16 +2587,16 @@ test('화염병 판의 결정성·이어하기·해시: 같은 시드·같은 �
    화염병 줄을 안 연 판은 앞 단계 지문(STAGE1~3_FP — 위 테스트) 그대로다. 밸런스 조정으로 화염병·앞 단계 수치를 일부러 바꾸면 다시 잰다 */
 // 밸런스 정리에서 think의 화염병 몫(THINK.sp.flame)을 0.1 → 0.05로 — 고르는 카드가 달라져 다시 쟀다(규칙은 그대로, 2175899401).
 // 그 뒤 15절 규칙(병력·탄 효과 레벨 상한 해제)으로 또 다시 쟀다: 1단계 묶음은 열두 판 중 여덟 판이 병력 9999를 넘기고(가장 큰 판 38090명), 3단계 묶음은 세 판이 탄 효과 Lv4 이상을 얻는다
-const FLAME_FP = 784506671;
+const FLAME_FP = 2368617906;
 test('화염병 줄(4단계)을 연 판의 지문 — FLAME_FP(1단계 판·3단계 판에 flame: true, 무한모드 상한 해제(15절) 규칙으로 다시 잰 값). 넷째 자리(유물)는 화염병 줄을 연 판에만 유물 카드로 나온다(병과 넷 > 자리 셋)', () => {
   assert.equal(C.hash(stageFP(1, { flame: true }), stageFP(3, { relicsOpen: R.RELIC_IDS, flame: true })), FLAME_FP);
   const k6 = (s, relicsOpen) => { const o = C.snapshot(s); o.endless.seg = 6; o.endless.relicsOpen = relicsOpen; o.endless.offer = null; return C.restore(o); };
-  const f = k6(toOffer(4, FLAME3).s, ['fourth', 'pledge']);
+  const f = k6(toOffer(4, FLAME3).s, ['fourth', 'bag']);
   assert.equal(C.relicFits(f, 'fourth'), true);
-  assert.deepEqual(C.offerOf(f), [{ k: 'relic', r: 'fourth' }, { k: 'relic', r: 'pledge' }]);
-  const p = k6(first3(4).s, ['fourth', 'pledge']);
+  assert.deepEqual(C.offerOf(f), [{ k: 'relic', r: 'fourth' }, { k: 'relic', r: 'bag' }]);
+  const p = k6(first3(4).s, ['fourth', 'bag']);
   assert.equal(C.relicFits(p, 'fourth'), false);
-  assert.deepEqual(C.offerOf(p), [{ k: 'relic', r: 'pledge' }]);
+  assert.deepEqual(C.offerOf(p), [{ k: 'relic', r: 'bag' }]);
 });
 
 test('넷째 자리와 화염병 줄(정해진 판): 병과가 넷인 판에서는 넷째 자리가 실제로 찬다 — 특수병 셋이 있어도 넷째 병과(화염병)가 합류(호위 병사 6 × 4 = 24명부터), 넷째 자리가 없으면 자리가 차서 병사로. 카드 후보·봇의 특수병 값도 같은 규칙', () => {

@@ -4,7 +4,7 @@
    --cards가 없으면 예전 그대로(카드 없음). 있으면 (봇 × 카드 고르기)마다 한 줄 + 고른 카드 종류 분포. --unl은 --cards가 있으면 1이 기본
    (2: 탄 효과·탄종 상자·시너지 + 4구간부터 장애물(장갑문·폭발 드럼통·방패 정예) — core.CARD.stageMax까지. 장애물만 끄고 재려면 C.RUN_ORDER.obstacle = Infinity),
    --ammo는 별로 열린 탄종(기본 넷 다 — 탄종 카드 후보).
-   3단계(유물 — 대왕 보스 뒤): --unl 3 [--relics all|compass,coil,…](열린 유물, 기본 all) [--hold heart,…](처음부터 가진 유물 — 유물마다 재 보기).
+   3단계(유물 — 대왕 보스 뒤): --unl 3 [--relics all|compass,coil,…](열린 유물, 기본 all) [--hold ward,…](처음부터 가진 유물 — 유물마다 재 보기).
    --flame: 화염병 줄(4단계)을 연 판(특수병 카드·철창·금색 칸에 화염병이 나온다 — think는 화염병을 THINK.sp.flame으로 본다. '그 병과 우선' 고르기는 밸런스 때 더한다) */
 import * as C from '../assets/core.js';
 import * as R from '../assets/roster.js';
@@ -52,8 +52,8 @@ export const THINK = {
   // 속사만 식 그대로(화력 +15%), 나머지는 맞는 좀비가 늘 있지 않은 만큼 낮춰 어림했다]
   fx: { pierce: 0.08, burst: 0.08, rapid: 0.15, frost: 0.04 },
   combo: 0.05,
-  // 3단계(유물): 유물 하나가 남은 판에서 구간마다 화력 몇 배 몫인가 [초안 — 밸런스 때 재서 고칠 것. 심장은 한 번 더 사는 몫이라 크게, 가방은 화면 쪽 알이라 판에는 손해 쪽]
-  relic: { compass: 0.02, banner: 0.03, megaphone: 0.02, coil: 0.08, fourth: 0.05, heart: 0.3, bag: 0, pouch: 0.04 },
+  // 3단계(유물): 유물 하나가 남은 판에서 구간마다 화력 몇 배 몫인가 [초안 — 밸런스 때 재서 고칠 것. 가방은 화면 쪽 알이라 판에는 손해 쪽]
+  relic: { compass: 0.02, dice: 0.03, megaphone: 0.02, coil: 0.08, fourth: 0.05, pledge: 0.05, bag: 0, pouch: 0.04, ward: 0.05 },
   // 빌드 개편 판(thinkScoreB — 아래 식): 값은 '화력이 이만큼(자연로그) 는다'로 어림한 것 [초안 — 잰 값은 ENDGAME.md 19절]
   b: {
     w: { pierce: 0.02, burst: 0.03, frost: 0.03, sniper: 0.05, rocket: 0.025, flame: 0.03, medic: 0.025, shield: 0.06, chg: 0.01, dur: 0.02 },   // 유효 레벨(deep) 하나의 몫
