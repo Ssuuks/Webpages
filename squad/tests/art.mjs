@@ -995,7 +995,7 @@ test('장애물 그림: 드럼통(빨강, 길가 통과 다르게, 총알 받는
   // 장갑문: 폭은 벽처럼 x0~x1(boxFaces), 벽보다 높고 두껍다, 숫자는 체력(벽과 같은 규칙)
   assert.ok(R_.DOOR_H > R_.WALL_H && R_.DOOR_D > 0.35, `장갑문 ${R_.DOOR_H}×${R_.DOOR_D}m vs 벽 ${R_.WALL_H}×0.35m`);
   assert.match(src, /const top = boxFaces\(p, DOOR_H, DOOR_D\);/, '장갑문은 x0~x1로 그린다');
-  assert.match(src, /function drawDoor[\s\S]*?const t = String\(Math\.max\(1, Math\.ceil\(p\.hp\)\)\);/, '장갑문 숫자 = 체력');
+  assert.match(src, /function drawDoor[\s\S]*?const t = hideNum\(s, p\) \? '\?' : String\(Math\.max\(1, Math\.ceil\(p\.hp\)\)\);/, '장갑문 숫자 = 체력(가려진 길이 아니면)');
   assert.match(src, /k === 'door'\) drawDoor\(s, it\.o\); else if \(k === 'drum'\) drawDrum\(s, it\.o, bio\)/, '소품 종류마다 그림');
   // 드럼통 체력 숫자의 글자 색 짝은 미리 굽는다(그리는 중 굽기 0)
   const m = src.match(/function drawDrum[\s\S]*?font\.draw\([^;]*fill: '(#[0-9A-F]+)', out: PANEL\.bad\.out/);
