@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, COMBO_IDS2, deep, SETS, SET_IDS, setTier, comboV } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, COMBO_IDS2, comboV } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -1716,13 +1716,6 @@ export function cardInfo(s, c) {
   const B = bldOf(s);
   if (B) {
     const o = cardInfoB(s, c, B);
-    // 이 카드가 올리는 빌드 세트: { id, from, to(레벨 합), tier(고른 뒤 단계), up(단계가 오르나), next(다음 단계까지 남은 레벨 — 없으면 0) }
-    const part = c.k === 'gun' ? 'gun' : c.k === 'unit' ? c.u : c.k === 'fx' ? c.a : c.k === 'hero' ? c.h : c.k === 'guard' ? c.g : '';
-    const id = part && o ? SET_IDS.find((x) => SETS[x].parts.includes(part)) : '';
-    if (id) {
-      const from = setLv(s, id), to = from + (o.to - o.from) * (part === 'gun' ? 2 : 1), tier = setTier(id, to), nx = SETS[id].at[tier];
-      o.set = { id, from, to, tier, up: tier > setTier(id, from), next: nx ? nx - to : 0 };
-    }
     return o;
   }
   return cardInfoOld(s, c, q);
@@ -1733,8 +1726,6 @@ function cardInfoB(s, c, B) {
     // 개편 판: n = 등급(한 번에 오르는 레벨 1·2·3)
     const n = Math.max(1, c.n | 0);
     if (c.k === 'gun') return { k: 'gun', from: q.tier, to: Math.min(tierMax(s), q.tier + n), n };   // 총 ★ — 무기 개조는 ★로 합쳐졌다
-    if (c.k === 'hero') return { k: 'hero', h: c.h, from: B[c.h] | 0, to: (B[c.h] | 0) + n, n };
-    if (c.k === 'guard') return { k: 'guard', g: c.g, from: B[c.g] | 0, to: c.g === 'shield' ? Math.min(BUILD.shieldMax, B.shield + n) : (B[c.g] | 0) + n, n };
     if (c.k === 'curse') return { k: 'curse', mul: BUILD.curse.mul, more: BUILD.curse.more };
     if (c.k === 'unit') {
       const m = q.sp.find((o) => o.k === c.u);
@@ -1781,30 +1772,6 @@ export const fxOf = (s) => (s && s.endless && s.endless.fx) || null;
    gun 무기 개조 레벨 · chg/dur 영웅 카드 · shield/armor 생존 카드 · shieldLeft 이번 구간에 남은 방패 · spec { 병과: 전문화 } · down 쓰러진 특수병 [{ k, lv }]
    rr 남은 다시 뽑기 · rrn 이번 카드에서 다시 뽑은 수 · pi 이번 보스 뒤 몇 번째 카드 · more 더 고를 카드 수 · curse 다음 구간 위협 배수 · rel 유물 카드를 볼 차례 */
 export const bldOf = (s) => (s && s.endless && s.endless.bld) || null;
-/* 빌드 세트(roster.SETS): 세는 것의 레벨 합. 쓰러진 특수병(B.down)도 그 레벨로 센다(돌아올 것이므로) */
-function partLv(s, B, p) {
-  if (p === 'gun') return 2 * (s.squad.tier | 0);   // 탄막 세트의 총 몫 = (총 ★ − 1) × 2 — 무기 개조 레벨(예전 문턱 8·14·20)을 ★(최대 10)로 이어 붙인 값
-  if (p === 'chg' || p === 'dur' || p === 'shield' || p === 'armor') return B[p] | 0;
-  if (AMMO[p]) return fxLv(s, p);
-  const m = s.squad.sp.find((o) => o.k === p);
-  if (m) return m.lv || 1;
-  const d = B.down.find((o) => o.k === p);
-  return d ? d.lv : 0;
-}
-export function setLv(s, id) { const B = bldOf(s); if (!B) return 0; let n = 0; for (const p of SETS[id].parts) n += partLv(s, B, p); return n; }
-/* 지금 켜진 단계(0~3 — B.sets에 적어 둔 값: 싸움 중에는 이것만 본다) */
-export const setOn = (s, id) => { const B = s.endless && s.endless.bld; return B ? B.sets[id] | 0 : 0; };
-const setV = (s, id) => { const t = setOn(s, id); return t ? SETS[id].v[t - 1] : null; };
-/* 레벨이 바뀐 뒤(카드·상자·철창·특수병 쓰러짐/복귀) 단계를 다시 적는다 — 오른 단계는 'set' 이벤트 */
-function syncSets(s, quiet) {
-  const B = bldOf(s);
-  if (!B) return;
-  for (const id of SET_IDS) {
-    const t = setTier(id, setLv(s, id));
-    if (t > (B.sets[id] | 0) && !quiet) emit(s, { t: 'set', id, tier: t, x: s.squad.x, z: s.squad.z });
-    if (t) B.sets[id] = t; else delete B.sets[id];
-  }
-}
 const comboIds = (s) => (bldOf(s) ? COMBO_IDS2 : COMBO_IDS);
 /* 탄 효과의 그 레벨 값(개편 판은 fx2Val) */
 export const fxV = (s, a, lv) => (bldOf(s) ? fx2Val(a, lv) : fxVal(a, lv));
@@ -1841,7 +1808,6 @@ function fxAdd(s, a, via, x, z) {
   fx[a] = (fx[a] | 0) + 1;
   emit(s, { t: 'fxUp', a, lv: fx[a], via, x: x ?? s.squad.x, z: z ?? s.squad.z });
   comboEmit(s, on, x, z);
-  if (s.endless.bld && via !== 'card') syncSets(s);
 }
 function shuffle(g, a) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand(g) * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
@@ -2099,15 +2065,6 @@ function makeOffer3(s) {
     else if (q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1)) cands.push({ c: { k: 'unit', u: k }, w: W.unit });
   }
   if (e.fx) for (const a of AMMO_IDS) if (((e.ammo || []).includes(a) || s.ammo === a) && fxCan(s, a)) cands.push({ c: { k: 'fx', a }, w: W.fx * (e.fx[a] ? BUILD.own : 1) });
-  if (s.hero) { cands.push({ c: { k: 'hero', h: 'chg' }, w: W.hero }); cands.push({ c: { k: 'hero', h: 'dur' }, w: W.hero }); }
-  if (B.shield < BUILD.shieldMax) cands.push({ c: { k: 'guard', g: 'shield' }, w: W.guard });
-  cands.push({ c: { k: 'guard', g: 'armor' }, w: W.guard });
-  // 이미 쌓은 세트의 카드는 더 잘 나온다(빌드를 정하면 그 빌드의 카드가 모인다)
-  for (const o of cands) {
-    const part = o.c.k === 'gun' ? 'gun' : o.c.k === 'unit' ? o.c.u : o.c.k === 'fx' ? o.c.a : o.c.k === 'hero' ? o.c.h : o.c.g;
-    const id = SET_IDS.find((x) => SETS[x].parts.includes(part));
-    if (id) o.w *= 1 + BUILD.setPull * Math.min(12, setLv(s, id));
-  }
   for (let j = cands.length - 1; j >= 0; j--) if (!(cands[j].w > 0)) cands.splice(j, 1);
   let first = true;
   while (out.length < count && cands.length) {
@@ -2155,13 +2112,10 @@ function pickCardB(s, i) {
   if (c.k === 'gun') q.tier = Math.min(tierMax(s), q.tier + n);   // 총 ★ +n(상한까지)
   else if (c.k === 'unit') for (let j = 0; j < n; j++) addSpecial(s, c.u, 'card', q.x, q.z);
   else if (c.k === 'fx') { for (let j = 0; j < n; j++) if (fxCan(s, c.a)) fxAdd(s, c.a, 'card', q.x, q.z); }
-  else if (c.k === 'hero') B[c.h] = (B[c.h] | 0) + n;
-  else if (c.k === 'guard') { B[c.g] = (B[c.g] | 0) + n; if (c.g === 'shield') B.shield = Math.min(BUILD.shieldMax, B.shield); }
   else if (c.k === 'curse') { B.curse = BUILD.curse.mul; B.more += BUILD.curse.more; }
   else if (c.k === 'relic') { if (relicCan(e, c.r)) relicAdd(s, c.r); B.rel = 0; again = true; }
   e.picks.push(pickName(c));
   emit(s, { t: 'card', ...info, x: q.x, z: q.z });
-  syncSets(s);
   if (!again && B.more > 0) { B.more--; again = true; }
   if (again) {
     B.pi++; B.rrn = 0;
@@ -2177,9 +2131,7 @@ function startSegmentB(s) {
   const tag = segInfo(e.seg).tag;   // 방금 잡은 보스의 등급
   nextSegment(s);
   B.curse = 0; B.more = 0; B.pi = 0; B.rrn = 0; B.rel = 0;
-  B.shieldLeft = B.shield | 0;
-  const sc = setV(s, 'command');
-  const add = Math.max(1, Math.round(q.n * (BUILD.supply[tag] + (sc ? sc.supply : 0))));
+  const add = Math.max(1, Math.round(q.n * BUILD.supply[tag]));
   gain(s, add, q.x, q.z, 'supply');
   emit(s, { t: 'supply', n: add, x: q.x, z: q.z });
   if (e.fx) fxCrates(s);
@@ -2192,13 +2144,11 @@ function spBack(s) {
   B.down = [];
   for (const d of down) {
     if (q.sp.some((m) => m.k === d.k) || q.sp.length >= spMax(s) || q.n < spEscort(s) * (q.sp.length + 1)) continue;
-    const sp = setV(s, 'precise');   // 정밀 세트: 쓰러진 특수병이 더 높은 레벨로 돌아온다
-    const back = relicOn(s, 'pledge') ? 1 : sp && sp.back > BUILD.spBack ? sp.back : BUILD.spBack;   // 부활 서약(유물): 제 레벨로
+    const back = relicOn(s, 'pledge') ? 1 : BUILD.spBack;   // 부활 서약(유물): 제 레벨로
     const lv = Math.max(1, Math.floor(d.lv * back));
     q.sp.push({ id: s.nextId++, k: d.k, cd: 0.6, lv });
     emit(s, { t: 'spGet', k: d.k, via: 'back', lv, x: q.x, z: q.z });
   }
-  syncSets(s, true);
 }
 const OBS_ON = { obs: true }, FLAME_ON = { flame: true }, OBS_FLAME = { obs: true, flame: true };
 /* 구간을 만드는 옵션: 2단계를 연 판만 장애물(4구간부터), 화염병 줄을 연 판만 철창·금색 칸에 화염병. 둘 다 없으면 null(예전 그대로) */
@@ -2348,7 +2298,7 @@ export function restore(o) {
         else {
           const B = e.bld, nb = newBld();
           for (const k of Object.keys(nb)) if (typeof nb[k] === 'number') B[k] = k === 'curse' ? (B.curse > 1 && B.curse < 10 ? B.curse : 0) : k === 'crit' ? (B.crit >= 0 && B.crit < 2 ? B.crit : 0) : Math.max(0, Math.min(LV_SANE, Math.floor(Number(B[k]) || 0)));
-          B.sets = {};   // 단계는 레벨에서 다시 센다(아래 — 탄 효과·특수병을 고쳐 읽은 뒤)
+          delete B.sets;   // 빌드 세트는 없어졌다(옛 저장의 값은 버린다)
           B.spec = {};   // 전문화 카드는 없어졌다(Lv5 고유 능력 — roster.SP_EVO). 옛 저장의 값은 버린다
           B.down = (Array.isArray(B.down) ? B.down : []).filter((d, i, l) => d && SP[d.k] && l.findIndex((x) => x && x.k === d.k) === i).map((d) => ({ k: d.k, lv: Math.max(1, Math.min(LV_SANE, Math.floor(Number(d.lv) || 1))) }));
         }
@@ -2387,7 +2337,7 @@ export function restore(o) {
       const okN = (c) => c.n === 1 || c.n === 2 || c.n === 3;
       const okCardB = (c) => c && typeof c === 'object' && (c.syn === undefined || c.syn === true) && (c.k === 'relic' ? okRelic(c) : c.k === 'curse' ? true
         : c.k === 'spec' ? false : !okN(c) ? false : c.k === 'gun' ? true : c.k === 'unit' ? spKindsOf(o).includes(c.u)
-          : c.k === 'fx' ? !!(e.fx && AMMO[c.a]) : c.k === 'hero' ? (c.h === 'chg' || c.h === 'dur') : c.k === 'guard' ? (c.g === 'shield' || c.g === 'armor') : false);
+          : c.k === 'fx' ? !!(e.fx && AMMO[c.a]) : false);
       const okCard = e.bld ? okCardB : (c) => c && typeof c === 'object' && (c.k === 'relic' ? okRelic(c) : kinds.includes(c.k) && (c.k !== 'unit' || spKindsOf(o).includes(c.u)) && ((c.k !== 'ammo' && c.k !== 'fx') || !!AMMO[c.a]) && (c.syn === undefined || c.syn === true));
       if (e.offer != null && !(Array.isArray(e.offer) && e.offer.length && e.offer.every(okCard))) e.offer = null;
       if (e.offer == null) {
@@ -2397,7 +2347,6 @@ export function restore(o) {
       }
     }
   }
-  if (o.endless && o.endless.bld) syncSets(o, true);
   for (const b of o.bullets) if (typeof b.hm !== 'number') b.hm = 1;
   // 화염병(4단계): 화염병 줄을 연 판에만 — 아닌 판(손댄 저장)의 화염병·불 지대는 버린다. 불 지대는 숫자가 성한 것만(남은 시간이 있는 것), 비면 필드도 없게
   if (!flameOn(o)) q.sp = q.sp.filter((m) => m.k !== 'flame');
@@ -2427,11 +2376,9 @@ function lose(s, k, cause, x, z, sub) {
   // 개편 판의 생존 카드: 게이트 방패(구간마다 shield번 — 빨간 게이트 손실을 통째로 막는다), 방탄복(좀비·보스에게 잃는 병사 ×armor^레벨)
   const B = s.endless && s.endless.bld;
   if (B) {
-    if (cause === 'gate' && B.shieldLeft > 0) { B.shieldLeft--; emit(s, { t: 'shield', n: k, left: B.shieldLeft, x: x ?? q.x, z: z ?? q.z }); return; }
     const medB = soft ? spLv(q, 'medic') : 0;
-    if (soft && (B.armor || medB || B.sets.frost)) {
-      const sf = setV(s, 'frost');
-      const a = (k * (sf ? 1 - sf.loss : 1)) / ((1 + BUILD.armor * deep(B.armor)) * (1 + BUILD.med * deep(medB))) + q.lossFrac;
+    if (soft && medB) {   // 의무병: 좀비·보스에게 잃는 병사 ÷(1 + med × 레벨)
+      const a = k / (1 + BUILD.med * medB) + q.lossFrac;
       k = Math.floor(a);
       q.lossFrac = a - k;
       if (k <= 0) return;
@@ -2480,7 +2427,7 @@ function lose(s, k, cause, x, z, sub) {
     // 의무병 전문화(개편 판): 소생 — 좀비에게 잃은 병사가 모두 돌아온다, 경호 — 특수병이 맞아서 쓰러지지 않는다
     q.pool += real * (B && med >= BUILD.evo && soft && sub !== 'stomp' ? Math.min(1, share + SP_EVO.medic.v) : share);   // 의무병 Lv5 소생: 더 돌아온다
   }
-  if (soft && q.sp.length && (sub === 'slam' || real >= Math.max(3, Math.ceil(0.15 * before))) && !(B && B.sets.precise && SETS.precise.v[B.sets.precise - 1].guard)) spDrop(s, 'hit');
+  if (soft && q.sp.length && (sub === 'slam' || real >= Math.max(3, Math.ceil(0.15 * before)))) spDrop(s, 'hit');
   escort(s);
 }
 
@@ -2535,7 +2482,6 @@ function addSpecial(s, k, via, x, z, mul = 0) {
     s.stats.spUp++;
     emit(s, { t: 'spUp', k, lv: m.lv, id: m.id, via, x: x ?? q.x, z: z ?? q.z });
     if (h && HEROES[h.id].match === k) chargeHero(s, 0.25);
-    if (s.endless && s.endless.bld && via !== 'card') syncSets(s);
     return;
   }
   const cap = spMax(s);   // 넷째 자리(유물)면 4자리·호위 병사 6명
@@ -2552,7 +2498,7 @@ function addSpecial(s, k, via, x, z, mul = 0) {
   emit(s, { t: 'spGet', k, via, x: x ?? q.x, z: z ?? q.z });
   if (h && HEROES[h.id].match === k) chargeHero(s, 0.25);
   if (on.length) comboEmit(s, on, x, z);
-  if (s.endless && s.endless.bld) { const B = s.endless.bld; B.down = B.down.filter((d) => d.k !== k); if (via !== 'card') syncSets(s); }
+  if (s.endless && s.endless.bld) { const B = s.endless.bld; B.down = B.down.filter((d) => d.k !== k); }
 }
 
 function gain(s, k, x, z, why) {
@@ -3015,10 +2961,7 @@ function fire(s, R) {
       if (FX.rapid) dmg *= fxV(s, 'rapid', FX.rapid).dmg * (FXR && FXR.heat > 1 && q.heat >= FX_HEAT ? FXR.heat : 1);
     } else if (A && A.dmg) dmg *= A.dmg;
     const B = s.endless && s.endless.bld;
-    if (B && B.gun) dmg *= 1 + BUILD.gun * deep(B.gun);
-    const sBar = B ? setV(s, 'barrage') : null, sPre = B ? setV(s, 'precise') : null;   // 빌드 세트: 탄막(화력), 정밀(치명타 — 난수 없이 확률만큼 고르게)
-    if (sBar) dmg *= 1 + sBar.fire;
-    if (B && B.dur && s.hero && s.hero.act > 0) dmg *= 1 + BUILD.hero.pow * deep(B.dur);   // 영웅 카드 '끈기': 스킬이 켜진 동안   // 무기 개조(개편 판): 위협 식에 들지 않는 화력
+    if (B && B.gun) dmg *= 1 + BUILD.gun * B.gun;   // 무기 개조(옛 저장의 값만 — 총 ★로 합쳐졌다)
     const rng = A && A.range ? A.range : 0;   // 탄종의 사거리(없으면 기본)
     const span = R + 0.3;
     // 펫의 확률 효과(크리티컬은 총알마다, 멀리·넓게 쏘기는 일제 사격마다 굴린다 — 펫 전용 난수). avg면 기대값만큼 피해를 고르게 올린다
@@ -3038,7 +2981,6 @@ function fire(s, R) {
       const bl = { x, z: q.z + 0.4 * R, d: 0, dmg, hm };
       if (far || rng) bl.r = (rng || BULLET_RANGE) * (far ? PET_FAR : 1);
       if (pCrit && !pCrit.avg && rand(pCrit) < ppC) { bl.dmg = dmg * PET_CRIT; bl.c = 1; crits++; }
-      if (sPre) { B.crit += sPre.p; if (B.crit >= 1) { B.crit -= 1; bl.dmg *= sPre.mul; bl.c = 1; } }
       s.bullets.push(bl);
       if (FXR && FXR.evo2 && q.heat >= FX_HEAT) s.bullets.push({ ...bl, x: bl.x + (i % 2 ? 0.3 : -0.3), dmg: bl.dmg * 0.6 });   // 속사 Lv10 쌍갈래 과열: 과열 중 총알이 둘로 갈라진다
     }
@@ -3212,9 +3154,7 @@ function fxHit2(s, b, f, near, fx) {
     if (n) emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: line[n - 1].z });
   }
   if (fx.burst) {
-    let v = fx2Val('burst', fx.burst);
-    const sb = setV(s, 'blast');
-    if (sb) v = { splash: v.splash * (1 + sb.dmg), r: v.r * (1 + sb.r) };
+    const v = fx2Val('burst', fx.burst);
     fxSplash(s, b, f, near, v);
     for (let i = 0; i < hits.length && i < 2; i++) fxSplash(s, b, hits[i], near, v);
   }
@@ -3334,8 +3274,6 @@ function fxDeath(s, f, by) {
   }
 }
 function hitFoe(s, f, dmg, by) {
-  // 빌드 세트 '한파': 느려진 적이 받는 모든 피해 +
-  if (f.slowT > s.t && s.endless && s.endless.bld && s.endless.bld.sets.frost) dmg *= 1 + SETS.frost.v[s.endless.bld.sets.frost - 1].amp;
   f.hp -= dmg;
   f.hitT = s.t;
   if (f.hp > 0) return false;
@@ -3529,8 +3467,6 @@ function chargeHero(s, a) {
   const h = s.hero;
   if (!h || h.act > 0 || h.charge >= 1) return;
   const B = s.endless && s.endless.bld;
-  if (B && B.chg) a *= 1 + BUILD.hero.chg * B.chg;   // 영웅 카드 '전투 함성'
-  if (B && B.sets.command) a *= 1 + SETS.command.v[B.sets.command - 1].chg;
   h.charge = Math.min(1, h.charge + a);
   if (h.charge >= 1) emit(s, { t: 'heroReady', id: h.id });
 }
@@ -3559,7 +3495,6 @@ function castHero(s) {
   h.charge = 0;
   h.T = h.id === 'mungchi' && fxOf(s) && comboOn(s, 'rapidMungchi') ? comboV('rapidMungchi', !!bldOf(s)) : H.skill.dur;   // 긴 나팔(속사 + 뭉치)
   const B = s.endless && s.endless.bld;
-  if (B && B.dur) h.T *= 1 + BUILD.hero.dur * B.dur;   // 영웅 카드 '끈기'
   h.act = h.T;
   h.shot = 0;
   s.stats.heroUses++;
@@ -3731,25 +3666,23 @@ function specialActB(s, m, lv, D, B) {
   const P = BUILD.sp[m.k];
   const L5 = Math.min(lv, BUILD.evo);   // 정해진 값(간격·범위·위력 식)은 Lv5까지, 그 위는 각성·숙련 배수(a)로 — 18.4
   const a = awk(lv);
-  const pow = P ? P.dmg * (1 + P.lv * deep(L5 - 1)) * a : 1;
+  const pow = P ? P.dmg * (1 + P.lv * (L5 - 1)) * a : 1;
   const evo = lv >= BUILD.evo;   // Lv5 고유 능력(roster.SP_EVO)
   const evo2 = lv >= 10;   // Lv10 2차 진화(roster.SP_EVO2)
   const fx = !!fxOf(s);
-  const sb = setV(s, 'blast'), sp = setV(s, 'precise');
-  const bR = sb ? 1 + sb.r : 1, bD = sb ? 1 + sb.dmg : 1;
   if (m.k === 'sniper') {
     const nabiBoost = h && h.id === 'nabi' ? 1 + heroVal('nabi', 'boost', h.lv) * synergyOf(lv) : 1;
-    const dmg = unitVal('sniper', 'dmg', L5) * D * nabiBoost * pow * (sp ? 1 + sp.p * (sp.mul - 1) : 1);   // 정밀 세트: 저격은 치명타 기대값만큼
+    const dmg = unitVal('sniper', 'dmg', L5) * D * nabiBoost * pow;
     const big = evo ? SP_EVO.sniper.v : 1;
     const ok = snipe(s, dmg, 'sniper', big, evo2);
     m.cd = ok ? unitVal('sniper', 'every', L5) : 0.25;
   } else if (m.k === 'rocket') {
     const k = 1;
-    const r = unitVal('rocket', 'r', L5) * k * bR;
+    const r = unitVal('rocket', 'r', L5) * k;
     const t = rocketTarget(s, D, r);
     if (!t) { m.cd = 0.25; return; }
     const T = Math.max(0.25, (t.z - q.z) / SP.rocket.speed);
-    const rk = { id: s.nextId++, x0: q.x, z0: q.z + 0.5, x: t.x, z: t.z, t: T, T, r, dmg: SP.rocket.dmg * D * pow * k * bD, fid: t.fid };
+    const rk = { id: s.nextId++, x0: q.x, z0: q.z + 0.5, x: t.x, z: t.z, t: T, T, r, dmg: SP.rocket.dmg * D * pow * k, fid: t.fid };
     if (evo2) rk.fire = true;   // 로켓병 Lv10 불씨 로켓: 떨어진 자리에 불 지대
     s.rockets.push(rk);
     emit(s, { t: 'rocket', id: rk.id, x0: rk.x0, z0: rk.z0, x: rk.x, z: rk.z });
@@ -3760,12 +3693,12 @@ function specialActB(s, m, lv, D, B) {
     }
     m.cd = unitVal('rocket', 'every', L5) * (fx && comboOn(s, 'rapidRocket') ? COMBOS.rapidRocket.v : 1);
   } else if (m.k === 'flame') {
-    const w = unitVal('flame', 'w', L5) * bR * (h && h.id === 'mungchi' && h.act > 0 ? 1 + UNITS.flame.horn * synergyOf(lv) : 1);
-    const len = unitVal('flame', 'len', L5) * (evo ? SP_EVO.flame.v : 1) * bR;   // 화염병 Lv5 불바다: 불 지대 길이 ×2
+    const w = unitVal('flame', 'w', L5) * (h && h.id === 'mungchi' && h.act > 0 ? 1 + UNITS.flame.horn * synergyOf(lv) : 1);
+    const len = unitVal('flame', 'len', L5) * (evo ? SP_EVO.flame.v : 1);   // 화염병 Lv5 불바다: 불 지대 길이 ×2
     const t = flameTarget(s, D, w, len);
     if (!t) { m.cd = 0.25; return; }
     const T = unitVal('flame', 'T', L5);
-    const zn = { id: s.nextId++, x: t.x, z: t.z, w, len, t: T, T, follow: evo2 ? t.z - q.z : undefined, d: unitVal('flame', 'dmg', L5) * D * pow * bD, lv };
+    const zn = { id: s.nextId++, x: t.x, z: t.z, w, len, t: T, T, follow: evo2 ? t.z - q.z : undefined, d: unitVal('flame', 'dmg', L5) * D * pow, lv };
     (s.flames || (s.flames = [])).push(zn);
     emit(s, { t: 'flame', id: zn.id, x0: q.x, z0: q.z, x: zn.x, z: zn.z, w, len, T, lv, boss: !!t.boss });
     m.cd = unitVal('flame', 'every', L5);
@@ -4694,7 +4627,6 @@ export function stateHash(s) {
   // 빌드 개편(연 판에만)
   if (s.endless && s.endless.bld) {
     const B = s.endless.bld, of = s.endless.offer;
-    h = hash(h, 'sets', SET_IDS.map((k) => B.sets[k] | 0).join(''), B.crit.toFixed(4));
     h = hash(h, 'bld', B.gun, B.chg, B.dur, B.shield, B.armor, B.shieldLeft, B.rr, B.rrn, B.pi, B.more, B.curse, B.rel, '', B.down.map((d) => d.k + d.lv).join(','),
       of ? of.map((c) => (c.b || c.h || c.g || '') + (c.n || 0)).join(',') : '-');
   }

@@ -8,7 +8,7 @@
    --flame: 화염병 줄(4단계)을 연 판(특수병 카드·철창·금색 칸에 화염병이 나온다 — think는 화염병을 THINK.sp.flame으로 본다. '그 병과 우선' 고르기는 밸런스 때 더한다) */
 import * as C from '../assets/core.js';
 import * as R from '../assets/roster.js';
-import { AMMO_IDS, fxK, RELICS, RELIC_IDS, BUILD, SETS, deep, fx2Val } from '../assets/roster.js';
+import { AMMO_IDS, fxK, RELICS, RELIC_IDS, BUILD, fx2Val } from '../assets/roster.js';
 import { makeBot, rng } from '../tests/bots.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : process.argv[i + 1]; };
@@ -115,23 +115,11 @@ function thinkScoreB(s, c, f, K) {
   if (f.k === 'curse') return K.curse;
   if (f.k === 'relic') return ((THINK.relic)[c.r] || 0) * (1 + THINK.H);
   let v = 0;
-  const part = f.k === 'gun' ? 'gun' : f.k === 'unit' ? f.u : f.k === 'fx' ? f.a : f.k === 'hero' ? f.h : f.g;
+  const part = f.k === 'gun' ? 'gun' : f.k === 'unit' ? f.u : f.k === 'fx' ? f.a : '';
   if (f.k === 'gun') v = g(C.WEAPON[f.to], C.WEAPON[f.from]);   // 총 ★(무기 단계)
   else if (f.k === 'fx' && f.a === 'rapid') v = g(fx2Val('rapid', f.to).pow, f.from ? fx2Val('rapid', f.from).pow : 1);
-  else if (f.k === 'guard' && f.g === 'armor') v = g(1 + BUILD.armor * deep(f.to), 1 + BUILD.armor * deep(f.from));
-  else v = (K.w[part] || 0.02) * (deep(f.to) - deep(f.from)) + (f.from ? 0 : K.first);
+  else v = (K.w[part] || 0.02) * (f.to - f.from) + (f.from ? 0 : K.first);   // 레벨마다 정해진 능력(성장 개편 — 세트·깊이 보상은 없어졌다)
   if (f.combos) v += (K.combo ?? THINK.combo) * f.combos.length;
-  const st = f.set;
-  if (st) {
-    const T = K.tier[st.id], at = SETS[st.id].at;
-    const phi = (lv) => {   // 레벨 합 lv의 퍼텐셜: 지난 단계 몫의 합 + prog × 다음 단계 몫 × 걸음 비율
-      let sum = 0, t = 0;
-      while (t < 3 && lv >= at[t]) sum += T[t++];
-      if (t < 3) sum += K.prog * T[t] * (lv - (t ? at[t - 1] : 0)) / (at[t] - (t ? at[t - 1] : 0));
-      return sum;
-    };
-    v += phi(st.to) - phi(st.from);
-  }
   return v;
 }
 const argMax = (xs) => xs.reduce((bi, v, i) => (v > xs[bi] ? i : bi), 0);

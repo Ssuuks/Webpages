@@ -1853,17 +1853,16 @@ test('재굴림 주사위(개편 판): 얻는 즉시 다시 뽑기 +3번, 그 �
 test('부활 서약(개편 판): 보스를 잡으면 쓰러진 특수병이 레벨의 BUILD.spBack 몫이 아니라 제 레벨로 돌아온다(정밀 세트의 back보다도 위). 개편 판이 아니면 카드로 안 나온다', () => {
   assert.equal(C.relicFits(bldRun(45, 1), 'pledge'), true);
   assert.equal(C.relicFits(bare3(), 'pledge'), false);
-  for (const [relics, tier] of [[[], 0], [['pledge'], 0], [['pledge'], 3], [[], 2]]) {
+  for (const relics of [[], ['pledge']]) {
     const u = bldRun(45, 1);
     u.squad.sp = [];
     u.endless.relics = relics.slice();
     u.endless.bld.down = [{ k: 'rocket', lv: 10 }];
-    u.endless.bld.sets = tier ? { precise: tier } : {};
     u.endless.offer = null; u.boss.dead = true; u.endless.wait = 0.001;
     C.step(u, { dir: 0 });
     const m = u.squad.sp.find((x) => x.k === 'rocket');
-    const back = relics.length ? 1 : tier ? Math.max(R.BUILD.spBack, R.SETS.precise.v[tier - 1].back || 0) : R.BUILD.spBack;
-    assert.ok(m && m.lv === Math.floor(10 * back), `${relics} 정밀 ${tier}단계: 돌아온 레벨 ${m && m.lv}`);
+    const back = relics.length ? 1 : R.BUILD.spBack;
+    assert.ok(m && m.lv === Math.floor(10 * back), `${relics}: 돌아온 레벨 ${m && m.lv}`);
   }
 });
 
@@ -3599,8 +3598,6 @@ test('총 ★(개편 판): 무기 단계와 무기 개조가 하나로 — 상�
   const shot = (tier) => { const u = C.newEndless({ seed: 31, ...BLD }); u.squad.tier = tier; u.squad.n = 500; u.foes = []; u.props = []; u.rows = []; u.saws = []; delete u.divs; u.squad.fireAcc = 1; C.step(u, { dir: 0 }); return u.bullets.length ? u.bullets.at(-1).dmg : 0; };
   const d0 = shot(0), d4 = shot(4), d9 = shot(9);
   assert.ok(d0 > 0 && Math.abs(d4 / d0 - C.WEAPON[4]) < 1e-9 && Math.abs(d9 / d0 - C.WEAPON[9]) < 1e-9, `★ 피해 ${d4 / d0} ${d9 / d0}`);
-  // 탄막 세트의 총 몫은 ★ − 1(무기 개조가 합쳐졌다)
-  assert.equal(C.setLv(at(1, (o) => { o.squad.tier = 3; o.endless.bld.gun = 0; }), 'barrage'), 2 * 3 + C.fxLv(at(1, (o) => { o.squad.tier = 3; }), 'rapid'));
   assert.ok(q.tier >= 0);
 });
 
@@ -3792,7 +3789,7 @@ test('빌드 개편: 다시 뽑기는 카드를 바꾸고 횟수를 쓴다 — �
   const k = bldRun(32, 6, { n: 9000 });
   assert.ok(k.endless.bosses >= 6 && C.rerollsOf(k) >= 1, `대왕 뒤 다시 뽑기 ${C.rerollsOf(k)}`);
 });
-test('빌드 개편: 카드를 고르면 그만큼 오르고(무기 개조는 화력에), 다음 구간이 시작되며 자동 보급(+20%)을 받는다', () => {
+test('빌드 개편: 카드를 고르면 그만큼 오르고(총 ★은 화력에), 다음 구간이 시작되며 자동 보급(+20%)을 받는다', () => {
   const s = bldRun(40, 1);
   const of = C.offerOf(s);
   const i = Math.max(0, of.findIndex((c) => c.k === 'gun'));
@@ -3802,7 +3799,7 @@ test('빌드 개편: 카드를 고르면 그만큼 오르고(무기 개조는 �
   assert.equal(s.endless.seg, 2);
   const sup = s.ev.find((e) => e.t === 'supply');
   assert.ok(sup && sup.n === Math.round(n0 * R.BUILD.supply['']), JSON.stringify(sup));
-  if (c.k === 'gun') assert.equal(s.endless.bld.gun, info.to);
+  if (c.k === 'gun') assert.equal(s.squad.tier, info.to);   // 총 ★ — 무기 개조는 ★로 합쳐졌다
   assert.ok(s.endless.picks.length === 1);
 });
 test('빌드 개편: 정예(3구간) 보스 뒤에는 유물을 먼저 고르고 이어서 카드를 고른다 — 유물은 5개까지', () => {
@@ -3851,20 +3848,7 @@ test('빌드 개편: 저장·복원해도 같은 판이고, 깨진 빌드 상태
   assert.equal(fixed.endless.bld.curse, 0);
   assert.ok(C.offerOf(fixed), '카드는 다시 뜬다');
 });
-test('빌드 개편: 게이트 방패는 빨간 게이트 손실을 구간마다 그 횟수만큼 막고, 쓰러진 특수병은 보스를 잡으면 절반 레벨로 돌아온다', () => {
-  const s = bldRun(44, 1);
-  s.endless.bld.shield = 1; s.endless.bld.shieldLeft = 1;
-  const row = { id: 999999, z: s.squad.z + 0.01, cells: [{ x0: -6, x1: 6, op: 'div', v: 2, k: 0, acc: 0, step: 1, cap: 2, v0: 2 }], done: false };
-  C.pickCard(s, 0);
-  s.endless.bld.shieldLeft = 1;
-  row.z = s.squad.z + 0.5;
-  s.rows.unshift(row);
-  const n0 = s.squad.n;
-  let saw = false;
-  for (let t = 0; t < 30 && !saw; t++) { C.step(s, { dir: 0 }); saw = s.ev.some((e) => e.t === 'shield'); }
-  assert.ok(saw, '방패가 터졌다');
-  assert.ok(s.squad.n >= n0, `병력 ${n0} → ${s.squad.n}`);
-  assert.equal(s.endless.bld.shieldLeft, 0);
+test('빌드 개편: 쓰러진 특수병은 보스를 잡으면 절반 레벨로 돌아온다', () => {
   // 쓰러진 특수병
   const u = bldRun(45, 1);
   u.squad.sp = [];
@@ -3874,9 +3858,6 @@ test('빌드 개편: 게이트 방패는 빨간 게이트 손실을 구간마다
   const m = u.squad.sp.find((x) => x.k === 'rocket');
   assert.ok(m && m.lv === 3, JSON.stringify(u.squad.sp));
   assert.deepEqual(u.endless.bld.down, []);
-});
-test('빌드 개편: 깊이 보상(특수병·영웅·생존 카드용) — 한 가지에 몰면 값이 더 크다', () => {
-  assert.ok(R.deep(6) > 2 * R.deep(3));
 });
 test('탄 Lv1~5(개편 판, 18.3): 레벨마다 정해진 능력 — 관통(1마리·2마리·벽 +50%·일직선 전부·뚫을수록 +20%) · 작렬(1m·1.5m·50%·2m·유폭) · 속사(+10%·속도 +10%·보스 +30%·속도 더·과열) · 빙결(0.8초 25%·40%·잃는 병사 −30%·1.5초·번짐). Lv5가 진화·상한', () => {
   const V = (a, l) => R.fx2Val(a, l);
@@ -4075,58 +4056,6 @@ test('펫 여러 마리: 첫 마리는 예전 그대로(s.pet — 한 마리 판
   assert.deepEqual(d2.pets.team, ['newt', 'fox']);
   assert.equal(d2.pets.sel, 'newt');
 });
-test('빌드 세트: 같은 결의 레벨을 모으면 단계가 켜진다 — 카드가 세트 진행(from → to, 다음 단계까지)을 알려 주고, 단계가 오르면 set 이벤트. 탄막은 화력, 지휘는 보급을 올린다', () => {
-  for (const id of R.SET_IDS) {
-    const S0 = R.SETS[id];
-    assert.ok(S0.at[0] < S0.at[1] && S0.at[1] < S0.at[2] && S0.v.length === 3);
-    for (const t of [1, 2, 3]) assert.ok(S0.text(t).length > 4);
-    assert.equal(R.setTier(id, S0.at[0] - 1), 0);
-    assert.equal(R.setTier(id, S0.at[2]), 3);
-  }
-  assert.equal(R.setOf('gun'), 'barrage');
-  assert.equal(R.setOf('rocket'), 'blast');
-  const s = bldRun(40, 1);
-  const B = s.endless.bld;
-  s.squad.tier = Math.floor((R.SETS.barrage.at[0] - 1) / 2);   // 총 몫은 ★ × 2 — ★ +1이면 문턱(8)에 닿는다
-  s.endless.offer = [{ k: 'gun', n: 1 }];
-  const info = C.cardInfo(s, s.endless.offer[0]);
-  assert.deepEqual(info.set, { id: 'barrage', from: C.setLv(s, 'barrage'), to: C.setLv(s, 'barrage') + 2, tier: 1, up: true, next: R.SETS.barrage.at[1] - R.SETS.barrage.at[0] });
-  assert.equal(C.setOn(s, 'barrage'), 0);
-  B.chg = R.SETS.command.at[0];   // 지휘 1단계(다음 동기화에 켜진다)
-  const n0 = s.squad.n;
-  C.pickCard(s, 0);
-  assert.equal(C.setOn(s, 'barrage'), 1);
-  assert.equal(C.setOn(s, 'command'), 1);
-  assert.ok(s.ev.some((e) => e.t === 'set' && e.id === 'barrage' && e.tier === 1));
-  const sup = s.ev.find((e) => e.t === 'supply');
-  assert.equal(sup.n, Math.round(n0 * (R.BUILD.supply[''] + R.SETS.command.v[0].supply)));
-  // 탄막이 켜진 판의 총알이 그만큼 세다
-  const off = structuredClone(s);
-  delete off.endless.bld.sets.barrage;
-  C.step(s, { dir: 0 }); C.step(off, { dir: 0 });
-  for (let t = 0; t < 30 && !s.bullets.length; t++) { C.step(s, { dir: 0 }); C.step(off, { dir: 0 }); }
-  const last = (g) => g.bullets[g.bullets.length - 1];   // 가장 늦게 쏜 총알(단계를 끈 뒤에 쏜 것)
-  for (let t = 0; t < 20; t++) { C.step(s, { dir: 0 }); C.step(off, { dir: 0 }); }
-  assert.ok(s.bullets.length && Math.abs(last(s).dmg / last(off).dmg - (1 + R.SETS.barrage.v[0].fire)) < 1e-9, `${last(s).dmg} / ${last(off).dmg}`);
-  // 저장·복원: 단계는 레벨에서 다시 센다
-  const o = C.restore(C.snapshot(s));
-  assert.deepEqual(o.endless.bld.sets, s.endless.bld.sets);
-  assert.equal(C.stateHash(o), C.stateHash(s));
-});
-test('빌드 세트 정밀: 치명타는 난수 없이 확률만큼 고르게 터진다. 짝 시너지는 개편 판에서 더 세다', () => {
-  const s = bldRun(40, 1);
-  C.pickCard(s, 0);
-  s.endless.bld.sets.precise = 2;
-  const V = R.SETS.precise.v[1];
-  let crit = 0, all = 0;
-  for (let t = 0; t < 600; t++) { C.step(s, { dir: 0 }); for (const b of s.bullets) if (b.d <= C.BULLET_SPEED * C.DT + 1e-9) { all++; if (b.c) crit++; } if (s.phase === 'lost') break; }
-  assert.ok(all > 50 && Math.abs(crit / all - V.p) < 0.03, `${crit}/${all}`);
-  assert.ok(R.comboV('frostSniper', true) > R.comboV('frostSniper', false));
-  assert.equal(R.comboV('frostSniper', false), R.COMBOS.frostSniper.v);
-  assert.ok(R.comboText('burstRocket', true).includes(String(R.COMBO_V2.burstRocket)));
-});
-
-/* ---------- 17절 후속(ENDGAME.md 19절): 앞 구간 · 정밀 Ⅲ · 한파 · 개편 판의 think ---------- */
 const UP30 = { start: C.START_N + 60, fire: 30, hero: { id: 'mungchi', lv: 5 } };
 const BLD30 = { ...BLD, ...UP30 };
 test('개편 판의 앞 구간: 위협을 실제 강화(fire)로 만든다 — 기준(ENDLESS.fire)보다 높은 강화의 몫을 BUILD.earlyK만큼 따라가고 BUILD.early구간에 걸쳐 기준으로 돌아간다. 기준 이하·앞 단계 판은 그대로', () => {
@@ -4159,57 +4088,16 @@ test('가만히 서 있는 분대(봇 idle)는 개편 판에서 강화 30이어�
     assert.ok(bs.filter((b) => b === 0).length >= 17, `강화 ${fire} 첫 보스에서 죽은 판 ${bs.filter((b) => b === 0).length}/24`);
   }
 });
-test('빌드 세트 정밀: 단계마다 쓰러진 특수병이 더 높은 레벨로 돌아오고, Ⅲ단계는 큰 피해를 맞아도 특수병이 쓰러지지 않는다. 한파는 단계마다 잃는 병사를 더 줄인다', () => {
-  const V = R.SETS.precise.v;
-  assert.ok(V[0].back > R.BUILD.spBack && V[0].back < V[1].back && V[1].back < V[2].back && V[2].back <= 1);
-  assert.ok(!V[0].guard && !V[1].guard && V[2].guard, 'Ⅲ단계만 특수병을 지킨다');
-  for (const t of [1, 2]) assert.ok(R.SETS.precise.text(t).includes(`${Math.round(V[t - 1].back * 100)}%`), `Ⅰ·Ⅱ 글 ${t}`);
-  assert.ok(R.SETS.precise.text(3).includes('쓰러지지'), 'Ⅲ단계 글');
-  // 벽에 크게 부딪히면(병력의 40%) 특수병이 쓰러진다 — 정밀 Ⅲ단계만 버틴다
-  const crash = (tier) => {
-    const t = bldRun(46, 1);
-    C.pickCard(t, 0);
-    t.squad.n = 100; t.squad.sp = [{ id: 1, k: 'sniper', cd: 5, lv: 5 }];
-    if (tier) t.endless.bld.sets = { precise: tier }; else t.endless.bld.sets = {};
-    t.props = [{ id: 9600, kind: 'wall', x0: -5, x1: 5, z: t.squad.z + 0.2, hp: 400, max: 400, alive: true, hitT: -9 }];
-    for (let i = 0; i < 4; i++) C.step(t, { dir: 0 });
-    return t;
-  };
-  for (const tier of [0, 1, 2]) { const t = crash(tier); assert.ok(t.squad.n < 80 && !t.squad.sp.length && t.endless.bld.down.some((d) => d.k === 'sniper' && d.lv === 5), `정밀 ${tier}단계: 병력 ${t.squad.n} · ${JSON.stringify(t.squad.sp)}`); }
-  { const t = crash(3); assert.ok(t.squad.n < 80 && t.squad.sp.length === 1 && t.squad.sp[0].k === 'sniper', `정밀 Ⅲ: 병력 ${t.squad.n} · ${JSON.stringify(t.squad.sp)}`); }
-  // 보스를 잡으면 돌아오는 레벨: 단계의 back 몫(없으면 BUILD.spBack)
-  for (const tier of [0, 1, 2, 3]) {
-    const u = bldRun(45, 1);
-    u.squad.sp = [];
-    u.endless.bld.down = [{ k: 'rocket', lv: 10 }];
-    u.endless.bld.sets = tier ? { precise: tier } : {};
-    u.endless.offer = null; u.boss.dead = true; u.endless.wait = 0.001;
-    C.step(u, { dir: 0 });
-    const m = u.squad.sp.find((x) => x.k === 'rocket');
-    assert.ok(m && m.lv === Math.floor(10 * (tier ? V[tier - 1].back : R.BUILD.spBack)), `정밀 ${tier}단계: 돌아온 레벨 ${m && m.lv}`);
-  }
-  // 한파: 단계마다 잃는 병사가 줄고, 느려진 적이 받는 피해는 늘어난다
-  const F = R.SETS.frost.v;
-  assert.ok(F[0].loss < F[1].loss && F[1].loss < F[2].loss && F[2].loss < 1);
-  assert.ok(F[0].amp < F[1].amp && F[1].amp < F[2].amp);
-});
-test('개편 판의 think: 카드 종류마다 점수를 매기고(gun g2 · spec · hero · guard · curse · 시너지 · 세트 진행), 단계에 오르는 카드가 더 높다 — 기본 점수는 앞 단계 판 그대로', () => {
+test('개편 판의 think: 카드 종류마다 점수를 매기고(총 ★ · 특수병 · 탄 효과 · curse · 시너지), 더 높은 레벨의 카드가 더 크다 — 기본 점수는 앞 단계 판 그대로', () => {
   const s = bldRun(40, 1);
   const B = s.endless.bld;
-  const cards = [{ k: 'gun', n: 1 }, { k: 'unit', u: 'sniper', n: 1 }, { k: 'unit', u: 'medic', n: 2 }, { k: 'fx', a: 'rapid', n: 1 }, { k: 'fx', a: 'frost', n: 1 }, { k: 'fx', a: 'pierce', n: 3 },
-    { k: 'hero', h: 'chg', n: 1 }, { k: 'hero', h: 'dur', n: 1 }, { k: 'guard', g: 'shield', n: 1 }, { k: 'guard', g: 'armor', n: 2 }, { k: 'curse' }];
+  const cards = [{ k: 'gun', n: 1 }, { k: 'unit', u: 'sniper', n: 1 }, { k: 'unit', u: 'medic', n: 2 }, { k: 'fx', a: 'rapid', n: 1 }, { k: 'fx', a: 'frost', n: 1 }, { k: 'fx', a: 'pierce', n: 3 }, { k: 'curse' }];
   for (const c of cards) { const v = thinkScore(s, c); assert.ok(Number.isFinite(v) && v > 0, `${JSON.stringify(c)} → ${v}`); }
   s.squad.sp = [{ id: 1, k: 'rocket', cd: 1, lv: 3 }]; B.down = [];
-  // 같은 카드라도 세트 단계에 오르면 점수가 높다(탄막: 총 ★ 몫이 문턱에 닿는 카드)
-  const at = R.SETS.barrage.at[0];
-  s.squad.tier = Math.floor((at - 1) / 2);
-  const up = thinkScore(s, { k: 'gun', n: 1 });
-  s.squad.tier = Math.floor((at - 1) / 2) - 1;
-  const flat = thinkScore(s, { k: 'gun', n: 1 });
-  assert.ok(up > flat, `단계에 오르는 무기 개조 ${up} > ${flat}`);
-  // 한 세트에 이미 쌓인 쪽 카드를 더 높게 본다(깊이 보상) — 폭발 세트에 쌓은 판에서 작렬 카드 > 관통 카드
-  s.squad.tier = 0; s.endless.fx = { burst: 4 };
-  assert.ok(thinkScore(s, { k: 'fx', a: 'burst', n: 1 }) > thinkScore(s, { k: 'fx', a: 'pierce', n: 1 }));
+  // 레벨 폭이 큰 카드(희귀·전설)가 더 높다
+  s.squad.tier = 0; s.endless.fx = { burst: 1 };
+  assert.ok(thinkScore(s, { k: 'fx', a: 'burst', n: 3 }) > thinkScore(s, { k: 'fx', a: 'burst', n: 1 }));
+  assert.ok(thinkScore(s, { k: 'gun', n: 3 }) > thinkScore(s, { k: 'gun', n: 1 }));
   // 앞 단계 판의 점수는 그대로(식 그대로 — STAGE1_FP·13절 테스트가 지킨다)
   const t = C.newEndless({ seed: 31, ...UP10, unl: 1, ammoOpen: R.AMMO_IDS });
   t.squad.n = 100;

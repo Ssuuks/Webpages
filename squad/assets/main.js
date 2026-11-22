@@ -4,7 +4,7 @@ import {
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, mutLv, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
-  nMax, fmtN, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, setLv, setOn,
+  nMax, fmtN, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS, SETS, SET_IDS, TIER_MARK, comboText } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, PET_SLOTS, comboText } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1653,7 +1653,6 @@ function finishEndless() {
    카드는 엄지가 닿는 화면 아래쪽에 세로로. 보스가 쓰러질 때 대개 손가락으로 길을 잡고 있으므로 그 손가락이 카드를 고르지 않게:
    뜬 지 PICK_GRACE 안의 누름은 버리고, 카드 위에서 새로 눌러 같은 카드에서 뗐을 때만 고른다(누르고 있던 손가락은 캔버스에 붙잡혀 있다) */
 let mutNote = '';         // 방금 정해진 적 변이 알림(보급 알림이 덮지 않게 이어 붙인다)
-let setNote = '';         // 방금 오른 빌드 세트 알림(보급 알림이 덮지 않게 이어 붙인다)
 let lastCard = '';        // 방금 고른 카드의 알림 글(개편 판 — 보급 알림이 이어 붙인다)
 const PICK_GRACE = 500;   // ms
 const PICK_AUTO = 600;    // __squad.auto(봇)가 고르기까지 ms
@@ -1675,12 +1674,10 @@ const pct = (x) => Math.round(x * 100);
 /* 개편 판 특수병의 위력 글(그 레벨): 저격·로켓·불 지대 위력 배수, 의무병은 덜 잃는 몫 */
 function spPowText(u, lv) {
   const P = BUILD.sp[u];
-  if (P) return ` · 위력 ×${(P.dmg * (1 + P.lv * deep(lv - 1))).toFixed(1)}`;
-  return u === 'medic' ? ` · 좀비·보스에게 잃는 병사 −${pct(1 - 1 / (1 + BUILD.med * deep(lv)))}%, 회복 +${50 * lv}%` : '';
+  if (P) return ` · 위력 ×${(P.dmg * (1 + P.lv * (Math.min(lv, BUILD.evo) - 1)) * awk(lv)).toFixed(1)}`;
+  return u === 'medic' ? ` · 좀비·보스에게 잃는 병사 −${pct(1 - 1 / (1 + BUILD.med * lv))}%, 회복 +${50 * lv}%` : '';
 }
 function cardText(c) {
-  if (c.k === 'hero') { const H = HERO_CARDS[c.h]; return { kind: '영웅', lead: H.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: H.text(c.to), col: s && s.hero && HEROES[s.hero.id] ? HEROES[s.hero.id].color : '#FF9F43', icon: 'star', n: c.n }; }
-  if (c.k === 'guard') { const G = GUARD_CARDS[c.g]; return { kind: '생존', lead: G.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: G.text(c.to), col: '#7BE0A0', icon: 'medic', n: c.n }; }
   if (c.k === 'curse') return { kind: '위험한 계약', lead: '', from: '', to: `카드 ${c.more}장 더`, det: `지금 카드를 ${c.more}장 더 골라요`, cost: `다음 구간 위협 ×${c.mul}`, col: '#FF5E7A', icon: 'star', curse: true };
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
   if (c.k === 'gun') { const bs = bldOf(s); return { kind: bs ? '총 ★' : '무기', lead: bs ? '총' : '무기', from: bs ? tierName(c.from) : c.from ? `${c.from}` : '기본', to: tierName(c.to), det: `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 ${bs ? '★' + (tierMax(s) + 1) : tierMax(s) + '단계'}`, col: '#FFC93C', icon: 'gun' }; }
@@ -1717,8 +1714,6 @@ function cardText(c) {
 }
 /* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
 function cardDone(c) {
-  if (c.k === 'hero') return `${HERO_CARDS[c.h].name} Lv${c.to}`;
-  if (c.k === 'guard') return `${GUARD_CARDS[c.g].name} Lv${c.to}`;
   if (c.k === 'curse') return `위험한 계약 — 카드 ${c.more}장 더`;
   if (c.k === 'men') return `병력 +${fmtN(c.to - c.from)}`;
   if (c.k === 'gun') return `무기 ${tierName(c.to)}`;
@@ -1746,8 +1741,7 @@ function pickSummary(picks) {
   const n = new Map();
   for (const p of picks) n.set(p, (n.get(p) | 0) + 1);
   const part = (p, i) => p.split(':')[i];
-  const name = (p) => (p.startsWith('hero:') ? (HERO_CARDS[part(p, 1)] || { name: '영웅' }).name : p.startsWith('guard:') ? (GUARD_CARDS[part(p, 1)] || { name: '생존' }).name
-      : p === 'curse' ? '위험한 계약' : p === 'men' ? '증원' : p === 'gun' ? (s && bldOf(s) ? '무기 개조' : '무기') : p.startsWith('unit:') ? (UNITS[p.slice(5)] || { name: '특수병' }).name
+  const name = (p) => (p === 'curse' ? '위험한 계약' : p === 'men' ? '증원' : p === 'gun' ? (s && bldOf(s) ? '무기 개조' : '무기') : p.startsWith('unit:') ? (UNITS[p.slice(5)] || { name: '특수병' }).name
     : p.startsWith('fx:') ? `${fxName(p.slice(3))} 효과` : ammoName(p.slice(5)));
   // 종류 순서: 1단계(…·탄종)와 2단계(…·탄 효과)를 합친 카드 순서 — 'fx:관통'처럼 고른 효과는 같은 효과끼리 '2번'으로 묶인다
   const order = [...new Set([...CARD.kinds, ...(CARD.kinds2 || []), 'spec', 'hero', 'guard', 'curse'])];
@@ -1821,21 +1815,9 @@ function renderPick() {
         body.appendChild(syn);
       }
     }
-    // 빌드 세트(개편 판): 이 카드가 올리는 세트의 레벨 합과 다음 단계 — 단계가 오르는 카드는 반짝인다
-    let setText = '';
-    if (info.set && SETS[info.set.id]) {
-      const st = info.set, S = SETS[st.id];
-      const el = document.createElement('span');
-      el.className = 'pick-set' + (st.up ? ' up' : '');
-      el.style.setProperty('--set', S.color);
-      setText = `세트 ${S.name} ${st.from} → ${st.to}` + (st.up ? ` · ${TIER_MARK[st.tier]}단계 발동! ${S.text(st.tier)}` : st.next ? ` · ${TIER_MARK[st.tier + 1]}단계까지 ${st.next}` : ' · 최고 단계');
-      el.textContent = setText;
-      body.appendChild(el);
-      if (st.up) b.classList.add('setup');
-    }
     b.append(ic, body);
     if (FINE) { const k = document.createElement('kbd'); k.className = 'pick-key'; k.textContent = i + 1; b.appendChild(k); }
-    b.setAttribute('aria-label', `${i + 1}번 ${T.kind}: ${chg.textContent}. ${T.det}${T.cost ? `. 대신 ${T.cost}` : ''}${synText ? `. 시너지 ${synText}` : ''}${setText ? `. ${setText}` : ''}`);
+    b.setAttribute('aria-label', `${i + 1}번 ${T.kind}: ${chg.textContent}. ${T.det}${T.cost ? `. 대신 ${T.cost}` : ''}${synText ? `. 시너지 ${synText}` : ''}`);
     list.appendChild(b);
   });
   $('pickNext').textContent = `다음: ${segToast(s.endless.seg + 1)}`;
@@ -2049,14 +2031,7 @@ function renderPauseUnits() {
   }
   // 빌드 개편: 무기 개조·영웅·생존 카드·전문화
   if (Bd) {
-    for (const id of SET_IDS) {
-      const n = setLv(s, id), t = setOn(s, id), S = SETS[id];
-      if (!n) continue;
-      addRow('star', `세트 ${S.name}${t ? ' ' + TIER_MARK[t] : ''} (${n}레벨)`, `${t ? S.text(t) : '아직 꺼짐'}${t < 3 ? ` · ${S.at[t]}레벨에 ${TIER_MARK[t + 1]}단계: ${S.text(t + 1)}` : ''}`);
-    }
-    if (Bd.gun) addRow('gun', `무기 개조 Lv${Bd.gun}`, `총알 화력 +${pct(BUILD.gun * deep(Bd.gun))}%`);
-    for (const k of Object.keys(HERO_CARDS)) if (Bd[k]) addRow('star', `${HERO_CARDS[k].name} Lv${Bd[k]}`, HERO_CARDS[k].text(Bd[k]));
-    for (const k of Object.keys(GUARD_CARDS)) if (Bd[k]) addRow('medic', `${GUARD_CARDS[k].name} Lv${Bd[k]}`, GUARD_CARDS[k].text(Bd[k]) + (k === 'shield' ? ` · 이번 구간 ${Bd.shieldLeft}번 남음` : ''));
+    if (Bd.gun) addRow('gun', `무기 개조 Lv${Bd.gun}`, `총알 화력 +${pct(BUILD.gun * Bd.gun)}%`);
     for (const m of sp) if (SP_EVO[m.k] && (m.lv || 1) >= BUILD.evo) addRow(m.k, `${UNITS[m.k].name} ‘${SP_EVO[m.k].name}’${(m.lv || 1) >= 10 ? ` · ‘${SP_EVO2[m.k].name}’` : ''}${(m.lv || 1) > BUILD.evo ? ` · 각성 +${Math.round((awk(m.lv || 1) - 1) * 100)}%` : ''}`, SP_EVO[m.k].text() + ((m.lv || 1) >= 10 ? ' · ' + SP_EVO2[m.k].text() : ''));   // Lv5 고유 능력·Lv10 2차 진화·각성
     for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * (rl && rl.includes('pledge') ? 1 : BUILD.spBack)))}로 돌아와요`);
     addRow('star', '다시 뽑기', `${Bd.rr}번 남음 · 대왕을 잡으면 +${1 + (rl && rl.includes('dice') ? RELICS.dice.king : 0)}`);
@@ -2417,28 +2392,12 @@ function handleEvents(ev) {
         break;
       }
       case 'offer': openPick(); break;
-      case 'set':
-        // 빌드 세트의 단계가 올랐다 — 빌드가 완성되어 가는 순간이라 시너지처럼 크게
-        if (SETS[e.id]) { sfx.combo(); vibe([20, 30, 20, 30, 50]); setNote = `세트 ${SETS[e.id].name} ${TIER_MARK[e.tier]}단계! ${SETS[e.id].text(e.tier)}`; toast(setNote, 3200); }
-        break;
-      case 'revive':
-        // 의무병 Lv10 '마지막 응급'(구간마다 한 번): 전멸 직전에 병력이 돌아왔다 — 판이 끝날 뻔한 순간이라 크게
-        sfx.power(2); vibe([60, 40, 60, 40, 120]);
-        toast(`마지막 응급! 병력 ${fmtN(e.n)}명으로 다시 일어났어요 · 이번 구간은 한 번뿐이에요`, 2800);
-        break;
-      case 'mutation': {
-        // 대왕을 잡았다 — 다음 바퀴의 적 변이가 정해졌다(바로 공개: 대왕 뒤 카드·유물로 대비). 다음 알림에 이어 붙여 한 줄로
-        const M = MUTATIONS[e.id];
-        if (M) { sfx.power(2); vibe([40, 40, 40]); mutNote = `변이 ${M.name}${e.lv > 1 ? ' Ⅱ' : ''}! ${M.text(e.lv)}`; toast(mutNote, 4200); }
-        break;
-      }
       case 'supply': {
         // 개편 판: 보스를 잡으면 자동 보급(증원 카드 대신) — 고른 카드와 다음 구간을 한 줄로(대왕 뒤에는 변이도)
         const mn = mutNote ? mutNote + ' · ' : '';
         mutNote = '';
-        toast(setNote ? `${mn}${setNote} · 보급 +${fmtN(e.n)}명` : `${mn}${lastCard ? lastCard + ' · ' : ''}보급 +${fmtN(e.n)}명 · ${segToast(s.endless.seg)}`, mn ? 4200 : setNote ? 3600 : 2800);
+        toast(`${mn}${lastCard ? lastCard + ' · ' : ''}보급 +${fmtN(e.n)}명 · ${segToast(s.endless.seg)}`, mn ? 4200 : 2800);
         lastCard = '';
-        setNote = '';
         break;
       }
       case 'shield':
@@ -2718,7 +2677,6 @@ function updateSpChips() {
   const ammoChip = s && !fx && AMMO[s.ammo] ? s.ammo : '';   // 탄 효과가 없는 판(캠페인·무한모드 1단계)의 출격 탄종
   const gmod = s && bldOf(s) ? bldOf(s).gun | 0 : 0;   // 무기 개조(개편 판)
   let key = 1 + tier + 31 * gmod;
-  if (s && bldOf(s)) for (const id of SET_IDS) key = (key * 7 + setOn(s, id)) % 2147483647;
   const mix = (v) => { key = (key * 131 + v + 7) % 2147483647; };
   for (const m of sp) { mix(UNIT_IDS.indexOf(m.k) + 1); mix(m.lv || 1); }
   mix(-1);
@@ -2749,19 +2707,6 @@ function updateSpChips() {
     chip.append('개조');
     const b = document.createElement('b');
     b.textContent = 'Lv' + gmod;
-    chip.appendChild(b);
-    box.appendChild(chip);
-  }
-  // 빌드 세트(개편 판): 켜진 단계만 — 세트 색 테두리
-  if (s && bldOf(s)) for (const id of SET_IDS) {
-    const t = setOn(s, id);
-    if (!t) continue;
-    const chip = document.createElement('span');
-    chip.className = 'sp-chip fx-chip set-chip' + (t >= 3 ? ' lv3' : '');
-    chip.style.setProperty('--acc', SETS[id].color);
-    chip.append(SETS[id].name);
-    const b = document.createElement('b');
-    b.textContent = TIER_MARK[t];
     chip.appendChild(b);
     box.appendChild(chip);
   }

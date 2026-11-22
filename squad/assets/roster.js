@@ -369,11 +369,9 @@ for (const id of RELIC_IDS) Object.defineProperties(RELICS[id], { good: { get() 
    수치는 모두 초안 — 봇으로 잰 값은 ENDGAME.md 16절 */
 export const BUILD = {
   supply: { '': 0.2, hard: 0.2, super: 0.5 },   // 보스를 잡으면 자동 보급: 병력 +이만큼(대왕은 더)
-  deep: 0.35,           // 깊이 보상(deep())
   gun: 0.03,            // 무기 개조: 총알 화력 +3% × 유효 레벨(위협 식에 안 들어간다)
-  w: { gun: 1, unit: 1, fx: 1, hero: 0.7, guard: 0.7 },   // 카드 종류가 나올 가중치
-  shieldMax: 3,
-  thr: { from: 4, step: 1.085 },   // 측정(32판 think·아무거나): 각성 전 1.14 → 15, 1.07(3단계) → 24, 각성·숙련 뒤 1.07 → 28 · 1.10 → 22~23 · 1.14 → 17. 1.085로 25 근처(ENDGAME.md 18.4)
+  w: { gun: 1, unit: 1, fx: 1 },   // 카드 종류가 나올 가중치
+  thr: { from: 4, step: 1.06 },   // 측정(32판 think/아무거나): 세트·깊이 보상을 없앤 뒤 1.0 → 40.3/34.4 · 1.03 → 31.3/27.7 · 1.06 → 26.6/22.8 · 1.085 → 21.6/18.3. 1.06으로 25 근처(ENDGAME.md 18.4)
   early: 1,             // 앞 구간의 위협을 실제 강화(ENDLESS.fire를 넘는 몫)로 만드는 구간 수(bldFe — 1구간은 전부, early구간에 기준으로 돌아간다. ENDGAME.md 19.1)
   earlyK: 0.75,         // 그 구간에서 강화가 기준을 넘는 몫을 얼마나 따라가나(1 = 전부 — 첫 구간이 너무 빡빡해 집중한 사람도 무너진 값)
   evo: 5,               // 탄 효과가 진화하는 레벨
@@ -381,7 +379,6 @@ export const BUILD = {
   awk: 0.15,            // 각성 Lv6~9: 그 역할의 값 레벨마다 +15%, Lv10은 2차 진화
   mastery: 0.04,        // 숙련(Lv10 위, 끝없음): 같은 카드를 또 고를 때마다 그 대상 효과 +4%(더한다)
   rare: [0.72, 0.23, 0.05],   // 카드 등급(일반·희귀·전설 = 한 번에 +1·+2·+3레벨) 확률
-  setPull: 0.1,         // 쌓은 세트 레벨 1당 그 세트 카드의 가중치 +10%(12레벨까지)
   own: 3,               // 이미 가진 것(탄 효과·특수병)의 카드가 나올 가중치
   reroll: 1,            // 판마다 다시 뽑기 횟수(대왕을 잡을 때마다 +1)
   curse: { p: 0.18, mul: 1.25, more: 2, from: 2 },   // 위험한 계약: from번째 보스 뒤부터 p 확률로 한 장 — 다음 구간 위협 ×mul, 대신 카드 more장 더
@@ -389,16 +386,12 @@ export const BUILD = {
   relicFrom: 3,         // 이 구간부터 정예·대왕 보스 뒤에 유물(예전 6 — 대왕만)
   pouch: 4,             // 넓은 탄낭의 슬롯(예전 3 — 증원 카드가 없어 대신 쪽도 없다)
   // 특수병 위력(쉽게 쓰러지는 만큼 세게): dmg 배수 × (1 + lv·(레벨 − 1)). 의무병은 레벨마다 좀비·보스에게 잃는 병사 ÷(1 + med·레벨), 회복 +50%
-  sp: { sniper: { dmg: 3, lv: 0.35 }, rocket: { dmg: 1, lv: 0.03 }, flame: { dmg: 2, lv: 0.15 } },
-  med: 0.02,
+  sp: { sniper: { dmg: 3, lv: 0.72 }, rocket: { dmg: 1, lv: 0.062 }, flame: { dmg: 2, lv: 0.31 } },   // lv: 레벨(−1)마다 위력 +이만큼(깊이 보상 deep()을 없애며 Lv5 값이 그대로이도록 deep(4)/4 ≈ 2.05배)
+  med: 0.048,           // 의무병 레벨마다 좀비·보스에게 잃는 병사 ÷(1 + med × 레벨)(깊이 보상을 없애며 Lv5 값이 그대로이도록 올렸다)
   spBoss: 0.06,         // 특수병 레벨 1당 보스전 추가 피해 한도(예전 0.02)
   spBack: 0.5,          // 쓰러진 특수병은 다음 구간에 이 몫의 레벨로 돌아온다(내림, 최소 Lv1)
-  hero: { chg: 0.5, dur: 0.25, pow: 0.045 },   // 영웅 카드 1레벨: 전투 함성 — 게이지 충전 +50% · 끈기 — 스킬 지속 +25%, 스킬이 켜진 동안 총알 화력 +4.5% × 유효 레벨
-  armor: 0.035,         // 방탄복 n레벨: 좀비·보스에게 잃는 병사 ÷(1 + 0.035 × 유효 레벨)
 };
 export const RARITY = ['', '일반', '희귀', '전설'];
-/* 깊이 보상: n레벨의 유효 레벨 = n × (1 + deep × (n − 1)) — 한 가지를 깊게 팔수록 한 레벨의 값이 커진다(얕게 고루 고르는 것보다 빌드를 정한 쪽이 세다) */
-export const deep = (n) => { const l = Math.max(0, n); return l * (1 + BUILD.deep * (l - 1)); };
 /* 각성·숙련 배수(개편 판 — 18.4): Lv5까지 1, Lv6~10은 레벨마다 +15%(Lv10에 2차 진화), Lv10 위(숙련)는 레벨마다 +4% 더 — 곱하지 않고 더한다 */
 export const awk = (l) => 1 + BUILD.awk * (Math.min(Math.max(l, 5), 10) - 5) + BUILD.mastery * Math.max(0, l - 10);
 /* 탄 효과의 값(개편 판 — ENDGAME.md 18.3~18.4): 레벨마다 정해진 능력(숫자만 오르는 레벨은 없다), Lv5가 진화, Lv6~10 각성(그 역할의 값 +15%씩, 구간 13부터),
@@ -459,15 +452,6 @@ export const SP_EVO = {
   flame: { name: '불바다', v: 2, text: () => `Lv5: 불 지대 길이 ×${SP_EVO.flame.v}` },
   medic: { name: '소생', v: 0.3, text: () => `Lv5: 잃은 병사가 ${apc(SP_EVO.medic.v)}%p 더 돌아와요(게이트·짓밟기 제외)` },
 };
-/* 영웅 카드 · 생존 카드(개편 판) */
-export const HERO_CARDS = {
-  chg: { name: '전투 함성', text: (n) => `영웅 게이지 충전 +${apc(BUILD.hero.chg * n)}%` },
-  dur: { name: '끈기', text: (n) => `영웅 스킬 지속 +${apc(BUILD.hero.dur * n)}%, 스킬이 켜진 동안 화력 +${apc(BUILD.hero.pow * deep(n))}%` },
-};
-export const GUARD_CARDS = {
-  shield: { name: '게이트 방패', text: (n) => `구간마다 ${n}번, 빨간 게이트로 잃는 병사를 막아요` },
-  armor: { name: '방탄복', text: (n) => `좀비·보스에게 잃는 병사 −${apc(1 - 1 / (1 + BUILD.armor * deep(n)))}%` },
-};
 /* 개편 판에 더해지는 시너지(COMBOS와 같은 모양 — 앞 단계 판은 COMBO_IDS 여섯만 본다) */
 Object.assign(COMBOS, {
   rapidRocket: { need: ['rapid', 'rocket'], name: '속사 포격', v: 0.7, g2: true, text: () => `로켓 쏘는 간격 ×${COMBOS.rapidRocket.v}` },
@@ -476,32 +460,6 @@ Object.assign(COMBOS, {
 });
 /* 개편 판의 시너지 = 짝 넷(탄 ↔ 특수병 — ENDGAME.md 18.3) + 영웅 짝(긴 나팔 그대로). 앞 단계 판은 COMBO_IDS 여섯 */
 export const COMBO_IDS2 = ['pierceSniper', 'rapidRocket', 'burstFlame', 'frostMedic', 'rapidMungchi'];
-/* 빌드 세트(개편 판): 같은 결의 카드 레벨을 모으면 단계마다 켜지는 큰 보너스 — '무슨 빌드인가'가 여기서 정해진다.
-   parts: 세는 것(gun 무기 개조 · 탄 효과 id · 병과 id(쓰러진 특수병도 그 레벨로) · chg/dur 영웅 카드 · shield/armor 생존 카드), at: 단계가 켜지는 레벨 합 [1·2·3단계].
-   v: 단계마다의 수치(글과 core가 함께 읽는다)
-   - barrage 탄막: 총알 화력 +fire
-   - blast 폭발: 작렬·로켓·불 지대의 범위 +r, 위력 +dmg
-   - precise 정밀: 총알·저격이 p 확률로 치명타(피해 ×mul), 쓰러진 특수병이 레벨의 back 몫으로 돌아온다(BUILD.spBack은 0.5), guard면 큰 피해를 맞아도 특수병이 쓰러지지 않는다(병사가 모자라 떠나는 것은 그대로)
-   - frost 한파: 좀비·보스에게 잃는 병사 −loss, 느려진 적이 받는 모든 피해 +amp
-   - command 지휘: 자동 보급 +supply(병력의 몫), 영웅 게이지 충전 +chg */
-export const SETS = {
-  barrage: { name: '탄막', color: '#FFC93C', parts: ['gun', 'rapid'], at: [8, 14, 20], v: [{ fire: 0.12 }, { fire: 0.45 }, { fire: 1 }],
-    text: (t) => `총알 화력 +${apc(SETS.barrage.v[t - 1].fire)}%` },
-  blast: { name: '폭발', color: '#FF8A3C', parts: ['burst', 'rocket', 'flame'], at: [8, 14, 20], v: [{ r: 0.1, dmg: 0.15 }, { r: 0.25, dmg: 0.55 }, { r: 0.5, dmg: 1.2 }],
-    text: (t) => `작렬·로켓·불 지대 범위 +${apc(SETS.blast.v[t - 1].r)}%, 위력 +${apc(SETS.blast.v[t - 1].dmg)}%` },
-  precise: { name: '정밀', color: '#4FD1C5', parts: ['pierce', 'sniper'], at: [8, 14, 20], v: [{ p: 0.1, mul: 2.5, back: 0.6 }, { p: 0.25, mul: 3, back: 0.8 }, { p: 0.4, mul: 4, back: 1, guard: 1 }],
-    text: (t) => `총알·저격이 ${apc(SETS.precise.v[t - 1].p)}% 확률로 치명타(피해 ×${SETS.precise.v[t - 1].mul}) — 벽·보스에도 · ${SETS.precise.v[t - 1].guard ? '특수병은 맞아도 쓰러지지 않아요' : `쓰러진 특수병이 레벨의 ${apc(SETS.precise.v[t - 1].back)}%로 돌아와요`}` },
-  frost: { name: '한파', color: '#8FD3FF', parts: ['frost', 'medic', 'shield', 'armor'], at: [8, 14, 20], v: [{ loss: 0.12, amp: 0.1 }, { loss: 0.28, amp: 0.25 }, { loss: 0.45, amp: 0.4 }],   // amp: 측정으로 낮춤(0.15·0.45·1 → 한파 세트가 탄 효과의 증폭을 없앤 뒤에도 남은 한 방의 주범)
-    text: (t) => `좀비·보스에게 잃는 병사 −${apc(SETS.frost.v[t - 1].loss)}%, 느려진 적이 받는 피해 +${apc(SETS.frost.v[t - 1].amp)}%` },
-  command: { name: '지휘', color: '#FF9F43', parts: ['chg', 'dur'], at: [4, 7, 10], v: [{ supply: 0.1, chg: 0.3 }, { supply: 0.2, chg: 0.6 }, { supply: 0.4, chg: 1 }],
-    text: (t) => `자동 보급 +${apc(SETS.command.v[t - 1].supply)}%p, 영웅 게이지 충전 +${apc(SETS.command.v[t - 1].chg)}%` },
-};
-export const SET_IDS = Object.keys(SETS);
-/* 카드가 세는 세트(없으면 '') — part: 'gun' · 탄종 id · 병과 id · 'chg'/'dur' · 'shield'/'armor' */
-export const setOf = (part) => SET_IDS.find((id) => SETS[id].parts.includes(part)) || '';
-/* 레벨 합 n의 단계(0~3) */
-export const setTier = (id, n) => { const at = SETS[id].at; return n >= at[2] ? 3 : n >= at[1] ? 2 : n >= at[0] ? 1 : 0; };
-export const TIER_MARK = ['', 'Ⅰ', 'Ⅱ', 'Ⅲ'];
 /* 개편 판에서 더 세진 짝 시너지 수치(v2 — 없는 것은 v 그대로) */
 export const COMBO_V2 = { frostSniper: 1.5, burstRocket: 1, rapidMungchi: 9, frostFlame: 0.75 };
 export const comboV = (id, g2) => (g2 && COMBO_V2[id] != null ? COMBO_V2[id] : COMBOS[id].v);
