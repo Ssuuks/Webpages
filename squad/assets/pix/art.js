@@ -692,16 +692,18 @@ export const ICONS = {
   fx_rapid: ['..Y...Y..', '.aYa.aYa.', '.aaa.aaa.', '.aaa.aaa.', '.ddd.ddd.', '..y...y..', '..y...y..', '..y...y..', '.........'],
   fx_frost: ['....J....', '...JJi...', '..JJiii..', '.JJiiiiu.', 'JJiiWiiuu', '.iiiiiuu.', '..iiiuu..', '...iuu...', '....u....'],
   /* 유물(무한모드 3·5단계 — 유물 카드·HUD 줄·일시정지 목록·나침반 표시): relic_<roster RELIC_IDS>. 9×9 정사각, 실루엣이 서로 다르다(tests/art.mjs).
-     나침반 = 금테 둥근 판에 빨간 바늘 · 휘장 = 빨강·파랑 리본에 별 메달 · 확성기 = 오른쪽으로 벌어진 빨간 나팔과 소리 · 코일 = 구리 감개에 번개 ·
-     넷째 자리 = 병사 머리 넷(넷째가 금빛) · 심장 = 진홍 하트 · 가방 = 알이 고개 내민 자루 · 탄낭 = 총알 셋 꽂힌 초록 주머니 */
+     나침반 = 금테 둥근 판에 빨간 바늘 · 주사위 = 빨간 눈 다섯 개 흰 주사위 · 확성기 = 오른쪽으로 벌어진 빨간 나팔과 소리 · 코일 = 구리 감개에 번개 ·
+     넷째 자리 = 병사 머리 넷(넷째가 금빛) · 서약 = 빨간 밀랍 도장이 찍힌 두루마리 · 가방 = 알이 고개 내민 자루 · 탄낭 = 총알 셋 꽂힌 초록 주머니 ·
+     방패막 = 청록 방패(가운데 흰 별빛) */
   relic_compass: ['...ddd...', '.ddyyydd.', '.dyJRJyd.', 'dyJJRJJyd', 'dyJJKJJyd', 'dyJJgJJyd', '.dyJgJyd.', '.ddyyydd.', '...ddd...'],
-  relic_banner: ['.RRR.jjj.', '..RRDjj..', '...RDj...', '...ddd...', '..dyyyd..', '.dyyWyyd.', '.dyWWWyd.', '..dyWyd..', '...ddd...'],
+  relic_dice: ['..hhhhhh.', '.hHHHHHHb', 'hHRHHHRHb', 'hHHHHHHHb', 'hHHHRHHHb', 'hHHHHHHHb', 'hHRHHHRHb', '.bHHHHHb.', '..bbbbb..'],
   relic_megaphone: ['......D..', '....DRD.W', '..DRRRD..', 'ggDRWRDW.', 'ggDRRRD..', '..DRRRDW.', '....DRD..', '..k...D.W', '..k......'],
   relic_coil: ['..gGGGg..', '.cCCCCCc.', '.qqqYqqq.', '.cCCYYCc.', '.qqqqYqq.', '.cCCCYCc.', '.qqqYqqq.', '.cCCYCCc.', '..gGGGg..'],
   relic_fourth: ['.jj...jj.', 'jJJj.jJJj', 'jjjj.jjjj', '.uu...uu.', '.........', '.jj...yy.', 'jJJj.yYYy', 'jjjj.yyyy', '.uu...dd.'],
-  relic_heart: ['.........', '.RR...RR.', 'RWRR.RRRD', 'RWRRRRRRD', 'RRRRRRRRD', '.RRRRRRD.', '..RRRRD..', '...RRD...', '....D....'],
+  relic_pledge: ['.MMMMMMM.', 'MmmmmmmmM', '.mkkkkkm.', '.mmmmmmm.', '.mkkkkmm.', '.mmmmmmm.', '.mmmRmmm.', 'MmmRRRmmM', '.MMMRMMM.'],
   relic_bag: ['...mmm...', '..mWmmM..', '..kkkkk..', '.wwwkwww.', 'wwwwwwwqw', 'wwwwwwwqw', 'wwwwwwqqw', '.wwwwqqq.', '..qqqqq..'],
   relic_pouch: ['.Y..Y..Y.', '.f..f..f.', '.d..d..d.', 'EEEEEEEEE', 'EAAAAAAAE', 'EAAAyAAAE', 'EAAAAAAAE', 'EAAAAAAAE', '.EEEEEEE.'],
+  relic_ward: ['.ttttttt.', 'tLLLLLllt', 'tLlllllTt', 'tLllWllTt', 'tLlWWWlTt', '.tlllllt.', '.tllllTt.', '..tlllt..', '...ttt...'],
 };
 export const ICON_PAL_EXPORT = ICON_PAL;
 

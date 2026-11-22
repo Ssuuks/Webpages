@@ -4,11 +4,11 @@
    --cards가 없으면 예전 그대로(카드 없음). 있으면 (봇 × 카드 고르기)마다 한 줄 + 고른 카드 종류 분포. --unl은 --cards가 있으면 1이 기본
    (2: 탄 효과·탄종 상자·시너지 + 4구간부터 장애물(장갑문·폭발 드럼통·방패 정예) — core.CARD.stageMax까지. 장애물만 끄고 재려면 C.RUN_ORDER.obstacle = Infinity),
    --ammo는 별로 열린 탄종(기본 넷 다 — 탄종 카드 후보).
-   3단계(유물 — 대왕 보스 뒤): --unl 3 [--relics all|compass,coil,…](열린 유물, 기본 all) [--hold heart,…](처음부터 가진 유물 — 유물마다 재 보기).
+   3단계(유물 — 대왕 보스 뒤): --unl 3 [--relics all|compass,coil,…](열린 유물, 기본 all) [--hold ward,…](처음부터 가진 유물 — 유물마다 재 보기).
    --flame: 화염병 줄(4단계)을 연 판(특수병 카드·철창·금색 칸에 화염병이 나온다 — think는 화염병을 THINK.sp.flame으로 본다. '그 병과 우선' 고르기는 밸런스 때 더한다) */
 import * as C from '../assets/core.js';
 import * as R from '../assets/roster.js';
-import { AMMO_IDS, fxK, RELICS, RELIC_IDS, BUILD, SETS, deep, fx2Val } from '../assets/roster.js';
+import { AMMO_IDS, fxK, RELICS, RELIC_IDS, BUILD, fx2Val } from '../assets/roster.js';
 import { makeBot, rng } from '../tests/bots.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : process.argv[i + 1]; };
@@ -52,11 +52,12 @@ export const THINK = {
   // 속사만 식 그대로(화력 +15%), 나머지는 맞는 좀비가 늘 있지 않은 만큼 낮춰 어림했다]
   fx: { pierce: 0.08, burst: 0.08, rapid: 0.15, frost: 0.04 },
   combo: 0.05,
-  // 3단계(유물): 유물 하나가 남은 판에서 구간마다 화력 몇 배 몫인가 [초안 — 밸런스 때 재서 고칠 것. 심장은 한 번 더 사는 몫이라 크게, 가방은 화면 쪽 알이라 판에는 손해 쪽]
-  relic: { compass: 0.02, banner: 0.03, megaphone: 0.02, coil: 0.08, fourth: 0.05, heart: 0.3, bag: 0, pouch: 0.04 },
+  // 3단계(유물): 유물 하나가 남은 판에서 구간마다 화력 몇 배 몫인가 [초안 — 밸런스 때 재서 고칠 것. 가방은 화면 쪽 알이라 판에는 손해 쪽]
+  relic: { compass: 0.02, dice: 0.03, megaphone: 0.02, coil: 0.08, fourth: 0.05, pledge: 0.05, bag: 0, pouch: 0.04, ward: 0.05 },
   // 빌드 개편 판(thinkScoreB — 아래 식): 값은 '화력이 이만큼(자연로그) 는다'로 어림한 것 [초안 — 잰 값은 ENDGAME.md 19절]
   b: {
     w: { pierce: 0.02, burst: 0.03, frost: 0.03, sniper: 0.05, rocket: 0.025, flame: 0.03, medic: 0.025, shield: 0.06, chg: 0.01, dur: 0.02 },   // 유효 레벨(deep) 하나의 몫
+    enhRare: 0.06, enhLegend: 0.14,   // 희귀·전설 강화 하나의 몫(초안)
     first: 0.08,    // 새 특수병·탄 효과를 처음 얻는 몫(레벨 1이 나머지보다 얼마나 더 값진가 — 자리를 잡는 일)
     tier: {         // 세트가 단계마다 더하는 몫(누적이 아니라 그 단계에 오를 때 더해지는 값)
       barrage: [0.11, 0.26, 0.32], blast: [0.17, 0.33, 0.4], precise: [0.2, 0.3, 0.4], frost: [0.15, 0.3, 0.45], command: [0.1, 0.1, 0.15],
@@ -105,34 +106,22 @@ export function thinkScore(s, c, K = THINK) {
 }
 /* 개편 판(s.endless.bld)의 카드 점수 = 직접 값(총·탄 효과·특수병·생존·영웅 레벨의 깊이 보상 deep() 몫) + 세트 진행(cardInfo의 set: from·to·tier·up·next — 단계에 오르는 몫과 다음 단계를 향한 걸음).
    - 무기 개조: 화력 ln((1 + gun·deep(to)) / (1 + gun·deep(from)))
-   - 속사: 화력 ln(dmg(to) / dmg(from)) (fx2Val)
+   - 속사: 화력 ln(pow(to) / pow(from)) (fx2Val — 피해·속도·보스·과열을 화력으로 어림한 값)
    - 그 밖의 탄 효과·특수병·영웅·게이트 방패: w[부품] × (deep(to) − deep(from)), 처음 얻으면 first를 더
    - 방탄복: ln((1 + armor·deep(to)) / (1 + armor·deep(from)))
    - 전문화 spec · 위험한 계약 curse: 정한 값
    - 세트: 오르는 단계의 tier[세트][단계] 합 + prog × (다음 단계의 tier × 그 단계까지의 걸음 비율)의 차. 정한 한 세트에 모을수록 단계가 빨리 켜지고 deep()이 커진다 */
 function thinkScoreB(s, c, f, K) {
   const g = (a, b) => Math.log(a / b);
-  if (f.k === 'spec') return K.spec;
   if (f.k === 'curse') return K.curse;
   if (f.k === 'relic') return ((THINK.relic)[c.r] || 0) * (1 + THINK.H);
   let v = 0;
-  const part = f.k === 'gun' ? 'gun' : f.k === 'unit' ? f.u : f.k === 'fx' ? f.a : f.k === 'hero' ? f.h : f.g;
-  if (f.k === 'gun') v = g(1 + BUILD.gun * deep(f.to), 1 + BUILD.gun * deep(f.from));
-  else if (f.k === 'fx' && f.a === 'rapid') v = g(fx2Val('rapid', f.to).dmg, f.from ? fx2Val('rapid', f.from).dmg : 1);
-  else if (f.k === 'guard' && f.g === 'armor') v = g(1 + BUILD.armor * deep(f.to), 1 + BUILD.armor * deep(f.from));
-  else v = (K.w[part] || 0.02) * (deep(f.to) - deep(f.from)) + (f.from ? 0 : K.first);
+  const part = f.k === 'gun' ? 'gun' : f.k === 'unit' ? f.u : f.k === 'fx' ? f.a : '';
+  if (f.k === 'gun') v = g(C.WEAPON[f.to], C.WEAPON[f.from]);   // 총 ★(무기 단계)
+  else if (f.k === 'fx' && f.a === 'rapid') v = g(fx2Val('rapid', f.to).pow, f.from ? fx2Val('rapid', f.from).pow : 1);
+  else v = (K.w[part] || 0.02) * (f.to - f.from) + (f.from ? 0 : K.first);   // 레벨마다 정해진 능력(성장 개편 — 세트·깊이 보상은 없어졌다)
   if (f.combos) v += (K.combo ?? THINK.combo) * f.combos.length;
-  const st = f.set;
-  if (st) {
-    const T = K.tier[st.id], at = SETS[st.id].at;
-    const phi = (lv) => {   // 레벨 합 lv의 퍼텐셜: 지난 단계 몫의 합 + prog × 다음 단계 몫 × 걸음 비율
-      let sum = 0, t = 0;
-      while (t < 3 && lv >= at[t]) sum += T[t++];
-      if (t < 3) sum += K.prog * T[t] * (lv - (t ? at[t - 1] : 0)) / (at[t] - (t ? at[t - 1] : 0));
-      return sum;
-    };
-    v += phi(st.to) - phi(st.from);
-  }
+  if (f.enh) v += f.enh === 'rare' ? K.enhRare : K.enhLegend;   // 카드 등급 = 강화: 부가 능력·규칙이 붙는 몫
   return v;
 }
 const argMax = (xs) => xs.reduce((bi, v, i) => (v > xs[bi] ? i : bi), 0);

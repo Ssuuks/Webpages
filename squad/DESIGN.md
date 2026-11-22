@@ -146,7 +146,7 @@ segKings(bosses)                         // 그 판에서 쓰러뜨린 대왕 �
 newEndless({ …, unl 1|2|3, flame, relicsOpen, relics(시험·측정용 — 처음부터 가진 유물) })   // CARD.stageMax = 3
 s.endless.fx = { 탄종: Lv }               // 2단계: 탄 효과(출격 탄종 s.ammo는 Lv2). fxOf, fxLv, fxSlots, fxCan, FX_LV·fxVal·fxText(roster)
 s.endless.obsSeen                         // 2단계: 이 판에서 처음 본 장애물 종류. buildSegment(…, opt { obs, flame }) — 장애물은 따로 난수(나머지 배치 그대로)
-s.endless.relics, .spent, .relicsOpen     // 3단계: 얻은 유물·써서 사라진 것·열린 것. RELIC, relicOn, relicFits, tierMax, spMax, spEscort, cardCount, eggP, bannerOn, relicFire, forkCrate, forkPeek
+s.endless.relics, .spent, .relicsOpen     // 3단계: 얻은 유물·써서 사라진 것·열린 것. RELIC, relicOn, relicFits, tierMax, spMax, spEscort, cardCount, eggP, forkCrate, forkPeek
 s.endless.flame, s.flames = [{ id, x, z, w, len, t, T, d, lv }]   // 4단계: 화염병 줄, 불 지대. flameOn, spKindsOf(SP_KINDS | SP_FLAME)
 offer 카드: { k:'fx', a, syn? } · { k:'unit', u, syn? } · { k:'relic', r } — cardInfo의 combos(켜지는 시너지), COMBOS·COMBO_IDS·comboOn·combosOn
 WEAPON[4] = 2.5(과부하 코일 — THREAT_TIER 3은 위협 식의 상한), OBST·OBSTACLES(roster)·doorMul·shieldMul·blastReach, RUN_ORDER { up 3, obstacle 4, relic 6 }
@@ -155,7 +155,7 @@ s.boss.dead                              // 무한모드: 쓰러지는 연출 �
 endlessCoins(s, bonusPct)                // 적립한 보스 코인 + 처치 10마리당 1(보급 %) + 상자 코인
 progress(s)                              // 무한모드는 이번 구간의 출발 자리(z0)부터
 // 이벤트: segClear { seg, coins, tag }(보스를 잡음 — 코인 적립), segStart { seg, L }(다음 구간이 이어짐). 'win'은 나오지 않는다
-// 단계 해금: fxUp { a, lv, via }, combo { id }, crate type 'fx', snipe thru, obstacle { kind, z }(처음 볼 때), blast, crateLost, relic { id }, relicUse { id:'heart', n }, flame { x, z, w, len, T, lv, boss }, kill.by 'drum'|'flame', offer.relic
+// 단계 해금: fxUp { a, lv, via }, combo { id }, crate type 'fx', snipe thru, obstacle { kind, z }(처음 볼 때), blast, crateLost, relic { id }, relicUse { id:'ward', cause:'saw'|'spit' }, mutation { id, lv, seg }, fork { …, hidden }, flame { x, z, w, len, T, lv, boss }, kill.by 'drum'|'flame', offer.relic
 // hitShapes: 'door'·'drum'·'blast'(원)·'fire'
 // 3택 1: offer { n, seg }(카드가 떴다 — 화면은 'pick' 모드로), card { k, from, to, u?, a?, x, z }(고른 카드 — 그 앞에 segStart, 효과의 gain·spGet·spUp)
 

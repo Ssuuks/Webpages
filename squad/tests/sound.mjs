@@ -100,7 +100,7 @@ test('배선: 판의 상태가 음악에 닿는다 · 파워업·보스 소리�
   // 효과음: 쓰는 이름이 모두 있다(없는 이름을 부르면 그 틱의 이벤트 처리가 멈춘다)
   const have = new Set([...audio.matchAll(/^  ([a-zA-Z]+)\([^)]*\) \{$/gm)].map((m) => m[1]));
   for (const m of main.matchAll(/sfx\.([a-zA-Z]+)\(/g)) assert.ok(have.has(m[1]), `sfx.${m[1]}이 audio.js에 있다`);
-  for (const k of ['power', 'fxUp', 'relic', 'combo', 'revive', 'bossIn', 'slamWarn', 'slam', 'roar', 'enrage', 'crack', 'bossDead']) {
+  for (const k of ['power', 'fxUp', 'relic', 'combo', 'bossIn', 'slamWarn', 'slam', 'roar', 'enrage', 'crack', 'bossDead']) {
     assert.ok(have.has(k), `효과음 ${k}`);
     assert.match(main, new RegExp(`sfx\\.${k}\\(`), `main이 sfx.${k}을 부른다`);
   }

@@ -404,14 +404,4 @@ export const sfx = {
       tone(b, i === 3 ? 0.5 : 0.11, { type: 'triangle', vol: 0.08, delay: i * 0.09, rev: i === 3 ? 0.5 : 0 });
     });
   },
-  /* 불굴의 심장이 되살렸다: 심장 박동 둘 → 솟아오르는 화음 */
-  revive() {
-    if (!ready('revive', 600)) return;
-    for (let i = 0; i < 2; i++) {
-      tone(70, 0.16, { type: 'sine', vol: 0.4, slide: 0.6, delay: i * 0.3 });
-      tone(60, 0.16, { type: 'sine', vol: 0.3, slide: 0.6, delay: i * 0.3 + 0.1 });
-    }
-    [392, 494, 587, 784, 988, 1175].forEach((f, i) => tone(f, 0.7, { type: 'triangle', vol: 0.08, delay: 0.6 + i * 0.07, rev: 0.6 }));
-    noise(0.8, { vol: 0.07, freq: 800, q: 0.8, slide: 6, delay: 0.5, rev: 0.6 });
-  },
 };
