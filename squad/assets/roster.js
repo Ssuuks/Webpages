@@ -378,6 +378,8 @@ export const BUILD = {
   awakeFrom: 13,        // 각성(Lv6~10)·숙련이 열리는 구간(바퀴 3 — ENDGAME.md 18.4). 그 전에는 Lv5가 상한
   awk: 0.15,            // 각성 Lv6~9: 그 역할의 값 레벨마다 +15%, Lv10은 2차 진화
   mastery: 0.04,        // 숙련(Lv10 위, 끝없음): 같은 카드를 또 고를 때마다 그 대상 효과 +4%(더한다)
+  legendUp: 0.01,       // 6구간 뒤로 구간마다 전설 확률 +1%p(희귀에서 가져온다 — 후반일수록 전설이 오른다), legendMax: 최대 +이만큼
+  legendMax: 0.15,
   rare: [0.72, 0.23, 0.05],   // 카드 등급(일반·희귀·전설 = 한 번에 +1·+2·+3레벨) 확률
   own: 3,               // 이미 가진 것(탄 효과·특수병)의 카드가 나올 가중치
   reroll: 1,            // 판마다 다시 뽑기 횟수(대왕을 잡을 때마다 +1)
@@ -432,6 +434,44 @@ function fx2Base(id, lv) {
   if (v.slow) return e + `${v.T}초 동안 ${apc(v.slow)}% 느리게${v.loss < 1 ? ` · 느려진 좀비에게 잃는 병사 −${apc(1 - v.loss)}%` : ''}${v.spread ? ' · 느려진 좀비가 죽으면 둘레도 느려져요' : ''}`;
   return e + `총알 피해 +${apc(v.dmg - 1)}%${l >= 2 ? ` · 쏘는 속도 +${apc(v.rate - 1)}%` : ''}${v.boss > 1 ? ` · 보스 +${apc(v.boss - 1)}%` : ''}${v.heat > 1 ? ` · ${FX_HEAT}초 계속 쏘면 과열 ×${v.heat}` : ''}`;
 }
+/* 카드 등급 = 강화(개편 판 — ENDGAME.md 18.8): 일반은 레벨 +1, 희귀는 레벨 +1 + 그 대상(탄 효과·특수병)의 부가 능력, 전설은 레벨 +1 + 규칙을 바꾸는 능력(판 끝까지).
+   같은 강화를 또 뽑으면 그 강화가 한 단계 세진다(수치 ×enhStr — 한 번 더 뽑을 때마다 +50%, 규칙형은 효과가 한 번 더 겹친다). 수치는 모두 [초안].
+   B.enh[id] = { r: 희귀를 뽑은 수, l: 전설을 뽑은 수 } */
+export const enhStr = (n) => 1 + 0.5 * Math.max(0, n - 1);
+export const ENH = {
+  pierce: {
+    rare: { name: '터지는 총알', v: 0.3, text: () => `벽·장갑문에 박힌 총알이 터져 벽 피해 +${apc(ENH.pierce.rare.v)}%` },
+    legend: { name: '벽 뚫기', text: () => '총알이 벽·장갑문을 뚫고 벽 뒤 좀비도 맞아요' },
+  },
+  burst: {
+    rare: { name: '불씨 폭발', t: 1.2, text: () => `폭발한 자리에 ${ENH.burst.rare.t}초 동안 불이 남아요` },
+    legend: { name: '게이트 폭발', v: 0.5, text: () => `폭발이 닿은 덧셈 게이트 칸도 올려요(폭발 피해의 ${apc(ENH.burst.legend.v)}%)` },
+  },
+  rapid: {
+    rare: { name: '신바람', v: 1.25, T: 1.5, text: () => `좀비를 잡으면 ${ENH.rapid.rare.T}초 동안 쏘는 속도 +${apc(ENH.rapid.rare.v - 1)}%` },
+    legend: { name: '즉시 과열', text: () => '맞서자마자 과열이 시작돼요(3초를 기다리지 않아요)' },
+  },
+  frost: {
+    rare: { name: '얼음 폭탄', v: 0.5, text: () => `느려진 좀비가 닿으면 터져 둘레에 제 체력의 ${apc(ENH.frost.rare.v)}%` },
+    legend: { name: '얼음 정체', text: () => '느려진 좀비는 앞의 느려진 좀비에 막혀 멈춰요' },
+  },
+  sniper: {
+    rare: { name: '사기 충전', v: 0.05, text: () => `저격으로 잡으면 영웅 게이지 +${apc(ENH.sniper.rare.v)}%` },
+    legend: { name: '꿰뚫는 저격', text: () => '저격이 일직선 뒤 표적 하나를 더 뚫어요' },
+  },
+  rocket: {
+    rare: { name: '이어 터짐', v: 0.5, text: () => `로켓이 한 번 더 터져요(피해 ${apc(ENH.rocket.rare.v)}%)` },
+    legend: { name: '대구경', v: 1.5, text: () => `로켓 폭발 반경 ×${ENH.rocket.legend.v}` },
+  },
+  flame: {
+    rare: { name: '뜨거운 기운', v: 1.2, text: () => `불 지대 위에 서 있으면 쏘는 속도 +${apc(ENH.flame.rare.v - 1)}%` },
+    legend: { name: '따라오는 불', text: () => '불 지대가 분대를 따라와요' },
+  },
+  medic: {
+    rare: { name: '숨 돌리기', v: 0.3, text: () => `회복할 때마다 특수병의 다음 차례가 ${ENH.medic.rare.v}초 앞당겨져요` },
+    legend: { name: '마지막 응급', text: () => '구간마다 한 번, 전멸 직전에 그 구간 바닥선의 절반으로 돌아와요' },
+  },
+};
 /* 특수병 Lv5 고유 능력(개편 판 — ENDGAME.md 18.3: 전문화 카드(둘 중 고르기)는 없어졌다). Lv1 합류, Lv2~4는 간격·피해, Lv5에 아래 능력 — Lv5가 상한(각성은 4단계) [수치는 초안]
    - sniper 거물 사냥: 보스·정예·거구·독침 좀비에게 저격 위력 ×v, 보스전 추가 피해 한도 +cap
    - rocket 쌍발: 한 번에 로켓 2발(둘째는 조금 늦게 같은 자리에)

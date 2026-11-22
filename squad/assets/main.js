@@ -3,7 +3,7 @@ import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
-  RELIC, relicsOf, mutLv, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
+  RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
   nMax, fmtN, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, PET_SLOTS, comboText } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, ENH, PET_SLOTS, comboText } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1693,8 +1693,8 @@ function cardText(c) {
     if (c.n) {
       // 개편 판: 등급만큼 한 번에 오른다(합류도 Lv n으로). 위력 배수·전문화 안내
       const hint = SP_EVO[c.u] && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 ‘${SP_EVO[c.u].name}’` : '';
-      return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}${spPowText(c.u, c.to)}${pair}${hint}`, col: U.color, icon: c.u, n: c.n }
-        : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${U.desc}${spPowText(c.u, c.to)}${pair}${hint}`, col: U.color, icon: c.u, n: c.n };
+      return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, col: U.color, icon: c.u, n: c.n }
+        : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${U.desc}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, col: U.color, icon: c.u, n: c.n };
     }
     return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}${pair}`, col: U.color, icon: c.u }
       : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류`, det: U.desc + pair, col: U.color, icon: c.u };
@@ -1704,13 +1704,20 @@ function cardText(c) {
     // 출격 탄종이 오르면 좋은 점만 세지고 대신 쪽(피해·사거리)은 그대로다
     const nm = fxName(c.a), col = AMMO[c.a] ? AMMO[c.a].color : '#fff';
     const evo = c.n && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 진화` : '';
-    if (c.from) return { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${fxT(c.a, c.to)}${s && s.ammo === c.a ? ' · 대신 쪽은 그대로' : ''}${evo}`, col, icon: 'fx_' + c.a, n: c.n };
+    if (c.from) return { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${fxT(c.a, c.to)}${s && s.ammo === c.a ? ' · 대신 쪽은 그대로' : ''}${evo}${enhText(c)}`, col, icon: 'fx_' + c.a, n: c.n };
     const fx = fxOf(s) || {};
     const used = AMMO_IDS.filter((a) => fx[a]).length;
-    return { kind: '탄 효과', lead: '새 효과:', from: '', to: c.to > 1 ? `${nm} Lv${c.to}` : nm, det: `Lv${c.to}: ${fxT(c.a, c.to)} · 칸 ${used + 1}/${fxSlots(s)}${evo}`, col, icon: 'fx_' + c.a, n: c.n };
+    return { kind: '탄 효과', lead: '새 효과:', from: '', to: c.to > 1 ? `${nm} Lv${c.to}` : nm, det: `Lv${c.to}: ${fxT(c.a, c.to)} · 칸 ${used + 1}/${fxSlots(s)}${evo}${enhText(c)}`, col, icon: 'fx_' + c.a, n: c.n };
   }
   const A = ammoText(c.to);
   return { kind: '탄종 바꾸기', lead: '', from: ammoName(c.from), to: ammoName(c.to), det: A.bad ? `${A.good} · 대신 ${A.bad}` : A.good, col: AMMO[c.to] ? AMMO[c.to].color : '#fff', icon: '' };
+}
+/* 카드 등급 = 강화: 희귀·전설 카드가 더하는 부가 능력·규칙(이미 가진 강화면 한 단계 세진다) */
+function enhText(c) {
+  const E = c.enh && ENH[c.enhId] ? ENH[c.enhId][c.enh] : null;
+  if (!E) return '';
+  const have = enhN(s, c.enhId, c.enh === 'rare' ? 'r' : 'l') > 0;
+  return ` · ${c.enh === 'rare' ? '희귀' : '전설'} 강화 ‘${E.name}’: ${E.text()}${have ? ' (이미 있어서 한 단계 세져요)' : ''}`;
 }
 /* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
 function cardDone(c) {
@@ -2031,6 +2038,10 @@ function renderPauseUnits() {
   }
   // 빌드 개편: 무기 개조·영웅·생존 카드·전문화
   if (Bd) {
+    for (const id of Object.keys(ENH)) for (const [kind, key] of [['rare', 'r'], ['legend', 'l']]) {   // 카드 강화(희귀·전설)
+      const n = enhN(s, id, key);
+      if (n) addRow(UNITS[id] ? id : 'fx_' + id, `${kind === 'rare' ? '희귀' : '전설'} 강화 ‘${ENH[id][kind].name}’${n > 1 ? ` ×${n}` : ''}`, ENH[id][kind].text());
+    }
     if (Bd.gun) addRow('gun', `무기 개조 Lv${Bd.gun}`, `총알 화력 +${pct(BUILD.gun * Bd.gun)}%`);
     for (const m of sp) if (SP_EVO[m.k] && (m.lv || 1) >= BUILD.evo) addRow(m.k, `${UNITS[m.k].name} ‘${SP_EVO[m.k].name}’${(m.lv || 1) >= 10 ? ` · ‘${SP_EVO2[m.k].name}’` : ''}${(m.lv || 1) > BUILD.evo ? ` · 각성 +${Math.round((awk(m.lv || 1) - 1) * 100)}%` : ''}`, SP_EVO[m.k].text() + ((m.lv || 1) >= 10 ? ' · ' + SP_EVO2[m.k].text() : ''));   // Lv5 고유 능력·Lv10 2차 진화·각성
     for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * (rl && rl.includes('pledge') ? 1 : BUILD.spBack)))}로 돌아와요`);
