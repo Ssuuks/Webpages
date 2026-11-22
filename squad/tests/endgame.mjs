@@ -4033,9 +4033,9 @@ test('카드 강화 효과 16종(개편 판): 희귀 8 — 터지는 총알·불
   assert.deepEqual([aid(undefined), aid(E('medic', 'l'))], ['lost', 'revive']);
 });
 
-test('각성·숙련(개편 판, 18.4·20절): 첫 대왕 뒤(BUILD.awakeFrom)부터 Lv5 위로 — Lv6~9는 그 역할의 값 +15%씩, Lv10은 2차 진화, 그 위(숙련)는 +4%씩 더. 그 전에는 Lv5가 상한', () => {
+test('각성·숙련(개편 판, 18.4·20절): 첫 대왕 뒤(BUILD.awakeFrom)부터 Lv5 위로 — Lv6~9는 그 역할의 값 +15%씩, Lv10은 2차 진화, 그 위(숙련)는 +10%씩 더(21.10). 그 전에는 Lv5가 상한', () => {
   assert.equal(R.awk(5), 1);
-  assert.ok(Math.abs(R.awk(7) - 1.3) < 1e-12 && Math.abs(R.awk(10) - 1.75) < 1e-12 && Math.abs(R.awk(12) - 1.83) < 1e-12, '각성 +15%씩, 숙련 +4%씩(더한다)');
+  assert.ok(Math.abs(R.awk(7) - 1.3) < 1e-12 && Math.abs(R.awk(10) - 1.75) < 1e-12 && Math.abs(R.awk(12) - (1.75 + 2 * R.BUILD.mastery)) < 1e-12, '각성 +15%씩, 숙련 +BUILD.mastery씩(더한다 — 21.10)');
   assert.equal(R.awk(1), 1);
   const at = (seg, mod = () => {}) => { const u = C.newEndless({ seed: 31, ...BLD }); u.endless.seg = seg; mod(u); return u; };
   const AW = R.BUILD.awakeFrom;
@@ -4331,6 +4331,28 @@ test('20.2 — 개편 판 분대 몸은 좁다(BUILD.narrow — 세 칸 길 한 
   assert.equal(C.radius(5000), 2.4);
   C.buildSegment(7, 9, 5000, 4, 0, { obs: true, bk: true, terrain: true, mul: 1, fe: 10 });
   assert.equal(C.radius(5000), 2.4, '만든 뒤 상한을 되돌린다');
+});
+test('21.10 — 탄은 끝없이 강해진다: Lv1~80 어느 레벨이든 한 단계 오르면 어떤 값이든 좋아지고(나빠지는 값은 없다), 상한 값은 넘지 않으며 넘친 몫은 다음 효과로 간다. 숙련은 +10%씩(더하기)', () => {
+  const better = { pierce: 1, n: 1, wall: 1, ramp: 1, splash: 1, r: 1, chain: 1, slow: 1, T: 1, loss: -1, shatter: 1, dmg: 1, rate: 1, boss: 1, heat: 1 };
+  assert.ok(Math.abs(R.awk(11) - R.awk(10) - R.BUILD.mastery) < 1e-12 && R.BUILD.mastery >= 0.1, '숙련 한 장 +10%');
+  for (const id of R.AMMO_IDS) {
+    for (let L = 1; L < 80; L++) {
+      const a = R.fx2Val(id, L), b = R.fx2Val(id, L + 1);
+      let up = 0;
+      for (const [k, d] of Object.entries(better)) {
+        if (!(k in a)) continue;
+        assert.ok(d * (b[k] - a[k]) >= -1e-9, `${id} Lv${L}→${L + 1} ${k} 나빠짐 ${a[k]} → ${b[k]}`);
+        if (d * (b[k] - a[k]) > 1e-9) up++;
+      }
+      assert.ok(up > 0 || b.evo !== a.evo || b.evo2 !== a.evo2, `${id} Lv${L}→${L + 1}: 오르는 값이 없다`);   // Lv5 진화·Lv10 2차 진화는 규칙이 생긴다
+    }
+    const v = R.fx2Val(id, 80);
+    if (v.pierce) assert.ok(v.pierce <= 1 && v.over > 0 && v.ramp > 2, '관통 몫 100% 상한 → 뚫을수록');
+    if (v.splash) assert.ok(v.r <= R.OVER.burst.rMax && v.over > 0, '작렬 반경 상한 → 둘레·유폭');
+    if (v.slow) assert.ok(v.slow <= 0.85 && v.loss >= 0.4 && v.T <= R.OVER.frost.tMax && v.shatter > 0, '빙결 상한 → 시간 → 얼음 폭탄');
+    if (v.rate) assert.ok(v.rate <= R.OVER.rapid.rMax && v.over > 0, '속사 속도 상한 → 피해·과열');
+  }
+  assert.ok(R.fx2Text('frost', 40).includes('(최대)') && R.fx2Text('frost', 40).includes('터져요'), '상한·넘침이 글에 보인다');
 });
 test('개편 판의 앞 구간: 위협을 실제 강화(fire)로 만든다 — 기준(ENDLESS.fire)보다 높은 강화의 몫을 BUILD.earlyK만큼 따라가고 BUILD.early구간에 걸쳐 기준으로 돌아간다. 기준 이하·앞 단계 판은 그대로', () => {
   const E = C.ENDLESS, B = R.BUILD;

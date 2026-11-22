@@ -2852,7 +2852,10 @@ function foesUpdate(s, R) {
       if (f.slowT > s.t && fx && s.endless.bld && fx.frost) cost = Math.max(1, Math.round(cost * fx2Val('frost', fx.frost).loss));   // 빙결 Lv3+: 느려진 좀비에게 잃는 병사 −30%
       const medic = f.slowT > s.t && s.endless && s.endless.bld && comboOn(s, 'frostMedic');   // (큰 피해는 특수병을 쓰러뜨리므로 맞기 전에 본다)
       lose(s, cost, s.phase === 'arena' ? 'summon' : f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
-      if (f.slowT > s.t && s.endless && s.endless.bld && enhN(s, 'frost', 'r')) fxBoom(s, f.x, f.z, 1.6, f.max * ENH.frost.rare.v * enhV(s, 'frost', 'r'), f);   // 희귀 강화 '얼음 폭탄': 느려진 좀비가 닿으면 터진다
+      if (f.slowT > s.t && s.endless && s.endless.bld && fx.frost) {   // 느려진 좀비가 닿으면 터진다: 희귀 강화 '얼음 폭탄' + 빙결 넘침(21.10 — 느려지는 시간이 4초를 넘친 몫)
+        const sh = (enhN(s, 'frost', 'r') ? ENH.frost.rare.v * enhV(s, 'frost', 'r') : 0) + fx2Val('frost', fx.frost).shatter;
+        if (sh > 0) fxBoom(s, f.x, f.z, 1.6, f.max * sh, f);
+      }
       if (medic && s.squad.n > 0) { s.stats.healed += cost; gain(s, cost, q.x, q.z, 'heal'); emit(s, { t: 'heal', n: cost, x: q.x, z: q.z }); }   // 응급 얼음(빙결 + 의무병): 느려진 좀비에게 잃은 병사는 바로 돌아온다
       continue;
     }

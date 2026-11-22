@@ -379,7 +379,7 @@ export const BUILD = {
   evo: 5,               // 탄 효과가 진화하는 레벨
   awakeFrom: 7,         // 각성(Lv6~10)·숙련이 열리는 구간(첫 대왕 뒤 — 예전 13: Lv5에 너무 일찍 닿아 성장이 멈춘 느낌이었다, ENDGAME.md 20절). 그 전에는 Lv5가 상한
   awk: 0.15,            // 각성 Lv6~9: 그 역할의 값 레벨마다 +15%, Lv10은 2차 진화
-  mastery: 0.04,        // 숙련(Lv10 위, 끝없음): 같은 카드를 또 고를 때마다 그 대상 효과 +4%(더한다)
+  mastery: 0.1,         // 숙련(Lv10 위, 끝없음): 같은 카드를 또 고를 때마다 그 대상 효과 +10%(더한다 — 예전 +4%는 거의 안 느껴졌다, ENDGAME.md 21.10)
   legendUp: 0.0015,     // 6구간 뒤로 구간마다 전설 확률 +0.15%p(일반에서 가져온다 — 후반일수록 전설이 오른다), legendMax: 최대 +이만큼(예전 +1%p·최대 15%p — ENDGAME.md 20절)
   legendMax: 0.02,
   rare: [0.9, 0.09, 0.01],    // 카드 등급(일반·희귀·전설) 확률 — 예전 0.72·0.23·0.05에 정예·대왕 뒤 카드가 모두 희귀 이상이라 너무 흔했다(20절)
@@ -417,10 +417,10 @@ export const BOSS_PAT = {
   line: { name: '좀비 장벽', n: 7, hp: 1.2, gap: 2.8, cd: 7, first: 4, text: () => '길을 가로지르는 졸개 줄 — 빈틈으로 빠지거나 쏴서 뚫으세요' },
 };
 export const BOSS_PAT_IDS = Object.keys(BOSS_PAT);
-/* 각성·숙련 배수(개편 판 — 18.4): Lv5까지 1, Lv6~10은 레벨마다 +15%(Lv10에 2차 진화), Lv10 위(숙련)는 레벨마다 +4% 더 — 곱하지 않고 더한다 */
+/* 각성·숙련 배수(개편 판 — 18.4): Lv5까지 1, Lv6~10은 레벨마다 +15%(Lv10에 2차 진화), Lv10 위(숙련)는 레벨마다 +10% 더(BUILD.mastery — 21.10) — 곱하지 않고 더한다 */
 export const awk = (l) => 1 + BUILD.awk * (Math.min(Math.max(l, 5), 10) - 5) + BUILD.mastery * Math.max(0, l - 10);
 /* 탄 효과의 값(개편 판 — ENDGAME.md 18.3~18.4): 레벨마다 정해진 능력(숫자만 오르는 레벨은 없다), Lv5가 진화, Lv6~10 각성(그 역할의 값 +15%씩, 구간 13부터),
-   Lv10 2차 진화(evo2), 그 위는 숙련(+4%씩). 수치는 모두 [초안].
+   Lv10 2차 진화(evo2), 그 위는 숙련(+10%씩 — 21.10). 상한에 닿는 값은 넘친 몫을 다음 효과로(OVER). 수치는 모두 [초안].
    관통 — Lv1 뒤 좀비 1마리에 50% · Lv2 뒤 2마리 · Lv3 벽·장갑문 피해 +50% · Lv4 일직선 전부 · Lv5 뚫을 때마다 다음 대상 피해 +20% · Lv10 벽을 뚫고 벽 뒤 좀비도 맞는다
    작렬 — Lv1 둘레 1m에 40% · Lv2 반경 1.5m · Lv3 둘레 피해 60% · Lv4 반경 2m · Lv5 처치된 좀비도 터진다(연쇄) · Lv10 연쇄 폭발이 벽·보스에도 든다
    속사 — Lv1 총알 피해 +10% · Lv2 쏘는 속도 +10% · Lv3 보스에게 +30% · Lv4 쏘는 속도 +10% 더 · Lv5 3초 계속 쏘면 과열(피해 ×1.5) · Lv10 과열 중 총알이 둘로 갈라진다
@@ -429,6 +429,15 @@ export const awk = (l) => 1 + BUILD.awk * (Math.min(Math.max(l, 5), 10) - 5) + B
 export const FX_CHAIN = 0.5;      // 작렬 Lv5: 터지는 좀비가 둘레에 주는 몫(그 좀비 체력의 이만큼) — 측정으로 0.3 → 0.5
 export const FX_HEAT = 3;         // 속사 Lv5: 이 초 동안 계속 쏘면 과열
 export const FX_FREEZE = { after: 3, T: 1 };   // 빙결 Lv10: 느려진 채 after초가 지나면 T초 얼어붙는다
+/* 넘침 전환(ENDGAME.md 21.10) [초안]: 상한에 닿은 넘친 몫(over — 그 값의 단위)을 다음 효과로 바꾸는 비율.
+   관통: 뒤 몫 100% 넘친 1당 뚫을수록 +ramp·벽 ×+wall / 작렬: 반경이 각성으로 (1 + grow·(a−1))배 커지다 rMax m에서 멈추고 넘친 1m당 둘레 +splash·유폭 +chain /
+   속사: 쏘는 속도가 각성으로 커지다 rMax배에서 멈추고 넘친 1당 피해 +dmg·과열 +heat / 빙결: 느려짐·잃는 병사 감소가 넘친 1당 느려지는 시간 +T초(tMax까지), 그 위 1초당 얼음 폭탄(제 체력의 shatter) */
+export const OVER = {
+  pierce: { ramp: 0.4, wall: 0.5 },
+  burst: { grow: 0.25, rMax: 3, splash: 0.3, chain: 0.2 },
+  rapid: { grow: 0.2, rMax: 1.6, dmg: 0.5, heat: 0.3 },
+  frost: { T: 2, tMax: 4, shatter: 0.25 },
+};
 export function fx2Val(id, lv) {
   const A = AMMO[id];
   const L = Math.max(1, Math.floor(lv) || 1);
@@ -436,13 +445,27 @@ export function fx2Val(id, lv) {
   const a = awk(L);
   const evo = l >= BUILD.evo, evo2 = L >= 10;
   if (!A) return {};
-  if (A.pierce) return { pierce: Math.min(1, 0.5 * a), n: l >= 4 ? 99 : l >= 2 ? 2 : 1, wall: l >= 3 ? 1.5 : 1, ramp: evo ? 0.2 * a : 0, evo, evo2, a };
-  if (A.splash) return { splash: (l >= 3 ? 0.6 : 0.4) * a, r: l >= 4 ? 2 : l >= 2 ? 1.5 : 1, chain: evo ? FX_CHAIN * a : 0, evo, evo2, a };
-  if (A.slow) return { slow: Math.min(0.85, (l >= 2 ? 0.35 : 0.25) * a), T: Math.round((l >= 4 ? 1.5 : 0.8) * a * 100) / 100, loss: l >= 3 ? Math.max(0.4, 1 - 0.2 * a) : 1, spread: evo, evo, evo2, a };
-  const rate = (l >= 2 ? 1.1 : 1) * (l >= 4 ? 1.1 : 1);
-  const dmg = Math.round((1 + 0.1 * a) * 1000) / 1000;
-  const boss = l >= 3 ? Math.round((1 + 0.3 * a) * 1000) / 1000 : 1, heat = evo ? Math.round((1 + 0.5 * a) * 1000) / 1000 : 1;
-  return { dmg, rate: Math.round(rate * 1000) / 1000, boss, heat, pow: Math.round(dmg * rate * (1 + (boss - 1) * 0.2) * (1 + (heat - 1) * 0.4) * 1000) / 1000, evo, evo2, a };
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+  // 넘침 전환(21.10): 상한에 닿는 값은 넘친 몫(over)을 정해진 다음 효과로 넘긴다 — 레벨이 오르면 어떤 값이든 늘 오른다
+  if (A.pierce) {
+    const raw = 0.5 * a, over = Math.max(0, raw - 1);   // 뒤 좀비 몫 상한 100% → 넘친 몫은 뚫을수록(ramp)·벽 피해로
+    return { pierce: Math.min(1, raw), n: l >= 4 ? 99 : l >= 2 ? 2 : 1, wall: r3((l >= 3 ? 1.5 : 1) + OVER.pierce.wall * over), ramp: r3((evo ? 0.2 * a : 0) + OVER.pierce.ramp * over), over: r3(over), evo, evo2, a };
+  }
+  if (A.splash) {
+    const r0 = l >= 4 ? 2 : l >= 2 ? 1.5 : 1, rRaw = r0 * (1 + OVER.burst.grow * (a - 1)), over = Math.max(0, rRaw - OVER.burst.rMax);   // 반경은 각성으로 커지다 3m에서 멈추고 → 둘레 피해·유폭으로
+    return { splash: r3((l >= 3 ? 0.6 : 0.4) * a + OVER.burst.splash * over), r: r3(Math.min(OVER.burst.rMax, rRaw)), chain: evo ? r3(FX_CHAIN * a + OVER.burst.chain * over) : 0, over: r3(over), evo, evo2, a };
+  }
+  if (A.slow) {
+    const sRaw = (l >= 2 ? 0.35 : 0.25) * a, lRaw = l >= 3 ? 1 - 0.2 * a : 1;
+    const over = Math.max(0, sRaw - 0.85) + Math.max(0, 0.4 - lRaw);   // 느려짐 85%·잃는 병사 −60% 상한 → 느려지는 시간(4초까지) → 얼음 폭탄(닿으면 터짐)
+    const tRaw = (l >= 4 ? 1.5 : 0.8) * a + OVER.frost.T * over, T = Math.min(OVER.frost.tMax, tRaw);
+    return { slow: Math.min(0.85, sRaw), T: Math.round(T * 100) / 100, loss: l >= 3 ? Math.max(0.4, lRaw) : 1, shatter: r3(OVER.frost.shatter * Math.max(0, tRaw - OVER.frost.tMax)), over: r3(over), spread: evo, evo, evo2, a };
+  }
+  const rRaw = (l >= 2 ? 1.1 : 1) * (l >= 4 ? 1.1 : 1) * (1 + OVER.rapid.grow * (a - 1)), over = Math.max(0, rRaw - OVER.rapid.rMax);   // 쏘는 속도 +60% 상한 → 총알 피해·과열 배수로
+  const rate = Math.min(OVER.rapid.rMax, rRaw);
+  const dmg = r3(1 + 0.1 * a + OVER.rapid.dmg * over);
+  const boss = l >= 3 ? r3(1 + 0.3 * a) : 1, heat = evo ? r3(1 + 0.5 * a + OVER.rapid.heat * over) : 1;
+  return { dmg, rate: r3(rate), boss, heat, over: r3(over), pow: r3(dmg * rate * (1 + (boss - 1) * 0.2) * (1 + (heat - 1) * 0.4)), evo, evo2, a };
 }
 export const FX_EVO = { pierce: '가속 관통', burst: '유폭', rapid: '과열', frost: '번지는 얼음' };
 export const FX_EVO2 = { pierce: '벽 너머 관통', burst: '벽·보스 유폭', rapid: '쌍갈래 과열', frost: '얼어붙는 얼음' };
@@ -451,11 +474,12 @@ export function fx2Text(id, lv) { return fx2Base(id, lv) + (fx2Val(id, lv).evo2 
 function fx2Base(id, lv) {
   const v = fx2Val(id, lv);
   const l = Math.min(BUILD.evo, Math.max(1, lv | 0));
-  const e = (v.evo2 ? `2차 진화 ‘${FX_EVO2[id]}’ · ` : v.evo ? `진화 ‘${FX_EVO[id]}’ · ` : '') + (v.a > 1 ? `각성 +${apc(v.a - 1)}% · ` : '');
-  if (v.pierce) return e + `뒤의 좀비 ${v.n > 2 ? '일직선 전부' : v.n === 2 ? '둘' : '하나'}에 ${apc(v.pierce)}%${v.wall > 1 ? ` · 벽·장갑문 +${apc(v.wall - 1)}%` : ''}${v.ramp ? ` · 뚫을 때마다 다음 +${apc(v.ramp)}%` : ''}`;
-  if (v.splash) return e + `둘레 ${v.r}m에 ${apc(v.splash)}%${v.chain ? ' · 처치된 좀비도 터져요' : ''}`;
-  if (v.slow) return e + `${v.T}초 동안 ${apc(v.slow)}% 느리게${v.loss < 1 ? ` · 느려진 좀비에게 잃는 병사 −${apc(1 - v.loss)}%` : ''}${v.spread ? ' · 느려진 좀비가 죽으면 둘레도 느려져요' : ''}`;
-  return e + `총알 피해 +${apc(v.dmg - 1)}%${l >= 2 ? ` · 쏘는 속도 +${apc(v.rate - 1)}%` : ''}${v.boss > 1 ? ` · 보스 +${apc(v.boss - 1)}%` : ''}${v.heat > 1 ? ` · ${FX_HEAT}초 계속 쏘면 과열 ×${v.heat}` : ''}`;
+  const e = (v.evo2 ? `2차 진화 ‘${FX_EVO2[id]}’ · ` : v.evo ? `진화 ‘${FX_EVO[id]}’ · ` : '') + (v.a > 1 ? `${lv > 10 ? '각성·숙련' : '각성'} +${apc(v.a - 1)}% · ` : '');
+  const mx = v.over > 0 ? '(최대)' : '';   // 넘침 전환(21.10): 상한에 닿은 값에 '(최대)' — 넘친 몫은 다음 효과로 간다
+  if (v.pierce) return e + `뒤의 좀비 ${v.n > 2 ? '일직선 전부' : v.n === 2 ? '둘' : '하나'}에 ${apc(v.pierce)}%${mx}${v.wall > 1 ? ` · 벽·장갑문 +${apc(v.wall - 1)}%` : ''}${v.ramp ? ` · 뚫을 때마다 다음 +${apc(v.ramp)}%` : ''}`;
+  if (v.splash) return e + `둘레 ${v.r}m${v.r >= OVER.burst.rMax ? '(최대)' : ''}에 ${apc(v.splash)}%${v.chain ? ` · 처치된 좀비도 터져요(${apc(v.chain)}%)` : ''}`;
+  if (v.slow) return e + `${v.T}초${v.T >= OVER.frost.tMax ? '(최대)' : ''} 동안 ${apc(v.slow)}%${v.slow >= 0.85 ? '(최대)' : ''} 느리게${v.loss < 1 ? ` · 느려진 좀비에게 잃는 병사 −${apc(1 - v.loss)}%` : ''}${v.spread ? ' · 느려진 좀비가 죽으면 둘레도 느려져요' : ''}${v.shatter ? ` · 느려진 좀비가 닿으면 터져요(제 체력의 ${apc(v.shatter)}%)` : ''}`;
+  return e + `총알 피해 +${apc(v.dmg - 1)}%${l >= 2 ? ` · 쏘는 속도 +${apc(v.rate - 1)}%${mx}` : ''}${v.boss > 1 ? ` · 보스 +${apc(v.boss - 1)}%` : ''}${v.heat > 1 ? ` · ${FX_HEAT}초 계속 쏘면 과열 ×${v.heat}` : ''}`;
 }
 /* 카드 등급 = 강화(개편 판 — ENDGAME.md 18.8): 일반은 레벨 +1, 희귀는 레벨 +1 + 그 대상(탄 효과·특수병)의 부가 능력, 전설은 레벨 +1 + 규칙을 바꾸는 능력(판 끝까지).
    같은 강화를 또 뽑으면 그 강화가 한 단계 세진다(수치 ×enhStr — 한 번 더 뽑을 때마다 +50%, 규칙형은 효과가 한 번 더 겹친다). 수치는 모두 [초안].

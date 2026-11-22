@@ -1684,8 +1684,8 @@ function statOf(k, id, lv) {
   if (k === 'fx') {
     const v = fx2Val(id, lv);
     if (v.pierce) return `뒤 ${v.n > 2 ? '전부' : v.n + '마리'}에 ${pct(v.pierce)}% · 벽 ×${r2(v.wall)}${v.ramp ? ` · 뚫을수록 +${pct(v.ramp)}%` : ''}`;
-    if (v.splash) return `반경 ${v.r}m에 ${pct(v.splash)}%${v.chain ? ` · 유폭 ${pct(v.chain)}%` : ''}`;
-    if (v.slow) return `${pct(v.slow)}% 느리게 ${v.T}초${v.loss < 1 ? ` · 잃는 병사 −${pct(1 - v.loss)}%` : ''}`;
+    if (v.splash) return `반경 ${r2(v.r)}m에 ${pct(v.splash)}%${v.chain ? ` · 유폭 ${pct(v.chain)}%` : ''}`;
+    if (v.slow) return `${pct(v.slow)}% 느리게 ${v.T}초${v.loss < 1 ? ` · 잃는 병사 −${pct(1 - v.loss)}%` : ''}${v.shatter ? ` · 닿으면 터짐 ${pct(v.shatter)}%` : ''}`;
     return `피해 +${pct(v.dmg - 1)}% · 속도 +${pct(v.rate - 1)}%${v.boss > 1 ? ` · 보스 +${pct(v.boss - 1)}%` : ''}${v.heat > 1 ? ` · 과열 ×${v.heat}` : ''}`;
   }
   const L = Math.min(lv, BUILD.evo), a = awk(lv), P = BUILD.sp[id];
