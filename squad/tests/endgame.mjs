@@ -4245,7 +4245,7 @@ test('20절 — 벽·장갑문 체력(개편 판)은 위협 곡선을 덜 따라
     if (k <= W.from) assert.equal(f, 1);
   }
 });
-test('20절 — 보스 패턴(개편 판): 시드·구간으로 정해지고(보통 1·정예 2·대왕 3, BUILD.bossPat.more구간부터 +1) 1구간·앞 단계 판은 없다. 체력은 첫 대왕 뒤부터 조금씩(bldBossHp)', () => {
+test('20절 — 보스 패턴(개편 판): 시드·구간으로 정해지고(보통 1·정예 2·대왕 3, BUILD.bossPat.more구간부터 +1) 1구간·앞 단계 판은 없다. 체력 덧배수(bldBossHp)는 첫 대왕 전에는 1', () => {
   const at = (seg, co = BLD) => { const u = C.newEndless({ seed: 31, ...co }); u.endless.seg = seg; return u; };
   const P = R.BUILD.bossPat;
   assert.deepEqual(C.bossPats(at(1)), []);
@@ -4257,8 +4257,9 @@ test('20절 — 보스 패턴(개편 판): 시드·구간으로 정해지고(보
   const seen = new Set(); for (let k = 2; k < 40; k++) for (const id of C.bossPats(at(k))) seen.add(id);
   assert.deepEqual([...seen].sort(), R.BOSS_PAT_IDS.slice().sort(), '모든 패턴이 나온다');
   assert.deepEqual(C.bossPats(at(8, CARD3)), [], '앞 단계 판은 없다');
-  assert.deepEqual([C.bldBossHp(1), C.bldBossHp(R.BUILD.bossHp.from - 1), C.bldBossHp(200)], [1, 1, R.BUILD.bossHp.max]);
-  assert.ok(C.bldBossHp(R.BUILD.bossHp.from) > 1);
+  const H = R.BUILD.bossHp;
+  assert.deepEqual([C.bldBossHp(1), C.bldBossHp(H.from - 1)], [1, 1]);
+  assert.equal(C.bldBossHp(H.from + 4), Math.min(H.max, 1 + H.k * 5));
 });
 test('20절 — 보스 패턴의 규칙: 넓은 내려찍기는 가장자리 한 칸만 남기고 예고가 더 길다 · 연속 내려찍기는 곧바로 지금 선 칸을 한 번 더 · 독침 세례는 보스 독침(병력의 hit만) · 돌진은 숨 고른 뒤 다가온다 · 좀비 장벽은 빈틈 하나 난 줄. 처음 쓸 때 한 번 알린다', () => {
   const arena = (pat) => {
@@ -4303,6 +4304,31 @@ test('20절 — 보스 패턴의 규칙: 넓은 내려찍기는 가장자리 한
     assert.ok(row.length >= R.BOSS_PAT.line.n - 2 && row.length < R.BOSS_PAT.line.n, `줄 ${row.length}마리, 빈틈이 있다`);
     const xs = row.map((f) => f.x).sort((a, c) => a - c); let gap = 0; for (let i = 1; i < xs.length; i++) gap = Math.max(gap, xs[i] - xs[i - 1]);
     assert.ok(gap > R.BOSS_PAT.line.gap * 0.9, `빈틈 ${gap.toFixed(2)}m`); }
+});
+test('20.1 — 개편 판 골든 패스는 무너지지 않는다: 2~40구간 어느 청크에서도 골든 병력이 출발 병력의 20% 아래로 안 떨어지고, 보스 체력(병력당)이 구간마다 이어진다(18구간쯤 보스 체력이 병사 몇 명 기준으로 무너지던 것)', () => {
+  for (const seed of [77, 90]) {
+    let prev = 0;
+    for (let seg = 2; seg <= 40; seg++) {
+      const n = Math.round(C.segFloor(seg) * 3);
+      const lv = C.buildSegment(seed, seg, n, 9, 0, { obs: true, flame: true, mul: C.bldThreat(seg), fe: 10, bk: true, terrain: true });
+      const mn = Math.min(...lv.golden);
+      assert.ok(mn >= 0.2 * n, `${seed}/${seg}구간: 골든 ${mn} / 출발 ${n} (${lv.plan.join(',')})`);
+      const per = lv.bossHp / n;
+      if (prev) assert.ok(per > 0.5 * prev, `${seed}/${seg}구간: 보스 체력/병력 ${per.toFixed(1)} (앞 구간 ${prev.toFixed(1)})`);
+      prev = per;
+    }
+  }
+});
+test('20.2 — 개편 판 분대 몸은 좁다(BUILD.narrow — 세 칸 길 한 칸에 들어가게): step·buildSegment가 판마다 상한을 정하고, 개편 판이 아닌 판은 그대로(2.4)', () => {
+  const b = C.newEndless({ seed: 31, ...BLD }), o = C.newEndless({ seed: 31, ...CARD3 });
+  b.squad.n = o.squad.n = 5000;
+  C.step(b, { dir: 0 });
+  assert.equal(C.radius(5000), R.BUILD.narrow);
+  assert.ok(C.hitHalf(C.radius(5000)) < (2 * C.ROAD) / 3 / 2, '맞는 몸이 세 칸 길 한 칸 안');
+  C.step(o, { dir: 0 });
+  assert.equal(C.radius(5000), 2.4);
+  C.buildSegment(7, 9, 5000, 4, 0, { obs: true, bk: true, terrain: true, mul: 1, fe: 10 });
+  assert.equal(C.radius(5000), 2.4, '만든 뒤 상한을 되돌린다');
 });
 test('개편 판의 앞 구간: 위협을 실제 강화(fire)로 만든다 — 기준(ENDLESS.fire)보다 높은 강화의 몫을 BUILD.earlyK만큼 따라가고 BUILD.early구간에 걸쳐 기준으로 돌아간다. 기준 이하·앞 단계 판은 그대로', () => {
   const E = C.ENDLESS, B = R.BUILD;

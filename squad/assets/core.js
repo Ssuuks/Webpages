@@ -192,7 +192,13 @@ export function dps(n, tier = 0, fireLv = 0) {
   if (n <= 0) return 0;
   return 6 * Math.pow(n, 0.8) * WEAPON[clamp(tier, 0, WEAPON.length - 1)] * (1 + 0.05 * fireLv);   // 캠페인 단계는 3을 넘지 않는다(값 그대로)
 }
-export function radius(n) { return Math.min(2.4, 0.35 + 0.18 * Math.sqrt(Math.max(1, n))); }
+/* 몸 반지름 상한: 보통 2.4m, 개편 판은 BUILD.narrow(세 칸 길 — 갈림 벽·세 칸 게이트·세 칸 내려찍기 — 한 칸(3.3m)에 몸이 들어가게, ENDGAME.md 20.2).
+   step·buildSegment·botTarget이 그 판에 맞춰 정한다(화면은 마지막 step의 값을 쓴다) */
+const R_MAX = 2.4;
+let RCAP = R_MAX;
+export const radiusCap = () => RCAP;
+const capFor = (s) => (s && s.endless && s.endless.bld ? BUILD.narrow : R_MAX);
+export function radius(n) { return Math.min(RCAP, 0.35 + 0.18 * Math.sqrt(Math.max(1, n))); }
 export function volleySize(n) { return Math.min(12, 2 + Math.floor(Math.sqrt(Math.max(1, n)))); }
 
 /* 보기 좋은 숫자로 반올림 */
@@ -685,9 +691,12 @@ function setElite(f, k, ng) {
    분대가, 닿을 적(옆으로 따라붙는 만큼 포함)의 체력 중 쏴서 못 잡는 몫을 맞는다. 골든 패스는 '무난한 사람'이라 LEAK_K배 */
 export const LEAK_K = 1.35;
 const LEAK_XS = [-3.8, -2.5, -1.25, 0, 1.25, 2.5, 3.8];
+/* 개편 판(BKON): 골든 패스의 화력도 위협 배수만큼(무리 체력이 lv.thr로 커지니 같은 잣대로 — 아니면 18구간쯤부터 '몰이 한 번에 전멸'로 읽혀
+   보스 체력이 병사 몇 명 기준으로 무너지고 무리는 20%로 깎였다, ENDGAME.md 20.1). buildSegment가 청크마다 정한다 */
+let LEAKT = 1;
 function waveLeak(foes, ng, p, fire = 0, xs = LEAK_XS) {
   if (!foes.length) return 0;
-  const D = dps(ng, 0, fire);
+  const D = dps(ng, 0, fire) * LEAKT;
   const R = radius(ng);
   let best = Infinity;
   for (const x of xs) best = Math.min(best, foeLeftover(foes, x, R, R + 0.3, D, p.speed, null));
@@ -1496,6 +1505,11 @@ export function segParams(k) {
    기존 것을 그 자리에서 바꾸거나 뒤에 더한다 — 장갑문(갈림길 위험한 쪽), 방패 정예(무리마다 하나), 폭발 드럼통(구간마다 1~2개). 그 밖의 배치는 opt 없이 만든 구간과 같다.
    opt.flame: 4단계(화염병 줄을 연 판만) — 철창·금색 칸의 병과를 화염병까지 넷 중에서 고른다(수·자리·나머지 배치는 그대로, placeSpecials) */
 export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
+  const prev = RCAP;
+  RCAP = opt && opt.bk ? BUILD.narrow : R_MAX;   // 개편 판은 좁은 몸으로 만든다(골든 패스·보스 체력의 맞는 몫이 실제 판과 같게)
+  try { return buildSegment0(seed, k, n, tier, attempt, opt); } finally { RCAP = prev; }
+}
+function buildSegment0(seed, k, n, tier, attempt, opt) {
   const p = segParams(k);
   const E = ENDLESS;
   if (opt && opt.terrain) { p.hide = p.seg >= TERRAIN.hideFrom; p.tight = p.seg >= TERRAIN.tightFrom; p.chain = p.seg >= TERRAIN.chainFrom; }   // 지형(개편 판만 — 바퀴 3·4·5부터)
@@ -1528,6 +1542,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
       ctx.late = i >= plan.length - 2;
       ctx.last = i === plan.length - 1;
       lv.thr = base * (p.tagFull ? p.threat : 1);
+      LEAKT = BKON ? lv.thr : 1;
       lv.wm = (p.tagFull ? p.waveMul : 1) * SW;   // 떼거리(변이): 무리 ×SW(좀비 수), 하나하나의 체력 ×SH — 무리 전체 체력은 ×SW × SH
       lv.gh = (p.tagFull ? p.gruntHp : p.gruntBase) * SH;
       const target = n0 * Math.pow(PE / n0, (i + 1) / plan.length);
@@ -1548,7 +1563,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
     lv.arenaZ = z + 12;
     placeSpecials(lv, p, false, hash(VERSION, 'endless-sp', seed >>> 0, p.seg, attempt), !!(opt && opt.flame));
     if (lv.og) { placeDrums(lv); obstacleMarks(lv); }
-  } finally { GK = 1; NCAP = MAX_N; delete lv.og; }
+  } finally { GK = 1; NCAP = MAX_N; LEAKT = 1; delete lv.og; }
   // MAX 칸(높인 끝)은 쓰지 않는다 — 몰아 쏘기 확인(redFast)을 판 중간에 돌릴 수 없다
   for (const r of lv.rows) for (const c of r.cells) if (c.cap0 != null) { c.cap = c.cap0; delete c.cap0; }
   if (BKON) bkScale(lv, BUILD.bk.mul * (segFloor(p.seg) || E.floor0) / n0);
@@ -2557,6 +2572,7 @@ function gain(s, k, x, z, why) {
 
 /* 입력: { dir: -1|0|1, tx: 목표 x 또는 null, skill: 영웅 스킬 버튼(이번 틱에 눌림) } */
 export function step(s, input) {
+  RCAP = capFor(s);
   s.ev.length = 0;
   if (s.phase === 'won' || s.phase === 'lost') { s.endT += DT; s.tick++; s.t += DT; return s; }
   if (s.endless && s.endless.offer) return s;   // 보스 뒤 3택 1: 고를 때까지(pickCard) 판이 멈춘다 — 틱도 세지 않는다
@@ -4041,6 +4057,7 @@ function cellCenter(c) { return clamp((c.x0 + c.x1) / 2, -EDGE, EDGE); }
 const CANDS = [-4.2, -3.6, -2.5, -1.25, -0.45, 0.45, 1.25, 2.5, 3.6, 4.2];
 
 export function botTarget(s, opt = {}) {
+  RCAP = capFor(s);
   const q = s.squad;
   const R = radius(q.n);
   const sight = opt.sight ?? 40;

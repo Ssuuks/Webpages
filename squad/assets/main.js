@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, ENH, PET_SLOTS, comboText, unitVal } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, ENH, PET_SLOTS, comboText, unitVal, fx2Val } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1677,6 +1677,26 @@ function spPowText(u, lv) {
   if (P) return ` · 위력 ×${(P.dmg * (1 + P.lv * (Math.min(lv, BUILD.evo) - 1)) * awk(lv)).toFixed(1)}`;
   return u === 'medic' ? ` · 좀비·보스에게 잃는 병사 −${pct(1 - 1 / (1 + BUILD.med * lv))}%, 회복 +${50 * lv}%` : '';
 }
+/* 개편 판 카드의 '지금 → 고르면' 숫자(레벨 lv의 핵심 수치 — 0이면 '없음'). 탄 효과는 fx2Val, 특수병은 간격·범위·위력 */
+const r2 = (x) => Math.round(x * 100) / 100;
+function statOf(k, id, lv) {
+  if (!lv) return '없음';
+  if (k === 'fx') {
+    const v = fx2Val(id, lv);
+    if (v.pierce) return `뒤 ${v.n > 2 ? '전부' : v.n + '마리'}에 ${pct(v.pierce)}% · 벽 ×${r2(v.wall)}${v.ramp ? ` · 뚫을수록 +${pct(v.ramp)}%` : ''}`;
+    if (v.splash) return `반경 ${v.r}m에 ${pct(v.splash)}%${v.chain ? ` · 유폭 ${pct(v.chain)}%` : ''}`;
+    if (v.slow) return `${pct(v.slow)}% 느리게 ${v.T}초${v.loss < 1 ? ` · 잃는 병사 −${pct(1 - v.loss)}%` : ''}`;
+    return `피해 +${pct(v.dmg - 1)}% · 속도 +${pct(v.rate - 1)}%${v.boss > 1 ? ` · 보스 +${pct(v.boss - 1)}%` : ''}${v.heat > 1 ? ` · 과열 ×${v.heat}` : ''}`;
+  }
+  const L = Math.min(lv, BUILD.evo), a = awk(lv), P = BUILD.sp[id];
+  const pow = P ? ` · 위력 ×${(P.dmg * (1 + P.lv * (L - 1)) * a).toFixed(1)}` : '';
+  if (id === 'sniper') return `${unitVal('sniper', 'every', L)}초마다${pow}`;
+  if (id === 'rocket') return `${r2(unitVal('rocket', 'every', L) * BUILD.rocket.cd)}초마다 · 반경 ${unitVal('rocket', 'r', L)}m${pow}`;
+  if (id === 'flame') return `${unitVal('flame', 'every', L)}초마다 · 폭 ${unitVal('flame', 'w', L)}m${pow}`;
+  if (id === 'medic') return `되살림 ${pct(unitVal('medic', 'share', lv))}% · 잃는 병사 −${pct(1 - 1 / (1 + BUILD.med * lv))}%`;
+  return `Lv${lv}`;
+}
+const deltaOf = (k, id, from, to) => (bldOf(s) && to > from ? `지금 ${statOf(k, id, from)} → 고르면 ${statOf(k, id, to)}` : '');
 /* 특수병 레벨 글(개편 판의 로켓병은 간격·조준이 다르다 — BUILD.rocket) */
 function spUp(u, lv) {
   if (u !== 'rocket' || !bldOf(s)) return UNITS[u].up(lv);
@@ -1687,7 +1707,7 @@ const spDesc = (u) => (u === 'rocket' && bldOf(s) ? `${spUp('rocket', 1)}. 벽�
 function cardText(c) {
   if (c.k === 'curse') return { kind: '위험한 계약', lead: '', from: '', to: `카드 ${c.more}장 더`, det: `지금 카드를 ${c.more}장 더 골라요`, cost: `다음 구간 위협 ×${c.mul}`, col: '#FF5E7A', icon: 'star', curse: true };
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
-  if (c.k === 'gun') { const bs = bldOf(s); return { kind: bs ? '총 ★' : '무기', lead: bs ? '총' : '무기', from: bs ? tierName(c.from) : c.from ? `${c.from}` : '기본', to: tierName(c.to), det: `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 ${bs ? '★' + (tierMax(s) + 1) : tierMax(s) + '단계'}`, col: '#FFC93C', icon: 'gun' }; }
+  if (c.k === 'gun') { const bs = bldOf(s); return { kind: bs ? '총 ★' : '무기', lead: bs ? '총' : '무기', from: bs ? tierName(c.from) : c.from ? `${c.from}` : '기본', to: tierName(c.to), det: bs ? `최대 ★${tierMax(s) + 1}` : `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 ${tierMax(s)}단계`, delta: bs ? `지금 총알 피해 ×${WEAPON[c.from]} → 고르면 ×${WEAPON[c.to]}` : '', col: '#FFC93C', icon: 'gun' }; }
   if (c.k === 'relic') {
     // 유물(3·5단계 — 대왕 보스 뒤): 이름, 좋은 점, '대신' 줄(대신 쪽이 있는 유물만 — 나침반·주사위·서약·방패막은 없다). 글·수치는 roster.js RELICS
     const Rl = RELICS[c.r];
@@ -1700,8 +1720,9 @@ function cardText(c) {
     if (c.n) {
       // 개편 판: 등급만큼 한 번에 오른다(합류도 Lv n으로). 위력 배수·전문화 안내
       const hint = SP_EVO[c.u] && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 ‘${SP_EVO[c.u].name}’` : '';
-      return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${spUp(c.u, c.to)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, col: U.color, icon: c.u, n: c.n }
-        : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${spDesc(c.u)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, col: U.color, icon: c.u, n: c.n };
+      const delta = deltaOf('unit', c.u, c.from || 0, c.to);
+      return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${spUp(c.u, c.to)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, delta, col: U.color, icon: c.u, n: c.n }
+        : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${spDesc(c.u)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, delta, col: U.color, icon: c.u, n: c.n };
     }
     return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}${pair}`, col: U.color, icon: c.u }
       : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류`, det: U.desc + pair, col: U.color, icon: c.u };
@@ -1711,10 +1732,11 @@ function cardText(c) {
     // 출격 탄종이 오르면 좋은 점만 세지고 약점(피해·사거리)은 그대로다 — 개편 판은 약점이 없다(ENDGAME.md 18.2)
     const nm = fxName(c.a), col = AMMO[c.a] ? AMMO[c.a].color : '#fff';
     const evo = c.n && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 진화` : '';
-    if (c.from) return { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${fxT(c.a, c.to)}${s && s.ammo === c.a && !bldOf(s) ? ' · 약점은 그대로' : ''}${evo}${enhText(c)}`, col, icon: 'fx_' + c.a, n: c.n };
+    const delta = deltaOf('fx', c.a, c.from || 0, c.to);
+    if (c.from) return { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${fxT(c.a, c.to)}${s && s.ammo === c.a && !bldOf(s) ? ' · 약점은 그대로' : ''}${evo}${enhText(c)}`, delta, col, icon: 'fx_' + c.a, n: c.n };
     const fx = fxOf(s) || {};
     const used = AMMO_IDS.filter((a) => fx[a]).length;
-    return { kind: '탄 효과', lead: '새 효과:', from: '', to: c.to > 1 ? `${nm} Lv${c.to}` : nm, det: `Lv${c.to}: ${fxT(c.a, c.to)} · 칸 ${used + 1}/${fxSlots(s)}${evo}${enhText(c)}`, col, icon: 'fx_' + c.a, n: c.n };
+    return { kind: '탄 효과', lead: '새 효과:', from: '', to: c.to > 1 ? `${nm} Lv${c.to}` : nm, det: `Lv${c.to}: ${fxT(c.a, c.to)} · 칸 ${used + 1}/${fxSlots(s)}${evo}${enhText(c)}`, delta, col, icon: 'fx_' + c.a, n: c.n };
   }
   const A = ammoText(c.to);
   return { kind: '탄종 바꾸기', lead: '', from: ammoName(c.from), to: ammoName(c.to), det: A.bad ? `${A.good} · 대신 ${A.bad}` : A.good, col: AMMO[c.to] ? AMMO[c.to].color : '#fff', icon: '' };
@@ -1797,7 +1819,7 @@ function renderPick() {
     kind.className = 'pick-kind';
     kind.textContent = T.kind;
     // 등급(개편 판 — 희귀·전설): 한 번에 오르는 레벨 수
-    if (T.n >= 2) { const rk = document.createElement('span'); rk.className = 'pick-rank'; rk.textContent = `${RARITY[Math.min(3, T.n)]} +${T.n}`; kind.appendChild(rk); }
+    if (T.n >= 2) { const rk = document.createElement('span'); rk.className = 'pick-rank'; rk.textContent = bldOf(s) ? `${RARITY[Math.min(3, T.n)]} 강화` : `${RARITY[Math.min(3, T.n)]} +${T.n}`; kind.appendChild(rk); }   // 개편 판: 등급은 레벨 수가 아니라 강화(레벨은 늘 +1)
     const chg = document.createElement('span');
     chg.className = 'pick-chg';
     if (T.lead) chg.append(T.lead + ' ');
@@ -1808,7 +1830,9 @@ function renderPick() {
     const det = document.createElement('span');
     det.className = 'pick-det';
     det.textContent = T.det;
-    body.append(kind, chg, det);
+    body.append(kind, chg);
+    if (T.delta) { const dl = document.createElement('span'); dl.className = 'pick-delta'; dl.textContent = T.delta; body.appendChild(dl); }   // 개편 판: 지금 → 고르면(숫자)
+    body.appendChild(det);
     // 유물의 대신 쪽(있을 때만): 좋은 점 아래 붉은 줄 — 고르기 전에 무엇을 내주는지
     if (T.cost) {
       const cs = document.createElement('span');
@@ -1831,7 +1855,7 @@ function renderPick() {
     }
     b.append(ic, body);
     if (FINE) { const k = document.createElement('kbd'); k.className = 'pick-key'; k.textContent = i + 1; b.appendChild(k); }
-    b.setAttribute('aria-label', `${i + 1}번 ${T.kind}: ${chg.textContent}. ${T.det}${T.cost ? `. 대신 ${T.cost}` : ''}${synText ? `. 시너지 ${synText}` : ''}`);
+    b.setAttribute('aria-label', `${i + 1}번 ${T.kind}: ${chg.textContent}. ${T.delta ? T.delta + '. ' : ''}${T.det}${T.cost ? `. 대신 ${T.cost}` : ''}${synText ? `. 시너지 ${synText}` : ''}`);
     list.appendChild(b);
   });
   $('pickNext').textContent = `다음: ${segToast(s.endless.seg + 1)}`;
