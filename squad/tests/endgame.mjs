@@ -4201,14 +4201,8 @@ test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사�
   const msg = names.map((k) => `${k} ${m[k].toFixed(1)}`).join(' · ');
   const lo = Math.min(m.barrage, m.blast), hi = Math.max(m.barrage, m.blast);
   for (const k of ['precise', 'frost']) assert.ok(m[k] >= lo - 3 && m[k] <= hi + 3, `${k}가 탄막·폭발 띠(${lo.toFixed(1)}~${hi.toFixed(1)}) ±3 밖 — ${msg}`);
-  // 세트·깊이 보상을 없앤 뒤(성장 개편 4단계 ③) think의 우위가 되살아났다(32판 26.6 vs 22.8) — 기준을 +1.5로 되돌린다(+3은 아래 todo — 16판 +2.8)
-  assert.ok(m.think >= m.random + 1.5, `think가 아무거나보다 +${(m.think - m.random).toFixed(1)}구간 — ${msg}`);
-  for (const gap of [3]) {
-    const okg = m.think >= m.random + gap;
-    const nm = `think가 아무거나보다 +${gap}구간 이상: ${(m.think - m.random) >= 0 ? '+' : ''}${(m.think - m.random).toFixed(1)}`;
-    if (okg) await t.test(nm, () => {});
-    else await t.test(nm, { todo: '세트·깊이 보상을 없앤 뒤 +2.8(16판) — 카드 등급 강화(4단계 ②)와 think 점수식(THINK.b)을 다듬은 뒤 다시 재 볼 것' }, () => { assert.ok(okg); });
-  }
+  // 카드 등급 강화(4단계 ②)까지 넣은 뒤 think의 우위가 처음 기준(+3)으로 돌아왔다(16판 +5.2, 32판 1.06 → 28.1 vs 24.7) — 정식 기준으로 되돌린다
+  assert.ok(m.think >= m.random + 3, `think가 아무거나보다 +${(m.think - m.random).toFixed(1)}구간 — ${msg}`);
   assert.ok(m.think > m.barrage && m.think > m.blast, `think가 정한 빌드보다 멀리 — ${msg}`);
   // 기획의 기준: ±1구간 띠 안(정직하게 잰 값 그대로 — 벗어나면 todo)
   for (const k of ['precise', 'frost']) {
