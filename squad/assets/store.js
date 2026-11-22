@@ -1,6 +1,6 @@
 /* 진행 저장 — 키는 'squad.v1' 그대로, v2는 필드를 더하기만 한다(옛 탭이 저장해도 새 필드가 남는다).
    localStorage가 막혀 있으면(사생활 보호 모드 등) 메모리로 계속 돈다. */
-import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap, PETS, PET_MAX_LV, PET_SLOTS, AMMO, RELICS, RELIC_IDS } from './roster.js';
+import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap, PETS, PET_MAX_LV, PET_SLOTS, AMMO, RELICS, RELIC_IDS, GUNS } from './roster.js';
 
 const KEY = 'squad.v1';
 const BAK = 'squad.bak';
@@ -37,6 +37,7 @@ export function defaults() {
     endless: { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0, rel: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수, 알린 해금 단계, 대왕 누적 처치, 출발 카드가 알린 유물 수
     pets: { own: {}, sel: '', team: [], slots: 1, eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
     ammo: { sel: '', seen: 0 },      // 탄종(ARSENAL.md 3절): 고른 탄종('' = 보통탄), 열림 안내를 본 별 문턱. 열림은 저장하지 않고 모은 별로 센다
+    gun: { sel: 'rifle' },           // 총 종류(ENDGAME.md 21절 — 무한모드 개편 판): 출격 때 들고 갈 총. 열림은 탄종처럼 모은 별로 센다
   };
 }
 /* 회차 하나는 L1~CYCLE_LEVELS. 그 회차의 L60을 깨면(maxL > 60) 끝난 회차다 */
@@ -178,6 +179,8 @@ export function normalize(o) {
   // 탄종: 모르는 id는 보통탄으로(열렸는지는 쓸 때 모은 별로 본다)
   const am = o.ammo && typeof o.ammo === 'object' ? o.ammo : {};
   out.ammo = { sel: AMMO[am.sel] ? am.sel : '', seen: Math.max(0, Math.floor(num(am.seen))) };
+  const gn = o.gun && typeof o.gun === 'object' ? o.gun : {};
+  out.gun = { sel: GUNS[gn.sel] ? gn.sel : 'rifle' };
   return out;
 }
 
