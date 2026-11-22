@@ -1719,7 +1719,7 @@ export function cardInfo(s, c) {
     const part = c.k === 'gun' ? 'gun' : c.k === 'unit' ? c.u : c.k === 'fx' ? c.a : c.k === 'hero' ? c.h : c.k === 'guard' ? c.g : '';
     const id = part && o ? SET_IDS.find((x) => SETS[x].parts.includes(part)) : '';
     if (id) {
-      const from = setLv(s, id), to = from + (o.to - o.from), tier = setTier(id, to), nx = SETS[id].at[tier];
+      const from = setLv(s, id), to = from + (o.to - o.from) * (part === 'gun' ? 2 : 1), tier = setTier(id, to), nx = SETS[id].at[tier];
       o.set = { id, from, to, tier, up: tier > setTier(id, from), next: nx ? nx - to : 0 };
     }
     return o;
@@ -1783,7 +1783,7 @@ export const fxOf = (s) => (s && s.endless && s.endless.fx) || null;
 export const bldOf = (s) => (s && s.endless && s.endless.bld) || null;
 /* 빌드 세트(roster.SETS): 세는 것의 레벨 합. 쓰러진 특수병(B.down)도 그 레벨로 센다(돌아올 것이므로) */
 function partLv(s, B, p) {
-  if (p === 'gun') return s.squad.tier | 0;   // 탄막 세트의 총 몫 = 총 ★ − 1(무기 개조가 ★로 합쳐졌다)
+  if (p === 'gun') return 2 * (s.squad.tier | 0);   // 탄막 세트의 총 몫 = (총 ★ − 1) × 2 — 무기 개조 레벨(예전 문턱 8·14·20)을 ★(최대 10)로 이어 붙인 값
   if (p === 'chg' || p === 'dur' || p === 'shield' || p === 'armor') return B[p] | 0;
   if (AMMO[p]) return fxLv(s, p);
   const m = s.squad.sp.find((o) => o.k === p);
