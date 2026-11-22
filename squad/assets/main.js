@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SPECS, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS, SETS, SET_IDS, TIER_MARK, comboText } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS, SETS, SET_IDS, TIER_MARK, comboText } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1679,7 +1679,6 @@ function spPowText(u, lv) {
   return u === 'medic' ? ` · 좀비·보스에게 잃는 병사 −${pct(1 - 1 / (1 + BUILD.med * deep(lv)))}%, 회복 +${50 * lv}%` : '';
 }
 function cardText(c) {
-  if (c.k === 'spec') { const U = UNITS[c.u], S = SPECS[c.u][c.b]; return { kind: '전문화', lead: U.name, from: '', to: S.name, det: `${S.text()} · 이 판 끝까지`, col: U.color, icon: c.u }; }
   if (c.k === 'hero') { const H = HERO_CARDS[c.h]; return { kind: '영웅', lead: H.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: H.text(c.to), col: s && s.hero && HEROES[s.hero.id] ? HEROES[s.hero.id].color : '#FF9F43', icon: 'star', n: c.n }; }
   if (c.k === 'guard') { const G = GUARD_CARDS[c.g]; return { kind: '생존', lead: G.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: G.text(c.to), col: '#7BE0A0', icon: 'medic', n: c.n }; }
   if (c.k === 'curse') return { kind: '위험한 계약', lead: '', from: '', to: `카드 ${c.more}장 더`, det: `지금 카드를 ${c.more}장 더 골라요`, cost: `다음 구간 위협 ×${c.mul}`, col: '#FF5E7A', icon: 'star', curse: true };
@@ -1696,7 +1695,7 @@ function cardText(c) {
     const pair = U.pair && s && s.hero && HEROES[s.hero.id] && HEROES[s.hero.id].match === c.u ? ` · ${U.pair(c.to || 1)}` : '';
     if (c.n) {
       // 개편 판: 등급만큼 한 번에 오른다(합류도 Lv n으로). 위력 배수·전문화 안내
-      const hint = c.to < BUILD.specAt ? ` · Lv${BUILD.specAt}에 전문화` : '';
+      const hint = SP_EVO[c.u] && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 ‘${SP_EVO[c.u].name}’` : '';
       return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}${spPowText(c.u, c.to)}${pair}${hint}`, col: U.color, icon: c.u, n: c.n }
         : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${U.desc}${spPowText(c.u, c.to)}${pair}${hint}`, col: U.color, icon: c.u, n: c.n };
     }
@@ -1718,7 +1717,6 @@ function cardText(c) {
 }
 /* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
 function cardDone(c) {
-  if (c.k === 'spec') return `${UNITS[c.u].name} 전문화 ‘${SPECS[c.u][c.b].name}’`;
   if (c.k === 'hero') return `${HERO_CARDS[c.h].name} Lv${c.to}`;
   if (c.k === 'guard') return `${GUARD_CARDS[c.g].name} Lv${c.to}`;
   if (c.k === 'curse') return `위험한 계약 — 카드 ${c.more}장 더`;
@@ -1748,8 +1746,7 @@ function pickSummary(picks) {
   const n = new Map();
   for (const p of picks) n.set(p, (n.get(p) | 0) + 1);
   const part = (p, i) => p.split(':')[i];
-  const name = (p) => (p.startsWith('spec:') ? `${(UNITS[part(p, 1)] || { name: '특수병' }).name} ${((SPECS[part(p, 1)] || {})[part(p, 2)] || { name: '전문화' }).name}`
-    : p.startsWith('hero:') ? (HERO_CARDS[part(p, 1)] || { name: '영웅' }).name : p.startsWith('guard:') ? (GUARD_CARDS[part(p, 1)] || { name: '생존' }).name
+  const name = (p) => (p.startsWith('hero:') ? (HERO_CARDS[part(p, 1)] || { name: '영웅' }).name : p.startsWith('guard:') ? (GUARD_CARDS[part(p, 1)] || { name: '생존' }).name
       : p === 'curse' ? '위험한 계약' : p === 'men' ? '증원' : p === 'gun' ? (s && bldOf(s) ? '무기 개조' : '무기') : p.startsWith('unit:') ? (UNITS[p.slice(5)] || { name: '특수병' }).name
     : p.startsWith('fx:') ? `${fxName(p.slice(3))} 효과` : ammoName(p.slice(5)));
   // 종류 순서: 1단계(…·탄종)와 2단계(…·탄 효과)를 합친 카드 순서 — 'fx:관통'처럼 고른 효과는 같은 효과끼리 '2번'으로 묶인다
@@ -2060,7 +2057,7 @@ function renderPauseUnits() {
     if (Bd.gun) addRow('gun', `무기 개조 Lv${Bd.gun}`, `총알 화력 +${pct(BUILD.gun * deep(Bd.gun))}%`);
     for (const k of Object.keys(HERO_CARDS)) if (Bd[k]) addRow('star', `${HERO_CARDS[k].name} Lv${Bd[k]}`, HERO_CARDS[k].text(Bd[k]));
     for (const k of Object.keys(GUARD_CARDS)) if (Bd[k]) addRow('medic', `${GUARD_CARDS[k].name} Lv${Bd[k]}`, GUARD_CARDS[k].text(Bd[k]) + (k === 'shield' ? ` · 이번 구간 ${Bd.shieldLeft}번 남음` : ''));
-    for (const k of Object.keys(Bd.spec)) if (SPECS[k] && SPECS[k][Bd.spec[k]]) addRow(k, `${UNITS[k].name} 전문화 ${SPECS[k][Bd.spec[k]].name}`, SPECS[k][Bd.spec[k]].text());
+    for (const m of sp) if (SP_EVO[m.k] && (m.lv || 1) >= BUILD.evo) addRow(m.k, `${UNITS[m.k].name} ‘${SP_EVO[m.k].name}’`, SP_EVO[m.k].text());   // Lv5 고유 능력
     for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * (rl && rl.includes('pledge') ? 1 : BUILD.spBack)))}로 돌아와요`);
     addRow('star', '다시 뽑기', `${Bd.rr}번 남음 · 대왕을 잡으면 +${1 + (rl && rl.includes('dice') ? RELICS.dice.king : 0)}`);
   }

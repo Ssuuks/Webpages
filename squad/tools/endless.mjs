@@ -112,7 +112,6 @@ export function thinkScore(s, c, K = THINK) {
    - 세트: 오르는 단계의 tier[세트][단계] 합 + prog × (다음 단계의 tier × 그 단계까지의 걸음 비율)의 차. 정한 한 세트에 모을수록 단계가 빨리 켜지고 deep()이 커진다 */
 function thinkScoreB(s, c, f, K) {
   const g = (a, b) => Math.log(a / b);
-  if (f.k === 'spec') return K.spec;
   if (f.k === 'curse') return K.curse;
   if (f.k === 'relic') return ((THINK.relic)[c.r] || 0) * (1 + THINK.H);
   let v = 0;

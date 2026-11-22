@@ -373,7 +373,7 @@ export const BUILD = {
   gun: 0.03,            // 무기 개조: 총알 화력 +3% × 유효 레벨(위협 식에 안 들어간다)
   w: { gun: 1, unit: 1, fx: 1, hero: 0.7, guard: 0.7 },   // 카드 종류가 나올 가중치
   shieldMax: 3,
-  thr: { from: 4, step: 1.14 },   // 위협 곡선: from구간 뒤로 구간마다 ×step 더(카드가 곱으로 쌓이는 만큼)         // 게이트 방패 상한(구간마다 이 횟수까지)
+  thr: { from: 4, step: 1.07 },   // 측정으로 1.14 → 1.07(성장 개편 3단계 — 탄·특수병 레벨이 Lv5에서 멈춰 후반 성장이 줄었다. 4단계의 각성·숙련 뒤 다시 맞춘다)   // 위협 곡선: from구간 뒤로 구간마다 ×step 더(카드가 곱으로 쌓이는 만큼)         // 게이트 방패 상한(구간마다 이 횟수까지)
   early: 1,             // 앞 구간의 위협을 실제 강화(ENDLESS.fire를 넘는 몫)로 만드는 구간 수(bldFe — 1구간은 전부, early구간에 기준으로 돌아간다. ENDGAME.md 19.1)
   earlyK: 0.75,         // 그 구간에서 강화가 기준을 넘는 몫을 얼마나 따라가나(1 = 전부 — 첫 구간이 너무 빡빡해 집중한 사람도 무너진 값)
   evo: 5,               // 탄 효과가 진화하는 레벨
@@ -390,7 +390,6 @@ export const BUILD = {
   med: 0.02,
   spBoss: 0.06,         // 특수병 레벨 1당 보스전 추가 피해 한도(예전 0.02)
   spBack: 0.5,          // 쓰러진 특수병은 다음 구간에 이 몫의 레벨로 돌아온다(내림, 최소 Lv1)
-  specAt: 3,            // 전문화를 고르는 레벨
   hero: { chg: 0.5, dur: 0.25, pow: 0.045 },   // 영웅 카드 1레벨: 전투 함성 — 게이지 충전 +50% · 끈기 — 스킬 지속 +25%, 스킬이 켜진 동안 총알 화력 +4.5% × 유효 레벨
   armor: 0.035,         // 방탄복 n레벨: 좀비·보스에게 잃는 병사 ÷(1 + 0.035 × 유효 레벨)
 };
@@ -427,24 +426,16 @@ export function fx2Text(id, lv) {
   if (v.slow) return e + `${v.T}초 동안 ${apc(v.slow)}% 느리게${v.loss < 1 ? ` · 느려진 좀비에게 잃는 병사 −${apc(1 - v.loss)}%` : ''}${v.spread ? ' · 느려진 좀비가 죽으면 둘레도 느려져요' : ''}`;
   return e + `총알 피해 +${apc(v.dmg - 1)}%${l >= 2 ? ` · 쏘는 속도 +${apc(v.rate - 1)}%` : ''}${v.boss > 1 ? ` · 보스 +${apc(v.boss - 1)}%` : ''}${v.heat > 1 ? ` · ${FX_HEAT}초 계속 쏘면 과열 ×${v.heat}` : ''}`;
 }
-/* 특수병 전문화(개편 판 — Lv3이 되면 둘 중 하나, 판 끝까지). v: 수치(글이 읽는다) */
-export const SPECS = {
-  sniper: {
-    boss: { name: '거물 사냥', v: 5, cap: 0.5, text: () => `보스·정예·거구·독침 좀비에게 저격 위력 ×${SPECS.sniper.boss.v}, 보스전 추가 피해 한도 +${apc(SPECS.sniper.boss.cap)}%` },
-    multi: { name: '2연발', v: 2, text: () => `한 번에 ${SPECS.sniper.multi.v}발을 쏴요` },
-  },
-  rocket: {
-    big: { name: '대구경', v: 1.5, text: () => `폭발 반경·위력 ×${SPECS.rocket.big.v}` },
-    fast: { name: '연사', v: 0.5, text: () => `쏘는 간격 ×${SPECS.rocket.fast.v}` },
-  },
-  medic: {
-    guard: { name: '경호', text: () => '특수병이 맞아서 쓰러지지 않아요(호위 병사가 모자랄 때만 떠나요)' },
-    revive: { name: '소생', v: 2, text: () => `좀비에게 잃은 병사가 모두 돌아오고(게이트·짓밟기 제외) 회복이 ${SPECS.medic.revive.v}배 빨라요` },
-  },
-  flame: {
-    wide: { name: '불바다', v: 1.6, text: () => `불 지대 폭·길이 ×${SPECS.flame.wide.v}` },
-    hot: { name: '백열', v: 2.2, text: () => `불 지대 위력 ×${SPECS.flame.hot.v}` },
-  },
+/* 특수병 Lv5 고유 능력(개편 판 — ENDGAME.md 18.3: 전문화 카드(둘 중 고르기)는 없어졌다). Lv1 합류, Lv2~4는 간격·피해, Lv5에 아래 능력 — Lv5가 상한(각성은 4단계) [수치는 초안]
+   - sniper 거물 사냥: 보스·정예·거구·독침 좀비에게 저격 위력 ×v, 보스전 추가 피해 한도 +cap
+   - rocket 쌍발: 한 번에 로켓 2발(둘째는 조금 늦게 같은 자리에)
+   - flame 불바다: 불 지대 길이 ×v
+   - medic 소생: 잃은 병사가 v만큼(%p) 더 돌아온다(회복 몫에 더한다, 게이트·짓밟기 제외) */
+export const SP_EVO = {
+  sniper: { name: '거물 사냥', v: 3, cap: 0.5, text: () => `Lv5: 보스·정예·거구·독침 좀비에게 저격 위력 ×${SP_EVO.sniper.v}, 보스전 추가 피해 한도 +${apc(SP_EVO.sniper.cap)}%` },
+  rocket: { name: '쌍발', text: () => 'Lv5: 한 번에 로켓 2발을 쏴요' },
+  flame: { name: '불바다', v: 2, text: () => `Lv5: 불 지대 길이 ×${SP_EVO.flame.v}` },
+  medic: { name: '소생', v: 0.3, text: () => `Lv5: 잃은 병사가 ${apc(SP_EVO.medic.v)}%p 더 돌아와요(게이트·짓밟기 제외)` },
 };
 /* 영웅 카드 · 생존 카드(개편 판) */
 export const HERO_CARDS = {
@@ -458,11 +449,11 @@ export const GUARD_CARDS = {
 /* 개편 판에 더해지는 시너지(COMBOS와 같은 모양 — 앞 단계 판은 COMBO_IDS 여섯만 본다) */
 Object.assign(COMBOS, {
   rapidRocket: { need: ['rapid', 'rocket'], name: '속사 포격', v: 0.7, g2: true, text: () => `로켓 쏘는 간격 ×${COMBOS.rapidRocket.v}` },
-  rapidSniper: { need: ['rapid', 'sniper'], name: '속사 저격', v: 0.7, g2: true, text: () => `저격 간격 ×${COMBOS.rapidSniper.v}` },
-  burstFlame: { need: ['burst', 'flame'], name: '기름불', v: 2, g2: true, text: () => `불 지대가 ${COMBOS.burstFlame.v}초 더 타요` },
-  frostRocket: { need: ['frost', 'rocket'], name: '빙결 포격', v: 0.5, g2: true, text: () => `느려진 적에게 로켓 위력 +${apc(COMBOS.frostRocket.v)}%` },
+  burstFlame: { need: ['burst', 'flame'], name: '기름불', v: 0.5, r: 1.6, g2: true, text: () => `불 지대에서 죽은 좀비가 터져 둘레 ${COMBOS.burstFlame.r}m에 제 체력의 ${apc(COMBOS.burstFlame.v)}%를 줘요` },
+  frostMedic: { need: ['frost', 'medic'], name: '응급 얼음', g2: true, text: () => '느려진 좀비에게 잃은 병사는 바로 돌아와요' },
 });
-export const COMBO_IDS2 = Object.keys(COMBOS);
+/* 개편 판의 시너지 = 짝 넷(탄 ↔ 특수병 — ENDGAME.md 18.3) + 영웅 짝(긴 나팔 그대로). 앞 단계 판은 COMBO_IDS 여섯 */
+export const COMBO_IDS2 = ['pierceSniper', 'rapidRocket', 'burstFlame', 'frostMedic', 'rapidMungchi'];
 /* 빌드 세트(개편 판): 같은 결의 카드 레벨을 모으면 단계마다 켜지는 큰 보너스 — '무슨 빌드인가'가 여기서 정해진다.
    parts: 세는 것(gun 무기 개조 · 탄 효과 id · 병과 id(쓰러진 특수병도 그 레벨로) · chg/dur 영웅 카드 · shield/armor 생존 카드), at: 단계가 켜지는 레벨 합 [1·2·3단계].
    v: 단계마다의 수치(글과 core가 함께 읽는다)
