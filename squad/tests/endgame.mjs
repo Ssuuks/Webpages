@@ -1844,10 +1844,11 @@ test('재굴림 주사위(개편 판): 얻는 즉시 다시 뽑기 +3번, 그 �
   assert.deepEqual(t.endless.relics, ['dice']);
   assert.equal(C.rerollsOf(t), rr0 + R.RELICS.dice.n, '얻는 즉시 +3');
   assert.deepEqual(t.ev.filter((e) => e.t === 'relic').map(({ x, z, ...e }) => e), [{ t: 'relic', id: 'dice' }]);
-  // 같은 시드의 대왕(6구간) 보스를 잡은 직후: 주사위를 쥔 판이 1번 더(1 + 1 = 2번)
-  const a = bldRun(32, 6, { n: 9000 }), b = bldRun(32, 6, { n: 9000, co: { relics: ['dice'] } });
-  assert.deepEqual([a.endless.bosses, b.endless.bosses], [6, 6]);
-  assert.equal(C.rerollsOf(b) - C.rerollsOf(a), R.RELICS.dice.king, '대왕을 잡으면 +1번 더');
+  // 대왕(6구간) 보스를 잡은 직후: 주사위를 쥔 판이 1번 더(1 + 1 = 2번) — 같은 자리에서 보스만 다시 쓰러뜨려 견준다(병력·카드 흐름의 흔들림 없이)
+  const kill = (relics) => { const o = C.snapshot(s); o.endless.offer = null; o.endless.seg = 6; o.params.tag = 'super'; o.endless.relics = relics.slice(); const u = C.restore(o); u.endless.offer = null; const rr0 = C.rerollsOf(u); u.boss.dead = false; u.boss.hp = 0; C.step(u, { dir: 0 }); return C.rerollsOf(u) - rr0; };
+  const k0 = kill([]), k1 = kill(['dice']);
+  assert.equal(k0, 1, '대왕: 다시 뽑기 +1');
+  assert.equal(k1 - k0, R.RELICS.dice.king, '주사위: 대왕마다 +1번 더');
 });
 
 test('부활 서약(개편 판): 보스를 잡으면 쓰러진 특수병이 레벨의 BUILD.spBack 몫이 아니라 제 레벨로 돌아온다(정밀 세트의 back보다도 위). 개편 판이 아니면 카드로 안 나온다', () => {
