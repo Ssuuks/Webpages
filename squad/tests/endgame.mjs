@@ -3955,7 +3955,7 @@ test('특수병 Lv1~5·짝 넷(개편 판, 18.3): 전문화 카드는 없고 Lv5
 });
 
 test('카드 등급 = 강화(개편 판, 18.8): 일반은 레벨 +1, 희귀는 +1 + 부가 능력, 전설은 +1 + 규칙을 바꾸는 능력. 같은 강화를 또 뽑으면 한 단계 세진다. 후반일수록 전설이 늘어난다', () => {
-  assert.deepEqual(Object.keys(R.ENH), ['pierce', 'burst', 'rapid', 'frost', 'sniper', 'rocket', 'flame', 'medic']);
+  assert.deepEqual(Object.keys(R.ENH), ['pierce', 'burst', 'rapid', 'frost', 'sniper', 'rocket', 'flame', 'rifle', 'shotgun', 'marksman', 'medic']);   // 21.9: 총 강화 셋
   for (const id of Object.keys(R.ENH)) for (const k of ['rare', 'legend']) assert.ok(R.ENH[id][k].name && R.ENH[id][k].text().length > 8, `${id} ${k}`);
   assert.deepEqual([R.enhStr(1), R.enhStr(2), R.enhStr(3)], [1, 1.5, 2]);
   const base = bldRun(31, 1);
@@ -4353,6 +4353,130 @@ test('21.10 — 탄은 끝없이 강해진다: Lv1~80 어느 레벨이든 한 �
     if (v.rate) assert.ok(v.rate <= R.OVER.rapid.rMax && v.over > 0, '속사 속도 상한 → 피해·과열');
   }
   assert.ok(R.fx2Text('frost', 40).includes('(최대)') && R.fx2Text('frost', 40).includes('터져요'), '상한·넘침이 글에 보인다');
+});
+/* ---------- 21절: 총 종류 — 소총 · 산탄총 · 저격총 ---------- */
+const gunState = (gun, seg = 5, mod = () => {}) => {
+  const u = C.newEndless({ seed: 31, ...BLD, gun });
+  u.endless.seg = seg; u.endless.fx = {}; u.squad.n = 900; u.props = []; u.rows = []; u.saws = []; u.bullets = []; u.foes = []; delete u.divs;
+  mod(u);
+  u.squad.fireAcc = 1 / C.gunOf(u).v.hz - C.DT / 2;   // 다음 틱에 일제 사격 한 번
+  return u;
+};
+const gfoe = (u, id, dz, hp, extra = {}) => ({ id, kind: 'grunt', x: u.squad.x, z: u.squad.z + dz, hp, max: hp, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9, ...extra });
+test('21 — 총 종류: 출격 때 고른 총(모르는 총·없으면 소총), 총마다 Lv을 기억, 저장·복원·해시. 개편 판이 아니면 없다. 소총 Lv1은 예전 총과 똑같이 쏜다', () => {
+  assert.deepEqual(R.GUN_IDS, ['rifle', 'shotgun', 'marksman']);
+  for (const g of R.GUN_IDS) { const u = C.newEndless({ seed: 31, ...BLD, gun: g }); assert.deepEqual([u.endless.bld.gt, u.endless.bld.gl, u.endless.bld.gp], [g, { [g]: 1 }, '']); assert.equal(C.gunOf(u).id, g); }
+  assert.equal(C.newEndless({ seed: 31, ...BLD, gun: 'nope' }).endless.bld.gt, 'rifle');
+  assert.equal(C.gunOf(C.newEndless({ seed: 31, ...CARD3 })), null, '개편 판이 아니면 총 종류가 없다');
+  // 소총 Lv1: 초당 10번, volleySize발, 퍼짐 ±(R + 0.3), 사거리 기본(bl.r 없음)
+  const u = gunState('rifle');
+  C.step(u, { dir: 0 });
+  const R0 = C.radius(u.squad.n);
+  assert.equal(u.bullets.length, C.volleySize(u.squad.n));
+  assert.ok(u.bullets.every((b) => b.r === undefined && b.g === undefined && Math.abs(b.x - u.squad.x) <= R0 + 0.3 + 1e-9));
+  // 저장·복원: 총 상태가 이어지고 해시에 든다, 깨진 값은 고친다
+  const w = C.newEndless({ seed: 31, ...BLD, gun: 'shotgun' }); w.endless.bld.gl = { shotgun: 3, rifle: 2 }; w.endless.bld.gp = 'marksman';
+  const r = C.restore(JSON.parse(JSON.stringify(C.snapshot(w))));
+  assert.deepEqual([r.endless.bld.gt, r.endless.bld.gl, r.endless.bld.gp], ['shotgun', { rifle: 2, shotgun: 3 }, 'marksman']);
+  assert.equal(C.stateHash(r), C.stateHash(w));
+  const v = JSON.parse(JSON.stringify(C.snapshot(w))); v.endless.bld.gt = 'nope'; v.endless.bld.gl = { rifle: -2, laser: 9 }; v.endless.bld.gp = 'rifle';
+  const vr = C.restore(v);
+  assert.deepEqual([vr.endless.bld.gt, vr.endless.bld.gl, vr.endless.bld.gp], ['rifle', { rifle: 1 }, '']);
+  const w2 = C.restore(JSON.parse(JSON.stringify(C.snapshot(w)))); w2.endless.bld.gl.shotgun = 4;
+  assert.notEqual(C.stateHash(w2), C.stateHash(w), '총 Lv이 해시에 든다');
+  // 저장 파일: 고른 총(모르는 것은 소총)
+  assert.equal(S.normalize({ gun: { sel: 'marksman' } }).gun.sel, 'marksman');
+  assert.equal(S.normalize({ gun: { sel: 'laser' } }).gun.sel, 'rifle');
+  assert.equal(S.normalize({}).gun.sel, 'rifle');
+});
+test('21.2 — 산탄총: 초당 4번 · 펠릿 3 × volleySize(36까지) · 퍼짐 ±(R + 1.4) · 사거리 24m · near m 뒤로 피해가 줄어 끝에서 fall · 벽·장갑문 ×wall', () => {
+  const K = R.GUNK.shotgun, v = R.gunVal('shotgun', 1);
+  const u = gunState('shotgun');
+  C.step(u, { dir: 0 });
+  const n = Math.min(v.pelMax, Math.round(C.volleySize(u.squad.n) * v.pel)), R0 = C.radius(u.squad.n);
+  assert.equal(u.bullets.length, n);
+  assert.ok(u.bullets.every((b) => b.g === 's' && b.r === K.range && Math.abs(b.x - u.squad.x) <= R0 + K.spread + 1e-9));
+  assert.ok(u.bullets.some((b) => Math.abs(b.x - u.squad.x) > R0 + 0.3), '소총보다 넓게');
+  // 감쇠: 가까이 100%, 끝(range)에서 fall
+  const hit = (dz) => { const w = gunState('shotgun'); w.squad.fireAcc = -99; const f = gfoe(w, 99800, dz, 1e9); w.foes = [f]; w.bullets = [{ x: f.x, z: f.z - 0.2, d: dz - 0.6, dmg: 100, base: 100, hm: 1, g: 's', r: K.range }]; C.step(w, { dir: 0 }); return 1e9 - f.hp; };
+  assert.ok(Math.abs(hit(4) - 100) < 1e-6, `가까이 ${hit(4)}`);
+  assert.ok(Math.abs(hit(K.range) - 100 * K.fall) < 2, `끝 ${hit(K.range)}`);
+  // 벽 ×wall
+  const wall = (gun) => { const w = gunState(gun); w.squad.fireAcc = -99; const p = { id: 99810, kind: 'wall', x0: -2, x1: 2, z: w.squad.z + 5, hp: 1e9, max: 1e9, alive: true, hitT: -9 }; w.props = [p]; w.bullets = [{ x: 0, z: p.z - 0.3, d: 4, dmg: 100, base: 100, hm: 1, ...(gun === 'shotgun' ? { g: 's', r: K.range } : {}) }]; C.step(w, { dir: 0 }); return 1e9 - p.hp; };
+  assert.ok(Math.abs(wall('shotgun') / wall('rifle') - K.wall) < 1e-6, `벽 ${wall('shotgun')} / ${wall('rifle')}`);
+});
+test('21.2.1 — 저격총: 옆 ±(R + aim) 안 체력이 가장 큰 적을 노려 따라가고, 남는 피해는 같은 줄 뒤 적에게 이어 간다(관통 예산), 보스 ×boss. Lv5 헤드샷·Lv10 터지는 한 발', () => {
+  const K = R.GUNK.marksman;
+  const u = gunState('marksman', 5, (w) => { w.squad.n = 100; });
+  const R0 = C.radius(u.squad.n);
+  const small = gfoe(u, 99820, 20, 50, { x: u.squad.x - 0.5 }), big = gfoe(u, 99821, 25, 5000, { x: u.squad.x + R0 + K.aim - 0.2 }), out = gfoe(u, 99822, 25, 9e9, { x: u.squad.x - R0 - K.aim - 0.5 });
+  u.foes = [small, big, out];
+  C.step(u, { dir: 0 });
+  assert.equal(u.bullets.length, 1, '병력 400 아래는 한 발');
+  assert.ok(u.bullets[0].tg === big.id && Math.abs(u.bullets[0].x - big.x) < 1e-9 && u.bullets[0].r === 50, '조준 폭 안 가장 센 적(밖의 더 센 적은 아니다)');
+  big.x += 0.4; u.squad.fireAcc = -99; C.step(u, { dir: 0 });
+  assert.ok(Math.abs(u.bullets[0].x - big.x) < 1e-9, '조준한 적을 따라간다');
+  // 관통 예산: 앞 적(체력 30)을 잡고 남은 70이 뒤 적에게
+  const w = gunState('marksman'); w.squad.fireAcc = -99;
+  const a = gfoe(w, 99830, 6, 30), b = gfoe(w, 99831, 6.3, 1e9);
+  w.foes = [a, b]; w.bullets = [{ x: a.x, z: a.z - 0.2, d: 5, dmg: 100, hm: 1, g: 'm', thru: 1, r: 50 }];
+  for (let i = 0; i < 3; i++) C.step(w, { dir: 0 });
+  assert.ok(!a.alive && Math.abs(1e9 - b.hp - 70) < 1e-6, `뒤 적에게 ${1e9 - b.hp}`);
+  // 보스 ×boss
+  const boss = (gun) => { const z = gunState(gun); z.squad.fireAcc = -99; z.boss = { x: 0, z: z.squad.z + 6, hp: 1e9, max: 1e9, r: 2.5, hitT: -9, walk: 0, slam: null, slamCd: 99, summonCd: 99, clash: false, clashCd: 0, enraged: true, t: 0, bonus: 0 }; z.phase = 'arena'; z.bullets = [{ x: 0, z: z.boss.z - 1.2, d: 5, dmg: 100, hm: 1, ...(gun === 'marksman' ? { g: 'm', thru: 1, r: 50 } : {}) }]; C.step(z, { dir: 0 }); return 1e9 - z.boss.hp; };
+  assert.ok(Math.abs(boss('marksman') / boss('rifle') - K.boss) < 1e-6, `보스 ${boss('marksman')} / ${boss('rifle')}`);
+  // Lv5 헤드샷: 맞은 뒤 체력이 head 몫 아래면 쓰러진다(거구·정예는 아니다)
+  const head = (kind) => { const z = gunState('marksman', 5, (q) => { q.endless.bld.gl = { marksman: 5 }; }); z.squad.fireAcc = -99; const f = gfoe(z, 99840, 6, 1000, { kind }); z.foes = [f]; z.bullets = [{ x: f.x, z: f.z - 0.2, d: 5, dmg: 1000 * (1 - R.gunVal('marksman', 5).head) + 5, hm: 1, g: 'm', thru: 1, r: 50 }]; C.step(z, { dir: 0 }); return f.alive; };
+  assert.deepEqual([head('grunt'), head('brute')], [false, true]);
+});
+test('21.9 — 총 Lv 카드: 그 총의 Lv +1(각성 전 Lv5 상한), 희귀·전설이면 총 강화. 총 카드(★)와 따로 나온다', () => {
+  const base = bldRun(31, 1, { co: { gun: 'shotgun' } });
+  const pickAs = (card, mod = () => {}) => { const o = C.snapshot(base); o.endless.offer = [card]; mod(o); const u = C.restore(o); C.pickCard(u, 0); return u; };
+  assert.equal(pickAs({ k: 'gunlv', g: 'shotgun', n: 1 }).endless.bld.gl.shotgun, 2);
+  const leg = pickAs({ k: 'gunlv', g: 'shotgun', n: 3 });
+  assert.deepEqual([leg.endless.bld.gl.shotgun, C.enhN(leg, 'shotgun', 'l')], [2, 1]);
+  assert.ok(C.gunOf(leg).v.wall > R.gunVal('shotgun', 2).wall * 1.9 && C.gunOf(leg).v.shard > 0, '전설: 2차 진화 바로 + 벽 ×2');
+  assert.equal(C.cardInfo(C.restore(C.snapshot(base)), { k: 'gunlv', g: 'shotgun', n: 2 }).enh, 'rare');
+  const cap = pickAs({ k: 'gunlv', g: 'shotgun', n: 1 }, (o) => { o.endless.bld.gl.shotgun = 5; o.endless.seg = R.BUILD.awakeFrom - 1; });
+  assert.equal(cap.endless.bld.gl.shotgun, 5, '각성 전 Lv5 상한');
+  // 카드 더미에 총 Lv 카드가 나온다
+  let seen = 0;
+  for (let x = 1; x <= 80; x++) { const o = C.snapshot(base); o.endless.seed = x; o.endless.offer = null; o.endless.bld.rel = 0; for (const c of C.offerOf(C.restore(o)) || []) if (c.k === 'gunlv') { seen++; assert.equal(c.g, 'shotgun'); } }
+  assert.ok(seen > 5, `총 Lv 카드 ${seen}`);
+});
+test('21.8 — 총 바꾸기: GUN_SWAP.from구간부터 무기 상자 일부에 다른 총, 열면 다음 보스 뒤 맨 앞에 바꾸기/그대로(★ +1) — 다시 뽑기 없음. 바꾸면 ★ 그대로, 지금 총 Lv은 기억, 새 총은 keep 몫부터', () => {
+  // 상자에 다른 총이 든다(시드로 정해진다 — 그 구간부터)
+  let found = 0, early = 0;
+  for (let seed = 1; seed <= 40 && found < 3; seed++) {
+    const u = bldRun(seed, R.GUN_SWAP.from - 1, { n: 9000, each: (s) => { if (s.squad.n < 9000) s.squad.n = 9000; } });
+    if (u.phase === 'lost') continue;
+    C.pickCard(u, 0); while (C.offerOf(u)) C.pickCard(u, 0);
+    for (const p of u.props) if (p.reward && p.reward.type === 'gunx') { found++; assert.ok(R.GUNS[p.reward.g] && p.reward.g !== u.endless.bld.gt); }
+  }
+  for (let seed = 1; seed <= 10; seed++) { const u = bldRun(seed, 1); C.pickCard(u, 0); while (C.offerOf(u)) C.pickCard(u, 0); for (const p of u.props) if (p.reward && p.reward.type === 'gunx') early++; }
+  assert.ok(found >= 1 && early === 0, `다른 총 상자 ${found}, 앞 구간 ${early}`);
+  // 열면 gp, 다음 카드 화면 맨 앞에 바꾸기/그대로
+  const base = bldRun(33, 2, { co: { gun: 'marksman' } });
+  const o = C.snapshot(base); o.endless.offer = null; o.endless.bld.gl = { marksman: 5 }; o.endless.bld.gp = 'shotgun'; o.endless.bld.rel = 0;
+  const u = C.restore(o);
+  const of = C.offerOf(u);
+  assert.deepEqual(of.map((c) => c.k + ':' + c.g), ['swap:shotgun', 'keep:shotgun']);
+  assert.equal(C.rerollCards(u), false, '다시 뽑기 없음');
+  const tier = u.squad.tier;
+  const sw = C.restore(C.snapshot(u)); C.pickCard(sw, 0);
+  assert.deepEqual([sw.endless.bld.gt, sw.endless.bld.gl, sw.endless.bld.gp, sw.squad.tier], ['shotgun', { marksman: 5, shotgun: Math.floor(5 * R.GUN_SWAP.keep) }, '', tier]);
+  assert.ok(C.offerOf(sw) && C.offerOf(sw).every((c) => c.k !== 'swap' && c.k !== 'keep'), '이어서 보통 카드');
+  const kp = C.restore(C.snapshot(u)); C.pickCard(kp, 1);
+  assert.deepEqual([kp.endless.bld.gt, kp.endless.bld.gp, kp.squad.tier], ['marksman', '', Math.min(C.tierMax(kp), tier + 1)]);
+  // 되돌아가면 그 총의 Lv 그대로
+  const back = C.restore(C.snapshot(sw)); back.endless.offer = [{ k: 'swap', g: 'marksman' }]; C.pickCard(back, 0);
+  assert.deepEqual([back.endless.bld.gt, back.endless.bld.gl.marksman], ['marksman', 5]);
+  // 다른 총 상자를 열면 gp(바로 바뀌지 않는다)
+  const cr = gunState('rifle', 9); cr.squad.fireAcc = -99;
+  const p = { id: 99900, kind: 'crate', x0: -1.1, x1: 1.1, z: cr.squad.z + 3, hp: 1, max: 1, alive: true, hitT: -9, reward: { type: 'gunx', g: 'shotgun' } };
+  cr.props = [p]; cr.bullets = [{ x: 0, z: p.z - 0.2, d: 2, dmg: 10, hm: 1 }];
+  C.step(cr, { dir: 0 });
+  assert.deepEqual([p.alive, cr.endless.bld.gt, cr.endless.bld.gp], [false, 'rifle', 'shotgun']);
 });
 test('개편 판의 앞 구간: 위협을 실제 강화(fire)로 만든다 — 기준(ENDLESS.fire)보다 높은 강화의 몫을 BUILD.earlyK만큼 따라가고 BUILD.early구간에 걸쳐 기준으로 돌아간다. 기준 이하·앞 단계 판은 그대로', () => {
   const E = C.ENDLESS, B = R.BUILD;
