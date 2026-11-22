@@ -3724,6 +3724,33 @@ test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.3 �
   assert.ok(walls >= 1, '벽이 있는 구간');
 });
 
+test('덧셈 칸 = 구간 기준 병력 B(k)(개편 판, 18.8): 같은 구간이면 병력이 얼마든 칸의 숫자가 같고, B(k) = segFloor(k) × 1.5에 비례한다. 앞 단계 판은 그대로', () => {
+  const adds = (lv) => lv.rows.flatMap((r) => r.cells.filter((c) => c.op === 'add').map((c) => [c.v0, c.cap]));
+  const seg = (k, n, bk = true) => C.buildSegment(5, k, n, 0, 0, bk ? { bk: true, fe: 10 } : null);
+  for (const k of [3, 8, 14]) {
+    const a = adds(seg(k, 200)), b = adds(seg(k, 5000)), c = adds(seg(k, 300000));
+    assert.ok(a.length >= 6);
+    // 병력이 달라 칸의 배치(어느 줄에 무슨 칸)는 조금 다를 수 있지만 크기의 자리는 B(k) 근처 — 가장 큰 칸이 B(k)의 같은 몫 안
+    const maxOf = (l) => Math.max(...l.map(([v]) => Math.abs(v)));
+    const B = R.BUILD.bk.mul * C.segFloor(k);
+    for (const l of [a, b, c]) assert.ok(maxOf(l) <= B * 1.2 && maxOf(l) >= B * 0.05, `${k}구간 가장 큰 칸 ${maxOf(l)} (B ${Math.round(B)})`);
+    assert.ok(maxOf(a) / maxOf(c) < 4 && maxOf(c) / maxOf(a) < 4, `병력 200과 30만에서 칸의 크기가 비슷하다 ${maxOf(a)} ${maxOf(c)}`);
+  }
+  // 앞 단계 판(bk 없음)은 병력에 비례한다
+  const old = (n) => Math.max(...adds(seg(8, n, false)).map(([v]) => Math.abs(v)));
+  assert.ok(old(300000) / old(200) > 100, '앞 단계 판은 병력에 비례');
+  // 쏘아 올리는 폭(step)도 B(k)에 맞춘다: 1칸 올리는 피해 = 같은 구간에서 병력과 상관없이 비슷
+  const steps = (n) => seg(8, n).rows.flatMap((r) => r.cells.filter((c) => c.op === 'add').map((c) => c.step));
+  const s1 = steps(200), s2 = steps(300000);
+  assert.ok(s1.length && s2.length && s1.every((x) => x > 0) && s2.every((x) => x > 0));
+  // 이어 붙인 판에서도(nextSegment): 같은 구간 번호면 병력이 달라도 칸이 B(k) 크기
+  const base = bldRun(31, 1);
+  const next = (n) => { const o = C.snapshot(base); o.endless.seg = 7; o.squad.n = n; const u = C.restore(o); C.pickCard(u, 0); return Math.max(...adds({ rows: u.rows }).map(([v]) => Math.abs(v))); };
+  const r1 = next(300), r2 = next(2e6);
+  assert.ok(r1 / r2 < 4 && r2 / r1 < 4, `이어 붙인 8구간 ${r1} vs ${r2}`);
+  assert.equal(R.BUILD.bk.gain, 0.2);
+});
+
 test('지형(개편 판): 늦게 보이는 길(13구간~, 벽·문 숫자가 가려진다 — 병사 보상 ×1.3) · 촘촘한 함정(19구간~, 쉼 30 → 16m, 톱날 하나 더) · 연속 갈림길(25구간~, 갈림길 바로 뒤에 또 하나). 개편 판이 아니면 없다', () => {
   const seg = (seedN, k, terrain) => C.buildSegment(seedN, k, 5000, 0, 0, terrain ? { terrain: true } : null);
   const kinds = (lv) => lv.chunks.map((c) => c.kind);

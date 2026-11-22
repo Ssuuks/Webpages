@@ -1438,6 +1438,20 @@ export const ENDLESS = {
   lead: 6,                  // 다음 구간의 첫 청크까지 더 두는 거리(m)
   coinBase: 10, coinStep: 20, coinTag: { '': 1, hard: 1.5, super: 2 }, coinLoop: 0.25,
 };
+/* 덧셈 칸을 구간 기준 병력 B(k)에 비례하게(ENDGAME.md 18.8): 좋은 칸(+)과 나쁜 칸(−) 모두, 크기 = 만들 때 병력 기준 값 × f(f = B(k) / 그때 병력). 같은 구간이면 누구에게나 같은 숫자.
+   쏴서 올리는 폭(step)도 B(k)에 맞춘다 — 1칸 올리는 데 드는 피해 ÷ f(오르는 시간은 그대로) */
+function bkScale(lv, f) {
+  const sc = (x) => Math.sign(x) * Math.max(1, Math.round(Math.abs(x) * f));
+  for (const r of lv.rows) {
+    for (const c of r.cells) {
+      if (c.op !== 'add') continue;
+      c.v0 = sc(c.v0);
+      c.v = c.v0;
+      c.cap = Math.max(c.v0, sc(c.cap));
+      c.step = c.step / f;
+    }
+  }
+}
 /* 구간 k(1부터)의 지역·등급·가상 레벨 */
 export function segInfo(k) {
   const n = Math.max(1, Math.floor(k));
@@ -1497,7 +1511,8 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
     startE: n0, fireE: FE, heroE: null, marks: [], bare: true, refMul: base,
   };
   if (opt && opt.obs && p.seg >= RUN_ORDER.obstacle) lv.og = { rs: hash(VERSION, 'obstacle', seed >>> 0, p.seg, attempt) };
-  GK = E.gk;
+  const BKON = !!(opt && opt.bk && BUILD.bk.on);   // 개편 판: 덧셈 칸은 B(k)에 비례(아래). 만들 때의 이득 축소는 ENDLESS.gk가 아니라 BUILD.bk.gain
+  GK = BKON ? BUILD.bk.gain : E.gk;
   NCAP = E.maxN;
   const SW = opt && opt.swarm > 1 ? opt.swarm : 1, SH = opt && opt.swarmHp > 0 ? opt.swarmHp : 1;
   try {
@@ -1535,6 +1550,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   } finally { GK = 1; NCAP = MAX_N; delete lv.og; }
   // MAX 칸(높인 끝)은 쓰지 않는다 — 몰아 쏘기 확인(redFast)을 판 중간에 돌릴 수 없다
   for (const r of lv.rows) for (const c of r.cells) if (c.cap0 != null) { c.cap = c.cap0; delete c.cap0; }
+  if (BKON) bkScale(lv, BUILD.bk.mul * (segFloor(p.seg) || E.floor0) / n0);
   // 코인 상자는 구간 번호만큼(가상 레벨 61~120의 값을 그대로 주지 않는다)
   for (const pr of lv.props) if (pr.reward && pr.reward.type === 'coin') pr.reward.v = Math.min(60, 10 + 5 * p.seg);
   lv.foes.sort((a, b) => a.z - b.z || a.id - b.id);
@@ -1641,7 +1657,7 @@ export function newEndless(opt = {}) {
   const seed = (opt.seed >>> 0) || 1;
   const unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(opt.unl) || 0)));
   const flame = unl >= 1 && opt.flame === true;   // 화염병 줄(4단계): 첫 구간의 철창·금색 칸부터 화염병이 나온다
-  const seg = buildSegment(seed, 1, opt.start ?? START_N, 0, 0, opt.build === 2 && unl >= 1 ? { ...(flame ? FLAME_ON : {}), fe: bldFe(1, opt.fire) } : flame ? FLAME_ON : null);
+  const seg = buildSegment(seed, 1, opt.start ?? START_N, 0, 0, opt.build === 2 && unl >= 1 ? { ...(flame ? FLAME_ON : {}), fe: bldFe(1, opt.fire), bk: true } : flame ? FLAME_ON : null);
   const s = newGame(seg, opt);
   s.endless = { seed, seg: 1, bosses: 0, bank: 0, wait: 0, z0: 0 };
   // 보스 뒤 3택 1(opt.unl ≥ 1): 연 단계·별로 열린 탄종·고른 카드·지금 떠 있는 카드. 안 연 판에는 필드가 없다(해시 그대로)
@@ -2171,7 +2187,7 @@ function nextSegment(s) {
   const e = s.endless;
   e.seg++;
   // 개편 판: 위협 배수 = 계약(curse) × 빌드가 쌓이는 만큼 더 가파른 곡선(BUILD.thr — from구간 뒤로 구간마다 ×step)
-  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv), terrain: true, swarm: mutLv(s, 'swarm') ? MUTATIONS.swarm.n[mutLv(s, 'swarm') - 1] : 1, swarmHp: mutLv(s, 'swarm') ? MUTATIONS.swarm.hp[mutLv(s, 'swarm') - 1] : 1 } : segOpt(e));
+  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv), bk: true, terrain: true, swarm: mutLv(s, 'swarm') ? MUTATIONS.swarm.n[mutLv(s, 'swarm') - 1] : 1, swarmHp: mutLv(s, 'swarm') ? MUTATIONS.swarm.hp[mutLv(s, 'swarm') - 1] : 1 } : segOpt(e));
   const dz = q.z + ENDLESS.lead;
   const off = s.nextId;
   for (const r of seg.rows) { r.id += off; r.z += dz; }
