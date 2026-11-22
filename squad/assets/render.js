@@ -2,7 +2,7 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, mutLv, relicOn, TERRAIN, forkPeek, tierMax, nMax } from './core.js';
+import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, mutLv, relicOn, TERRAIN, forkPeek, tierMax, nMax, radiusCap } from './core.js';
 import { HEROES, biomeOf, bossNameOf, OBSTACLES, unitVal, FOG_X } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, BIOME_GROUP, biomeSheets, PET_ART } from './pix/art.js';
@@ -248,7 +248,7 @@ export function formGeom(R, ppm, vf, vb, pb) {
   const D = Math.max(0, SQUAD_DEPTH * R - FORM_IN);
   const f = vf > 0 ? vf : ppm * 0.6, b = vb > 0 ? vb : f;
   const S = D * (f + b);
-  const m0 = Math.max(R >= R3 ? 3 : 2, 1 + Math.ceil(S / FORM_LIM.rowH - 1e-9));
+  const m0 = Math.max(R >= Math.min(R3, radiusCap() - 1e-9) ? 3 : 2, 1 + Math.ceil(S / FORM_LIM.rowH - 1e-9));   // 개편 판은 몸이 좁아(radiusCap) 큰 무리도 R3에 못 닿는다 — 상한에 닿으면 3줄
   return { R, ppm, vf: f, vb: b, pb: pb > 0 ? pb : ppm, D, W: 2 * R * ppm, S, m0 };
 }
 /* 그림 수 하한: 줄마다 두 장 이상(한 장으로는 양옆 끝, 특히 앞 모서리에 닿지 못한다 — 큰 좀비는 모서리에서 문다). 셋뿐이면(3명) V자: 앞 가운데 하나, 뒤 둘
@@ -1315,6 +1315,13 @@ export function createRenderer(cvs) {
           break;
         case 'surge': surgeT = time; break;
         case 'clash': shake(0.3); break;
+        case 'bossChargeWarn':   // 돌진 숨 고르기: 보스 발밑에 붉은 고리(개편 판 보스 패턴)
+          if (s.boss) { ring(s.boss.x, s.boss.z, 0.5, 4, e.warn || 0.8, '#FF7A45', { thick: 2 }); fx('glow', s.boss.x, 2, s.boss.z - 0.5, e.warn || 0.8, { col: '#FF5A3C', r: 5 }); }
+          break;
+        case 'bossCharge':   // 돌진: 먼지와 흔들림
+          shake(0.25);
+          if (s.boss) burst(s.boss.x, 0.2, s.boss.z, 12, bfx().dust, 4, 2);
+          break;
         case 'stomp':
           stompT = time;   // 짓밟기는 길 전체를 흔든다(SIM: 옆 위치와 상관없이 맞는다) — 보스 발에서 분대까지 땅이 번쩍인다
           shake(0.3);

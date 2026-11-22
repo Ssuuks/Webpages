@@ -1109,7 +1109,8 @@ test('유물 그림: relic_<id> 아이콘(9×9, 실루엣이 서로·다른 아�
   assert.match(main, /가려진 길! 벽 숫자는 가까이 가야 보여요/);
   assert.match(main, /case 'relicUse':\s*[^]*?if \(e\.id === 'ward'\) \{[^]*?sfx\.power\(1\);[^]*?toast\(/, '방패막: 소리·진동·알림');
   assert.match(main, /lines\.push\(\['유물', /, '결과 화면 유물 줄');
-  assert.match(main, /최대 \$\{bs \? '★' \+ \(tierMax\(s\) \+ 1\) : tierMax\(s\) \+ '단계'\}/, '무기 카드 상한은 core.tierMax(개편 판은 ★)');
+  assert.match(main, /최대 ★\$\{tierMax\(s\) \+ 1\}/, '무기 카드 상한은 core.tierMax(개편 판은 ★)');
+  assert.match(main, /최대 \$\{tierMax\(s\)\}단계/, '무기 카드 상한은 core.tierMax(앞 단계 판은 단계)');
   assert.doesNotMatch(main, /최대 3단계|특수병 자리\(3명\)|병사가 4명은/, '자리·호위·무기 상한은 core 값으로(넷째 자리·코일)');
   for (const sel of ['#scrPick.relic', '.pick-card.relic', '.pick-cost', '.relic-chip', '.relic-chip i.off']) assert.ok(html.includes(sel), `index.html ${sel}`);
   assert.match(html, /id="pickTitle"/);
