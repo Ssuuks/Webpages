@@ -41,7 +41,7 @@ if (isMainThread) {
   const T = await import(pathToFileURL(path.join(root, 'tools/endless.mjs')).href);
   const { makeBot } = await import(pathToFileURL(path.join(root, 'tests/bots.mjs')).href);
   for (const kv of (process.env.SET || '').split(',').filter(Boolean)) { const [k, v] = kv.split('='); const ps = k.split('.'); let o = R; for (const x of ps.slice(0, -1)) o = o[x]; o[ps[ps.length - 1]] = Number(v); }
-  const opt = { seed: 77 + i * 13, start: C.START_N + 60, fire: 30, hero: { id: 'mungchi', lv: 5 }, unl: 3, ammoOpen: R.AMMO_IDS, relicsOpen: R.RELIC_IDS.slice(), flame: true, build: 2 };
+  const opt = { seed: 77 + i * 13, start: C.START_N + 60, fire: 30, hero: { id: 'mungchi', lv: 5 }, unl: 3, ammoOpen: R.AMMO_IDS, relicsOpen: R.RELIC_IDS.slice(), flame: true, build: 2, ...(process.env.GUN ? { gun: process.env.GUN } : {}) };
   const s = C.newEndless(opt);
   const pol = makeBot(bot, 1000 + i, { skill: true });
   const pick = T.makePicker(picker, 2000 + i);

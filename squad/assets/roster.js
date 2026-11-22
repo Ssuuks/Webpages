@@ -481,6 +481,54 @@ function fx2Base(id, lv) {
   if (v.slow) return e + `${v.T}초${v.T >= OVER.frost.tMax ? '(최대)' : ''} 동안 ${apc(v.slow)}%${v.slow >= 0.85 ? '(최대)' : ''} 느리게${v.loss < 1 ? ` · 느려진 좀비에게 잃는 병사 −${apc(1 - v.loss)}%` : ''}${v.spread ? ' · 느려진 좀비가 죽으면 둘레도 느려져요' : ''}${v.shatter ? ` · 느려진 좀비가 닿으면 터져요(제 체력의 ${apc(v.shatter)}%)` : ''}`;
   return e + `총알 피해 +${apc(v.dmg - 1)}%${l >= 2 ? ` · 쏘는 속도 +${apc(v.rate - 1)}%${mx}` : ''}${v.boss > 1 ? ` · 보스 +${apc(v.boss - 1)}%` : ''}${v.heat > 1 ? ` · ${FX_HEAT}초 계속 쏘면 과열 ×${v.heat}` : ''}`;
 }
+/* 총 종류(개편 판 — ENDGAME.md 21절): 소총(rifle) · 산탄총(shotgun) · 저격총(marksman — 특수병 저격수 sniper와 id를 가른다). 출격 때 고르고(별로 연다 — stars), 판 안에서는 다른 총이 든 무기 상자를 열면 다음 보스 뒤에 바꿀지 고른다.
+   ★(총 카드·상자)은 셋이 같은 피해 배수(core WEAPON). 총 Lv(총마다 따로)은 탄과 같은 틀 — Lv1~5 정해진 능력, Lv6~10 각성(그 총의 값 +15%씩), Lv10 2차 진화, 그 위 숙련.
+   gunVal(id, lv)가 그 레벨의 사격 규칙을 낸다(core fire·bulletsUpdate가 읽는다). 수치는 모두 [초안].
+   - hz 초당 일제 사격 · pel 한 번에 쏘는 발 수 배수(소총 = core volleySize) · spread 퍼짐(분대 폭 R에 더하는 m) · range 사거리(m)
+   - dmg 초당 피해 배수 · wall 벽·장갑문 · boss 보스(총알 몫) · near 산탄 감쇠가 시작되는 거리(그 뒤 range에서 fall까지 줄어든다)
+   - aim 저격 조준 폭(R에 더하는 m — 그 안 가장 센 적을 노린다), thru 넘친 피해가 같은 줄 뒤로 이어 간다(관통 예산)
+   - burst 소총 Lv5 '점사': every번째 일제 사격마다 피해 ×k(Lv10이면 그 사격이 관통 예산) · slug 산탄 Lv5: 맞힌 맨 앞 적을 m만큼 밀어낸다 · shard 산탄 Lv10: 부순 벽 뒤 4m에 벽 체력의 몫
+   - head 저격 Lv5 '헤드샷': 맞은 뒤 체력이 이 몫 아래인 일반 좀비는 바로 쓰러진다 · pop 저격 Lv10: 쓰러뜨린 적이 터져 둘레 1.6m에 제 체력의 몫 */
+export const GUNS = {
+  rifle: { name: '소총', stars: 0, color: '#FFE38A', line: '무난한 기본 총', text: () => '분대 폭에 고르게 · 사거리 30m' },
+  shotgun: { name: '산탄총', stars: 60, color: '#FF8A5B', line: '가까이 · 넓게 · 세게 — 장애물 파괴', text: () => `옆 칸까지 퍼지는 펠릿 · 피해 ×${GUNK.shotgun.dmg}(${GUNK.shotgun.near}m 넘으면 줄어 ${GUNK.shotgun.range}m에서 ${apc(GUNK.shotgun.fall)}%) · 벽·장갑문 ×${GUNK.shotgun.wall}` },
+  marksman: { name: '저격총', stars: 120, color: '#7FE3FF', line: '멀리 · 한 점 · 무겁게 — 거물 사냥', text: () => `옆 ±${GUNK.marksman.aim}m 안 가장 센 적을 노려 초당 ${GUNK.marksman.hz}발 · 사거리 50m · 남는 피해는 뒤로 뚫고 간다 · 보스 ×${GUNK.marksman.boss}` },
+};
+export const GUN_IDS = Object.keys(GUNS);
+export const GUN_EVO = { rifle: '점사', shotgun: '슬러그', marksman: '헤드샷' };
+export const GUN_EVO2 = { rifle: '관통 점사', shotgun: '파편', marksman: '터지는 한 발' };
+const GUN_EVO2_TEXT = { rifle: '점사가 남는 피해를 뒤로 이어 간다(관통)', shotgun: '부순 벽의 파편이 벽 뒤 좀비에게', marksman: '쓰러뜨린 적이 터진다' };
+/* 총의 바탕 수치(Lv1) — 봇으로 맞춘다(21.12). 산탄: 피해·퍼짐·사거리·감쇠(near m부터 range에서 fall까지)·벽 / 저격: 초당 발·조준 폭·피해·보스 */
+export const GUNK = {
+  shotgun: { dmg: 1.6, spread: 1.4, range: 24, near: 8, fall: 0.6, wall: 2 },   // 21.12: 1.4·22m·40%·×1.6이면 20.9구간(소총 29.4) — 1.6·24m·60%·×2로 28.4
+  marksman: { hz: 3, aim: 1.5, dmg: 0.6, boss: 1.6 },   // 21.12: 조준 ±2.5m·피해 ×1이면 37.5구간(너무 셌다) — ±1.5m·×0.6·보스 ×1.6으로 29.6
+};
+export function gunVal(id, lv) {
+  const L = Math.max(1, Math.floor(lv) || 1), l = Math.min(BUILD.evo, L), a = awk(L);
+  const evo = l >= BUILD.evo, evo2 = L >= 10;
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+  if (id === 'shotgun') {
+    const K = GUNK.shotgun, wRaw = (l >= 3 ? K.wall * 1.25 : K.wall) * (1 + 0.5 * (a - 1));
+    return { hz: 4, pel: l >= 2 ? 3.75 : 3, pelMax: 36, spread: K.spread, range: K.range, near: l >= 4 ? K.near + 4 : K.near, fall: K.fall, dmg: r3(K.dmg + 0.2 * (a - 1)), wall: r3(wRaw), boss: 1, slug: evo ? 0.6 : 0, shard: evo2 ? r3(0.3 * a) : 0, evo, evo2, a };
+  }
+  if (id === 'marksman') {
+    const hRaw = evo ? 0.2 + 0.1 * (a - 1) : 0, over = Math.max(0, hRaw - 0.5);   // 헤드샷 문턱 50% 상한 → 넘친 몫은 피해로(21.10)
+    const K = GUNK.marksman;
+    return { hz: l >= 4 ? K.hz * 1.2 : K.hz, rounds: true, spread: 0, aim: l >= 2 ? K.aim + 1 : K.aim, range: 50, thru: true, dmg: r3(K.dmg * (1 + 0.5 * over)), wall: 1, boss: r3((l >= 3 ? K.boss + 0.3 : K.boss) + 0.3 * (a - 1)), head: r3(Math.min(0.5, hRaw)), pop: evo2 ? 0.5 : 0, over: r3(over), evo, evo2, a };
+  }
+  const hRaw = (l >= 2 ? 11 : 10) * (1 + 0.3 * (a - 1)), over = Math.max(0, hRaw - 18);   // 소총: 쏘는 속도 초당 18 상한 → 넘친 몫은 피해로
+  return { hz: r3(Math.min(18, hRaw)), spread: l >= 3 ? 0.8 : 0.3, range: l >= 4 ? 35 : 30, dmg: r3(1 + over / 18), wall: 1, boss: 1, burst: evo ? { every: 4, k: r3(2 + 0.5 * (a - 1)), thru: evo2 } : null, over: r3(over), evo, evo2, a };
+}
+export function gunText(id, lv) {
+  const v = gunVal(id, lv), L = Math.max(1, lv | 0);
+  const e = (v.evo2 ? `2차 진화 ‘${GUN_EVO2[id]}’ · ` : v.evo ? `진화 ‘${GUN_EVO[id]}’ · ` : '') + (v.a > 1 ? `${L > 10 ? '각성·숙련' : '각성'} +${apc(v.a - 1)}% · ` : '');
+  const tail = v.evo2 ? ` · ${GUN_EVO2_TEXT[id]}` : '';
+  if (id === 'shotgun') return e + `펠릿 ×${v.pel} · 피해 ×${v.dmg}(${v.near}m 넘으면 줄어요) · 벽·장갑문 ×${v.wall}${v.slug ? ' · 맨 앞 적을 밀어내요' : ''}` + tail;
+  if (id === 'marksman') return e + `초당 ${v.hz}발 · 조준 폭 ±${v.aim}m · 보스 ×${v.boss}${v.head ? ` · 체력 ${apc(v.head)}%${v.head >= 0.5 ? '(최대)' : ''} 아래 좀비는 바로 쓰러져요` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
+  return e + `초당 ${v.hz}번${v.hz >= 18 ? '(최대)' : ''} · 퍼짐 ±${v.spread}m · 사거리 ${v.range}m${v.burst ? ` · ${v.burst.every}번째마다 ×${v.burst.k}` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
+}
+/* 총 바꾸기(21.8): from구간부터 무기 상자의 p 몫에 다른 총, 대왕 뒤 카드에 king 확률로 '총 바꾸기' 한 장. 처음 잡는 총은 지금 총 Lv의 keep 몫(내림, 최소 1) */
+export const GUN_SWAP = { from: 7, p: 0.25, king: 0.2, keep: 0.5 };
 /* 카드 등급 = 강화(개편 판 — ENDGAME.md 18.8): 일반은 레벨 +1, 희귀는 레벨 +1 + 그 대상(탄 효과·특수병)의 부가 능력, 전설은 레벨 +1 + 규칙을 바꾸는 능력(판 끝까지).
    같은 강화를 또 뽑으면 그 강화가 한 단계 세진다(수치 ×enhStr — 한 번 더 뽑을 때마다 +50%, 규칙형은 효과가 한 번 더 겹친다). 수치는 모두 [초안].
    B.enh[id] = { r: 희귀를 뽑은 수, l: 전설을 뽑은 수 } */
@@ -518,6 +566,18 @@ export const ENH = {
   flame: {
     rare: { name: '뜨거운 기운', v: 1.2, text: () => `불 지대 위에 서 있으면 쏘는 속도 +${apc(ENH.flame.rare.v - 1)}%` },
     legend: { name: '불의 행진', text: () => `2차 진화 ‘따라오는 불’을 바로(불 지대가 분대를 따라와요) · 불 피해 ${legX()}` },
+  },
+  rifle: {   // 총 강화(21.9) — 총 Lv 카드가 희귀·전설이면
+    rare: { name: '확장 탄창', v: 1.15, text: () => `쏘는 속도 ×${ENH.rifle.rare.v}` },
+    legend: { name: '전술 소총', text: () => `2차 진화 ‘관통 점사’를 바로(점사도 바로) · 점사 배수 ${legX()}` },
+  },
+  shotgun: {
+    rare: { name: '넓은 총구', v: 0.6, pel: 1.2, text: () => `퍼짐 +${ENH.shotgun.rare.v}m · 펠릿 ×${ENH.shotgun.rare.pel}` },
+    legend: { name: '파쇄 산탄', text: () => `2차 진화 ‘파편’을 바로(슬러그도 바로) · 벽·장갑문 피해 ${legX()}` },
+  },
+  marksman: {
+    rare: { name: '안정 조준', v: 1.5, text: () => `조준 폭 +${ENH.marksman.rare.v}m` },
+    legend: { name: '대물 저격', head: 0.2, text: () => `2차 진화 ‘터지는 한 발’을 바로(헤드샷 ${apc(ENH.marksman.legend.head)}%도 바로) · 보스 ${legX()}` },
   },
   medic: {
     rare: { name: '숨 돌리기', v: 0.3, text: () => `회복할 때마다 특수병의 다음 차례가 ${ENH.medic.rare.v}초 앞당겨져요` },

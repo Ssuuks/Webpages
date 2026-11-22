@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, GUNS, GUN_IDS, gunVal, GUN_SWAP } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -145,6 +145,25 @@ export const LV_SANE = 999;
 export const enhN = (s, id, kind) => { const B = s && s.endless && s.endless.bld; const e = B && B.enh && B.enh[id]; return e ? e[kind] | 0 : 0; };
 const enhV = (s, id, kind) => { const n = enhN(s, id, kind); return n ? enhStr(n) : 0; };   // 강화 배수(없으면 0)
 const legKs = (s, id) => legK(enhN(s, id, 'l'));   // 전설 강화의 핵심 수치 배수(없으면 1 — 한 장 ×2, 두 장 ×2.5 …)
+/* 개편 판의 총(ENDGAME.md 21절): { id, lv, v } — v는 그 총 Lv의 사격 규칙(roster.gunVal) + 총 강화(희귀·전설). 개편 판이 아니면 null(예전 총 그대로) */
+export function gunOf(s) {
+  const B = s && s.endless && s.endless.bld;
+  if (!B) return null;
+  const id = GUNS[B.gt] ? B.gt : 'rifle', lv = (B.gl && B.gl[id]) || 1;
+  const v = { ...gunVal(id, lv) };
+  const r = enhV(s, id, 'r'), ln = enhN(s, id, 'l'), lk = legK(ln);
+  if (id === 'rifle') {
+    if (r) v.hz = Math.round(v.hz * (1 + (ENH.rifle.rare.v - 1) * r) * 1000) / 1000;
+    if (ln) { v.burst = { every: 4, k: (v.burst ? v.burst.k : 2) * lk, thru: true }; v.evo2 = true; }
+  } else if (id === 'shotgun') {
+    if (r) { v.spread += ENH.shotgun.rare.v * r; v.pel *= 1 + (ENH.shotgun.rare.pel - 1) * r; }
+    if (ln) { v.wall *= lk; v.slug = v.slug || 0.6; v.shard = v.shard || 0.3; v.evo2 = true; }
+  } else {
+    if (r) v.aim += ENH.marksman.rare.v * r;
+    if (ln) { v.boss *= lk; v.head = Math.max(v.head, ENH.marksman.legend.head); v.pop = v.pop || 0.5; v.evo2 = true; }
+  }
+  return { id, lv, v };
+}
 export const awakeOn = (s) => !!(s && s.endless && s.endless.bld && s.endless.seg >= BUILD.awakeFrom);   // 각성·숙련이 열렸나(첫 대왕 뒤부터 — BUILD.awakeFrom)
 export const spLvMax = (s) => (s && s.endless ? (s.endless.bld && !awakeOn(s) ? BUILD.evo : LV_SANE) : SP_LV_MAX);   // 개편 판의 특수병은 각성이 열리기 전 Lv5가 상한, 그 뒤는 끝없음(숙련)   // 개편 판의 특수병은 Lv5(고유 능력)가 상한 — 각성은 4단계
 export const SP = {
@@ -1700,7 +1719,11 @@ export function newEndless(opt = {}) {
     // 따로 가는 줄(4단계 화염병 — 2회차 엔딩): 카드가 있는 판에만. 병과 뽑기(철창·금색 칸·특수병 카드 — spKindsOf)가 화염병까지 본다. 안 연 판에는 필드가 없다
     if (flame) s.endless.flame = true;
     // 빌드 개편(opt.build === 2 — ENDGAME.md 16절): 안 연 판에는 필드가 없다(앞 단계 지문 그대로)
-    if (opt.build === 2) s.endless.bld = newBld();
+    if (opt.build === 2) {
+      s.endless.bld = newBld();
+      const g = GUNS[opt.gun] ? opt.gun : 'rifle';   // 총 종류(21절): 출격 때 고른 총, Lv1. gl = 총마다 Lv(바꿔도 기억한다), gp = 바꿀지 고를 총(무기 상자에서 — 다음 보스 뒤)
+      Object.assign(s.endless.bld, { gt: g, gl: { [g]: 1 }, gp: '' });
+    }
   }
   s.refMul = seg.refMul;
   return s;
@@ -2359,6 +2382,14 @@ export function restore(o) {
       }
       // 적 변이(개편 판만): 아는 id만, 나온 순서 그대로(같은 id가 또 나오면 2단계라 중복은 그대로 둔다)
       if (!Number.isFinite(e.medicAt)) delete e.medicAt;
+      if (e.bld) {   // 총(21절): 아는 총만, Lv은 1 이상 정수, 지금 총은 Lv이 꼭 있다, 바꿀 총은 지금 총과 다른 아는 총만
+        const B = e.bld, gl = B.gl && typeof B.gl === 'object' ? B.gl : {}, ok = {};
+        B.gt = GUNS[B.gt] ? B.gt : 'rifle';
+        for (const id of GUN_IDS) { const v = Math.floor(Number(gl[id]) || 0); if (v >= 1) ok[id] = Math.min(LV_SANE, v); }
+        if (!ok[B.gt]) ok[B.gt] = 1;
+        B.gl = ok;
+        B.gp = GUNS[B.gp] && B.gp !== B.gt ? B.gp : '';
+      }
       if (e.bld) {   // 카드 강화: 아는 대상만 r·l 정수(0 이상)
         const en = e.bld.enh && typeof e.bld.enh === 'object' ? e.bld.enh : {}, ok = {};
         for (const id of Object.keys(ENH)) if (en[id] && typeof en[id] === 'object') { const r = Math.max(0, Math.min(LV_SANE, Math.floor(Number(en[id].r) || 0))), l = Math.max(0, Math.min(LV_SANE, Math.floor(Number(en[id].l) || 0))); if (r || l) ok[id] = { r, l }; }
@@ -3014,6 +3045,20 @@ export const PET_WIDE = 1.5;
 export const PET_CHEER = 0.3;
 export const PET_FAR_AVG = 0.5;
 export const PET_WIDE_AVG = 0.2;
+/* 저격총의 조준(21.2.1): 분대 앞 사거리 안 · 옆 ±(R + aim) 안에서 체력이 가장 큰 적부터 k발에 하나씩(같은 적은 한 번). 적이 모자라면 보스(사거리 안), 그다음은 정면(분대가 선 게이트 칸) */
+function gunAims(s, R, gv, k) {
+  const q = s.squad, out = [], used = new Set();
+  const cand = [];
+  for (const f of s.foes) if (f.alive && f.z > q.z + 0.5 && f.z - q.z <= gv.range && Math.abs(f.x - q.x) <= R + gv.aim) cand.push(f);
+  cand.sort((a, c) => c.hp - a.hp || a.id - c.id);
+  for (const f of cand) { if (out.length >= k) break; if (!used.has(f.id)) { used.add(f.id); out.push({ x: f.x, tg: f.id }); } }
+  const bo = s.boss;
+  while (out.length < k) {
+    if (bo && bo.hp > 0 && bo.z - q.z <= gv.range) out.push({ x: clamp(bo.x + (out.length % 2 ? 0.5 : -0.5) * (out.length > 0 ? 1 : 0), bo.x - BOSS_HIT + 0.1, bo.x + BOSS_HIT - 0.1), tg: 0 });
+    else out.push({ x: q.x + (out.length === 0 ? 0 : (out.length % 2 ? 0.6 : -0.6)), tg: 0 });
+  }
+  return out;
+}
 function fire(s, R) {
   const q = s.squad;
   if (q.n <= 0) return;
@@ -3027,13 +3072,18 @@ function fire(s, R) {
   if (rr && q.rushT > s.t) rateK *= 1 + (ENH.rapid.rare.v - 1) * rr;   // 희귀 강화 '신바람': 좀비를 잡으면 잠깐 더 빨리
   if (fr && s.flames && s.flames.some((zn) => inFire(zn, q.x, q.z))) rateK *= 1 + (ENH.flame.rare.v - 1) * fr;   // 희귀 강화 '뜨거운 기운': 불 지대 위에서 더 빨리
   q.fireAcc += DT * rateK;
-  const per = 1 / VOLLEY_HZ;
+  // 총 종류(개편 판 — 21절): 초당 일제 사격(hz)·발 수·퍼짐·사거리. 소총 Lv1은 예전 총과 똑같다(hz 10 · volleySize · ±(R + 0.3) · 30m)
+  const G = gunOf(s), gv = G ? G.v : null;
+  const HZ = gv ? gv.hz : VOLLEY_HZ;
+  const per = 1 / HZ;
   while (q.fireAcc >= per) {
     q.fireAcc -= per;
     q.volley++;
-    const b = volleySize(q.n);
+    const b = !gv ? volleySize(q.n) : gv.rounds ? (q.n >= 4000 ? 3 : q.n >= 400 ? 2 : 1) : gv.pel ? Math.min(gv.pelMax, Math.round(volleySize(q.n) * gv.pel)) : volleySize(q.n);
     const hm = heroDmg(s);
-    let dmg = (dps(q.n, q.tier, s.fireLv) * hm) / (VOLLEY_HZ * b);
+    let dmg = (dps(q.n, q.tier, s.fireLv) * hm) / (HZ * b) * (gv ? gv.dmg : 1);
+    const bst = gv && gv.burst && q.volley % gv.burst.every === 0 ? gv.burst : null;   // 소총 Lv5 점사: every번째 일제 사격마다 ×k
+    if (bst) dmg *= bst.k;
     const A = s.ammo ? AMMO[s.ammo] : null;
     const FX = s.endless && s.endless.fx;
     if (FX) {
@@ -3043,8 +3093,9 @@ function fire(s, R) {
     } else if (A && A.dmg) dmg *= A.dmg;
     const B = s.endless && s.endless.bld;
     if (B && B.gun) dmg *= 1 + BUILD.gun * B.gun;   // 무기 개조(옛 저장의 값만 — 총 ★로 합쳐졌다)
-    const rng = A && A.range && !(FX && s.endless.bld) ? A.range : 0;   // 탄종의 사거리(없으면 기본 — 개편 판은 약점이 없어 늘 기본)
-    const span = R + 0.3;
+    const rng = gv ? (gv.range !== BULLET_RANGE ? gv.range : 0) : A && A.range && !FX ? A.range : 0;   // 탄종의 사거리(없으면 기본 — 개편 판은 약점이 없어 총의 사거리)
+    const span = R + (gv ? gv.spread : 0.3);
+    const aims = gv && gv.rounds ? gunAims(s, R, gv, b) : null;   // 저격총: 한 발마다 조준한 표적
     // 펫의 확률 효과(크리티컬은 총알마다, 멀리·넓게 쏘기는 일제 사격마다 굴린다 — 펫 전용 난수). avg면 기대값만큼 피해를 고르게 올린다
     // 여러 마리면 효과마다 그 펫이 따로 굴린다(한 마리 판은 예전과 같은 난수 순서)
     const pCrit = petBy(s, 'crit'), pFar = petBy(s, 'far'), pWide = petBy(s, 'wide');
@@ -3060,9 +3111,15 @@ function fire(s, R) {
     for (let i = 0; i < b; i++) {
       // 고르게 퍼뜨리되 매번 조금씩 어긋나게(황금비 수열 — 난수를 쓰지 않는다)
       const j = ((q.volley * 0.618034 + i * 0.381966) % 1) - 0.5;
-      const x = q.x - span + ((i + 0.5 + j * 0.8) / b) * 2 * span;
+      let x = q.x - span + ((i + 0.5 + j * 0.8) / b) * 2 * span;
+      if (aims) x = aims[i].x;
       const bl = { x, z: q.z + 0.4 * R, d: 0, dmg, hm };
       if (far || rng) bl.r = (rng || BULLET_RANGE) * (far ? PET_FAR : 1);
+      if (gv && G.id !== 'rifle') {
+        if (G.id === 'shotgun') { bl.g = 's'; bl.base = dmg; if (gv.slug) bl.slug = gv.slug / b; }   // 산탄: 거리로 줄어드는 피해(bulletsUpdate), 슬러그는 펠릿마다 나눠 민다
+        else { bl.g = 'm'; bl.thru = 1; if (aims[i].tg) bl.tg = aims[i].tg; }   // 저격: 관통 예산 · 조준한 적을 따라간다
+      }
+      if (bst && bst.thru) bl.thru = 1;   // 소총 Lv10 관통 점사
       if (pCrit && !pCrit.avg && rand(pCrit) < ppC) { bl.dmg = dmg * PET_CRIT; bl.c = 1; crits++; }
       s.bullets.push(bl);
       if (split > 0) s.bullets.push({ ...bl, x: bl.x + (i % 2 ? 0.3 : -0.3), dmg: bl.dmg * split });   // 속사 Lv10 쌍갈래 과열: 과열 중 총알이 둘로 갈라진다 · 전설 강화 '탄막 폭풍': 늘
@@ -3090,17 +3147,21 @@ function bulletsUpdate(s) {
   const adv = BULLET_SPEED * DT;
   const list = s.bullets;
   // 총알이 이번 틱에 닿을 수 있는 적만 미리 고른다(순서 그대로 — 결과는 같고 빠르다)
-  const zMax = q.z + BULLET_RANGE * (petBy(s, 'far') ? PET_FAR : 1) + 4;
+  const GU = gunOf(s), gw = GU ? GU.v : null;   // 총 종류(21절): 사거리·벽·보스 배수, 산탄 감쇠, 저격 관통 예산·헤드샷
+  const zMax = q.z + Math.max(BULLET_RANGE, gw ? gw.range : 0) * (petBy(s, 'far') ? PET_FAR : 1) + 4;
   const near = [];
   if (list.length) for (const f of s.foes) if (f.alive && f.z - f.r < zMax) near.push(f);
   const FX = s.endless && s.endless.fx;
   // 개편 판: 관통·작렬 효과가 벽·장갑문·보스에도 든다(wallK — 덧효과가 좀비에만 들면 벽 앞에서 빌드가 꺼진다), 빙결은 언 적이 받는 총알 피해를 키운다
   const B2 = FX && s.endless.bld ? FX : null;
   const wallK = (B2 && B2.pierce ? fx2Val('pierce', B2.pierce).wall * legKs(s, 'pierce') : 1) * (1 + ENH.pierce.rare.v * enhV(s, 'pierce', 'r'));   // 전설 강화 '벽 뚫기': ×legK   // 관통 Lv3+: 벽·장갑문 피해 +50%, 희귀 강화 '터지는 총알': +30%
-  const bossK = B2 && B2.rapid ? fx2Val('rapid', B2.rapid).boss : 1;   // 속사 Lv3+: 보스에게 +30%
+  const bossK = (B2 && B2.rapid ? fx2Val('rapid', B2.rapid).boss : 1) * (gw ? gw.boss : 1);   // 속사 Lv3+: 보스에게 +30%, 저격총 ×1.3~
+  const gWall = gw ? gw.wall : 1;   // 산탄총 벽·장갑문 ×1.6~
   let w = 0;
   for (let i = 0; i < list.length; i++) {
     const b = list[i];
+    if (b.g === 's' && gw) b.dmg = b.base * (b.d <= gw.near ? 1 : 1 - (1 - gw.fall) * Math.min(1, (b.d - gw.near) / Math.max(1, gw.range - gw.near)));   // 산탄: near m 뒤로 range에서 fall까지 준다
+    if (b.tg) { const f = near.find((o) => o.id === b.tg); if (f && f.alive) b.x = f.x; else b.tg = 0; }   // 저격: 조준한 적을 따라간다
     const z0 = b.z;
     const z1 = z0 + adv;
     let bestZ = Infinity;
@@ -3146,6 +3207,24 @@ function bulletsUpdate(s) {
       continue;
     }
     // 장갑문은 총알 종류만큼(doorMul), 방패 정예는 정면 총알을 막는다(shieldMul — 관통 효과면 제 피해). 둘 다 2단계 판의 4구간부터만 있다
+    if (gw && hitKind === 2) {   // 개편 판(총 종류): 벽·장갑문 × 총의 벽 배수, 산탄 Lv10 파편(부순 벽 뒤 4m에 벽 체력의 몫)
+      const wd = hitObj.kind === 'wall' || hitObj.kind === 'door', was = hitObj.alive;
+      hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK * gWall : 1));
+      if (wd && was && !hitObj.alive && b.g === 's' && gw.shard) fxBoom(s, (hitObj.x0 + hitObj.x1) / 2, hitObj.z + 2.5, 3, hitObj.max * gw.shard);
+      if (wd && B2 && B2.pierce && (B2.pierce >= 10 || enhN(s, 'pierce', 'l'))) wallThru(s, b, hitObj, near, B2.pierce);
+      continue;
+    }
+    if (gw && hitKind === 3) {   // 개편 판(총 종류): 저격·관통 점사는 남는 피해가 같은 줄 뒤로 이어 간다(관통 예산), 저격 헤드샷·터지는 한 발, 산탄 슬러그
+      const f = hitObj, hp0 = f.hp, mul = (f.elite === 'shield' ? shieldMul(s) : 1) * (f.arm && !(fxOf(s) && fxOf(s).pierce) ? f.arm : 1);
+      let kill = hitFoe(s, f, b.dmg * mul, 'gun');
+      if (FX) fxHit2(s, b, f, near, FX); else if (s.ammo) ammoHit(s, b, f, near);   // 탄 효과가 없는 개편 판(1단계)은 출격 탄종 그대로
+      if (!kill && b.g === 'm' && gw.head && f.alive && f.kind !== 'brute' && !f.elite && f.hp <= gw.head * f.max) kill = hitFoe(s, f, f.hp, 'gun');   // 헤드샷
+      if (kill && b.g === 'm' && gw.pop) fxBoom(s, f.x, f.z, 1.6, f.max * gw.pop, f);   // 터지는 한 발
+      if (b.slug && f.alive) f.z += b.slug;   // 슬러그: 맨 앞(맞은) 적을 밀어낸다
+      const left = kill && b.thru ? b.dmg - hp0 / mul : 0;
+      if (left > b.dmg * 0.02) { b.dmg = left; if (b.g === 's') b.base = left; b.tg = 0; b.z = f.z + 0.01; list[w++] = b; }   // 남은 피해로 계속 날아간다
+      continue;
+    }
     if (B2 && hitKind === 2) { const wd = hitObj.kind === 'wall' || hitObj.kind === 'door'; hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK : 1)); if (wd && B2.pierce && (B2.pierce >= 10 || enhN(s, 'pierce', 'l'))) wallThru(s, b, hitObj, near, B2.pierce); continue; }   // 관통 Lv10 · 전설 강화 '벽 뚫기'
     if (B2 && hitKind === 3) { hitFoe(s, hitObj, (hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg) * (hitObj.arm && !(fxOf(s) && fxOf(s).pierce) ? hitObj.arm : 1), 'gun'); fxHit2(s, b, hitObj, near, FX); continue; }
     if (hitKind === 2) { hitProp(s, hitObj, hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg); continue; }
@@ -4856,6 +4935,7 @@ export function stateHash(s) {
   if (s.endless && s.endless.bld) {
     const B = s.endless.bld, of = s.endless.offer;
     if (B.enh) h = hash(h, 'enh', Object.keys(ENH).map((k) => (B.enh[k] ? B.enh[k].r + ':' + B.enh[k].l : '-')).join(','));
+    if (B.gt) h = hash(h, 'gun', B.gt, GUN_IDS.map((g) => (B.gl && B.gl[g]) | 0).join(','), B.gp || '-');
     h = hash(h, 'bld', B.gun, B.chg, B.dur, B.shield, B.armor, B.shieldLeft, B.rr, B.rrn, B.pi, B.more, B.curse, B.rel, '', B.down.map((d) => d.k + d.lv).join(','),
       of ? of.map((c) => (c.b || c.h || c.g || '') + (c.n || 0)).join(',') : '-');
   }
