@@ -3557,7 +3557,7 @@ test('빌드 개편: 안 연 판에는 bld가 없고, 연 판의 카드에는 �
   assert.ok(of && of.length === 3, JSON.stringify(of));
   assert.deepEqual(of, C.offerOf(b));
   for (const c of of) {
-    assert.ok(['gun', 'unit', 'fx', 'hero', 'guard', 'spec'].includes(c.k), c.k);
+    assert.ok(['gun', 'gunlv', 'swap', 'unit', 'fx', 'hero', 'guard', 'spec'].includes(c.k), c.k);   // 21절: 총 Lv·총 바꾸기
     if (c.k !== 'spec') assert.ok(c.n >= 1 && c.n <= 3, `등급 ${c.n}`);
     assert.ok(C.cardInfo(a, c), '카드 글을 만들 값이 있다');
   }
@@ -4180,7 +4180,7 @@ test('20절 — 카드 등급이 드물다: 보통 보스 뒤는 희귀 9%·전�
   // 대왕(6구간) 뒤 첫 카드: 첫 (총이 아닌) 장은 희귀 이상, 전설은 그 자리의 tagRare 몫 안팎
   const kings = offers(6);
   let firstLeg = 0, n = 0;
-  for (const of of kings) { const c = of.find((k) => k.k !== 'gun'); if (!c) continue; n++; assert.ok(c.n >= 2, '대왕 뒤 첫 장은 희귀 이상'); if (c.n === 3) firstLeg++; }
+  for (const of of kings) { const c = of.find((k) => k.k !== 'gun' && k.k !== 'swap'); if (!c) continue; n++; assert.ok(c.n >= 2, '대왕 뒤 첫 장은 희귀 이상'); if (c.n === 3) firstLeg++; }
   assert.ok(Math.abs(firstLeg / n - R.BUILD.tagRare.super[2]) < 0.08, `대왕 뒤 첫 장 전설 ${(firstLeg / n).toFixed(2)}`);
   // 다시 뽑기: 카드는 바뀌어도 자리마다 등급은 그대로(총 ★이 상한이라 총 카드가 없는 판)
   let same = 0, diff = 0;

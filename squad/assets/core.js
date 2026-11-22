@@ -2141,6 +2141,7 @@ function makeOffer3(s) {
   let first = true;
   const lastPick = e.picks && e.picks.length ? e.picks[e.picks.length - 1] : '';
   const firstOffer = B.pi === (B.pre | 0);   // 이 보스 뒤 첫 카드(유물·총 바꾸기를 먼저 골랐으면 그다음)
+  let tagIdx = -1;   // 희귀 보장을 받은 장의 자리(총 바꾸기 카드가 그 자리를 덮지 않게)
   void lastPick;
   while (out.length < count && cands.length) {
     let sum = 0;
@@ -2150,16 +2151,16 @@ function makeOffer3(s) {
     const c = cands.splice(j, 1)[0].c;
     const rr = rand(gr);   // 자리마다 하나씩 굴린다 — 총 카드도 굴려서 자리가 밀리지 않게
     const useTag = first && firstOffer && c.k !== 'gun';   // 정예·대왕 뒤 첫 카드의 첫 (총이 아닌) 장만 희귀 이상
-    if (useTag) first = false;
+    if (useTag) { first = false; tagIdx = out.length; }
     c.n = c.k === 'gun' ? 1 + (tag ? 1 : 0) : rarityOf(rr, useTag ? tag : '', e.seg);   // 총 카드는 ★ +1(정예·대왕 뒤 +2) — 강화가 없다. 정예·대왕 뒤 첫 카드의 첫 장(총이 아닌)만 희귀 이상(tagRare)
     const id = c.k === 'unit' ? c.u : c.k === 'fx' ? c.a : '';
     if (id && combosBy(s, id).length) c.syn = true;
     out.push(c);
   }
-  // 총 바꾸기(21.8): 대왕 뒤 첫 카드에 GUN_SWAP.king 확률로 한 장(첫 장 자리 — 다른 총 하나). 등급·계약 굴림과 따로 굴린다
+  // 총 바꾸기(21.8): 대왕 뒤 첫 카드에 GUN_SWAP.king 확률로 한 장(가운데 자리 — 다른 총 하나). 등급·계약 굴림과 따로 굴린다
   if (tag === 'super' && firstOffer && out.length >= 2) {
     const gs = { rs: hash(VERSION, 'gunking', e.seed >>> 0, e.seg, B.rrn) };
-    if (rand(gs) < GUN_SWAP.king) { const others = GUN_IDS.filter((x) => x !== B.gt); out[0] = { k: 'swap', g: others[Math.floor(rand(gs) * others.length)] }; }
+    if (rand(gs) < GUN_SWAP.king) { const others = GUN_IDS.filter((x) => x !== B.gt); const j = tagIdx === 1 ? (out.length > 2 ? 2 : 0) : 1; out[j] = { k: 'swap', g: others[Math.floor(rand(gs) * others.length)] }; }   // 가운데 자리(희귀 보장을 받은 장은 피한다)
   }
   // 위험한 계약: 이 보스 뒤 첫 카드에만, 마지막 장 자리에
   const curse = rand(g) < BUILD.curse.p;
@@ -2387,12 +2388,12 @@ export function restore(o) {
   if (typeof o.refFire !== 'number') o.refFire = 0;
   if (o.pet) {
     if (typeof o.pet !== 'object' || !PETS[o.pet.id]) o.pet = undefined;
-    else { num0(o.pet, ['rs', 'procs', 'acc']); o.pet.lv = Math.max(1, Math.min(PET_MAX_LV, o.pet.lv | 0 || 1)); }
+    else { num0(o.pet, ['rs', 'procs', 'acc']); if (!(o.pet.cdT > 0)) delete o.pet.cdT; o.pet.lv = Math.max(1, Math.min(PET_MAX_LV, o.pet.lv | 0 || 1)); }
   }
   if (o.pet == null) delete o.pet;
   if (o.pets !== undefined) {
     const more = o.pet && Array.isArray(o.pets) ? o.pets.filter((p, i, l) => p && typeof p === 'object' && PETS[p.id] && p.id !== o.pet.id && l.findIndex((x) => x && x.id === p.id) === i).slice(0, PET_TEAM_MAX - 1) : [];
-    for (const p of more) { num0(p, ['rs', 'procs', 'acc']); p.lv = Math.max(1, Math.min(PET_MAX_LV, p.lv | 0 || 1)); }
+    for (const p of more) { num0(p, ['rs', 'procs', 'acc']); if (!(p.cdT > 0)) delete p.cdT; p.lv = Math.max(1, Math.min(PET_MAX_LV, p.lv | 0 || 1)); }
     if (more.length) o.pets = more; else delete o.pets;
   }
   if (o.ammo != null && !AMMO[o.ammo]) delete o.ammo;   // 모르는 탄종이 든 스냅숏은 보통탄으로 이어진다
@@ -3080,6 +3081,8 @@ export const PET_CRIT = 2;
 export const PET_FAR = 1.5;
 export const PET_WIDE = 1.5;
 export const PET_CHEER = 0.3;
+export const PET_CHEER_CD = 4;   // 무한모드: '기운 내'가 한 번 차면 이만큼 쉰다
+export const PET_CHEER_E = 0.2;   // 무한모드의 '기운 내' 한 번(캠페인은 PET_CHEER) — 쉬는 시간과 함께 게이지가 초당 많아야 5%p 더 찬다(기본 충전 16초 ≈ 초당 6%p)
 export const PET_FAR_AVG = 0.5;
 export const PET_WIDE_AVG = 0.2;
 /* 저격총의 조준(21.2.1): 분대 앞 사거리 안 · 옆 ±(R + aim) 안에서 체력이 가장 큰 적부터 k발에 하나씩(같은 적은 한 번). 적이 모자라면 보스(사거리 안), 그다음은 정면(분대가 선 게이트 칸) */
@@ -3130,7 +3133,7 @@ function fire(s, R) {
     } else if (A && A.dmg) dmg *= A.dmg;
     const B = s.endless && s.endless.bld;
     if (B && B.gun) dmg *= 1 + BUILD.gun * B.gun;   // 무기 개조(옛 저장의 값만 — 총 ★로 합쳐졌다)
-    const rng = gv ? (gv.range !== BULLET_RANGE ? gv.range : 0) : A && A.range && !FX ? A.range : 0;   // 탄종의 사거리(없으면 기본 — 개편 판은 약점이 없어 총의 사거리)
+    const rng = gv ? (gv.range !== BULLET_RANGE ? gv.range : 0) : A && A.range && !(FX && s.endless.bld) ? A.range : 0;   // 탄종의 사거리(없으면 기본 — 개편 판은 약점이 없어 총의 사거리)
     const span = R + (gv ? gv.spread : 0.3);
     const aims = gv && gv.rounds ? gunAims(s, R, gv, b) : null;   // 저격총: 한 발마다 조준한 표적
     // 펫의 확률 효과(크리티컬은 총알마다, 멀리·넓게 쏘기는 일제 사격마다 굴린다 — 펫 전용 난수). avg면 기대값만큼 피해를 고르게 올린다
@@ -3509,11 +3512,13 @@ function hitFoe(s, f, dmg, by) {
   if (s.endless && s.endless.bld && s.endless.fx) fxDeath(s, f, by);   // 작렬 Lv5 유폭 · 빙결 Lv5 번지는 얼음 · 기름불(작렬 + 화염병)
   chargeHero(s, 0.01);
   // 펫 '기운 내': 처치마다 확률로 영웅 게이지 +PET_CHEER
+  // 무한모드는 한 번 차면 PET_CHEER_CD초 쉰다(처치가 아주 잦아 스킬이 거의 늘 켜져 있었다 — 쉬는 동안은 굴리지도 않는다). 캠페인은 그대로
   const pc = s.hero ? petBy(s, 'cheer') : null;
-  if (pc) {
+  const bldCheer = !!(s.endless && s.endless.bld);   // 쉬는 시간·작은 몫은 개편 판만(앞 단계 판의 지문 그대로)
+  if (pc && !(bldCheer && pc.cdT > s.t)) {
     const p = petP(pc.id, pc.lv);
     if (pc.avg) chargeHero(s, PET_CHEER * p);
-    else if (rand(pc) < p) { pc.procs++; chargeHero(s, PET_CHEER); emit(s, { t: 'pet', fx: 'cheer', x: f.x, z: f.z }); }
+    else if (rand(pc) < p) { pc.procs++; chargeHero(s, bldCheer ? PET_CHEER_E : PET_CHEER); if (bldCheer) pc.cdT = s.t + PET_CHEER_CD; emit(s, { t: 'pet', fx: 'cheer', x: f.x, z: f.z }); }
   }
   return true;
 }
@@ -4963,6 +4968,7 @@ export function stateHash(s) {
   if (s.boss) h = hash(h, s.boss.x.toFixed(4), s.boss.slam ? s.boss.slam.t.toFixed(4) : -1, s.boss.slamCd.toFixed(4), s.boss.summonCd.toFixed(4));
   // 펫(안 데려간 판에는 없다 — 해시 그대로)
   if (s.pet) h = hash(h, s.pet.id, s.pet.lv, s.pet.rs >>> 0, s.pet.procs, s.pet.acc.toFixed(4), s.pet.double ? 1 : 0);
+  if (s.endless && s.endless.bld) for (const p of [s.pet, ...(s.pets || [])]) if (p && p.cdT) h = hash(h, 'cheerCd', p.cdT.toFixed(4));   // 불도롱뇽이 쉬는 동안(무한모드)
   if (s.pets) for (const p of s.pets) h = hash(h, p.id, p.lv, p.rs >>> 0, p.procs, p.acc.toFixed(4), p.double ? 1 : 0);
   // 탄종(보통탄 판에는 없다 — 해시 그대로)
   if (s.ammo) { h = hash(h, s.ammo); for (const f of s.foes) if (f.alive && f.slowT > s.t) h = hash(h, f.id, f.slowT.toFixed(4)); }

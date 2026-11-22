@@ -180,7 +180,7 @@ export const PETS = {
   newt: {
     name: '불도롱뇽', biome: 'lava', fx: 'cheer', p: [0.1, 0.5], color: '#FF8A3C',
     line: '꼬리 불꽃이 활활, 기운 내!',
-    fxName: '기운 내', text: (lv) => `좀비를 처치할 때 ${pp('newt', lv)}% 확률로 영웅 게이지가 30% 더 차요`,
+    fxName: '기운 내', text: (lv) => `좀비를 처치할 때 ${pp('newt', lv)}% 확률로 영웅 게이지가 30% 더 차요(무한모드 개편 판은 20%, 한 번 차면 4초 쉬어요)`,
   },
   puppy: {
     name: '풍선 강아지', biome: 'park', fx: 'coin', p: [0.05, 0.25], color: '#FF9FD0',
