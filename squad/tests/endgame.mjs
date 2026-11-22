@@ -3589,7 +3589,7 @@ test('적 변이(개편 판): 대왕을 잡으면 다음 바퀴의 변이가 시
   for (const id of R.MUT_IDS) for (const lv of [1, 2]) { const x = R.MUTATIONS[id].text(lv); assert.ok(R.MUTATIONS[id].name && x.length > 10 && x.length < 90, `${id} Lv${lv}: ${x}`); }
 });
 
-test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.4 — 관통 탄 효과면 제 피해) · 떼거리(무리 ×2, 체력 ×0.6) · 질주(좀비 ×1.6) · 분노한 보스(체력 ×1.5·간격 ×0.8) · 두꺼운 벽(×1.4) · 독안개(가장자리에서 병력이 줄어든다)', () => {
+test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.3 — 관통 탄 효과면 제 피해) · 떼거리(무리 ×2, 체력 ×0.8) · 질주(좀비 ×1.8) · 분노한 보스(체력 ×1.5·간격 ×0.8) · 두꺼운 벽(×1.5) · 독안개(가장자리에서 병력이 줄어든다)', () => {
   const base = bldRun(31, 1);
   const withMut = (mut, i = 0) => { const o = C.snapshot(base); o.endless.mut = mut.slice(); const t = C.restore(o); C.pickCard(t, i); return t; };
   const ctl = withMut([]);
@@ -3622,9 +3622,9 @@ test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.4 �
     C.step(t, { dir: 0 });
     return 1e6 - f.hp;
   };
-  const full = hitHp({}), half = hitHp({ arm: 0.4 });
-  assert.ok(full > 0 && Math.abs(half / full - 0.4) < 1e-9, `장갑 ${half}/${full}`);
-  assert.ok(Math.abs(hitHp({ arm: 0.4 }, { pierce: 1 }) / full - 1) < 1e-9, '관통 탄 효과면 제 피해');
+  const full = hitHp({}), half = hitHp({ arm: 0.3 });
+  assert.ok(full > 0 && Math.abs(half / full - 0.3) < 1e-9, `장갑 ${half}/${full}`);
+  assert.ok(Math.abs(hitHp({ arm: 0.3 }, { pierce: 1 }) / full - 1) < 1e-9, '관통 탄 효과면 제 피해');
   // 떼거리: 같은 구간인데 좀비가 더 많다
   const sw = withMut(['swarm']);
   assert.ok(sw.foes.length > ctl.foes.length * 1.3, `떼거리 ${sw.foes.length} vs ${ctl.foes.length}`);

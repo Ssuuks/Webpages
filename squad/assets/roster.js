@@ -353,12 +353,12 @@ export const RELIC_IDS = Object.keys(RELICS);
    - fog 독안개: 길 가장자리(가운데에서 FOG_X m 밖)에 있으면 병력이 초당 v씩 준다 */
 export const FOG_X = 2.6;
 export const MUTATIONS = {
-  armor: { name: '장갑', v: [0.4, 0.2], text: (lv) => `일반 좀비 절반이 정면 총알을 ${apc(MUTATIONS.armor.v[lv - 1])}%만 받아요 — 관통탄·작렬·저격이 잘 뚫어요` },
-  swarm: { name: '떼거리', n: [2, 3], hp: [0.6, 0.5], text: (lv) => `좀비 무리가 ${MUTATIONS.swarm.n[lv - 1]}배, 하나하나의 체력은 ${apc(MUTATIONS.swarm.hp[lv - 1])}% — 작렬·화염병이 잘 막아요` },
-  rush: { name: '질주', v: [1.6, 2], text: (lv) => `좀비가 ${MUTATIONS.rush.v[lv - 1]}배 빨라요 — 빙결·로켓이 잘 막아요` },
+  armor: { name: '장갑', v: [0.3, 0.15], text: (lv) => `일반 좀비 절반이 정면 총알을 ${apc(MUTATIONS.armor.v[lv - 1])}%만 받아요 — 관통탄·작렬·저격이 잘 뚫어요` },
+  swarm: { name: '떼거리', n: [2, 3], hp: [0.8, 0.8], text: (lv) => `좀비 무리가 ${MUTATIONS.swarm.n[lv - 1]}배, 하나하나의 체력은 ${apc(MUTATIONS.swarm.hp[lv - 1])}% — 작렬·화염병이 잘 막아요` },
+  rush: { name: '질주', v: [1.8, 2.4], text: (lv) => `좀비가 ${MUTATIONS.rush.v[lv - 1]}배 빨라요 — 빙결·로켓이 잘 막아요` },
   rage: { name: '분노한 보스', hp: [1.5, 1.8], cd: [0.8, 0.7], text: (lv) => `보스 체력 ×${MUTATIONS.rage.hp[lv - 1]}, 공격 간격 ${apc(MUTATIONS.rage.cd[lv - 1])}% — 속사·저격이 잘 막아요` },
-  thick: { name: '두꺼운 벽', v: [1.4, 1.8], text: (lv) => `벽·장갑문 체력 ×${MUTATIONS.thick.v[lv - 1]} — 관통·총 ★이 잘 막아요` },
-  fog: { name: '독안개', v: [0.04, 0.07], text: (lv) => `길 가장자리(가운데에서 ${FOG_X}m 밖)에서 병력이 초당 ${apc(MUTATIONS.fog.v[lv - 1])}% 줄어요 — 의무병이 잘 막아요` },
+  thick: { name: '두꺼운 벽', v: [1.5, 1.9], text: (lv) => `벽·장갑문 체력 ×${MUTATIONS.thick.v[lv - 1]} — 관통·총 ★이 잘 막아요` },
+  fog: { name: '독안개', v: [0.055, 0.08], text: (lv) => `길 가장자리(가운데에서 ${FOG_X}m 밖)에서 병력이 초당 ${apc(MUTATIONS.fog.v[lv - 1])}% 줄어요 — 의무병이 잘 막아요` },
 };
 export const MUT_IDS = Object.keys(MUTATIONS);
 export const MUT_MAX_LV = 2;
