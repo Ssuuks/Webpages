@@ -4105,6 +4105,7 @@ test('개편 판의 think: 카드 종류마다 점수를 매기고(총 ★ · �
   assert.equal(thinkScore(t, { k: 'men' }), (Math.pow(to / 100, 0.8) - 1) * (1 + 2 * Math.min(1, Math.max(0, (C.segFloor(t.endless.seg + 1) - 100) / (to - 100)))));
 });
 test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사람(sloppy0.1) 16판 — 정밀·한파가 탄막·폭발 사이(±3구간 띠 안)에 든다, 생각해서 고르기(think)는 아무거나보다 확실히 멀리 간다', async (t) => {
+  // 세트·깊이 보상을 없앤 뒤 잰 값(32판, 위협 곡선 1.06): think 26.6 · 아무거나 22.8 (16판 think 26.1 · 탄막 21.1 · 폭발 16.6).
   // 성장 개편 3단계 뒤 잰 값(32판, 위협 곡선 1.07): 탄막 23.6 · 폭발 18.5 · 정밀 16.5 · 한파 23.4 · think 24.0 · 아무거나 24.0.
   // 총 ★ 합치기 뒤 잰 값(32판): 탄막 19.8 · 폭발 24.1 · think 25.3 · 아무거나 23.1 (정밀·한파는 16판 18.7·19.3).
   // 이 기준을 만들 때 잰 값(32판, 평균 잡은 보스 — ENDGAME.md 19절): 탄막 20.9 · 폭발 23.8 · 정밀 21.7 · 한파 21.5 · think 26.8 · 아무거나 19.5 · 늘 첫 장 21.2 (정밀·한파는 손보기 전 16.6·17.4)
@@ -4123,23 +4124,15 @@ test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사�
   const msg = names.map((k) => `${k} ${m[k].toFixed(1)}`).join(' · ');
   const lo = Math.min(m.barrage, m.blast), hi = Math.max(m.barrage, m.blast);
   for (const k of ['precise', 'frost']) assert.ok(m[k] >= lo - 3 && m[k] <= hi + 3, `${k}가 탄막·폭발 띠(${lo.toFixed(1)}~${hi.toFixed(1)}) ±3 밖 — ${msg}`);
-  // 성장 개편 3단계(탄·특수병이 Lv5에서 멈춘다) 뒤: 아무거나도 거의 다 채워 think의 우위가 사라졌다(32판 24.0 vs 24.0 — 총 ★ 직후 +2.2였다).
-  // 기준을 '아무거나보다 나쁘지 않게'(−1.5)로 낮추고 +1.5·+3은 아래 todo로 남긴다 — 4단계(각성·숙련·카드 등급 강화)에서 고르기가 다시 의미를 갖게 한다
-  assert.ok(m.think >= m.random - 1.5, `think가 아무거나보다 ${(m.think - m.random).toFixed(1)}구간 — ${msg}`);
-  for (const gap of [1.5, 3]) {
+  // 세트·깊이 보상을 없앤 뒤(성장 개편 4단계 ③) think의 우위가 되살아났다(32판 26.6 vs 22.8) — 기준을 +1.5로 되돌린다(+3은 아래 todo — 16판 +2.8)
+  assert.ok(m.think >= m.random + 1.5, `think가 아무거나보다 +${(m.think - m.random).toFixed(1)}구간 — ${msg}`);
+  for (const gap of [3]) {
     const okg = m.think >= m.random + gap;
     const nm = `think가 아무거나보다 +${gap}구간 이상: ${(m.think - m.random) >= 0 ? '+' : ''}${(m.think - m.random).toFixed(1)}`;
     if (okg) await t.test(nm, () => {});
-    else await t.test(nm, { todo: '성장 개편 3단계 뒤 고르기의 차이가 줄었다(레벨 상한) — 4단계(각성·숙련·카드 등급 강화) 뒤 think 점수식(THINK.b)과 함께 다시 재 볼 것' }, () => { assert.ok(okg); });
+    else await t.test(nm, { todo: '세트·깊이 보상을 없앤 뒤 +2.8(16판) — 카드 등급 강화(4단계 ②)와 think 점수식(THINK.b)을 다듬은 뒤 다시 재 볼 것' }, () => { assert.ok(okg); });
   }
-  // think가 정한 빌드보다 멀리 — 성장 개편 3단계 뒤 우위가 사라져(32판 24.0 vs 탄막 23.6) 16판의 흔들림 안이다: '2구간 안'을 지키고 엄격한 기준은 todo로 남긴다
-  assert.ok(m.think >= Math.max(m.barrage, m.blast) - 2, `think가 정한 빌드보다 한참 뒤 — ${msg}`);
-  {
-    const oks = m.think > m.barrage && m.think > m.blast;
-    const nm = `think가 정한 빌드(탄막·폭발)보다 멀리: think ${m.think.toFixed(1)} · 탄막 ${m.barrage.toFixed(1)} · 폭발 ${m.blast.toFixed(1)}`;
-    if (oks) await t.test(nm, () => {});
-    else await t.test(nm, { todo: '성장 개편 3단계 뒤 우위가 흔들림 안이다 — 4단계(각성·숙련·카드 등급 강화) 뒤 think 점수식과 함께 다시 재 볼 것' }, () => { assert.ok(oks); });
-  }
+  assert.ok(m.think > m.barrage && m.think > m.blast, `think가 정한 빌드보다 멀리 — ${msg}`);
   // 기획의 기준: ±1구간 띠 안(정직하게 잰 값 그대로 — 벗어나면 todo)
   for (const k of ['precise', 'frost']) {
     const ok = m[k] >= lo - 1 && m[k] <= hi + 1;
