@@ -1485,7 +1485,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   if (opt && opt.obs && p.seg >= RUN_ORDER.obstacle) lv.og = { rs: hash(VERSION, 'obstacle', seed >>> 0, p.seg, attempt) };
   GK = E.gk;
   NCAP = E.maxN;
-  const SW = opt && opt.swarm > 1 ? opt.swarm : 1;
+  const SW = opt && opt.swarm > 1 ? opt.swarm : 1, SH = opt && opt.swarmHp > 0 ? opt.swarmHp : 1;
   try {
     const plan = planChunks(p, g);
     lv.plan = plan;
@@ -1498,8 +1498,8 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
       ctx.late = i >= plan.length - 2;
       ctx.last = i === plan.length - 1;
       lv.thr = base * (p.tagFull ? p.threat : 1);
-      lv.wm = (p.tagFull ? p.waveMul : 1) * SW;   // 떼거리(변이): 무리 ×SW, 하나하나의 체력 ÷SW (SW 1이면 그대로)
-      lv.gh = (p.tagFull ? p.gruntHp : p.gruntBase) / SW;
+      lv.wm = (p.tagFull ? p.waveMul : 1) * SW;   // 떼거리(변이): 무리 ×SW, 하나하나의 체력 ÷SW × SH (1이면 그대로)
+      lv.gh = ((p.tagFull ? p.gruntHp : p.gruntBase) / SW) * SH;
       const target = n0 * Math.pow(PE / n0, (i + 1) / plan.length);
       const t = ng > target * 1.25 ? target * 0.9 : ng < target * 0.8 ? target * 1.15 : target;
       const rowsBefore = lv.rows.length;
@@ -2197,7 +2197,7 @@ function nextSegment(s) {
   const e = s.endless;
   e.seg++;
   // 개편 판: 위협 배수 = 계약(curse) × 빌드가 쌓이는 만큼 더 가파른 곡선(BUILD.thr — from구간 뒤로 구간마다 ×step)
-  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv), swarm: mutLv(s, 'swarm') ? MUTATIONS.swarm.n[mutLv(s, 'swarm') - 1] : 1 } : segOpt(e));
+  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv), swarm: mutLv(s, 'swarm') ? MUTATIONS.swarm.n[mutLv(s, 'swarm') - 1] : 1, swarmHp: mutLv(s, 'swarm') ? MUTATIONS.swarm.hp[mutLv(s, 'swarm') - 1] : 1 } : segOpt(e));
   const dz = q.z + ENDLESS.lead;
   const off = s.nextId;
   for (const r of seg.rows) { r.id += off; r.z += dz; }

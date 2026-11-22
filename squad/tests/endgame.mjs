@@ -3589,7 +3589,7 @@ test('적 변이(개편 판): 대왕을 잡으면 다음 바퀴의 변이가 시
   for (const id of R.MUT_IDS) for (const lv of [1, 2]) { const x = R.MUTATIONS[id].text(lv); assert.ok(R.MUTATIONS[id].name && x.length > 10 && x.length < 90, `${id} Lv${lv}: ${x}`); }
 });
 
-test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.5 — 관통 탄 효과면 제 피해) · 떼거리(무리 ×2, 체력 ÷2) · 질주(좀비 ×1.4) · 분노한 보스(체력 ×1.5·간격 ×0.8) · 두꺼운 벽(×1.6) · 독안개(가장자리에서 병력이 줄어든다)', () => {
+test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.4 — 관통 탄 효과면 제 피해) · 떼거리(무리 ×2, 체력 ×0.6) · 질주(좀비 ×1.6) · 분노한 보스(체력 ×1.5·간격 ×0.8) · 두꺼운 벽(×1.4) · 독안개(가장자리에서 병력이 줄어든다)', () => {
   const base = bldRun(31, 1);
   const withMut = (mut, i = 0) => { const o = C.snapshot(base); o.endless.mut = mut.slice(); const t = C.restore(o); C.pickCard(t, i); return t; };
   const ctl = withMut([]);
@@ -3599,17 +3599,17 @@ test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.5 �
   let walls = 0;
   th.props.forEach((p, i) => {
     const c = ctl.props[i];
-    if (p.kind === 'wall' || p.kind === 'door') { walls++; assert.equal(p.hp, Math.round(c.hp * 1.6)); assert.equal(p.max, Math.round(c.max * 1.6)); } else assert.equal(p.hp, c.hp);
+    if (p.kind === 'wall' || p.kind === 'door') { walls++; assert.equal(p.hp, Math.round(c.hp * R.MUTATIONS.thick.v[0])); assert.equal(p.max, Math.round(c.max * R.MUTATIONS.thick.v[0])); } else assert.equal(p.hp, c.hp);
   });
   // 장갑: 일반 좀비(졸개·질주)의 절반만 arm 0.5, 나머지·정예·독침 좀비는 그대로
   const ar = withMut(['armor']);
   const plainZ = ar.foes.filter((f) => (f.kind === 'grunt' || f.kind === 'runner') && !f.elite);
-  const armed = plainZ.filter((f) => f.arm === 0.5);
+  const armed = plainZ.filter((f) => f.arm === R.MUTATIONS.armor.v[0]);
   assert.ok(plainZ.length >= 4 && armed.length === Math.ceil(plainZ.length / 2), `일반 좀비 ${plainZ.length} 중 ${armed.length}`);
   assert.ok(ar.foes.filter((f) => f.arm !== undefined).every((f) => armed.includes(f)));
   assert.ok(ctl.foes.every((f) => f.arm === undefined));
   const ar2 = withMut(['armor', 'swarm', 'armor']);   // 장갑 2단계(0.3) — 떼거리도 걸려 좀비가 늘어난다
-  assert.ok(ar2.foes.some((f) => f.arm === 0.3));
+  assert.ok(ar2.foes.some((f) => f.arm === R.MUTATIONS.armor.v[1]));
   // 정면 총알: 장갑 좀비는 총알 피해 ×arm, 관통 탄 효과가 있으면 제 피해
   const hitHp = (mod, fx) => {
     const t = C.restore(C.snapshot(ar));
@@ -3622,9 +3622,9 @@ test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.5 �
     C.step(t, { dir: 0 });
     return 1e6 - f.hp;
   };
-  const full = hitHp({}), half = hitHp({ arm: 0.5 });
-  assert.ok(full > 0 && Math.abs(half / full - 0.5) < 1e-9, `장갑 ${half}/${full}`);
-  assert.ok(Math.abs(hitHp({ arm: 0.5 }, { pierce: 1 }) / full - 1) < 1e-9, '관통 탄 효과면 제 피해');
+  const full = hitHp({}), half = hitHp({ arm: 0.4 });
+  assert.ok(full > 0 && Math.abs(half / full - 0.4) < 1e-9, `장갑 ${half}/${full}`);
+  assert.ok(Math.abs(hitHp({ arm: 0.4 }, { pierce: 1 }) / full - 1) < 1e-9, '관통 탄 효과면 제 피해');
   // 떼거리: 같은 구간인데 좀비가 더 많다
   const sw = withMut(['swarm']);
   assert.ok(sw.foes.length > ctl.foes.length * 1.3, `떼거리 ${sw.foes.length} vs ${ctl.foes.length}`);
@@ -3640,7 +3640,7 @@ test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.5 �
     C.step(t, { dir: 0 });
     return z0 - f.z;   // 좀비가 제 속도로 간 거리(분대가 앞으로 가는 몫은 뺀다)
   };
-  assert.ok(Math.abs(run(['rush']) / run([]) - 1.4) < 0.02, `질주 ${run(['rush'])} / ${run([])}`);
+  assert.ok(Math.abs(run(['rush']) / run([]) - R.MUTATIONS.rush.v[0]) < 0.02, `질주 ${run(['rush'])} / ${run([])}`);
   // 분노한 보스: 체력 ×1.5
   const arena = (mut) => {
     const t = C.restore(C.snapshot(base));
@@ -3651,8 +3651,8 @@ test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.5 �
     return t.boss && t.boss.max;
   };
   const b0 = arena([]), b1 = arena(['rage']);
-  assert.ok(b0 > 0 && b1 === Math.round(b0 * 1.5), `보스 체력 ${b1} vs ${b0}`);
-  // 독안개: 가운데에서 3.2m 안쪽에서는 안 줄고 밖에서는 줄어든다(초당 3%)
+  assert.ok(b0 > 0 && b1 === Math.round(b0 * R.MUTATIONS.rage.hp[0]), `보스 체력 ${b1} vs ${b0}`);
+  // 독안개: 가운데에서 FOG_X m 안쪽에서는 안 줄고 밖에서는 줄어든다(초당 v)
   const fog = (x, mut) => {
     const t = C.restore(C.snapshot(ctl));
     t.endless.mut = mut.slice();
@@ -3665,7 +3665,7 @@ test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.5 �
   assert.equal(fog(0, ['fog']).lost, 0);
   assert.equal(fog(4, []).lost, 0);
   const fg = fog(4, ['fog']);
-  assert.ok(Math.abs(fg.lost - 0.03 * 4000) < 40, `독안개 1초 ${fg.lost}`);
+  assert.ok(Math.abs(fg.lost - R.MUTATIONS.fog.v[0] * 4000) < 40, `독안개 1초 ${fg.lost}`);
   // 이어하기: 변이·좀비의 arm이 이어지고 해시에 든다, 이상한 값은 버린다
   const o = C.snapshot(ar);
   const r = C.restore(JSON.parse(JSON.stringify(o)));

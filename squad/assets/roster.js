@@ -346,19 +346,19 @@ export const RELIC_IDS = Object.keys(RELICS);
 /* 적 변이(ENDGAME.md 18.6 — 빌드 개편 판의 무한모드): 대왕(6구간마다)을 잡으면 다음 바퀴의 변이가 무작위로 정해지고 바로 알려진다. 판 끝까지 쌓인다.
    직전에 나온 것과 같은 변이는 안 나오고, 이미 한 번 나온 변이가 또 나오면 2단계로 세진다(v·n·hp·cd의 둘째 값). 수치는 모두 [초안].
    - armor 장갑: 일반 좀비 절반이 정면 총알을 v배만 받는다(관통 탄 효과면 제 피해 — 방패 정예와 같은 규칙). 작렬 둘레·저격·로켓·영웅 스킬은 제 피해
-   - swarm 떼거리: 좀비 무리가 n배, 하나하나의 체력은 1/n(무리 전체 체력은 그대로, 닿아서 잃는 병사는 는다)
+   - swarm 떼거리: 좀비 무리가 n배, 하나하나의 체력은 hp배(무리 전체 체력은 n × hp배로 조금 늘고, 닿아서 잃는 병사도 는다)
    - rush 질주: 좀비가 v배 빠르다
    - rage 분노한 보스: 보스 체력 ×hp, 내려찍기·졸개 소환 간격 ×cd
    - thick 두꺼운 벽: 벽·장갑문 체력 ×v
    - fog 독안개: 길 가장자리(가운데에서 FOG_X m 밖)에 있으면 병력이 초당 v씩 준다 */
-export const FOG_X = 3.2;
+export const FOG_X = 2.6;
 export const MUTATIONS = {
-  armor: { name: '장갑', v: [0.5, 0.3], text: (lv) => `일반 좀비 절반이 정면 총알을 ${apc(MUTATIONS.armor.v[lv - 1])}%만 받아요 — 관통탄·작렬·저격이 잘 뚫어요` },
-  swarm: { name: '떼거리', n: [2, 3], text: (lv) => `좀비 무리가 ${MUTATIONS.swarm.n[lv - 1]}배, 하나하나는 약해요 — 작렬·화염병이 잘 막아요` },
-  rush: { name: '질주', v: [1.4, 1.7], text: (lv) => `좀비가 ${MUTATIONS.rush.v[lv - 1]}배 빨라요 — 빙결·로켓이 잘 막아요` },
-  rage: { name: '분노한 보스', hp: [1.5, 2], cd: [0.8, 0.65], text: (lv) => `보스 체력 ×${MUTATIONS.rage.hp[lv - 1]}, 공격 간격 ${apc(MUTATIONS.rage.cd[lv - 1])}% — 속사·저격이 잘 막아요` },
-  thick: { name: '두꺼운 벽', v: [1.6, 2.2], text: (lv) => `벽·장갑문 체력 ×${MUTATIONS.thick.v[lv - 1]} — 관통·총 ★이 잘 막아요` },
-  fog: { name: '독안개', v: [0.03, 0.05], text: (lv) => `길 가장자리(가운데에서 ${FOG_X}m 밖)에서 병력이 초당 ${apc(MUTATIONS.fog.v[lv - 1])}% 줄어요 — 의무병이 잘 막아요` },
+  armor: { name: '장갑', v: [0.4, 0.2], text: (lv) => `일반 좀비 절반이 정면 총알을 ${apc(MUTATIONS.armor.v[lv - 1])}%만 받아요 — 관통탄·작렬·저격이 잘 뚫어요` },
+  swarm: { name: '떼거리', n: [2, 3], hp: [0.6, 0.5], text: (lv) => `좀비 무리가 ${MUTATIONS.swarm.n[lv - 1]}배, 하나하나의 체력은 ${apc(MUTATIONS.swarm.hp[lv - 1])}% — 작렬·화염병이 잘 막아요` },
+  rush: { name: '질주', v: [1.6, 2], text: (lv) => `좀비가 ${MUTATIONS.rush.v[lv - 1]}배 빨라요 — 빙결·로켓이 잘 막아요` },
+  rage: { name: '분노한 보스', hp: [1.5, 1.8], cd: [0.8, 0.7], text: (lv) => `보스 체력 ×${MUTATIONS.rage.hp[lv - 1]}, 공격 간격 ${apc(MUTATIONS.rage.cd[lv - 1])}% — 속사·저격이 잘 막아요` },
+  thick: { name: '두꺼운 벽', v: [1.4, 1.8], text: (lv) => `벽·장갑문 체력 ×${MUTATIONS.thick.v[lv - 1]} — 관통·총 ★이 잘 막아요` },
+  fog: { name: '독안개', v: [0.04, 0.07], text: (lv) => `길 가장자리(가운데에서 ${FOG_X}m 밖)에서 병력이 초당 ${apc(MUTATIONS.fog.v[lv - 1])}% 줄어요 — 의무병이 잘 막아요` },
 };
 export const MUT_IDS = Object.keys(MUTATIONS);
 export const MUT_MAX_LV = 2;
