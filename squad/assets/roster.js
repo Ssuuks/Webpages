@@ -399,11 +399,11 @@ export const RARITY = ['', '일반', '희귀', '전설'];
 export const deep = (n) => { const l = Math.max(0, n); return l * (1 + BUILD.deep * (l - 1)); };
 /* 탄 효과의 값(개편 판 — ENDGAME.md 18.3): 레벨마다 정해진 능력(숫자만 오르는 레벨은 없다), Lv5가 진화(상한 — 각성 Lv6~10은 아직 없다). 수치는 모두 [초안].
    관통 — Lv1 뒤 좀비 1마리에 50% · Lv2 뒤 2마리 · Lv3 벽·장갑문 피해 +50% · Lv4 일직선 전부 · Lv5 뚫을 때마다 다음 대상 피해 +20%
-   작렬 — Lv1 둘레 1m에 30% · Lv2 반경 1.5m · Lv3 둘레 피해 50% · Lv4 반경 2m · Lv5 처치된 좀비도 터진다(연쇄 — 그 좀비 체력의 chain배를 둘레에)
+   작렬 — Lv1 둘레 1m에 40% · Lv2 반경 1.5m · Lv3 둘레 피해 60% · Lv4 반경 2m · Lv5 처치된 좀비도 터진다(연쇄 — 그 좀비 체력의 chain배를 둘레에)
    속사 — Lv1 총알 피해 +10% · Lv2 쏘는 속도 +10% · Lv3 보스에게 +30% · Lv4 쏘는 속도 +10% 더 · Lv5 3초 계속 쏘면 과열(피해 ×1.5)
-   빙결 — Lv1 0.8초 동안 25% 느리게 · Lv2 40% · Lv3 느려진 좀비에게 잃는 병사 −30% · Lv4 1.5초 · Lv5 느려진 좀비가 죽으면 둘레도 느려진다
+   빙결 — Lv1 0.8초 동안 25% 느리게 · Lv2 35% · Lv3 느려진 좀비에게 잃는 병사 −20% · Lv4 1.5초 · Lv5 느려진 좀비가 죽으면 둘레도 느려진다
    (빙결의 '언 적이 받는 총알 피해 증폭'은 없앴다 — 한 방의 주범). pow: 화력으로 어림한 값(think 점수용 — 위협 식에는 안 든다) */
-export const FX_CHAIN = 0.3;      // 작렬 Lv5: 터지는 좀비가 둘레에 주는 몫(그 좀비 체력의 이만큼)
+export const FX_CHAIN = 0.5;      // 작렬 Lv5: 터지는 좀비가 둘레에 주는 몫(그 좀비 체력의 이만큼) — 측정으로 0.3 → 0.5
 export const FX_HEAT = 3;         // 속사 Lv5: 이 초 동안 계속 쏘면 과열
 export function fx2Val(id, lv) {
   const A = AMMO[id];
@@ -411,8 +411,8 @@ export function fx2Val(id, lv) {
   const evo = l >= BUILD.evo;
   if (!A) return {};
   if (A.pierce) return { pierce: 0.5, n: l >= 4 ? 99 : l >= 2 ? 2 : 1, wall: l >= 3 ? 1.5 : 1, ramp: evo ? 0.2 : 0, evo };
-  if (A.splash) return { splash: l >= 3 ? 0.5 : 0.3, r: l >= 4 ? 2 : l >= 2 ? 1.5 : 1, chain: evo ? FX_CHAIN : 0, evo };
-  if (A.slow) return { slow: l >= 2 ? 0.4 : 0.25, T: l >= 4 ? 1.5 : 0.8, loss: l >= 3 ? 0.7 : 1, spread: evo, evo };
+  if (A.splash) return { splash: l >= 3 ? 0.6 : 0.4, r: l >= 4 ? 2 : l >= 2 ? 1.5 : 1, chain: evo ? FX_CHAIN : 0, evo };
+  if (A.slow) return { slow: l >= 2 ? 0.35 : 0.25, T: l >= 4 ? 1.5 : 0.8, loss: l >= 3 ? 0.8 : 1, spread: evo, evo };
   const rate = (l >= 2 ? 1.1 : 1) * (l >= 4 ? 1.1 : 1);
   const boss = l >= 3 ? 1.3 : 1, heat = evo ? 1.5 : 1;
   return { dmg: 1.1, rate: Math.round(rate * 1000) / 1000, boss, heat, pow: Math.round(1.1 * rate * (1 + (boss - 1) * 0.2) * (1 + (heat - 1) * 0.4) * 1000) / 1000, evo };
@@ -478,7 +478,7 @@ export const SETS = {
     text: (t) => `작렬·로켓·불 지대 범위 +${apc(SETS.blast.v[t - 1].r)}%, 위력 +${apc(SETS.blast.v[t - 1].dmg)}%` },
   precise: { name: '정밀', color: '#4FD1C5', parts: ['pierce', 'sniper'], at: [8, 14, 20], v: [{ p: 0.1, mul: 2.5, back: 0.6 }, { p: 0.25, mul: 3, back: 0.8 }, { p: 0.4, mul: 4, back: 1, guard: 1 }],
     text: (t) => `총알·저격이 ${apc(SETS.precise.v[t - 1].p)}% 확률로 치명타(피해 ×${SETS.precise.v[t - 1].mul}) — 벽·보스에도 · ${SETS.precise.v[t - 1].guard ? '특수병은 맞아도 쓰러지지 않아요' : `쓰러진 특수병이 레벨의 ${apc(SETS.precise.v[t - 1].back)}%로 돌아와요`}` },
-  frost: { name: '한파', color: '#8FD3FF', parts: ['frost', 'medic', 'shield', 'armor'], at: [8, 14, 20], v: [{ loss: 0.15, amp: 0.15 }, { loss: 0.35, amp: 0.45 }, { loss: 0.55, amp: 1 }],
+  frost: { name: '한파', color: '#8FD3FF', parts: ['frost', 'medic', 'shield', 'armor'], at: [8, 14, 20], v: [{ loss: 0.12, amp: 0.1 }, { loss: 0.28, amp: 0.25 }, { loss: 0.45, amp: 0.4 }],   // amp: 측정으로 낮춤(0.15·0.45·1 → 한파 세트가 탄 효과의 증폭을 없앤 뒤에도 남은 한 방의 주범)
     text: (t) => `좀비·보스에게 잃는 병사 −${apc(SETS.frost.v[t - 1].loss)}%, 느려진 적이 받는 피해 +${apc(SETS.frost.v[t - 1].amp)}%` },
   command: { name: '지휘', color: '#FF9F43', parts: ['chg', 'dur'], at: [4, 7, 10], v: [{ supply: 0.1, chg: 0.3 }, { supply: 0.2, chg: 0.6 }, { supply: 0.4, chg: 1 }],
     text: (t) => `자동 보급 +${apc(SETS.command.v[t - 1].supply)}%p, 영웅 게이지 충전 +${apc(SETS.command.v[t - 1].chg)}%` },
