@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SPECS, COMBO_IDS2, deep, SETS, SET_IDS, setTier, comboV } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SPECS, COMBO_IDS2, deep, SETS, SET_IDS, setTier, comboV } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -1485,6 +1485,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   if (opt && opt.obs && p.seg >= RUN_ORDER.obstacle) lv.og = { rs: hash(VERSION, 'obstacle', seed >>> 0, p.seg, attempt) };
   GK = E.gk;
   NCAP = E.maxN;
+  const SW = opt && opt.swarm > 1 ? opt.swarm : 1;
   try {
     const plan = planChunks(p, g);
     lv.plan = plan;
@@ -1497,8 +1498,8 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
       ctx.late = i >= plan.length - 2;
       ctx.last = i === plan.length - 1;
       lv.thr = base * (p.tagFull ? p.threat : 1);
-      lv.wm = p.tagFull ? p.waveMul : 1;
-      lv.gh = p.tagFull ? p.gruntHp : p.gruntBase;
+      lv.wm = (p.tagFull ? p.waveMul : 1) * SW;   // 떼거리(변이): 무리 ×SW, 하나하나의 체력 ÷SW (SW 1이면 그대로)
+      lv.gh = (p.tagFull ? p.gruntHp : p.gruntBase) / SW;
       const target = n0 * Math.pow(PE / n0, (i + 1) / plan.length);
       const t = ng > target * 1.25 ? target * 0.9 : ng < target * 0.8 ? target * 1.15 : target;
       const rowsBefore = lv.rows.length;
@@ -1900,6 +1901,42 @@ export function relicOn(s, id) {
   const e = s && s.endless;
   return !!(e && e.relics && e.relics.includes(id) && !(e.spent && e.spent.includes(id)));
 }
+/* 적 변이(roster.MUTATIONS): 이 판에 쌓인 변이의 단계(0이면 없음). s.endless.mut = 나온 순서의 id 배열(같은 id가 또 나오면 2단계) */
+export const mutLv = (s, id) => {
+  const m = s && s.endless && s.endless.mut;
+  if (!m) return 0;
+  let n = 0;
+  for (const x of m) if (x === id) n++;
+  return Math.min(MUT_MAX_LV, n);
+};
+/* 대왕을 잡았다: 다음 바퀴의 변이를 시드·구간으로 정한다(직전과 같은 것은 빼고) — 'mutation' { id, lv } */
+export function mutRoll(s) {
+  const e = s.endless;
+  if (!e.mut) e.mut = [];
+  const last = e.mut[e.mut.length - 1];
+  const left = MUT_IDS.filter((id) => id !== last);
+  const g = { rs: hash(VERSION, 'mut', e.seed >>> 0, e.seg) };
+  const id = left[Math.floor(rand(g) * left.length)];
+  e.mut.push(id);
+  emit(s, { t: 'mutation', id, lv: mutLv(s, id), seg: e.seg + 1 });
+}
+/* 새 구간에 거는 변이: 장갑(일반 좀비 절반에 arm), 두꺼운 벽(벽·장갑문 체력). 떼거리는 구간을 만들 때(buildSegment opt.swarm), 질주·분노·독안개는 판 중(mutLv)에 본다 */
+function mutSeg(s) {
+  const arm = mutLv(s, 'armor'), thick = mutLv(s, 'thick');
+  if (arm) {
+    let i = 0;
+    for (const f of s.foes) if ((f.kind === 'grunt' || f.kind === 'runner') && !f.elite && i++ % 2 === 0) f.arm = MUTATIONS.armor.v[arm - 1];
+  }
+  if (thick) for (const p of s.props) if (p.kind === 'wall' || p.kind === 'door') { p.hp = Math.round(p.hp * MUTATIONS.thick.v[thick - 1]); p.max = Math.round(p.max * MUTATIONS.thick.v[thick - 1]); }
+}
+/* 독안개: 길 가장자리에 서 있으면 병력이 초당 v씩 준다(1명이 안 되는 몫은 모아 둔다 — q.fogAcc) */
+function fogUpdate(s) {
+  const lv = mutLv(s, 'fog');
+  if (!lv || Math.abs(s.squad.x) <= FOG_X) return;
+  const q = s.squad;
+  q.fogAcc = (q.fogAcc || 0) + MUTATIONS.fog.v[lv - 1] * q.n * DT;
+  if (q.fogAcc >= 1) { const k = Math.floor(q.fogAcc); q.fogAcc -= k; lose(s, k, 'fog', q.x, q.z); }
+}
 /* 무기 단계 상한(과부하 코일이면 RELICS.coil.tier — WEAPON의 끝 값) */
 export const tierMax = (s) => (relicOn(s, 'coil') ? Math.min(WEAPON.length - 1, RELICS.coil.tier) : TIER_MAX);
 /* 특수병 자리·호위 병사 수(넷째 자리면 RELICS.fourth) */
@@ -2160,7 +2197,7 @@ function nextSegment(s) {
   const e = s.endless;
   e.seg++;
   // 개편 판: 위협 배수 = 계약(curse) × 빌드가 쌓이는 만큼 더 가파른 곡선(BUILD.thr — from구간 뒤로 구간마다 ×step)
-  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv) } : segOpt(e));
+  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv), swarm: mutLv(s, 'swarm') ? MUTATIONS.swarm.n[mutLv(s, 'swarm') - 1] : 1 } : segOpt(e));
   const dz = q.z + ENDLESS.lead;
   const off = s.nextId;
   for (const r of seg.rows) { r.id += off; r.z += dz; }
@@ -2172,6 +2209,7 @@ function nextSegment(s) {
   s.nextId = off + seg.nextId + 1;
   s.rows = seg.rows; s.foes = seg.foes; s.props = seg.props; s.saws = seg.saws; s.marks = seg.marks;
   s.spits = []; s.rockets = [];
+  if (e.mut) mutSeg(s);
   delete s.pools;
   delete s.flames;   // 불 지대(화염병)도 지나간 것과 함께
   s.L = seg.L; s.params = seg.params; s.speed = seg.speed;
@@ -2290,7 +2328,7 @@ export function restore(o) {
     if (o.endless.seg < 1) return null;
     const e = o.endless;
     // 3택 1을 안 연 판에 카드가 들어 있으면(손댄 저장) 버린다 — 남기면 step이 멈춘 채로 풀리지 않는다
-    if (e.unl == null) { delete e.bld; delete e.offer; delete e.picks; delete e.ammo; delete e.fx; delete e.flame; delete e.relicsOpen; delete e.relics; delete e.spent; delete e.wardAt; delete e.wardId; delete e.obsSeen; } else {
+    if (e.unl == null) { delete e.bld; delete e.offer; delete e.picks; delete e.ammo; delete e.fx; delete e.flame; delete e.relicsOpen; delete e.relics; delete e.spent; delete e.wardAt; delete e.wardId; delete e.mut; delete e.obsSeen; } else {
       e.unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(e.unl) || 0)));
       // 빌드 개편 상태: 숫자는 0 이상 정수(curse만 배수), 전문화는 아는 병과·갈래만, 쓰러진 특수병은 아는 병과 한 번씩
       if (e.bld !== undefined) {
@@ -2305,6 +2343,10 @@ export function restore(o) {
           B.down = (Array.isArray(B.down) ? B.down : []).filter((d, i, l) => d && SPECS[d.k] && l.findIndex((x) => x && x.k === d.k) === i).map((d) => ({ k: d.k, lv: Math.max(1, Math.min(LV_SANE, Math.floor(Number(d.lv) || 1))) }));
         }
       }
+      // 적 변이(개편 판만): 아는 id만, 나온 순서 그대로(같은 id가 또 나오면 2단계라 중복은 그대로 둔다)
+      if (e.bld && Array.isArray(e.mut)) e.mut = e.mut.filter((id) => typeof id === 'string' && MUTATIONS[id]).slice(0, 120);
+      else delete e.mut;
+      for (const f of o.foes) if (f.arm !== undefined && !(typeof f.arm === 'number' && f.arm > 0 && f.arm <= 1)) delete f.arm;
       e.ammo = Array.isArray(e.ammo) ? e.ammo.filter((a) => AMMO[a]) : [];
       e.picks = Array.isArray(e.picks) ? e.picks.filter((x) => typeof x === 'string') : [];
       if (e.flame !== true) delete e.flame;
@@ -2566,6 +2608,7 @@ export function step(s, input) {
   marksUpdate(s);
   propsUpdate(s, R);
   sawsUpdate(s, R);
+  fogUpdate(s);
   foesUpdate(s, R);
   spitsUpdate(s, R);
   if (s.pools) poolsUpdate(s, R);
@@ -2603,10 +2646,13 @@ function wiped(s) {
   return true;
 }
 
+/* 분노한 보스(변이): 내려찍기·졸개 소환 간격 배수 */
+const rageCd = (s) => { const l = mutLv(s, 'rage'); return l ? MUTATIONS.rage.cd[l - 1] : 1; };
 function enterArena(s) {
   s.phase = 'arena';
   const p = s.params;
-  const hp = s.bossHp > 0 ? s.bossHp : Math.round(dps(s.bossRef, 0, s.refFire || 0) * p.bossKill);
+  const rg = mutLv(s, 'rage');
+  const hp = Math.round((s.bossHp > 0 ? s.bossHp : Math.round(dps(s.bossRef, 0, s.refFire || 0) * p.bossKill)) * (rg ? MUTATIONS.rage.hp[rg - 1] : 1));
   s.boss = {
     z: s.stopZ + BOSS_GAP, x: 0, hp, max: hp, r: 2.5, walk: p.bossWalk || 1.3, hitT: -9,
     slam: null, slamCd: BOSS_FIRST_SLAM, summonCd: SUMMON_FIRST, enraged: false, clashCd: 0, clash: false, t: 0, bonus: 0,
@@ -2727,6 +2773,7 @@ function foesUpdate(s, R) {
   const q = s.squad;
   const fx = s.endless && s.endless.fx;
   const slowK = fx ? (fx.frost ? fxVal('frost', fx.frost).slow : 0) : AMMO.frost.slow;
+  const rl = mutLv(s, 'rush'), rushK = rl ? MUTATIONS.rush.v[rl - 1] : 1;
   for (const f of s.foes) {
     if (!f.alive) continue;
     const dz = f.z - q.z;
@@ -2747,7 +2794,7 @@ function foesUpdate(s, R) {
         }
       }
     } else {
-      f.z -= (f.slowT > s.t ? f.spd * (1 - slowK) : f.spd) * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로)
+      f.z -= (f.slowT > s.t ? f.spd * (1 - slowK) : f.spd) * rushK * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로), 질주(변이)면 더 빠르다
       if (dz < f.homeDist) {
         const d = q.x - f.x;
         const m = f.home * DT;
@@ -3040,7 +3087,7 @@ function bulletsUpdate(s) {
     }
     // 장갑문은 총알 종류만큼(doorMul), 방패 정예는 정면 총알을 막는다(shieldMul — 관통 효과면 제 피해). 둘 다 2단계 판의 4구간부터만 있다
     if (B2 && hitKind === 2) { const wd = hitObj.kind === 'wall' || hitObj.kind === 'door'; hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK : 1)); continue; }
-    if (B2 && hitKind === 3) { hitFoe(s, hitObj, (hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg) * (iceK > 1 && hitObj.slowT > s.t ? iceK : 1), 'gun'); fxHit2(s, b, hitObj, near, FX); continue; }
+    if (B2 && hitKind === 3) { hitFoe(s, hitObj, (hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg) * (iceK > 1 && hitObj.slowT > s.t ? iceK : 1) * (hitObj.arm && !(fxOf(s) && fxOf(s).pierce) ? hitObj.arm : 1), 'gun'); fxHit2(s, b, hitObj, near, FX); continue; }
     if (hitKind === 2) { hitProp(s, hitObj, hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg); continue; }
     if (hitKind === 3) { hitFoe(s, hitObj, hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg, 'gun'); if (FX) fxHit(s, b, hitObj, near, FX); else if (s.ammo) ammoHit(s, b, hitObj, near); continue; }
     if (hitKind === 4) {
@@ -3264,7 +3311,7 @@ function bossUpdate(s, R) {
       b.slam = null;
       e.wait = ENDLESS.wait;
       e.bosses++;
-      if (e.bld) { const B = e.bld; B.pi = 0; B.rrn = 0; B.more = 0; B.rel = 1; if (p.tag === 'super') B.rr += 1 + (relicOn(s, 'dice') ? RELICS.dice.king : 0); }
+      if (e.bld) { const B = e.bld; B.pi = 0; B.rrn = 0; B.more = 0; B.rel = 1; if (p.tag === 'super') { B.rr += 1 + (relicOn(s, 'dice') ? RELICS.dice.king : 0); mutRoll(s); } }
       const coins = segCoins(e.seg);
       e.bank += coins;
       s.stats.bossT += b.t;
@@ -3332,7 +3379,7 @@ function bossUpdate(s, R) {
       emit(s, { t: 'slam', x0: b.slam.x0, x1: b.slam.x1, hit });
       if (hit) lose(s, Math.ceil(SLAM_HIT * q.n), 'boss', q.x, q.z, 'slam');
       b.slam = null;
-      b.slamCd = p.slamEvery * (b.enraged ? 0.8 : 1);
+      b.slamCd = p.slamEvery * (b.enraged ? 0.8 : 1) * rageCd(s);
     }
   } else {
     b.slamCd -= DT;
@@ -3354,7 +3401,7 @@ function bossUpdate(s, R) {
   if (s.L >= UNLOCK.summon) {
     b.summonCd -= DT;
     if (b.summonCd <= 0 && b.z - q.z > 9) {
-      b.summonCd = 5.5;
+      b.summonCd = 5.5 * rageCd(s);
       const m = Math.min(8, 3 + Math.floor(s.L / 5));
       const hp = SUMMON_HP * dps(s.bossRef, 0, s.refFire || 0) * (s.refMul || 1);
       // L4+: 둘은 길 양 가장자리를 따라 달려와 마지막에 파고드는 질주 좀비(정면 사격에 늦게 들어온다 — 막으려면 옆으로 가서 쏴야 한다)
@@ -4497,6 +4544,8 @@ export function stateHash(s) {
   if (s.boss) h = hash(h, s.boss.hp.toFixed(4), s.boss.z.toFixed(4));
   for (const m of q.sp) h = hash(h, m.k, m.cd.toFixed(4), m.lv || 1);
   h = hash(h, q.pool.toFixed(4), q.recent.toFixed(4), q.healAcc.toFixed(4), q.lossFrac.toFixed(4));
+  if (q.fogAcc) h = hash(h, 'fog', q.fogAcc.toFixed(4));
+  if (s.endless && s.endless.mut && s.endless.mut.length) h = hash(h, 'mut', s.endless.mut.join(','));
   if (s.boss) h = hash(h, s.boss.bonus.toFixed(4));
   for (const rk of s.rockets) h = hash(h, rk.x.toFixed(4), rk.z.toFixed(4), rk.t.toFixed(4));
   if (s.hero) h = hash(h, s.hero.charge.toFixed(4), s.hero.act.toFixed(4), s.hero.cd.toFixed(4), s.hero.shot.toFixed(4));

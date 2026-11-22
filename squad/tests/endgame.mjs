@@ -3560,6 +3560,129 @@ test('빌드 개편: 안 연 판에는 bld가 없고, 연 판의 카드에는 �
   }
   assert.equal(C.stateHash(a), C.stateHash(b));
 });
+test('적 변이(개편 판): 대왕을 잡으면 다음 바퀴의 변이가 시드·구간으로 정해지고(직전과 같은 것은 안 나온다, 또 나오면 2단계) mutation 이벤트로 알려진다. 개편 판이 아니면 없다', () => {
+  const evs = [];
+  const k = bldRun(32, 6, { n: 9000, each: (s) => { for (const e of s.ev) if (e.t === 'mutation') evs.push(e); } });
+  assert.equal(k.endless.bosses, 6);
+  assert.equal(k.endless.mut.length, 1, '첫 대왕 뒤 변이 하나');
+  assert.ok(R.MUT_IDS.includes(k.endless.mut[0]));
+  assert.equal(C.mutLv(k, k.endless.mut[0]), 1);
+  assert.deepEqual(evs.map(({ t, ...e }) => e), [{ id: k.endless.mut[0], lv: 1, seg: 7 }], 'mutation 이벤트(대왕을 잡은 틱에 한 번)');
+  assert.deepEqual(bldRun(32, 6, { n: 9000 }).endless.mut, k.endless.mut, '같은 시드는 같은 변이');
+  // 규칙: 연달아 같은 것은 안 나오고, 또 나오면 2단계(최대 2), 같은 시드·구간이면 같은 굴림
+  const roll = (seed, segs) => {
+    const s = C.newEndless({ seed, ...BLD });
+    const out = [];
+    for (const seg of segs) { s.endless.seg = seg; C.mutRoll(s); out.push(s.endless.mut[s.endless.mut.length - 1]); }
+    return { s, out };
+  };
+  const a = roll(5, [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72]);
+  for (let i = 1; i < a.out.length; i++) assert.notEqual(a.out[i], a.out[i - 1], `${i}번째는 직전과 다르다`);
+  assert.deepEqual(roll(5, [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72]).out, a.out);
+  assert.ok(R.MUT_IDS.every((id) => C.mutLv(a.s, id) <= R.MUT_MAX_LV), '단계는 2까지');
+  assert.ok(R.MUT_IDS.some((id) => a.out.filter((x) => x === id).length >= 2 && C.mutLv(a.s, id) === 2), '또 나온 변이는 2단계');
+  assert.ok(new Set(a.out).size >= 4, '여러 가지가 나온다');
+  // 개편 판이 아니면 변이가 없다
+  const plain = C.newEndless({ seed: 32, ...CARD3 });
+  assert.ok(!('mut' in plain.endless) && C.mutLv(plain, 'fog') === 0);
+  // 글은 수치에서 — 이름·좋은 점이 한 줄
+  for (const id of R.MUT_IDS) for (const lv of [1, 2]) { const x = R.MUTATIONS[id].text(lv); assert.ok(R.MUTATIONS[id].name && x.length > 10 && x.length < 90, `${id} Lv${lv}: ${x}`); }
+});
+
+test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.5 — 관통 탄 효과면 제 피해) · 떼거리(무리 ×2, 체력 ÷2) · 질주(좀비 ×1.4) · 분노한 보스(체력 ×1.5·간격 ×0.8) · 두꺼운 벽(×1.6) · 독안개(가장자리에서 병력이 줄어든다)', () => {
+  const base = bldRun(31, 1);
+  const withMut = (mut, i = 0) => { const o = C.snapshot(base); o.endless.mut = mut.slice(); const t = C.restore(o); C.pickCard(t, i); return t; };
+  const ctl = withMut([]);
+  // 두꺼운 벽: 벽·장갑문 체력만 ×1.6(나머지 소품은 그대로)
+  const th = withMut(['thick']);
+  assert.equal(th.props.length, ctl.props.length);
+  let walls = 0;
+  th.props.forEach((p, i) => {
+    const c = ctl.props[i];
+    if (p.kind === 'wall' || p.kind === 'door') { walls++; assert.equal(p.hp, Math.round(c.hp * 1.6)); assert.equal(p.max, Math.round(c.max * 1.6)); } else assert.equal(p.hp, c.hp);
+  });
+  // 장갑: 일반 좀비(졸개·질주)의 절반만 arm 0.5, 나머지·정예·독침 좀비는 그대로
+  const ar = withMut(['armor']);
+  const plainZ = ar.foes.filter((f) => (f.kind === 'grunt' || f.kind === 'runner') && !f.elite);
+  const armed = plainZ.filter((f) => f.arm === 0.5);
+  assert.ok(plainZ.length >= 4 && armed.length === Math.ceil(plainZ.length / 2), `일반 좀비 ${plainZ.length} 중 ${armed.length}`);
+  assert.ok(ar.foes.filter((f) => f.arm !== undefined).every((f) => armed.includes(f)));
+  assert.ok(ctl.foes.every((f) => f.arm === undefined));
+  const ar2 = withMut(['armor', 'swarm', 'armor']);   // 장갑 2단계(0.3) — 떼거리도 걸려 좀비가 늘어난다
+  assert.ok(ar2.foes.some((f) => f.arm === 0.3));
+  // 정면 총알: 장갑 좀비는 총알 피해 ×arm, 관통 탄 효과가 있으면 제 피해
+  const hitHp = (mod, fx) => {
+    const t = C.restore(C.snapshot(ar));
+    t.foes = [];
+    t.squad.n = 300;
+    if (fx) t.endless.fx = { ...fx };
+    const f = { id: 99001, kind: 'grunt', x: 0, z: t.squad.z + 6, hp: 1e6, max: 1e6, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9, ...mod };
+    t.foes = [f];
+    t.bullets = [{ x: 0, z: f.z - 0.3, d: 5, dmg: 100, hm: 1 }];
+    C.step(t, { dir: 0 });
+    return 1e6 - f.hp;
+  };
+  const full = hitHp({}), half = hitHp({ arm: 0.5 });
+  assert.ok(full > 0 && Math.abs(half / full - 0.5) < 1e-9, `장갑 ${half}/${full}`);
+  assert.ok(Math.abs(hitHp({ arm: 0.5 }, { pierce: 1 }) / full - 1) < 1e-9, '관통 탄 효과면 제 피해');
+  // 떼거리: 같은 구간인데 좀비가 더 많다
+  const sw = withMut(['swarm']);
+  assert.ok(sw.foes.length > ctl.foes.length * 1.3, `떼거리 ${sw.foes.length} vs ${ctl.foes.length}`);
+  // 질주: 같은 틱 동안 좀비가 1.4배 달려온다
+  const run = (mut) => {
+    const t = C.restore(C.snapshot(ctl));
+    t.endless.mut = mut.slice();
+    t.squad.n = 300;
+    const f = { id: 99002, kind: 'grunt', x: 3, z: t.squad.z + 25, hp: 1e9, max: 1e9, spd: 3.2, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9 };
+    t.foes = [f]; t.bullets = []; t.props = []; t.rows = []; t.saws = []; delete t.divs;
+    t.squad.fireAcc = -9;
+    const z0 = f.z;
+    C.step(t, { dir: 0 });
+    return z0 - f.z;   // 좀비가 제 속도로 간 거리(분대가 앞으로 가는 몫은 뺀다)
+  };
+  assert.ok(Math.abs(run(['rush']) / run([]) - 1.4) < 0.02, `질주 ${run(['rush'])} / ${run([])}`);
+  // 분노한 보스: 체력 ×1.5
+  const arena = (mut) => {
+    const t = C.restore(C.snapshot(base));
+    t.endless.mut = mut.slice();
+    C.pickCard(t, 0);
+    t.squad.n = 4000;
+    for (let i = 0; i < 40000 && !t.boss; i++) { const of = C.offerOf(t); if (of) { C.pickCard(t, 0); continue; } C.step(t, C.botInput(t)); if (t.phase === 'lost') break; }
+    return t.boss && t.boss.max;
+  };
+  const b0 = arena([]), b1 = arena(['rage']);
+  assert.ok(b0 > 0 && b1 === Math.round(b0 * 1.5), `보스 체력 ${b1} vs ${b0}`);
+  // 독안개: 가운데에서 3.2m 안쪽에서는 안 줄고 밖에서는 줄어든다(초당 3%)
+  const fog = (x, mut) => {
+    const t = C.restore(C.snapshot(ctl));
+    t.endless.mut = mut.slice();
+    t.foes = []; t.props = []; t.rows = []; t.saws = []; t.bullets = []; delete t.divs;
+    t.squad.n = 4000; t.squad.x = x; t.squad.fireAcc = -9;
+    let ev = 0;
+    for (let i = 0; i < 60; i++) { C.step(t, { dir: 0 }); for (const e of t.ev) if (e.t === 'loss' && e.cause === 'fog') ev += e.n; }
+    return { n: t.squad.n, lost: ev };
+  };
+  assert.equal(fog(0, ['fog']).lost, 0);
+  assert.equal(fog(4, []).lost, 0);
+  const fg = fog(4, ['fog']);
+  assert.ok(Math.abs(fg.lost - 0.03 * 4000) < 40, `독안개 1초 ${fg.lost}`);
+  // 이어하기: 변이·좀비의 arm이 이어지고 해시에 든다, 이상한 값은 버린다
+  const o = C.snapshot(ar);
+  const r = C.restore(JSON.parse(JSON.stringify(o)));
+  assert.deepEqual(r.endless.mut, ['armor']);
+  assert.equal(C.stateHash(r), C.stateHash(ar));
+  assert.notEqual(C.stateHash(ar), C.stateHash(ctl));
+  const bad = C.snapshot(ar);
+  bad.endless.mut = ['armor', 'nope', 5, 'fog'];
+  bad.foes[0].arm = 'x';
+  const rb = C.restore(bad);
+  assert.deepEqual(rb.endless.mut, ['armor', 'fog']);
+  assert.ok(rb.foes.every((f) => f.arm === undefined || (f.arm > 0 && f.arm <= 1)));
+  const noB = C.snapshot(ar); noB.endless.bld = undefined; delete noB.endless.bld;
+  assert.ok(!('mut' in C.restore(noB).endless), '개편 판이 아니면 변이를 버린다');
+  assert.ok(walls >= 1, '벽이 있는 구간');
+});
+
 test('빌드 개편: 다시 뽑기는 카드를 바꾸고 횟수를 쓴다 — 다 쓰면 못 뽑는다. 대왕을 잡으면 +1', () => {
   const s = bldRun(31, 1);
   const before = JSON.stringify(C.offerOf(s));

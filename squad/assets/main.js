@@ -3,7 +3,7 @@ import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
-  RELIC, relicsOf, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
+  RELIC, relicsOf, mutLv, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
   nMax, fmtN, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, setLv, setOn,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SPECS, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS, SETS, SET_IDS, TIER_MARK, comboText } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SPECS, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS, SETS, SET_IDS, TIER_MARK, comboText } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1652,6 +1652,7 @@ function finishEndless() {
    보스가 쓰러지고 연출이 끝나면 판이 멈추고(core: offer) 카드가 뜬다. 고르면 다음 구간이 이어진다(pickCard).
    카드는 엄지가 닿는 화면 아래쪽에 세로로. 보스가 쓰러질 때 대개 손가락으로 길을 잡고 있으므로 그 손가락이 카드를 고르지 않게:
    뜬 지 PICK_GRACE 안의 누름은 버리고, 카드 위에서 새로 눌러 같은 카드에서 뗐을 때만 고른다(누르고 있던 손가락은 캔버스에 붙잡혀 있다) */
+let mutNote = '';         // 방금 정해진 적 변이 알림(보급 알림이 덮지 않게 이어 붙인다)
 let setNote = '';         // 방금 오른 빌드 세트 알림(보급 알림이 덮지 않게 이어 붙인다)
 let lastCard = '';        // 방금 고른 카드의 알림 글(개편 판 — 보급 알림이 이어 붙인다)
 const PICK_GRACE = 500;   // ms
@@ -2062,9 +2063,11 @@ function renderPauseUnits() {
     for (const k of Object.keys(HERO_CARDS)) if (Bd[k]) addRow('star', `${HERO_CARDS[k].name} Lv${Bd[k]}`, HERO_CARDS[k].text(Bd[k]));
     for (const k of Object.keys(GUARD_CARDS)) if (Bd[k]) addRow('medic', `${GUARD_CARDS[k].name} Lv${Bd[k]}`, GUARD_CARDS[k].text(Bd[k]) + (k === 'shield' ? ` · 이번 구간 ${Bd.shieldLeft}번 남음` : ''));
     for (const k of Object.keys(Bd.spec)) if (SPECS[k] && SPECS[k][Bd.spec[k]]) addRow(k, `${UNITS[k].name} 전문화 ${SPECS[k][Bd.spec[k]].name}`, SPECS[k][Bd.spec[k]].text());
-    for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * BUILD.spBack))}로 돌아와요`);
-    addRow('star', '다시 뽑기', `${Bd.rr}번 남음 · 대왕을 잡으면 +1`);
+    for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * (rl && rl.includes('pledge') ? 1 : BUILD.spBack)))}로 돌아와요`);
+    addRow('star', '다시 뽑기', `${Bd.rr}번 남음 · 대왕을 잡으면 +${1 + (rl && rl.includes('dice') ? RELICS.dice.king : 0)}`);
   }
+  // 적 변이(개편 판 — 대왕을 잡을 때마다 하나씩 쌓인다)
+  if (s.endless && s.endless.mut) for (const id of MUT_IDS) { const l = mutLv(s, id); if (l) addRow('skull', `변이 ${MUTATIONS[id].name}${l > 1 ? ' Ⅱ' : ''}`, MUTATIONS[id].text(l)); }
   if (fx) for (const id of combosOn(s)) addRow('star', `시너지 ${COMBOS[id].name}`, comboText(id, !!bldOf(s)));
   if (rl) for (const id of rl) {
     const Rl = RELICS[id];
@@ -2419,12 +2422,21 @@ function handleEvents(ev) {
         // 빌드 세트의 단계가 올랐다 — 빌드가 완성되어 가는 순간이라 시너지처럼 크게
         if (SETS[e.id]) { sfx.combo(); vibe([20, 30, 20, 30, 50]); setNote = `세트 ${SETS[e.id].name} ${TIER_MARK[e.tier]}단계! ${SETS[e.id].text(e.tier)}`; toast(setNote, 3200); }
         break;
-      case 'supply':
-        // 개편 판: 보스를 잡으면 자동 보급(증원 카드 대신) — 고른 카드와 다음 구간을 한 줄로
-        toast(setNote ? `${setNote} · 보급 +${fmtN(e.n)}명` : `${lastCard ? lastCard + ' · ' : ''}보급 +${fmtN(e.n)}명 · ${segToast(s.endless.seg)}`, setNote ? 3600 : 2800);
+      case 'mutation': {
+        // 대왕을 잡았다 — 다음 바퀴의 적 변이가 정해졌다(바로 공개: 대왕 뒤 카드·유물로 대비). 다음 알림에 이어 붙여 한 줄로
+        const M = MUTATIONS[e.id];
+        if (M) { sfx.power(2); vibe([40, 40, 40]); mutNote = `변이 ${M.name}${e.lv > 1 ? ' Ⅱ' : ''}! ${M.text(e.lv)}`; toast(mutNote, 4200); }
+        break;
+      }
+      case 'supply': {
+        // 개편 판: 보스를 잡으면 자동 보급(증원 카드 대신) — 고른 카드와 다음 구간을 한 줄로(대왕 뒤에는 변이도)
+        const mn = mutNote ? mutNote + ' · ' : '';
+        mutNote = '';
+        toast(setNote ? `${mn}${setNote} · 보급 +${fmtN(e.n)}명` : `${mn}${lastCard ? lastCard + ' · ' : ''}보급 +${fmtN(e.n)}명 · ${segToast(s.endless.seg)}`, mn ? 4200 : setNote ? 3600 : 2800);
         lastCard = '';
         setNote = '';
         break;
+      }
       case 'shield':
         sfx.power(1); vibe(20);
         toast(`게이트 방패가 막았어요! 병사 ${fmtN(e.n)}명을 지켰어요${e.left ? ` · 이번 구간 ${e.left}번 남음` : ''}`, 2000);

@@ -2,8 +2,8 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, forkPeek, tierMax, nMax } from './core.js';
-import { HEROES, biomeOf, bossNameOf, OBSTACLES, unitVal } from './roster.js';
+import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, mutLv, forkPeek, tierMax, nMax } from './core.js';
+import { HEROES, biomeOf, bossNameOf, OBSTACLES, unitVal, FOG_X } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, BIOME_GROUP, biomeSheets, PET_ART } from './pix/art.js';
 import { createAtlas, createBiomeCache, pickStep, mkCanvas, rasterCanvas } from './pix/atlas.js';
@@ -3400,6 +3400,15 @@ export function createRenderer(cvs) {
       ctx.fillStyle = '#FFF1DE';
       ctx.globalAlpha = 0.22 * (1 - (time - stompT) / 0.22);
       groundQuad(-ROAD, ROAD, q.z - SQUAD_DEPTH * radius(q.n) - 0.4, b.z + 0.3, 0.025);
+      ctx.globalAlpha = 1;
+    }
+    // 독안개(변이): 길 가장자리(가운데에서 FOG_X m 밖)가 초록으로 깔리고 천천히 일렁인다 — 닿으면 병력이 준다(core.fogUpdate)
+    if (mutLv(s, 'fog') && (s.phase === 'run' || s.phase === 'arena')) {
+      ctx.fillStyle = '#7CD26A';
+      ctx.globalAlpha = 0.2 + 0.08 * Math.sin(time * 2.4);
+      const fz0 = q.z - 6, fz1 = q.z + 70;
+      groundQuad(-ROAD, -FOG_X, fz0, fz1, 0.03);
+      groundQuad(FOG_X, ROAD, fz0, fz1, 0.03);
       ctx.globalAlpha = 1;
     }
     if (s.divs) for (const d of s.divs) drawDivider(d);
