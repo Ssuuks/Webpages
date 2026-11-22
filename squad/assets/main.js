@@ -1663,7 +1663,7 @@ let pickSel = -1;         // 키보드로 고른 카드(-1: 아직)
 /* 유물의 좋은 점·대신 쪽 글 — 개편 판에서 달라진 것(넓은 탄낭: 슬롯 BUILD.pouch, 증원 카드가 없어 대신 쪽도 없다) */
 const relicGood = (id) => (id === 'pouch' && bldOf(s) ? `탄 효과 슬롯 ${FX_SLOTS} → ${BUILD.pouch}` : RELICS[id].text());
 const relicBad = (id) => (id === 'pouch' && bldOf(s) ? '' : RELICS[id].cost());
-const tierName = (t) => (t > 0 ? `${t}단계` : '기본');
+const tierName = (t) => (s && bldOf(s) ? `★${t + 1}` : t > 0 ? `${t}단계` : '기본');   // 개편 판은 총 ★(무기 단계 + 1)
 const ammoName = (a) => (a && AMMO[a] ? AMMO[a].name : '보통탄');
 /* 탄 효과 이름(무한모드 2단계): 탄종 이름에서 '탄'을 뺀 것 — '관통'·'작렬'·'속사'·'빙결' */
 const fxName = (a) => (AMMO[a] ? AMMO[a].name.replace(/탄$/, '') : '탄');
@@ -1679,13 +1679,12 @@ function spPowText(u, lv) {
   return u === 'medic' ? ` · 좀비·보스에게 잃는 병사 −${pct(1 - 1 / (1 + BUILD.med * deep(lv)))}%, 회복 +${50 * lv}%` : '';
 }
 function cardText(c) {
-  if (c.k === 'gun' && c.g2) return { kind: '무기 개조', lead: '무기 개조', from: `Lv${c.from}`, to: `Lv${c.to}`, det: `총알 화력 +${pct(BUILD.gun * deep(c.from))}% → +${pct(BUILD.gun * deep(c.to))}% · 깊게 팔수록 한 레벨이 세져요`, col: '#FFC93C', icon: 'gun', n: c.n };
   if (c.k === 'spec') { const U = UNITS[c.u], S = SPECS[c.u][c.b]; return { kind: '전문화', lead: U.name, from: '', to: S.name, det: `${S.text()} · 이 판 끝까지`, col: U.color, icon: c.u }; }
   if (c.k === 'hero') { const H = HERO_CARDS[c.h]; return { kind: '영웅', lead: H.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: H.text(c.to), col: s && s.hero && HEROES[s.hero.id] ? HEROES[s.hero.id].color : '#FF9F43', icon: 'star', n: c.n }; }
   if (c.k === 'guard') { const G = GUARD_CARDS[c.g]; return { kind: '생존', lead: G.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: G.text(c.to), col: '#7BE0A0', icon: 'medic', n: c.n }; }
   if (c.k === 'curse') return { kind: '위험한 계약', lead: '', from: '', to: `카드 ${c.more}장 더`, det: `지금 카드를 ${c.more}장 더 골라요`, cost: `다음 구간 위협 ×${c.mul}`, col: '#FF5E7A', icon: 'star', curse: true };
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
-  if (c.k === 'gun') return { kind: '무기', lead: '무기', from: c.from ? `${c.from}` : '기본', to: tierName(c.to), det: `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 ${tierMax(s)}단계`, col: '#FFC93C', icon: 'gun' };
+  if (c.k === 'gun') { const bs = bldOf(s); return { kind: bs ? '총 ★' : '무기', lead: bs ? '총' : '무기', from: bs ? tierName(c.from) : c.from ? `${c.from}` : '기본', to: tierName(c.to), det: `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 ${bs ? '★' + (tierMax(s) + 1) : tierMax(s) + '단계'}`, col: '#FFC93C', icon: 'gun' }; }
   if (c.k === 'relic') {
     // 유물(3·5단계 — 대왕 보스 뒤): 이름, 좋은 점, '대신' 줄(대신 쪽이 있는 유물만 — 나침반·주사위·서약·방패막은 없다). 글·수치는 roster.js RELICS
     const Rl = RELICS[c.r];
@@ -1719,7 +1718,6 @@ function cardText(c) {
 }
 /* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
 function cardDone(c) {
-  if (c.k === 'gun' && c.g2) return `무기 개조 Lv${c.to}`;
   if (c.k === 'spec') return `${UNITS[c.u].name} 전문화 ‘${SPECS[c.u][c.b].name}’`;
   if (c.k === 'hero') return `${HERO_CARDS[c.h].name} Lv${c.to}`;
   if (c.k === 'guard') return `${GUARD_CARDS[c.g].name} Lv${c.to}`;
@@ -2735,9 +2733,9 @@ function updateSpChips() {
     chip.className = 'sp-chip fx-chip gun-chip' + (tier >= tierMax(s) ? ' lv3' : '');
     chip.style.setProperty('--acc', WTIER[Math.min(WTIER.length - 1, tier)]);
     chip.appendChild(iconEl('gun', 2));
-    chip.append('무기');
+    chip.append(s && bldOf(s) ? '총' : '무기');
     const b = document.createElement('b');
-    b.textContent = tier + '단계';
+    b.textContent = s && bldOf(s) ? '★' + (tier + 1) : tier + '단계';
     chip.appendChild(b);
     box.appendChild(chip);
   }

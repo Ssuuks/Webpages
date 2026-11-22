@@ -32,8 +32,10 @@ export const START_N = 12;
 export const VOLLEY_HZ = 10;
 export const BULLET_SPEED = 48;
 export const BULLET_RANGE = 30;
-export const WEAPON = [1, 1.35, 1.7, 2.1, 2.5];   // 무기 단계 0~3(캠페인·보통 판), 넷째 값은 과부하 코일(무한모드 유물 — 3단계와 같은 걸음) [초안]
+export const WEAPON = [1, 1.35, 1.7, 2.1, 2.5, 2.8, 3.1, 3.4, 3.7, 4];   // 무기 단계 0~3(캠페인·보통 판), 넷째 값은 과부하 코일(무한모드 유물). 개편 판은 이것이 총 ★1~10(ENDGAME.md 18.3 — ★마다 약 +30%: 다섯째 값 뒤는 +0.3씩) [초안]
 export const TIER_MAX = 3;        // 보통 판의 무기 단계 상한(유물이 올리면 tierMax(s))
+/* 총 ★(개편 판 — 무기 단계 tier = ★ − 1): 상자와 카드가 모두 ★를 올린다. 상한은 ★5(바퀴 1~3), 19구간(바퀴 4)부터 ★10. 과부하 코일이면 +1 */
+export const STAR = { cap: 5, capLate: 10, lateFrom: 19 };
 export const THREAT_TIER = 3;     // 무한모드 위협 식(buildSegment)이 보는 무기 단계 상한 — 코일의 넷째 단계는 위협에 안 들어가 오래 남는 이득이다
 export const WAKE = 45;           // 이 거리 안에 들어온 적이 다가오기 시작
 export const BOSS_GAP = 28;       // 보스가 나타나는 거리
@@ -1729,7 +1731,7 @@ function cardInfoB(s, c, B) {
   {
     // 개편 판: n = 등급(한 번에 오르는 레벨 1·2·3)
     const n = Math.max(1, c.n | 0);
-    if (c.k === 'gun') return { k: 'gun', g2: true, from: B.gun, to: B.gun + n, n };
+    if (c.k === 'gun') return { k: 'gun', from: q.tier, to: Math.min(tierMax(s), q.tier + n), n };   // 총 ★ — 무기 개조는 ★로 합쳐졌다
     if (c.k === 'spec') return SPECS[c.u] && SPECS[c.u][c.b] ? { k: 'spec', u: c.u, b: c.b } : null;
     if (c.k === 'hero') return { k: 'hero', h: c.h, from: B[c.h] | 0, to: (B[c.h] | 0) + n, n };
     if (c.k === 'guard') return { k: 'guard', g: c.g, from: B[c.g] | 0, to: c.g === 'shield' ? Math.min(BUILD.shieldMax, B.shield + n) : (B[c.g] | 0) + n, n };
@@ -1781,7 +1783,8 @@ export const fxOf = (s) => (s && s.endless && s.endless.fx) || null;
 export const bldOf = (s) => (s && s.endless && s.endless.bld) || null;
 /* 빌드 세트(roster.SETS): 세는 것의 레벨 합. 쓰러진 특수병(B.down)도 그 레벨로 센다(돌아올 것이므로) */
 function partLv(s, B, p) {
-  if (p === 'gun' || p === 'chg' || p === 'dur' || p === 'shield' || p === 'armor') return B[p] | 0;
+  if (p === 'gun') return s.squad.tier | 0;   // 탄막 세트의 총 몫 = 총 ★ − 1(무기 개조가 ★로 합쳐졌다)
+  if (p === 'chg' || p === 'dur' || p === 'shield' || p === 'armor') return B[p] | 0;
   if (AMMO[p]) return fxLv(s, p);
   const m = s.squad.sp.find((o) => o.k === p);
   if (m) return m.lv || 1;
@@ -1946,7 +1949,11 @@ function fogUpdate(s) {
   if (q.fogAcc >= 1) { const k = Math.floor(q.fogAcc); q.fogAcc -= k; lose(s, k, 'fog', q.x, q.z); }
 }
 /* 무기 단계 상한(과부하 코일이면 RELICS.coil.tier — WEAPON의 끝 값) */
-export const tierMax = (s) => (relicOn(s, 'coil') ? Math.min(WEAPON.length - 1, RELICS.coil.tier) : TIER_MAX);
+export function tierMax(s) {
+  const coil = relicOn(s, 'coil');
+  if (bldOf(s)) return Math.min(WEAPON.length - 1, (s.endless.seg >= STAR.lateFrom ? STAR.capLate : STAR.cap) - 1 + (coil ? 1 : 0));   // 개편 판: 총 ★ 상한
+  return coil ? Math.min(WEAPON.length - 1, RELICS.coil.tier) : TIER_MAX;
+}
 /* 특수병 자리·호위 병사 수(넷째 자리면 RELICS.fourth) */
 export const spMax = (s) => (relicOn(s, 'fourth') ? RELICS.fourth.slots : SP_MAX);
 export const spEscort = (s) => (relicOn(s, 'fourth') ? RELICS.fourth.escort : SP_ESCORT);
@@ -2087,7 +2094,7 @@ function makeOffer3(s) {
   const sm = q.sp.find((m) => SPECS[m.k] && (m.lv || 1) >= BUILD.specAt && !B.spec[m.k]);
   if (sm) for (const b of Object.keys(SPECS[sm.k])) if (out.length < count) out.push({ k: 'spec', u: sm.k, b });
   const W = BUILD.w;
-  const cands = [{ c: { k: 'gun' }, w: W.gun }];
+  const cands = q.tier < tierMax(s) ? [{ c: { k: 'gun' }, w: W.gun }] : [];   // 총 ★ 상한이면 총 카드는 안 나온다
   for (const k of spKindsOf(s)) {
     const m = q.sp.find((o) => o.k === k);
     if (m) cands.push({ c: { k: 'unit', u: k }, w: W.unit * BUILD.own });
@@ -2147,7 +2154,7 @@ function pickCardB(s, i) {
   const info = cardInfo(s, c);
   const n = Math.max(1, c.n | 0);
   let again = false;
-  if (c.k === 'gun') B.gun += n;
+  if (c.k === 'gun') q.tier = Math.min(tierMax(s), q.tier + n);   // 총 ★ +n(상한까지)
   else if (c.k === 'unit') for (let j = 0; j < n; j++) addSpecial(s, c.u, 'card', q.x, q.z);
   else if (c.k === 'fx') { for (let j = 0; j < n; j++) if (fxCan(s, c.a)) fxAdd(s, c.a, 'card', q.x, q.z); }
   else if (c.k === 'spec') { if (SPECS[c.u] && SPECS[c.u][c.b]) B.spec[c.u] = c.b; }

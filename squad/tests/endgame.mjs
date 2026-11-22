@@ -18,6 +18,7 @@ const POOL = makePool(Math.max(1, Math.min(4, os.availableParallelism ? os.avail
 after(() => POOL.close());
 
 const R_TERRAIN = C.TERRAIN;
+const R_STAR = C.STAR;
 const UP10 = { start: C.START_N + 20, fire: 10, hero: { id: 'mungchi', lv: 5 } };
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 /* 봇 한 종류로 n판: 잡은 보스 수들 */
@@ -1639,7 +1640,7 @@ test('유물 아홉(roster.RELICS): 이름·좋은 점·대신 쪽 글은 수치
     ['갈림길 보상 상자 속이 45m 앞에서 보이고, 위험한 쪽 보상 병사 ×1.5', ''],
     ['다시 뽑기를 바로 3번 더, 대왕을 잡을 때마다 2번씩', ''],
     ['빨간 덧셈 칸이 1.5배 빨리 올라요', '파란 칸은 0.8배'],
-    ['무기 단계 상한 3 → 4', '지원병 상자 병력 −30%'],
+    ['총 ★ 상한 +1 (보통 판은 무기 단계 3 → 4)', '지원병 상자 병력 −30%'],
     ['특수병 자리 3 → 4', '특수병마다 호위 병사 4 → 6명'],
     [`쓰러진 특수병이 보스 뒤에 레벨의 ${Math.round(R.BUILD.spBack * 100)}%가 아니라 제 레벨로 돌아와요`, ''],
     ['일반 보스의 알 확률 15 → 35%', '카드 3장 → 2장'],
@@ -1649,7 +1650,7 @@ test('유물 아홉(roster.RELICS): 이름·좋은 점·대신 쪽 글은 수치
   for (const id of R.RELIC_IDS) assert.deepEqual([R.RELICS[id].good, R.RELICS[id].bad], [R.RELICS[id].text(), R.RELICS[id].cost()], `${id}: 예전 이름 good·bad`);
   assert.deepEqual(C.RELIC, { max: 3, show: 3 });
   assert.equal(R.RELICS.compass.ahead, C.MARK_AHEAD, '나침반은 갈림길 알림과 같은 거리');
-  assert.equal(R.RELICS.coil.tier, C.WEAPON.length - 1, '코일의 상한 = WEAPON의 끝 값');
+  assert.equal(R.RELICS.coil.tier, 4, '보통 판의 코일 상한 = 무기 단계 4(WEAPON의 다섯째 값)');
   assert.equal(C.RUN_ORDER.relic, 6);
   // 유물 카드의 정보는 { k: 'relic', r }(글은 roster에서), 모르는 유물은 null
   const s = bare3();
@@ -1658,12 +1659,13 @@ test('유물 아홉(roster.RELICS): 이름·좋은 점·대신 쪽 글은 수치
 });
 
 test('무기 4단계(과부하 코일): WEAPON의 다섯째 값 2.5 — dps의 0~3단계 값은 그대로(캠페인은 3단계를 넘지 않는다), 무한모드 위협 식은 3단계에서 자른다(4단계는 위협에 안 든다). 상한 4는 코일을 가진 판만', () => {
-  assert.deepEqual(C.WEAPON, [1, 1.35, 1.7, 2.1, 2.5]);
+  assert.deepEqual(C.WEAPON, [1, 1.35, 1.7, 2.1, 2.5, 2.8, 3.1, 3.4, 3.7, 4], '앞 다섯은 그대로, 총 ★6~10은 +0.3씩');
   assert.deepEqual([C.TIER_MAX, C.THREAT_TIER], [3, 3]);
   for (const n of [1, 12, 400, 9999]) {
     [1, 1.35, 1.7, 2.1].forEach((w, t) => assert.equal(C.dps(n, t, 3), 6 * Math.pow(n, 0.8) * w * (1 + 0.05 * 3), `dps ${n}명 ${t}단계`));
     assert.equal(C.dps(n, 4), 6 * Math.pow(n, 0.8) * 2.5);
-    assert.equal(C.dps(n, 9), C.dps(n, 4), '끝 값에서 자른다');
+    assert.equal(C.dps(n, 20), C.dps(n, 9), '끝 값에서 자른다');
+    assert.equal(C.dps(n, 9), 6 * Math.pow(n, 0.8) * 4);
     assert.equal(C.dps(n, -1), C.dps(n, 0));
   }
   // 4단계로 만든 구간 = 3단계로 만든 구간(위협 = WEAPON[min(tier, THREAT_TIER)] × …), 2단계와는 다르다
@@ -3561,6 +3563,47 @@ test('빌드 개편: 안 연 판에는 bld가 없고, 연 판의 카드에는 �
   }
   assert.equal(C.stateHash(a), C.stateHash(b));
 });
+test('총 ★(개편 판): 무기 단계와 무기 개조가 하나로 — 상자·카드가 모두 ★를 올리고(카드는 등급만큼), 상한은 ★5(바퀴 1~3)·19구간부터 ★10, 코일이면 +1. 상한이면 총 카드는 안 나온다', () => {
+  const s = bldRun(31, 1);
+  const q = s.squad;
+  const at = (seg, mod = () => {}) => { const o = C.snapshot(s); o.endless.seg = seg; mod(o); return C.restore(o); };
+  assert.equal(C.tierMax(at(1)), R_STAR.cap - 1);
+  assert.equal(C.tierMax(at(18)), R_STAR.cap - 1);
+  assert.equal(C.tierMax(at(19)), R_STAR.capLate - 1);
+  assert.equal(C.tierMax(at(19, (o) => { o.endless.relics = ['coil']; })), C.WEAPON.length - 1, '코일 +1이어도 ★11은 없다 — WEAPON의 끝(★10)에서 자른다');
+  assert.equal(C.tierMax(at(1, (o) => { o.endless.relics = ['coil']; })), R_STAR.cap);
+  assert.equal(C.WEAPON.length, 10);
+  // 카드: ★ += 등급, 상한에서 자름. 무기 개조(bld.gun)는 더 오르지 않는다
+  const pick = (n, tier, seg = 1) => {
+    const u = at(seg, (o) => { o.squad.tier = tier; o.endless.offer = [{ k: 'gun', n }]; });
+    const { k, from, to, n: nn } = C.cardInfo(u, { k: 'gun', n });   // (세트 진행 set도 실려 온다)
+    assert.deepEqual({ k, from, to, nn }, { k: 'gun', from: tier, to: Math.min(C.tierMax(u), tier + n), nn: n });
+    C.pickCard(u, 0);
+    return u;
+  };
+  assert.equal(pick(1, 0).squad.tier, 1);
+  assert.equal(pick(3, 0).squad.tier, 3, '전설 = ★ +3');
+  assert.equal(pick(3, 3).squad.tier, 4, '상한(★5)에서 자른다');
+  assert.equal(pick(2, 5, 19).squad.tier, 7);
+  assert.equal(pick(1, 0).endless.bld.gun, s.endless.bld.gun, '무기 개조 레벨은 안 오른다');
+  // 총 카드 후보: 상한이면 안 나온다, 아래면 나온다(여러 시드 — 한 번은 나온다)
+  let low = 0, high = 0;
+  for (let x = 1; x <= 30; x++) {
+    const o = C.snapshot(s); o.endless.seed = x; o.endless.seg = 2; o.squad.tier = 0; o.endless.offer = null;
+    low += (C.offerOf(C.restore(o)) || []).some((c) => c.k === 'gun') ? 1 : 0;
+    const o2 = C.snapshot(s); o2.endless.seed = x; o2.endless.seg = 2; o2.squad.tier = 4; o2.endless.offer = null;
+    high += (C.offerOf(C.restore(o2)) || []).some((c) => c.k === 'gun') ? 1 : 0;
+  }
+  assert.ok(low > 0 && high === 0, `상한 아래 ${low}회 · 상한 ${high}회`);
+  // 피해: ★가 오르면 dps가 WEAPON만큼(+30% 안팎) 오른다 — 총알이 나가는 틱의 dmg
+  const shot = (tier) => { const u = C.newEndless({ seed: 31, ...BLD }); u.squad.tier = tier; u.squad.n = 500; u.foes = []; u.props = []; u.rows = []; u.saws = []; delete u.divs; u.squad.fireAcc = 1; C.step(u, { dir: 0 }); return u.bullets.length ? u.bullets.at(-1).dmg : 0; };
+  const d0 = shot(0), d4 = shot(4), d9 = shot(9);
+  assert.ok(d0 > 0 && Math.abs(d4 / d0 - C.WEAPON[4]) < 1e-9 && Math.abs(d9 / d0 - C.WEAPON[9]) < 1e-9, `★ 피해 ${d4 / d0} ${d9 / d0}`);
+  // 탄막 세트의 총 몫은 ★ − 1(무기 개조가 합쳐졌다)
+  assert.equal(C.setLv(at(1, (o) => { o.squad.tier = 3; o.endless.bld.gun = 0; }), 'barrage'), 3 + C.fxLv(at(1, (o) => { o.squad.tier = 3; }), 'rapid'));
+  assert.ok(q.tier >= 0);
+});
+
 test('적 변이(개편 판): 대왕을 잡으면 다음 바퀴의 변이가 시드·구간으로 정해지고(직전과 같은 것은 안 나온다, 또 나오면 2단계) mutation 이벤트로 알려진다. 개편 판이 아니면 없다', () => {
   const evs = [];
   const k = bldRun(32, 6, { n: 9000, each: (s) => { for (const e of s.ev) if (e.t === 'mutation') evs.push(e); } });

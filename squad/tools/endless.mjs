@@ -117,7 +117,7 @@ function thinkScoreB(s, c, f, K) {
   if (f.k === 'relic') return ((THINK.relic)[c.r] || 0) * (1 + THINK.H);
   let v = 0;
   const part = f.k === 'gun' ? 'gun' : f.k === 'unit' ? f.u : f.k === 'fx' ? f.a : f.k === 'hero' ? f.h : f.g;
-  if (f.k === 'gun') v = g(1 + BUILD.gun * deep(f.to), 1 + BUILD.gun * deep(f.from));
+  if (f.k === 'gun') v = g(C.WEAPON[f.to], C.WEAPON[f.from]);   // 총 ★(무기 단계)
   else if (f.k === 'fx' && f.a === 'rapid') v = g(fx2Val('rapid', f.to).dmg, f.from ? fx2Val('rapid', f.from).dmg : 1);
   else if (f.k === 'guard' && f.g === 'armor') v = g(1 + BUILD.armor * deep(f.to), 1 + BUILD.armor * deep(f.from));
   else v = (K.w[part] || 0.02) * (deep(f.to) - deep(f.from)) + (f.from ? 0 : K.first);

@@ -334,7 +334,7 @@ export const RELICS = {
   compass: { name: '나침반', kings: 0, ahead: 45, v: 1.5, text: () => `갈림길 보상 상자 속이 ${RELICS.compass.ahead}m 앞에서 보이고, 위험한 쪽 보상 병사 ×${RELICS.compass.v}`, cost: () => '' },
   dice: { name: '재굴림 주사위', kings: 0, n: 3, king: 1, text: () => `다시 뽑기를 바로 ${RELICS.dice.n}번 더, 대왕을 잡을 때마다 ${1 + RELICS.dice.king}번씩`, cost: () => '' },
   megaphone: { name: '빨간 확성기', kings: 0, red: 1.5, blue: 0.8, text: () => `빨간 덧셈 칸이 ${RELICS.megaphone.red}배 빨리 올라요`, cost: () => `파란 칸은 ${RELICS.megaphone.blue}배` },
-  coil: { name: '과부하 코일', kings: 0, tier: 4, men: 0.7, text: () => `무기 단계 상한 3 → ${RELICS.coil.tier}`, cost: () => `지원병 상자 병력 −${apc(1 - RELICS.coil.men)}%` },
+  coil: { name: '과부하 코일', kings: 0, tier: 4, men: 0.7, text: () => `총 ★ 상한 +1 (보통 판은 무기 단계 3 → ${RELICS.coil.tier})`, cost: () => `지원병 상자 병력 −${apc(1 - RELICS.coil.men)}%` },
   fourth: { name: '넷째 자리', kings: 2, slots: 4, escort: 6, text: () => `특수병 자리 3 → ${RELICS.fourth.slots}`, cost: () => `특수병마다 호위 병사 4 → ${RELICS.fourth.escort}명` },
   pledge: { name: '부활 서약', kings: 3, text: () => `쓰러진 특수병이 보스 뒤에 레벨의 ${apc(BUILD.spBack)}%가 아니라 제 레벨로 돌아와요`, cost: () => '' },
   bag: { name: '수집가의 가방', kings: 4, egg: 0.35, cards: 2, text: () => `일반 보스의 알 확률 ${apc(EGG.pEndless)} → ${apc(RELICS.bag.egg)}%`, cost: () => `카드 3장 → ${RELICS.bag.cards}장` },

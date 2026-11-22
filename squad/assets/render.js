@@ -20,7 +20,7 @@ const STEPS3 = [1, 0.75, 0.5];
 const STEPS4 = [1, 0.75, 0.5, 0.33];
 const biomeGroup = (n) => BIOME_GROUP.get(n) || '';   // 지역 시트 → 그 지역(아틀라스 묶음), 나머지는 ''(늘 남는 공용 페이지)
 /* 무기 단계 색. 다섯째(4단계)는 과부하 코일(무한모드 유물)로만 닿는다 — 전기 보라(총알 옆에 튀는 불꽃, drawBullets). core WEAPON과 같은 길이(tests/art.mjs) */
-export const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9', '#B98CFF'];
+export const WTIER = ['#FFE38A', '#FFB347', '#7FE8FF', '#FF7AD9', '#B98CFF', '#7CFF8A', '#FF5A5A', '#FFFFFF', '#3F7BFF', '#2BE8B0'];   // 총 ★1~10(개편 판)
 const SPARK4 = '#F2E8FF';   // 4단계 총알 옆 전기 불꽃
 /* 유물(무한모드 3·5단계)의 색: 보라 테두리 + 금빛 — 카드(index.html .pick-card.relic)·HUD 줄·나침반 표시가 같은 짝 */
 export const RELIC_COL = '#9B6BFF', RELIC_GOLD = '#FFD84A';
