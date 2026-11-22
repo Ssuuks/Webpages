@@ -145,6 +145,8 @@ export const LV_SANE = 999;
 export const enhN = (s, id, kind) => { const B = s && s.endless && s.endless.bld; const e = B && B.enh && B.enh[id]; return e ? e[kind] | 0 : 0; };
 const enhV = (s, id, kind) => { const n = enhN(s, id, kind); return n ? enhStr(n) : 0; };   // 강화 배수(없으면 0)
 const legKs = (s, id) => legK(enhN(s, id, 'l'));   // 전설 강화의 핵심 수치 배수(없으면 1 — 한 장 ×2, 두 장 ×2.5 …)
+/* 총 Lv 카드가 나올 수 있나: 각성 전에는 Lv5가 상한(탄과 같다) */
+export const gunLvCan = (s) => { const B = s && s.endless && s.endless.bld; if (!B || !B.gt) return false; const lv = (B.gl && B.gl[B.gt]) || 1; return awakeOn(s) || lv < BUILD.evo; };
 /* 개편 판의 총(ENDGAME.md 21절): { id, lv, v } — v는 그 총 Lv의 사격 규칙(roster.gunVal) + 총 강화(희귀·전설). 개편 판이 아니면 null(예전 총 그대로) */
 export function gunOf(s) {
   const B = s && s.endless && s.endless.bld;
@@ -1691,7 +1693,7 @@ export const bldThreat = (k) => Math.pow(BUILD.thr.step, Math.max(0, k - BUILD.t
 /* 개편 판의 앞 구간은 위협을 '실제 강화(fire)'의 화력으로 만든다(기준은 ENDLESS.fire) — 강화가 높아도 처음 보스·좀비가 같은 시간을 버틴다(가만히 서 있는 분대가 첫 보스를 넘지 못한다).
    BUILD.early구간에 걸쳐 기준으로 돌아간다(1구간 전부 → early구간에 0) — 그 뒤로는 강화가 높은 만큼 더 멀리 간다 */
 export const bldFe = (k, fire) => ENDLESS.fire + Math.max(0, (fire | 0) - ENDLESS.fire) * BUILD.earlyK * clamp(1 - (Math.max(1, k) - 1) / BUILD.early, 0, 1);
-const newBld = () => ({ sets: {}, crit: 0, gun: 0, chg: 0, dur: 0, shield: 0, armor: 0, shieldLeft: 0, spec: {}, down: [], rr: BUILD.reroll, rrn: 0, pi: 0, more: 0, curse: 0, rel: 0 });
+const newBld = () => ({ sets: {}, crit: 0, gun: 0, chg: 0, dur: 0, shield: 0, armor: 0, shieldLeft: 0, spec: {}, down: [], rr: BUILD.reroll, rrn: 0, pi: 0, more: 0, curse: 0, rel: 0, pre: 0 });   // pre: 이 보스 뒤 카드 앞에 고른 장 수(유물·총 바꾸기)
 export function newEndless(opt = {}) {
   const seed = (opt.seed >>> 0) || 1;
   const unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(opt.unl) || 0)));
@@ -1778,7 +1780,7 @@ export function cardInfo(s, c) {
   const B = bldOf(s);
   if (B) {
     const o = cardInfoB(s, c, B);
-    if (o && (o.k === 'unit' || o.k === 'fx') && o.n >= 2) { o.enhId = o.k === 'unit' ? o.u : o.a; o.enh = o.n === 2 ? 'rare' : 'legend'; }   // 카드 등급 = 강화(roster.ENH)
+    if (o && (o.k === 'unit' || o.k === 'fx' || o.k === 'gunlv') && o.n >= 2) { o.enhId = o.k === 'unit' ? o.u : o.k === 'fx' ? o.a : o.g; o.enh = o.n === 2 ? 'rare' : 'legend'; }   // 카드 등급 = 강화(roster.ENH — 총도)
     return o;
   }
   return cardInfoOld(s, c, q);
@@ -1790,6 +1792,9 @@ function cardInfoB(s, c, B) {
     const n = Math.max(1, c.n | 0);
     if (c.k === 'gun') return { k: 'gun', from: q.tier, to: Math.min(tierMax(s), q.tier + n), n };   // 총 ★ — 무기 개조는 ★로 합쳐졌다
     if (c.k === 'curse') return { k: 'curse', mul: BUILD.curse.mul, more: BUILD.curse.more };
+    if (c.k === 'gunlv') { const lv = (B.gl && B.gl[c.g]) || 1; return { k: 'gunlv', g: c.g, from: lv, to: awakeOn(s) ? lv + 1 : Math.min(BUILD.evo, lv + 1), n }; }   // 총 Lv(21.9)
+    if (c.k === 'swap') { const lv = (B.gl && B.gl[c.g]) || Math.max(1, Math.floor(((B.gl && B.gl[B.gt]) || 1) * GUN_SWAP.keep)); return { k: 'swap', g: c.g, from: B.gt, fromLv: (B.gl && B.gl[B.gt]) || 1, to: lv, pend: !!c.pend }; }   // 총 바꾸기: 처음 잡는 총은 지금 Lv의 keep 몫
+    if (c.k === 'keep') return { k: 'keep', g: c.g, from: q.tier, to: Math.min(tierMax(s), q.tier + 1) };   // 그대로 — 대신 ★ +1
     if (c.k === 'unit') {
       const m = q.sp.find((o) => o.k === c.u);
       const o = { k: 'unit', u: c.u, from: m ? m.lv || 1 : 0, to: m ? Math.min(spLvMax(s), (m.lv || 1) + 1) : 1, n };   // 레벨은 늘 +1 — 희귀·전설은 강화(enh)
@@ -2125,6 +2130,7 @@ function makeOffer3(s) {
   // 전문화: Lv3이 된 특수병(아직 안 고른 것 — 먼저 온 순서)의 두 갈래가 함께 나온다
   const W = BUILD.w;
   const cands = q.tier < tierMax(s) ? [{ c: { k: 'gun' }, w: W.gun }] : [];   // 총 ★ 상한이면 총 카드는 안 나온다
+  if (gunLvCan(s)) cands.push({ c: { k: 'gunlv', g: B.gt }, w: W.gun * (q.tier < tierMax(s) ? 1 : 2) });   // 총 Lv(21.9 — 그 총의 능력). ★이 상한이면 그 몫까지
   for (const k of spKindsOf(s)) {
     const m = q.sp.find((o) => o.k === k);
     if (m) cands.push({ c: { k: 'unit', u: k }, w: W.unit * BUILD.own });
@@ -2134,7 +2140,8 @@ function makeOffer3(s) {
   for (let j = cands.length - 1; j >= 0; j--) if (!(cands[j].w > 0)) cands.splice(j, 1);
   let first = true;
   const lastPick = e.picks && e.picks.length ? e.picks[e.picks.length - 1] : '';
-  const firstOffer = B.pi === 0 || (B.pi === 1 && lastPick.startsWith('relic:'));   // 이 보스 뒤 첫 카드(유물을 먼저 골랐으면 그다음)
+  const firstOffer = B.pi === (B.pre | 0);   // 이 보스 뒤 첫 카드(유물·총 바꾸기를 먼저 골랐으면 그다음)
+  void lastPick;
   while (out.length < count && cands.length) {
     let sum = 0;
     for (const o of cands) sum += o.w;
@@ -2149,6 +2156,11 @@ function makeOffer3(s) {
     if (id && combosBy(s, id).length) c.syn = true;
     out.push(c);
   }
+  // 총 바꾸기(21.8): 대왕 뒤 첫 카드에 GUN_SWAP.king 확률로 한 장(첫 장 자리 — 다른 총 하나). 등급·계약 굴림과 따로 굴린다
+  if (tag === 'super' && firstOffer && out.length >= 2) {
+    const gs = { rs: hash(VERSION, 'gunking', e.seed >>> 0, e.seg, B.rrn) };
+    if (rand(gs) < GUN_SWAP.king) { const others = GUN_IDS.filter((x) => x !== B.gt); out[0] = { k: 'swap', g: others[Math.floor(rand(gs) * others.length)] }; }
+  }
   // 위험한 계약: 이 보스 뒤 첫 카드에만, 마지막 장 자리에
   const curse = rand(g) < BUILD.curse.p;
   if (curse && B.pi === 0 && !B.curse && e.bosses >= BUILD.curse.from && out.length >= 2 && out[out.length - 1].k !== 'spec') out[out.length - 1] = { k: 'curse' };
@@ -2156,6 +2168,7 @@ function makeOffer3(s) {
 }
 function makeOfferB(s) {
   const B = s.endless.bld;
+  if (B.gp && GUNS[B.gp] && B.gp !== B.gt) return [{ k: 'swap', g: B.gp, pend: true }, { k: 'keep', g: B.gp, pend: true }];   // 총 바꾸기(21.8): 맨 앞, 둘 중 하나는 꼭
   if (B.rel) { const r = relicOfferB(s); if (r) return r; B.rel = 0; }
   return makeOffer3(s);
 }
@@ -2163,6 +2176,7 @@ function makeOfferB(s) {
 export function rerollCards(s) {
   const B = bldOf(s);
   if (!B || !s.endless.offer || B.rr <= 0) return false;
+  if (s.endless.offer[0] && s.endless.offer[0].pend) return false;   // 총 바꾸기 고르기는 다시 뽑지 않는다
   B.rr--; B.rrn++;
   const of = makeOffer(s);
   if (!of.length) { B.rr++; B.rrn--; return false; }
@@ -2170,7 +2184,7 @@ export function rerollCards(s) {
   return true;
 }
 export const rerollsOf = (s) => { const B = bldOf(s); return B ? B.rr : 0; };
-const pickName = (c) => (c.k === 'unit' ? 'unit:' + c.u : c.k === 'fx' ? 'fx:' + c.a : c.k === 'relic' ? 'relic:' + c.r : c.k === 'spec' ? 'spec:' + c.u + ':' + c.b : c.k === 'hero' ? 'hero:' + c.h : c.k === 'guard' ? 'guard:' + c.g : c.k);
+const pickName = (c) => (c.k === 'unit' ? 'unit:' + c.u : c.k === 'fx' ? 'fx:' + c.a : c.k === 'relic' ? 'relic:' + c.r : c.k === 'gunlv' ? 'gunlv:' + c.g : c.k === 'swap' ? 'swap:' + c.g : c.k === 'spec' ? 'spec:' + c.u + ':' + c.b : c.k === 'hero' ? 'hero:' + c.h : c.k === 'guard' ? 'guard:' + c.g : c.k);
 /* 카드 등급 n(2 희귀·3 전설)이면 대상 id의 강화 하나를 더 쌓는다 */
 function enhAdd(B, id, n) {
   if (n < 2 || !ENH[id]) return;
@@ -2190,7 +2204,15 @@ function pickCardB(s, i) {
   else if (c.k === 'unit') { addSpecial(s, c.u, 'card', q.x, q.z); enhAdd(B, c.u, n); }   // 레벨 +1, 희귀·전설이면 강화(등급은 레벨 수가 아니라 강화)
   else if (c.k === 'fx') { if (fxCan(s, c.a)) fxAdd(s, c.a, 'card', q.x, q.z); enhAdd(B, c.a, n); }
   else if (c.k === 'curse') { B.curse = BUILD.curse.mul; B.more += BUILD.curse.more; }
-  else if (c.k === 'relic') { if (relicCan(e, c.r)) relicAdd(s, c.r); B.rel = 0; again = true; }
+  else if (c.k === 'relic') { if (relicCan(e, c.r)) relicAdd(s, c.r); B.rel = 0; B.pre = (B.pre | 0) + 1; again = true; }
+  else if (c.k === 'gunlv') { if (!B.gl) B.gl = {}; B.gl[c.g] = info.to; enhAdd(B, c.g, n); }   // 총 Lv +1, 희귀·전설이면 총 강화
+  else if (c.k === 'swap' && GUNS[c.g]) {   // 총 바꾸기: 지금 총의 Lv은 기억해 두고, 처음 잡는 총은 지금 Lv의 keep 몫(★은 그대로)
+    if (!B.gl) B.gl = {};
+    B.gl[c.g] = info.to;
+    B.gt = c.g;
+    if (c.pend) { B.gp = ''; B.pre = (B.pre | 0) + 1; again = true; }
+    emit(s, { t: 'gunSwap', g: c.g, lv: info.to, x: q.x, z: q.z });
+  } else if (c.k === 'keep') { q.tier = Math.min(tierMax(s), q.tier + 1); B.gp = ''; B.pre = (B.pre | 0) + 1; again = true; }
   e.picks.push(pickName(c));
   emit(s, { t: 'card', ...info, x: q.x, z: q.z });
   if (!again && B.more > 0) { B.more--; again = true; }
@@ -2207,12 +2229,25 @@ function startSegmentB(s) {
   const e = s.endless, B = e.bld, q = s.squad;
   const tag = segInfo(e.seg).tag;   // 방금 잡은 보스의 등급
   nextSegment(s);
-  B.curse = 0; B.more = 0; B.pi = 0; B.rrn = 0; B.rel = 0;
+  B.curse = 0; B.more = 0; B.pi = 0; B.rrn = 0; B.rel = 0; B.pre = 0;
   const add = Math.max(1, Math.round(q.n * BUILD.supply[tag]));
   gain(s, add, q.x, q.z, 'supply');
   emit(s, { t: 'supply', n: add, x: q.x, z: q.z });
+  gunCrates(s);
   if (e.fx) fxCrates(s);
   if (e.relics) relicSeg(s);
+}
+/* 총 바꾸기 상자(21.8): GUN_SWAP.from구간부터 이번 구간 무기 상자의 GUN_SWAP.p 몫에 지금 총과 다른 총(시드·구간·상자 id로 정한다 — 상자 위에 그림).
+   열면 B.gp(바꿀지 고를 총) — 다음 보스 뒤 카드 화면 맨 앞에서 바꾸기 / 그대로(★ +1) */
+function gunCrates(s) {
+  const e = s.endless, B = e.bld;
+  if (!B || e.seg < GUN_SWAP.from) return;
+  const others = GUN_IDS.filter((g) => g !== B.gt);
+  for (const p of s.props) {
+    if (p.kind !== 'crate' || !p.reward || p.reward.type !== 'gun') continue;
+    const g = { rs: hash(VERSION, 'guncrate', e.seed >>> 0, e.seg, p.id) };
+    if (rand(g) < GUN_SWAP.p) p.reward = { type: 'gunx', g: others[Math.floor(rand(g) * others.length)] };
+  }
 }
 /* 쓰러진 특수병이 돌아온다(보스를 잡은 뒤 — 카드가 뜨기 전): 레벨은 BUILD.spBack 몫(최소 Lv1), 자리·호위 병사가 되면 */
 function spBack(s) {
@@ -2419,6 +2454,7 @@ export function restore(o) {
         }
         e.fx = fx;
         for (const p of o.props) if (p.reward && p.reward.type === 'fx' && !AMMO[p.reward.a]) p.reward = { type: 'gun' };
+        for (const p of o.props) if (p.reward && p.reward.type === 'gunx' && !(e.bld && GUNS[p.reward.g])) p.reward = { type: 'gun' };   // 총 바꾸기 상자(개편 판만)
         // 알린 장애물 종류: 아는 것만 한 번씩(없으면 빈 목록 — 다시 알린다)
         e.obsSeen = Array.isArray(e.obsSeen) ? e.obsSeen.filter((k, i, l) => OBSTACLE_IDS.includes(k) && l.indexOf(k) === i) : [];
       } else { delete e.fx; delete e.obsSeen; }
@@ -2426,7 +2462,8 @@ export function restore(o) {
       const okRelic = (c) => relicCan(e, c.r);   // 유물 카드: 열린 것 중 아직 없는 것(RELIC.max개 아래)
       const okN = (c) => c.n === 1 || c.n === 2 || c.n === 3;
       const okCardB = (c) => c && typeof c === 'object' && (c.syn === undefined || c.syn === true) && (c.k === 'relic' ? okRelic(c) : c.k === 'curse' ? true
-        : c.k === 'spec' ? false : !okN(c) ? false : c.k === 'gun' ? true : c.k === 'unit' ? spKindsOf(o).includes(c.u)
+        : c.k === 'swap' || c.k === 'keep' ? !!(GUNS[c.g] && e.bld && c.g !== e.bld.gt) && (c.pend === undefined || c.pend === true)   // 총 바꾸기(21.8)
+        : c.k === 'spec' ? false : !okN(c) ? false : c.k === 'gun' ? true : c.k === 'gunlv' ? !!(GUNS[c.g] && e.bld && c.g === e.bld.gt) : c.k === 'unit' ? spKindsOf(o).includes(c.u)
           : c.k === 'fx' ? !!(e.fx && AMMO[c.a]) : false);
       const okCard = e.bld ? okCardB : (c) => c && typeof c === 'object' && (c.k === 'relic' ? okRelic(c) : kinds.includes(c.k) && (c.k !== 'unit' || spKindsOf(o).includes(c.u)) && ((c.k !== 'ammo' && c.k !== 'fx') || !!AMMO[c.a]) && (c.syn === undefined || c.syn === true));
       if (e.offer != null && !(Array.isArray(e.offer) && e.offer.length && e.offer.every(okCard))) e.offer = null;
@@ -3510,6 +3547,12 @@ function openCrate(s, p) {
     else { gain(s, crateMen(q.n, r), x, p.z, 'crate'); emit(s, { t: 'crate', type: 'men', x, z: p.z }); }
     return;
   }
+  if (r.type === 'gunx' && bldOf(s)) {   // 총 바꾸기 상자(21.8): 바꿀지는 다음 보스 뒤에 고른다(달리는 중에는 멈추지 않는다)
+    const B = bldOf(s);
+    if (GUNS[r.g] && r.g !== B.gt) B.gp = r.g;
+    emit(s, { t: 'crate', type: 'gunx', g: r.g, x, z: p.z });
+    return;
+  }
   if (r.type === 'gun') {
     if (q.tier < tierMax(s)) { q.tier++; emit(s, { t: 'crate', type: 'gun', tier: q.tier, x, z: p.z }); }
     else { gain(s, crateMen(q.n, r), x, p.z, 'crate'); emit(s, { t: 'crate', type: 'men', x, z: p.z }); }
@@ -3605,7 +3648,7 @@ function bossUpdate(s, R) {
       b.slam = null;
       e.wait = ENDLESS.wait;
       e.bosses++;
-      if (e.bld) { const B = e.bld; B.pi = 0; B.rrn = 0; B.more = 0; B.rel = 1; if (p.tag === 'super') { B.rr += 1 + (relicOn(s, 'dice') ? RELICS.dice.king : 0); mutRoll(s); } }
+      if (e.bld) { const B = e.bld; B.pi = 0; B.rrn = 0; B.more = 0; B.rel = 1; B.pre = 0; if (p.tag === 'super') { B.rr += 1 + (relicOn(s, 'dice') ? RELICS.dice.king : 0); mutRoll(s); } }
       const coins = segCoins(e.seg);
       e.bank += coins;
       s.stats.bossT += b.t;
