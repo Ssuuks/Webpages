@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS, SETS, SET_IDS, TIER_MARK, comboText } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, HERO_CARDS, GUARD_CARDS, deep, PET_SLOTS, SETS, SET_IDS, TIER_MARK, comboText } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -2057,7 +2057,7 @@ function renderPauseUnits() {
     if (Bd.gun) addRow('gun', `무기 개조 Lv${Bd.gun}`, `총알 화력 +${pct(BUILD.gun * deep(Bd.gun))}%`);
     for (const k of Object.keys(HERO_CARDS)) if (Bd[k]) addRow('star', `${HERO_CARDS[k].name} Lv${Bd[k]}`, HERO_CARDS[k].text(Bd[k]));
     for (const k of Object.keys(GUARD_CARDS)) if (Bd[k]) addRow('medic', `${GUARD_CARDS[k].name} Lv${Bd[k]}`, GUARD_CARDS[k].text(Bd[k]) + (k === 'shield' ? ` · 이번 구간 ${Bd.shieldLeft}번 남음` : ''));
-    for (const m of sp) if (SP_EVO[m.k] && (m.lv || 1) >= BUILD.evo) addRow(m.k, `${UNITS[m.k].name} ‘${SP_EVO[m.k].name}’`, SP_EVO[m.k].text());   // Lv5 고유 능력
+    for (const m of sp) if (SP_EVO[m.k] && (m.lv || 1) >= BUILD.evo) addRow(m.k, `${UNITS[m.k].name} ‘${SP_EVO[m.k].name}’${(m.lv || 1) >= 10 ? ` · ‘${SP_EVO2[m.k].name}’` : ''}${(m.lv || 1) > BUILD.evo ? ` · 각성 +${Math.round((awk(m.lv || 1) - 1) * 100)}%` : ''}`, SP_EVO[m.k].text() + ((m.lv || 1) >= 10 ? ' · ' + SP_EVO2[m.k].text() : ''));   // Lv5 고유 능력·Lv10 2차 진화·각성
     for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * (rl && rl.includes('pledge') ? 1 : BUILD.spBack)))}로 돌아와요`);
     addRow('star', '다시 뽑기', `${Bd.rr}번 남음 · 대왕을 잡으면 +${1 + (rl && rl.includes('dice') ? RELICS.dice.king : 0)}`);
   }
@@ -2420,6 +2420,11 @@ function handleEvents(ev) {
       case 'set':
         // 빌드 세트의 단계가 올랐다 — 빌드가 완성되어 가는 순간이라 시너지처럼 크게
         if (SETS[e.id]) { sfx.combo(); vibe([20, 30, 20, 30, 50]); setNote = `세트 ${SETS[e.id].name} ${TIER_MARK[e.tier]}단계! ${SETS[e.id].text(e.tier)}`; toast(setNote, 3200); }
+        break;
+      case 'revive':
+        // 의무병 Lv10 '마지막 응급'(구간마다 한 번): 전멸 직전에 병력이 돌아왔다 — 판이 끝날 뻔한 순간이라 크게
+        sfx.power(2); vibe([60, 40, 60, 40, 120]);
+        toast(`마지막 응급! 병력 ${fmtN(e.n)}명으로 다시 일어났어요 · 이번 구간은 한 번뿐이에요`, 2800);
         break;
       case 'mutation': {
         // 대왕을 잡았다 — 다음 바퀴의 적 변이가 정해졌다(바로 공개: 대왕 뒤 카드·유물로 대비). 다음 알림에 이어 붙여 한 줄로

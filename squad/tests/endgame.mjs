@@ -3943,6 +3943,73 @@ test('특수병 Lv1~5·짝 넷(개편 판, 18.3): 전문화 카드는 없고 Lv5
   assert.ok(bite(false) > 0 && bite(true) <= 0, `응급 얼음: 의무병 없음 ${bite(false)} · 있음 ${bite(true)}`);
 });
 
+test('각성·숙련(개편 판, 18.4): 13구간부터 Lv5 위로 — Lv6~9는 그 역할의 값 +15%씩, Lv10은 2차 진화, 그 위(숙련)는 +4%씩 더. 그 전에는 Lv5가 상한', () => {
+  assert.equal(R.awk(5), 1);
+  assert.ok(Math.abs(R.awk(7) - 1.3) < 1e-12 && Math.abs(R.awk(10) - 1.75) < 1e-12 && Math.abs(R.awk(12) - 1.83) < 1e-12, '각성 +15%씩, 숙련 +4%씩(더한다)');
+  assert.equal(R.awk(1), 1);
+  const at = (seg, mod = () => {}) => { const u = C.newEndless({ seed: 31, ...BLD }); u.endless.seg = seg; mod(u); return u; };
+  assert.deepEqual([C.awakeOn(at(12)), C.awakeOn(at(13))], [false, true]);
+  assert.equal(C.awakeOn(C.newEndless({ seed: 31, ...CARD3 })), false, '개편 판이 아니면 없다');
+  // 상한: 13구간 전 Lv5, 그 뒤 끝없음(탄 효과·특수병 — 카드·상자·fxCan)
+  const u12 = at(12, (u) => { u.endless.fx = { pierce: 5 }; }), u13 = at(13, (u) => { u.endless.fx = { pierce: 5 }; });
+  assert.deepEqual([C.fxCan(u12, 'pierce'), C.fxCan(u13, 'pierce')], [false, true]);
+  assert.deepEqual([C.spLvMax(u12), C.spLvMax(u13) > 10], [R.BUILD.evo, true]);
+  assert.equal(C.cardInfo(u13, { k: 'fx', a: 'pierce', n: 2 }).to, 7);
+  assert.equal(C.cardInfo(u12, { k: 'fx', a: 'pierce', n: 2 }).to, 5);
+  // 값: 각성 배수가 그 역할의 값에 든다
+  assert.ok(Math.abs(R.fx2Val('pierce', 7).pierce - 0.65) < 1e-12 && Math.abs(R.fx2Val('burst', 7).splash - 0.78) < 1e-12);
+  assert.ok(Math.abs(R.fx2Val('frost', 7).slow - 0.455) < 1e-9 && R.fx2Val('frost', 7).loss < 0.75);
+  assert.equal(R.fx2Val('rapid', 4).heat, 1, '진화 전에는 과열이 없다');
+  assert.ok(R.fx2Val('rapid', 10).heat > R.fx2Val('rapid', 6).heat && R.fx2Val('rapid', 12).heat > R.fx2Val('rapid', 10).heat, '과열도 각성·숙련으로 오른다');
+  assert.deepEqual([R.fx2Val('pierce', 9).evo2, R.fx2Val('pierce', 10).evo2], [false, true]);
+  for (const a of R.AMMO_IDS) assert.ok(R.fx2Text(a, 10).includes(R.FX_EVO2[a]) && R.fx2Text(a, 7).includes('각성 +30%'), a);
+  // 특수병: Lv6+는 위력이 각성 배수만큼(간격·범위 식은 Lv5 그대로)
+  const dmgAt = (lv) => { const u = C.newEndless({ seed: 31, ...BLD }); u.endless.seg = 13; u.endless.fx = {}; u.squad.n = 600; u.props = []; u.rows = []; u.saws = []; u.bullets = []; delete u.divs; u.squad.fireAcc = -99; u.squad.sp = [{ id: 7, k: 'rocket', cd: 0, lv }]; u.foes = [{ id: 99200, kind: 'grunt', x: 0, z: u.squad.z + 25, hp: 1e9, max: 1e9, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9 }]; C.step(u, { dir: 0 }); return u.rockets[0] && u.rockets[0].dmg; };
+  const d5 = dmgAt(5), d7 = dmgAt(7), d10 = dmgAt(10);
+  assert.ok(d5 > 0 && Math.abs(d7 / d5 - R.awk(7)) < 1e-9 && Math.abs(d10 / d5 - R.awk(10)) < 1e-9, `로켓 위력 ${d5} ${d7} ${d10}`);
+});
+test('Lv10 2차 진화(개편 판): 관통 벽 너머 · 작렬 벽·보스 연쇄 · 속사 쌍갈래 · 빙결 얼어붙기 · 저격 터짐 · 불씨 로켓 · 따라오는 불 · 마지막 응급', () => {
+  const mk = (fx, seg = 13) => { const u = C.newEndless({ seed: 31, ...BLD }); u.endless.seg = seg; u.endless.fx = { ...fx }; u.squad.n = 600; u.props = []; u.rows = []; u.saws = []; u.bullets = []; delete u.divs; u.squad.fireAcc = -99; return u; };
+  const foe = (u, id, dz, hp, extra = {}) => ({ id, kind: 'grunt', x: 0, z: u.squad.z + dz, hp, max: hp, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9, ...extra });
+  // 관통: 벽에 맞은 총알이 벽 뒤 좀비를 뚫는다(Lv9는 안 뚫는다)
+  const thru = (lv) => { const u = mk({ pierce: lv }); const w = { id: 99210, kind: 'wall', x0: -1, x1: 1, z: u.squad.z + 6, hp: 1e9, max: 1e9, alive: true, hitT: -9 }; const f = foe(u, 99211, 8, 1e6); u.props = [w]; u.foes = [f]; u.bullets = [{ x: 0, z: w.z - 0.5, d: 5, dmg: 100, hm: 1 }]; C.step(u, { dir: 0 }); return Math.round(1e6 - f.hp); };
+  assert.deepEqual([thru(9), thru(10) > 0], [0, true]);
+  // 작렬: 연쇄 폭발이 벽도 친다(Lv9는 안 친다)
+  const chainWall = (lv) => { const u = mk({ burst: lv }); const a = foe(u, 99220, 6, 40); const w = { id: 99221, kind: 'wall', x0: 0.5, x1: 2.5, z: a.z, hp: 1e6, max: 1e6, alive: true, hitT: -9 }; u.props = [w]; u.foes = [a]; u.bullets = [{ x: 0, z: a.z - 0.3, d: 5, dmg: 100, hm: 1 }]; C.step(u, { dir: 0 }); return Math.round(1e6 - w.hp); };
+  assert.deepEqual([chainWall(9), chainWall(10) > 0], [0, true]);
+  // 속사: 과열 중 총알이 둘로 갈라진다(Lv5는 안 갈라진다) — 과열이 걸린 일제 사격의 총알 수
+  const burst = (lv) => { const u = mk({ rapid: lv }); u.squad.fireAcc = 0; u.foes = [foe(u, 99230, 60, 1e12)]; let n1 = 0, n2 = 0; for (let i = 0; i < 280; i++) { u.squad.heat = i < 10 ? 0 : u.squad.heat; C.step(u, { dir: 0 }); u.foes[0].z = u.squad.z + 30; u.foes[0].hp = 1e12; if (u.bullets.length) { if ((u.squad.heat || 0) >= R.FX_HEAT) n2 = Math.max(n2, u.bullets.length); else n1 = Math.max(n1, u.bullets.length); } } return n2 / Math.max(1, n1); };
+  assert.ok(burst(10) > burst(5) * 1.4, `쌍갈래 ${burst(5)} → ${burst(10)}`);
+  // 빙결: 느려진 채 3초가 지나면 1초 얼어붙는다(Lv9는 안 얼어붙는다)
+  const frozen = (lv) => { const u = mk({ frost: lv }); const f = foe(u, 99240, 60, 1e12, { spd: 2, slowT: 99, slowFrom: u.t - 3.1 }); u.foes = [f]; const z0 = f.z; C.step(u, { dir: 0 }); return f.z === z0 && f.freezeT > u.t; };
+  assert.deepEqual([frozen(9), frozen(10)], [false, true]);
+  // 저격: Lv10에 죽은 좀비가 터진다 / 불씨 로켓: 불 지대가 남는다 / 따라오는 불: 지대가 분대를 따라간다
+  const sn = (lv) => { const u = mk({}); u.squad.sp = [{ id: 7, k: 'sniper', cd: 0, lv }]; const a = foe(u, 99250, 20, 400), b = foe(u, 99251, 21.2, 400, { x: 0.5 }); u.foes = [a, b]; C.step(u, { dir: 0 }); const live = [a, b].filter((f) => f.alive); return { dead: 2 - live.length, hurt: live.length ? Math.round(400 - live[0].hp) : -1 }; };   // 저격수는 둘 중 하나를 쏜다 — 죽은 쪽이 터지면 남은 쪽이 맞는다
+  const s9 = sn(9), s10 = sn(10);
+  assert.deepEqual([s9.dead, s9.hurt], [1, 0], 'Lv9: 하나만 죽고 이웃은 멀쩡');
+  assert.equal(s10.hurt, Math.round(400 * R.SP_EVO2.sniper.v), `터지는 저격: 이웃이 제 체력의 50%를 맞는다 ${JSON.stringify(s10)}`);
+  const rk = (lv) => { const u = mk({}); u.squad.sp = [{ id: 7, k: 'rocket', cd: 0, lv }]; u.foes = [foe(u, 99260, 20, 1e9)]; C.step(u, { dir: 0 }); for (let i = 0; i < 180 && !(u.flames && u.flames.length); i++) C.step(u, { dir: 0 }); return !!(u.flames && u.flames.length); };
+  assert.deepEqual([rk(9), rk(10)], [false, true]);
+  const fl = (lv) => { const u = mk({}); u.squad.sp = [{ id: 8, k: 'flame', cd: 0, lv }]; u.foes = [foe(u, 99270, 12, 1e9)]; C.step(u, { dir: 0 }); const z0 = u.flames[0].z, q0 = u.squad.z; for (let i = 0; i < 20; i++) C.step(u, { dir: 0 }); return { moved: u.flames && u.flames[0] ? u.flames[0].z - z0 : 0, squad: u.squad.z - q0 }; };
+  const f9 = fl(9), f10 = fl(10);
+  assert.ok(Math.abs(f9.moved) < 1e-9 && Math.abs(f10.moved - f10.squad) < 0.5 && f10.moved > 1, `따라오는 불 ${f9.moved} ${f10.moved} (분대 ${f10.squad})`);
+  // 의무병: Lv10이면 구간마다 한 번 전멸 직전에 바닥선의 절반으로(Lv9는 전멸)
+  const wipe = (lv, seg = 13) => { let u = mk({}, seg); u.squad.n = 1; u.squad.sp = [{ id: 9, k: 'medic', cd: 0, lv }]; u.foes = []; u = C.restore(JSON.parse(JSON.stringify(C.snapshot(u)))); const evs = []; u.saws = [{ id: 99280, z: u.squad.z + 1, x: u.squad.x, xa: -5, xb: 5, spd: 0, dir: 1, w: 1.1 }]; let again = false, mid = null; for (let k = 0; k < 200 && u.phase !== "lost"; k++) { C.step(u, { dir: 0 }); for (const e of u.ev) evs.push(e); u.squad.z = u.saws[0].z; if (!again && evs.some((e) => e.t === "revive")) { again = true; mid = { h: C.stateHash(u), snap: JSON.parse(JSON.stringify(C.snapshot(u))) }; u.squad.n = 1; } } return { s: u, mid, rev: evs.filter((e) => e.t === 'revive').map(({ x, z, ...e }) => e), phase: u.phase }; };   // 톱날(소프트 손실이 아니라 의무병의 방탄이 안 듣는다)이 1명뿐인 분대를 전멸시킨다
+  const w9 = wipe(9), w10 = wipe(10);
+  assert.equal(w9.phase, 'lost');
+  assert.equal(w10.rev.length, 1, '구간마다 한 번');
+  assert.equal(w10.rev[0].n, Math.round(R.SP_EVO2.medic.v * C.segFloor(13)));
+  assert.equal(w10.phase, 'lost', '둘째 전멸은 그대로 끝');
+  assert.equal(w10.s.endless.medicAt, 13);
+  assert.equal(wipe(10, 14).s.endless.medicAt, 14);
+  // 이어하기: medicAt이 이어지고, 손댄 값은 버린다
+  const rr = C.restore(w10.mid.snap);
+  assert.equal(rr.endless.medicAt, 13);
+  assert.equal(C.stateHash(rr), w10.mid.h);
+  const bad = JSON.parse(JSON.stringify(w10.mid.snap)); bad.endless.medicAt = 'x';
+  assert.ok(!('medicAt' in C.restore(bad).endless));
+});
+
 test('탄 Lv 효과(개편 판): 관통 뒤 대상 · 벽 +50% · 뚫을수록 +20% / 작렬 유폭 / 속사 속도·과열 / 빙결 잃는 병사 −20%·번짐', () => {
   const mk = (fx) => { const u = C.newEndless({ seed: 31, ...BLD }); u.endless.fx = { ...fx }; u.squad.n = 300; u.props = []; u.rows = []; u.saws = []; u.bullets = []; delete u.divs; u.squad.fireAcc = -9; return u; };
   const foe = (u, id, dz, hp, extra = {}) => ({ id, kind: 'grunt', x: 0, z: u.squad.z + dz, hp, max: hp, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9, ...extra });

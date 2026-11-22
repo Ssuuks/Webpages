@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, COMBO_IDS2, deep, SETS, SET_IDS, setTier, comboV } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, COMBO_IDS2, deep, SETS, SET_IDS, setTier, comboV } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -141,7 +141,8 @@ export const SP_ESCORT = 4;   // 병사가 특수병 수 × 4보다 적으면 �
 export { SP_LV_MAX };         // 같은 병과를 또 구하면 Lv2·Lv3(SIM 9) — 그 뒤로는 병사로(캠페인)
 /* 특수병 레벨 상한: 캠페인은 SP_LV_MAX(3), 무한모드는 없다(Lv4부터는 roster.js의 over 규칙 — unitVal). LV_SANE: 저장을 읽을 때만 쓰는 울타리 */
 export const LV_SANE = 999;
-export const spLvMax = (s) => (s && s.endless ? (s.endless.bld ? BUILD.evo : LV_SANE) : SP_LV_MAX);   // 개편 판의 특수병은 Lv5(고유 능력)가 상한 — 각성은 4단계
+export const awakeOn = (s) => !!(s && s.endless && s.endless.bld && s.endless.seg >= BUILD.awakeFrom);   // 각성·숙련이 열렸나(바퀴 3부터)
+export const spLvMax = (s) => (s && s.endless ? (s.endless.bld && !awakeOn(s) ? BUILD.evo : LV_SANE) : SP_LV_MAX);   // 개편 판의 특수병은 각성이 열리기 전 Lv5가 상한, 그 뒤는 끝없음(숙련)   // 개편 판의 특수병은 Lv5(고유 능력)가 상한 — 각성은 4단계
 export const SP = {
   medic: { share: unitVal('medic', 'share', 1) },
   sniper: { every: unitVal('sniper', 'every', 1), dmg: unitVal('sniper', 'dmg', 1), near: 2, far: 36 },
@@ -1742,7 +1743,7 @@ function cardInfoB(s, c, B) {
       if (cb.length) o.combos = cb;
       return o;
     }
-    if (c.k === 'fx') { const lv = fxLv(s, c.a); const o = { k: 'fx', a: c.a, from: lv, to: Math.min(BUILD.evo, lv + n), n }; const cb = combosBy(s, c.a); if (cb.length) o.combos = cb; return o; }
+    if (c.k === 'fx') { const lv = fxLv(s, c.a); const o = { k: 'fx', a: c.a, from: lv, to: bldOf(s) && !awakeOn(s) ? Math.min(BUILD.evo, lv + n) : lv + n, n }; const cb = combosBy(s, c.a); if (cb.length) o.combos = cb; return o; }
   }
   if (c.k === 'relic') return RELICS[c.r] ? { k: 'relic', r: c.r } : null;
   return null;
@@ -1817,7 +1818,7 @@ const fxCount = (fx) => AMMO_IDS.reduce((n, a) => n + (fx[a] ? 1 : 0), 0);
 export function fxCan(s, a) {
   const fx = fxOf(s);
   if (!fx || !AMMO[a]) return false;
-  return fx[a] ? (!bldOf(s) || fx[a] < BUILD.evo) : fxCount(fx) < fxSlots(s);   // 개편 판은 Lv5(진화)가 상한 — 각성 Lv6~10은 아직 없다
+  return fx[a] ? (!bldOf(s) || awakeOn(s) || fx[a] < BUILD.evo) : fxCount(fx) < fxSlots(s);   // 개편 판은 각성이 열리기 전 Lv5(진화)가 상한
 }
 /* 시너지 재료: 탄종 id = 그 탄 효과(출격 탄종이든 카드든), 병과 = 그 특수병(레벨 상관없이), 영웅 id = 출격 영웅 */
 function hasPart(s, id) {
@@ -2339,7 +2340,7 @@ export function restore(o) {
     if (o.endless.seg < 1) return null;
     const e = o.endless;
     // 3택 1을 안 연 판에 카드가 들어 있으면(손댄 저장) 버린다 — 남기면 step이 멈춘 채로 풀리지 않는다
-    if (e.unl == null) { delete e.bld; delete e.offer; delete e.picks; delete e.ammo; delete e.fx; delete e.flame; delete e.relicsOpen; delete e.relics; delete e.spent; delete e.wardAt; delete e.wardId; delete e.mut; delete e.obsSeen; } else {
+    if (e.unl == null) { delete e.bld; delete e.offer; delete e.picks; delete e.ammo; delete e.fx; delete e.flame; delete e.relicsOpen; delete e.relics; delete e.spent; delete e.wardAt; delete e.wardId; delete e.mut; delete e.medicAt; delete e.obsSeen; } else {
       e.unl = Math.max(0, Math.min(CARD.stageMax, Math.floor(Number(e.unl) || 0)));
       // 빌드 개편 상태: 숫자는 0 이상 정수(curse만 배수), 전문화는 아는 병과·갈래만, 쓰러진 특수병은 아는 병과 한 번씩
       if (e.bld !== undefined) {
@@ -2353,6 +2354,7 @@ export function restore(o) {
         }
       }
       // 적 변이(개편 판만): 아는 id만, 나온 순서 그대로(같은 id가 또 나오면 2단계라 중복은 그대로 둔다)
+      if (!Number.isFinite(e.medicAt)) delete e.medicAt;
       if (e.bld && Array.isArray(e.mut)) e.mut = e.mut.filter((id) => typeof id === 'string' && MUTATIONS[id]).slice(0, 120);
       else delete e.mut;
       for (const f of o.foes) if (f.arm !== undefined && !(typeof f.arm === 'number' && f.arm > 0 && f.arm <= 1)) delete f.arm;
@@ -2456,6 +2458,16 @@ function lose(s, k, cause, x, z, sub) {
   s.stats.lost += real;
   emit(s, { t: 'loss', n: real, cause, x: x ?? q.x, z: z ?? q.z });
   if (q.n <= 0) {
+    const e2 = s.endless;
+    if (e2 && e2.bld && spLv(q, 'medic') >= 10 && e2.medicAt !== e2.seg) {   // 의무병 Lv10 마지막 응급: 구간마다 한 번, 전멸 직전에 바닥선의 절반으로
+      const n = clamp(Math.round(SP_EVO2.medic.v * (segFloor(e2.seg) || ENDLESS.floor0)), 1, nMax(s));
+      e2.medicAt = e2.seg;
+      q.n = n;
+      q.peak = Math.max(q.peak, n);
+      emit(s, { t: 'revive', id: 'medic', n, cause, x: q.x, z: q.z });
+      escort(s);
+      return;
+    }
     s.cause = cause;
     return;
   }
@@ -2784,6 +2796,7 @@ function foesUpdate(s, R) {
   const fx = s.endless && s.endless.fx;
   const slowK = fx ? (fx.frost ? fxV(s, 'frost', fx.frost).slow : 0) : AMMO.frost.slow;
   const rl = mutLv(s, 'rush'), rushK = rl ? MUTATIONS.rush.v[rl - 1] : 1;
+  const frostEvo2 = !!(fx && s.endless.bld && fx.frost >= 10);
   for (const f of s.foes) {
     if (!f.alive) continue;
     const dz = f.z - q.z;
@@ -2804,6 +2817,8 @@ function foesUpdate(s, R) {
         }
       }
     } else {
+      if (frostEvo2 && f.slowT > s.t && !(f.freezeT > s.t) && s.t - (f.slowFrom ?? s.t) >= FX_FREEZE.after) { f.freezeT = s.t + FX_FREEZE.T; f.slowFrom = s.t + FX_FREEZE.T; }   // 빙결 Lv10: 느려진 채 3초가 지나면 1초 얼어붙는다
+      if (f.freezeT > s.t) continue;
       f.z -= (f.slowT > s.t ? f.spd * (1 - slowK) : f.spd) * rushK * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로), 질주(변이)면 더 빠르다
       if (dz < f.homeDist) {
         const d = q.x - f.x;
@@ -3025,6 +3040,7 @@ function fire(s, R) {
       if (pCrit && !pCrit.avg && rand(pCrit) < ppC) { bl.dmg = dmg * PET_CRIT; bl.c = 1; crits++; }
       if (sPre) { B.crit += sPre.p; if (B.crit >= 1) { B.crit -= 1; bl.dmg *= sPre.mul; bl.c = 1; } }
       s.bullets.push(bl);
+      if (FXR && FXR.evo2 && q.heat >= FX_HEAT) s.bullets.push({ ...bl, x: bl.x + (i % 2 ? 0.3 : -0.3), dmg: bl.dmg * 0.6 });   // 속사 Lv10 쌍갈래 과열: 과열 중 총알이 둘로 갈라진다
     }
     if (wide) {
       // 양옆에 총알을 더: 가운데 밀도는 그대로, 폭만 PET_WIDE배(옆에 뭔가 있을 때만 맞는다)
@@ -3105,7 +3121,7 @@ function bulletsUpdate(s) {
       continue;
     }
     // 장갑문은 총알 종류만큼(doorMul), 방패 정예는 정면 총알을 막는다(shieldMul — 관통 효과면 제 피해). 둘 다 2단계 판의 4구간부터만 있다
-    if (B2 && hitKind === 2) { const wd = hitObj.kind === 'wall' || hitObj.kind === 'door'; hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK : 1)); continue; }
+    if (B2 && hitKind === 2) { const wd = hitObj.kind === 'wall' || hitObj.kind === 'door'; hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK : 1)); if (wd && B2.pierce >= 10) wallThru(s, b, hitObj, near, B2.pierce); continue; }
     if (B2 && hitKind === 3) { hitFoe(s, hitObj, (hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg) * (hitObj.arm && !(fxOf(s) && fxOf(s).pierce) ? hitObj.arm : 1), 'gun'); fxHit2(s, b, hitObj, near, FX); continue; }
     if (hitKind === 2) { hitProp(s, hitObj, hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg); continue; }
     if (hitKind === 3) { hitFoe(s, hitObj, hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg, 'gun'); if (FX) fxHit(s, b, hitObj, near, FX); else if (s.ammo) ammoHit(s, b, hitObj, near); continue; }
@@ -3172,6 +3188,13 @@ function fxHit(s, b, f, near, fx) {
 }
 /* 개편 판의 덧효과: 관통은 일직선 뒤 n마리(진화하면 모두 — 한 발에 PIERCE_MAX까지), 작렬은 맞은 좀비와 뚫고 지난 좀비(둘까지) 둘레, 빙결 */
 const PIERCE_MAX = 8;
+/* 관통 Lv10 벽 너머 관통: 벽·문에 맞은 총알이 벽 뒤(12m 안) 일직선의 좀비 셋까지 뚫는다 */
+function wallThru(s, b, w, near, lv) {
+  const v = fx2Val('pierce', lv);
+  const line = near.filter((o) => o.alive && o.z > w.z && o.z - w.z < 12 && Math.abs(o.x - b.x) <= o.r + 0.12).sort((a, c) => a.z - c.z || a.id - c.id).slice(0, 3);
+  for (const o of line) hitFoe(s, o, b.dmg * v.pierce, 'gun');
+  if (line.length) emit(s, { t: 'pierce', x: b.x, z0: w.z, z1: line[line.length - 1].z });
+}
 function fxHit2(s, b, f, near, fx) {
   const hits = [];
   if (fx.pierce) {
@@ -3195,7 +3218,10 @@ function fxHit2(s, b, f, near, fx) {
     fxSplash(s, b, f, near, v);
     for (let i = 0; i < hits.length && i < 2; i++) fxSplash(s, b, hits[i], near, v);
   }
-  if (fx.frost && f.alive) f.slowT = s.t + fx2Val('frost', fx.frost).T;
+  if (fx.frost && f.alive) {
+    if (!(f.slowT > s.t)) f.slowFrom = s.t;   // 느려지기 시작한 때(빙결 Lv10 — 3초 지나면 얼어붙는다)
+    f.slowT = s.t + fx2Val('frost', fx.frost).T;
+  }
 }
 function fxSplash(s, b, f, near, v) {
   const r2 = v.r * v.r;
@@ -3252,6 +3278,23 @@ function drumBlast(s, p, by) {
    빙결 — 느려진 좀비가 죽으면 둘레 1.5m의 좀비가 느려진다 */
 const FX_CHAIN_MAX = 12;
 let fxChainN = 0;
+/* 터짐(저격수 Lv10·작렬 Lv10 따위): 둘레 r의 좀비에게 d(그 좀비들이 죽으면 또 터질 수 있다 — 한 번에 FX_CHAIN_MAX까지) */
+function fxBoom(s, x, z, r, d, except) {
+  if (fxChainN >= FX_CHAIN_MAX) return 0;
+  const r2 = r * r;
+  let n = 0;
+  fxChainN++;
+  for (const o of s.foes) {
+    if (!o.alive || o === except) continue;
+    const dx = o.x - x, dz = o.z - z;
+    if (dx * dx + dz * dz > r2) continue;
+    n++;
+    hitFoe(s, o, d, 'chain');
+  }
+  fxChainN--;
+  if (n) emit(s, { t: 'splash', x, z, r, n });
+  return n;
+}
 function fxDeath(s, f, by) {
   const fx = s.endless.fx;
   if (by === 'flame' && comboOn(s, 'burstFlame') && fxChainN < FX_CHAIN_MAX) {   // 기름불(작렬 + 화염병): 불 지대에서 죽은 좀비가 터진다
@@ -3278,6 +3321,11 @@ function fxDeath(s, f, by) {
       hitFoe(s, o, d, 'chain');
     }
     fxChainN--;
+    if (v.evo2) {   // 작렬 Lv10: 연쇄 폭발이 벽·보스에도 든다
+      for (const p of s.props) if (p.alive && !p.passed && (p.kind === 'wall' || p.kind === 'door') && Math.abs(p.z - f.z) < v.r && overlap(f.x - v.r, f.x + v.r, p.x0, p.x1) > 0) hitProp(s, p, d);
+      const bo = s.boss;
+      if (bo && bo.hp > 0 && Math.abs(bo.z - 1 - f.z) < v.r + 1 && Math.abs(bo.x - f.x) < v.r + bo.r) hitBossBonus(s, d);
+    }
     if (n) emit(s, { t: 'splash', x: f.x, z: f.z, r: v.r, n });
   }
   if (fx.frost >= BUILD.evo && f.slowT > s.t) {
@@ -3578,7 +3626,7 @@ function snipeTarget(s, near, far) {
   return null;
 }
 
-function snipe(s, dmg, src, big = 1) {
+function snipe(s, dmg, src, big = 1, boom = false) {
   const q = s.squad;
   const t = snipeTarget(s, SP.sniper.near, SP.sniper.far);
   if (!t) return false;
@@ -3595,6 +3643,7 @@ function snipe(s, dmg, src, big = 1) {
   else if (t.kind === 'prop') { x1 = (t.o.x0 + t.o.x1) / 2; z1 = t.o.z; hitProp(s, t.o, dmg); kill = !t.o.alive; }
   else { x1 = t.o.x; z1 = t.o.z - 1; hitBossBonus(s, dmg); }
   emit(s, { t: 'snipe', x0: q.x, z0: q.z, x1, z1, src, kill });
+  if (boom && kill && t.kind === 'foe') fxBoom(s, x1, z1, 1.6, t.o.max * SP_EVO2.sniper.v, t.o);   // 저격수 Lv10 터지는 저격
   if (fx && t.kind === 'foe' && comboOn(s, 'pierceSniper')) {
     const g = snipeThru(s, t.o, x1, z1);
     if (g) emit(s, { t: 'snipe', x0: x1, z0: z1, x1: g.x, z1: g.z, src, kill: hitFoe(s, g, dmgAt(g), 'sniper'), thru: true });
@@ -3666,6 +3715,7 @@ function flamesUpdate(s) {
   const ice = fxOf(s) && comboOn(s, 'frostFlame') ? 1 + comboV('frostFlame', !!bldOf(s)) : 1;
   const b = s.boss;
   for (const zn of s.flames) {
+    if (zn.follow !== undefined) { zn.x = s.squad.x; zn.z = s.squad.z + zn.follow; }   // 화염병 Lv10 따라오는 불: 지대가 분대를 따라온다
     const d = zn.d * DT;
     for (const f of s.foes) if (f.alive && inFire(zn, f.x, f.z)) hitFoe(s, f, ice > 1 && f.slowT > s.t ? d * ice : d, 'flame');
     if (b && b.hp > 0 && bossInFire(zn, b)) hitBossBonus(s, d);
@@ -3679,24 +3729,28 @@ function flamesUpdate(s) {
 function specialActB(s, m, lv, D, B) {
   const q = s.squad, h = s.hero;
   const P = BUILD.sp[m.k];
-  const pow = P ? P.dmg * (1 + P.lv * deep(lv - 1)) : 1;
+  const L5 = Math.min(lv, BUILD.evo);   // 정해진 값(간격·범위·위력 식)은 Lv5까지, 그 위는 각성·숙련 배수(a)로 — 18.4
+  const a = awk(lv);
+  const pow = P ? P.dmg * (1 + P.lv * deep(L5 - 1)) * a : 1;
   const evo = lv >= BUILD.evo;   // Lv5 고유 능력(roster.SP_EVO)
+  const evo2 = lv >= 10;   // Lv10 2차 진화(roster.SP_EVO2)
   const fx = !!fxOf(s);
   const sb = setV(s, 'blast'), sp = setV(s, 'precise');
   const bR = sb ? 1 + sb.r : 1, bD = sb ? 1 + sb.dmg : 1;
   if (m.k === 'sniper') {
     const nabiBoost = h && h.id === 'nabi' ? 1 + heroVal('nabi', 'boost', h.lv) * synergyOf(lv) : 1;
-    const dmg = unitVal('sniper', 'dmg', lv) * D * nabiBoost * pow * (sp ? 1 + sp.p * (sp.mul - 1) : 1);   // 정밀 세트: 저격은 치명타 기대값만큼
+    const dmg = unitVal('sniper', 'dmg', L5) * D * nabiBoost * pow * (sp ? 1 + sp.p * (sp.mul - 1) : 1);   // 정밀 세트: 저격은 치명타 기대값만큼
     const big = evo ? SP_EVO.sniper.v : 1;
-    const ok = snipe(s, dmg, 'sniper', big);
-    m.cd = ok ? unitVal('sniper', 'every', lv) : 0.25;
+    const ok = snipe(s, dmg, 'sniper', big, evo2);
+    m.cd = ok ? unitVal('sniper', 'every', L5) : 0.25;
   } else if (m.k === 'rocket') {
     const k = 1;
-    const r = unitVal('rocket', 'r', lv) * k * bR;
+    const r = unitVal('rocket', 'r', L5) * k * bR;
     const t = rocketTarget(s, D, r);
     if (!t) { m.cd = 0.25; return; }
     const T = Math.max(0.25, (t.z - q.z) / SP.rocket.speed);
     const rk = { id: s.nextId++, x0: q.x, z0: q.z + 0.5, x: t.x, z: t.z, t: T, T, r, dmg: SP.rocket.dmg * D * pow * k * bD, fid: t.fid };
+    if (evo2) rk.fire = true;   // 로켓병 Lv10 불씨 로켓: 떨어진 자리에 불 지대
     s.rockets.push(rk);
     emit(s, { t: 'rocket', id: rk.id, x0: rk.x0, z0: rk.z0, x: rk.x, z: rk.z });
     if (evo) {   // 로켓병 Lv5 쌍발: 한 발 더(조금 늦게 같은 자리에)
@@ -3704,17 +3758,17 @@ function specialActB(s, m, lv, D, B) {
       s.rockets.push(r2);
       emit(s, { t: 'rocket', id: r2.id, x0: r2.x0, z0: r2.z0, x: r2.x, z: r2.z });
     }
-    m.cd = unitVal('rocket', 'every', lv) * (fx && comboOn(s, 'rapidRocket') ? COMBOS.rapidRocket.v : 1);
+    m.cd = unitVal('rocket', 'every', L5) * (fx && comboOn(s, 'rapidRocket') ? COMBOS.rapidRocket.v : 1);
   } else if (m.k === 'flame') {
-    const w = unitVal('flame', 'w', lv) * bR * (h && h.id === 'mungchi' && h.act > 0 ? 1 + UNITS.flame.horn * synergyOf(lv) : 1);
-    const len = unitVal('flame', 'len', lv) * (evo ? SP_EVO.flame.v : 1) * bR;   // 화염병 Lv5 불바다: 불 지대 길이 ×2
+    const w = unitVal('flame', 'w', L5) * bR * (h && h.id === 'mungchi' && h.act > 0 ? 1 + UNITS.flame.horn * synergyOf(lv) : 1);
+    const len = unitVal('flame', 'len', L5) * (evo ? SP_EVO.flame.v : 1) * bR;   // 화염병 Lv5 불바다: 불 지대 길이 ×2
     const t = flameTarget(s, D, w, len);
     if (!t) { m.cd = 0.25; return; }
-    const T = unitVal('flame', 'T', lv);
-    const zn = { id: s.nextId++, x: t.x, z: t.z, w, len, t: T, T, d: unitVal('flame', 'dmg', lv) * D * pow * bD, lv };
+    const T = unitVal('flame', 'T', L5);
+    const zn = { id: s.nextId++, x: t.x, z: t.z, w, len, t: T, T, follow: evo2 ? t.z - q.z : undefined, d: unitVal('flame', 'dmg', L5) * D * pow * bD, lv };
     (s.flames || (s.flames = [])).push(zn);
     emit(s, { t: 'flame', id: zn.id, x0: q.x, z0: q.z, x: zn.x, z: zn.z, w, len, T, lv, boss: !!t.boss });
-    m.cd = unitVal('flame', 'every', lv);
+    m.cd = unitVal('flame', 'every', L5);
   } else m.cd = 1;
 }
 function specialsUpdate(s, R) {
@@ -3798,6 +3852,11 @@ function specialsUpdate(s, R) {
       const b = s.boss;
       if (b && b.hp > 0 && Math.abs(b.z - 1 - rk.z) < rk.r + 1 && Math.abs(b.x - rk.x) < rk.r + b.r) hitBossBonus(s, rk.dmg);
       emit(s, { t: 'boom', x: rk.x, z: rk.z, r: rk.r });
+      if (rk.fire) {   // 불씨 로켓(Lv10): 떨어진 자리에 불 지대(2초)
+        const zn = { id: s.nextId++, x: rk.x, z: rk.z, w: rk.r * 1.6, len: rk.r * 1.6, t: 2, T: 2, d: rk.dmg * 0.4, lv: 1 };
+        (s.flames || (s.flames = [])).push(zn);
+        emit(s, { t: 'flame', id: zn.id, x0: rk.x, z0: rk.z, x: zn.x, z: zn.z, w: zn.w, len: zn.len, T: zn.T, lv: 1, boss: false });
+      }
     }
     s.rockets = s.rockets.filter((rk) => rk.t > 0);
   }
@@ -4605,6 +4664,7 @@ export function stateHash(s) {
   if (q.fogAcc) h = hash(h, 'fog', q.fogAcc.toFixed(4));
   if (q.heat) h = hash(h, 'heat', q.heat.toFixed(3));
   if (s.endless && s.endless.mut && s.endless.mut.length) h = hash(h, 'mut', s.endless.mut.join(','));
+  if (s.endless && s.endless.medicAt !== undefined) h = hash(h, 'medicAt', s.endless.medicAt);
   if (s.boss) h = hash(h, s.boss.bonus.toFixed(4));
   for (const rk of s.rockets) h = hash(h, rk.x.toFixed(4), rk.z.toFixed(4), rk.t.toFixed(4));
   if (s.hero) h = hash(h, s.hero.charge.toFixed(4), s.hero.act.toFixed(4), s.hero.cd.toFixed(4), s.hero.shot.toFixed(4));

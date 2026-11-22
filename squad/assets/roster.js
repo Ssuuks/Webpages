@@ -373,10 +373,13 @@ export const BUILD = {
   gun: 0.03,            // 무기 개조: 총알 화력 +3% × 유효 레벨(위협 식에 안 들어간다)
   w: { gun: 1, unit: 1, fx: 1, hero: 0.7, guard: 0.7 },   // 카드 종류가 나올 가중치
   shieldMax: 3,
-  thr: { from: 4, step: 1.07 },   // 측정으로 1.14 → 1.07(성장 개편 3단계 — 탄·특수병 레벨이 Lv5에서 멈춰 후반 성장이 줄었다. 4단계의 각성·숙련 뒤 다시 맞춘다)   // 위협 곡선: from구간 뒤로 구간마다 ×step 더(카드가 곱으로 쌓이는 만큼)         // 게이트 방패 상한(구간마다 이 횟수까지)
+  thr: { from: 4, step: 1.085 },   // 측정(32판 think·아무거나): 각성 전 1.14 → 15, 1.07(3단계) → 24, 각성·숙련 뒤 1.07 → 28 · 1.10 → 22~23 · 1.14 → 17. 1.085로 25 근처(ENDGAME.md 18.4)
   early: 1,             // 앞 구간의 위협을 실제 강화(ENDLESS.fire를 넘는 몫)로 만드는 구간 수(bldFe — 1구간은 전부, early구간에 기준으로 돌아간다. ENDGAME.md 19.1)
   earlyK: 0.75,         // 그 구간에서 강화가 기준을 넘는 몫을 얼마나 따라가나(1 = 전부 — 첫 구간이 너무 빡빡해 집중한 사람도 무너진 값)
   evo: 5,               // 탄 효과가 진화하는 레벨
+  awakeFrom: 13,        // 각성(Lv6~10)·숙련이 열리는 구간(바퀴 3 — ENDGAME.md 18.4). 그 전에는 Lv5가 상한
+  awk: 0.15,            // 각성 Lv6~9: 그 역할의 값 레벨마다 +15%, Lv10은 2차 진화
+  mastery: 0.04,        // 숙련(Lv10 위, 끝없음): 같은 카드를 또 고를 때마다 그 대상 효과 +4%(더한다)
   rare: [0.72, 0.23, 0.05],   // 카드 등급(일반·희귀·전설 = 한 번에 +1·+2·+3레벨) 확률
   setPull: 0.1,         // 쌓은 세트 레벨 1당 그 세트 카드의 가중치 +10%(12레벨까지)
   own: 3,               // 이미 가진 것(탄 효과·특수병)의 카드가 나올 가중치
@@ -396,31 +399,41 @@ export const BUILD = {
 export const RARITY = ['', '일반', '희귀', '전설'];
 /* 깊이 보상: n레벨의 유효 레벨 = n × (1 + deep × (n − 1)) — 한 가지를 깊게 팔수록 한 레벨의 값이 커진다(얕게 고루 고르는 것보다 빌드를 정한 쪽이 세다) */
 export const deep = (n) => { const l = Math.max(0, n); return l * (1 + BUILD.deep * (l - 1)); };
-/* 탄 효과의 값(개편 판 — ENDGAME.md 18.3): 레벨마다 정해진 능력(숫자만 오르는 레벨은 없다), Lv5가 진화(상한 — 각성 Lv6~10은 아직 없다). 수치는 모두 [초안].
-   관통 — Lv1 뒤 좀비 1마리에 50% · Lv2 뒤 2마리 · Lv3 벽·장갑문 피해 +50% · Lv4 일직선 전부 · Lv5 뚫을 때마다 다음 대상 피해 +20%
-   작렬 — Lv1 둘레 1m에 40% · Lv2 반경 1.5m · Lv3 둘레 피해 60% · Lv4 반경 2m · Lv5 처치된 좀비도 터진다(연쇄 — 그 좀비 체력의 chain배를 둘레에)
-   속사 — Lv1 총알 피해 +10% · Lv2 쏘는 속도 +10% · Lv3 보스에게 +30% · Lv4 쏘는 속도 +10% 더 · Lv5 3초 계속 쏘면 과열(피해 ×1.5)
-   빙결 — Lv1 0.8초 동안 25% 느리게 · Lv2 35% · Lv3 느려진 좀비에게 잃는 병사 −20% · Lv4 1.5초 · Lv5 느려진 좀비가 죽으면 둘레도 느려진다
+/* 각성·숙련 배수(개편 판 — 18.4): Lv5까지 1, Lv6~10은 레벨마다 +15%(Lv10에 2차 진화), Lv10 위(숙련)는 레벨마다 +4% 더 — 곱하지 않고 더한다 */
+export const awk = (l) => 1 + BUILD.awk * (Math.min(Math.max(l, 5), 10) - 5) + BUILD.mastery * Math.max(0, l - 10);
+/* 탄 효과의 값(개편 판 — ENDGAME.md 18.3~18.4): 레벨마다 정해진 능력(숫자만 오르는 레벨은 없다), Lv5가 진화, Lv6~10 각성(그 역할의 값 +15%씩, 구간 13부터),
+   Lv10 2차 진화(evo2), 그 위는 숙련(+4%씩). 수치는 모두 [초안].
+   관통 — Lv1 뒤 좀비 1마리에 50% · Lv2 뒤 2마리 · Lv3 벽·장갑문 피해 +50% · Lv4 일직선 전부 · Lv5 뚫을 때마다 다음 대상 피해 +20% · Lv10 벽을 뚫고 벽 뒤 좀비도 맞는다
+   작렬 — Lv1 둘레 1m에 40% · Lv2 반경 1.5m · Lv3 둘레 피해 60% · Lv4 반경 2m · Lv5 처치된 좀비도 터진다(연쇄) · Lv10 연쇄 폭발이 벽·보스에도 든다
+   속사 — Lv1 총알 피해 +10% · Lv2 쏘는 속도 +10% · Lv3 보스에게 +30% · Lv4 쏘는 속도 +10% 더 · Lv5 3초 계속 쏘면 과열(피해 ×1.5) · Lv10 과열 중 총알이 둘로 갈라진다
+   빙결 — Lv1 0.8초 동안 25% 느리게 · Lv2 35% · Lv3 느려진 좀비에게 잃는 병사 −20% · Lv4 1.5초 · Lv5 느려진 좀비가 죽으면 둘레도 느려진다 · Lv10 느려진 채 3초가 지나면 1초 얼어붙는다(보스 제외)
    (빙결의 '언 적이 받는 총알 피해 증폭'은 없앴다 — 한 방의 주범). pow: 화력으로 어림한 값(think 점수용 — 위협 식에는 안 든다) */
 export const FX_CHAIN = 0.5;      // 작렬 Lv5: 터지는 좀비가 둘레에 주는 몫(그 좀비 체력의 이만큼) — 측정으로 0.3 → 0.5
 export const FX_HEAT = 3;         // 속사 Lv5: 이 초 동안 계속 쏘면 과열
+export const FX_FREEZE = { after: 3, T: 1 };   // 빙결 Lv10: 느려진 채 after초가 지나면 T초 얼어붙는다
 export function fx2Val(id, lv) {
   const A = AMMO[id];
-  const l = Math.max(1, Math.min(BUILD.evo, Math.floor(lv) || 1));
-  const evo = l >= BUILD.evo;
+  const L = Math.max(1, Math.floor(lv) || 1);
+  const l = Math.min(BUILD.evo, L);   // 정해진 능력은 Lv5까지, 그 위는 각성 배수 a
+  const a = awk(L);
+  const evo = l >= BUILD.evo, evo2 = L >= 10;
   if (!A) return {};
-  if (A.pierce) return { pierce: 0.5, n: l >= 4 ? 99 : l >= 2 ? 2 : 1, wall: l >= 3 ? 1.5 : 1, ramp: evo ? 0.2 : 0, evo };
-  if (A.splash) return { splash: l >= 3 ? 0.6 : 0.4, r: l >= 4 ? 2 : l >= 2 ? 1.5 : 1, chain: evo ? FX_CHAIN : 0, evo };
-  if (A.slow) return { slow: l >= 2 ? 0.35 : 0.25, T: l >= 4 ? 1.5 : 0.8, loss: l >= 3 ? 0.8 : 1, spread: evo, evo };
+  if (A.pierce) return { pierce: Math.min(1, 0.5 * a), n: l >= 4 ? 99 : l >= 2 ? 2 : 1, wall: l >= 3 ? 1.5 : 1, ramp: evo ? 0.2 * a : 0, evo, evo2, a };
+  if (A.splash) return { splash: (l >= 3 ? 0.6 : 0.4) * a, r: l >= 4 ? 2 : l >= 2 ? 1.5 : 1, chain: evo ? FX_CHAIN * a : 0, evo, evo2, a };
+  if (A.slow) return { slow: Math.min(0.85, (l >= 2 ? 0.35 : 0.25) * a), T: Math.round((l >= 4 ? 1.5 : 0.8) * a * 100) / 100, loss: l >= 3 ? Math.max(0.4, 1 - 0.2 * a) : 1, spread: evo, evo, evo2, a };
   const rate = (l >= 2 ? 1.1 : 1) * (l >= 4 ? 1.1 : 1);
-  const boss = l >= 3 ? 1.3 : 1, heat = evo ? 1.5 : 1;
-  return { dmg: 1.1, rate: Math.round(rate * 1000) / 1000, boss, heat, pow: Math.round(1.1 * rate * (1 + (boss - 1) * 0.2) * (1 + (heat - 1) * 0.4) * 1000) / 1000, evo };
+  const dmg = Math.round((1 + 0.1 * a) * 1000) / 1000;
+  const boss = l >= 3 ? Math.round((1 + 0.3 * a) * 1000) / 1000 : 1, heat = evo ? Math.round((1 + 0.5 * a) * 1000) / 1000 : 1;
+  return { dmg, rate: Math.round(rate * 1000) / 1000, boss, heat, pow: Math.round(dmg * rate * (1 + (boss - 1) * 0.2) * (1 + (heat - 1) * 0.4) * 1000) / 1000, evo, evo2, a };
 }
 export const FX_EVO = { pierce: '가속 관통', burst: '유폭', rapid: '과열', frost: '번지는 얼음' };
-export function fx2Text(id, lv) {
+export const FX_EVO2 = { pierce: '벽 너머 관통', burst: '벽·보스 유폭', rapid: '쌍갈래 과열', frost: '얼어붙는 얼음' };
+const FX_EVO2_TEXT = { pierce: '벽을 뚫고 벽 뒤 좀비도 맞아요', burst: '연쇄 폭발이 벽·보스에도 들어요', rapid: '과열 중 총알이 둘로 갈라져요', frost: `느려진 채 ${FX_FREEZE.after}초가 지나면 ${FX_FREEZE.T}초 얼어붙어요(보스 제외)` };
+export function fx2Text(id, lv) { return fx2Base(id, lv) + (fx2Val(id, lv).evo2 ? ` · ${FX_EVO2_TEXT[id]}` : ''); }
+function fx2Base(id, lv) {
   const v = fx2Val(id, lv);
   const l = Math.min(BUILD.evo, Math.max(1, lv | 0));
-  const e = v.evo ? `진화 ‘${FX_EVO[id]}’ · ` : '';
+  const e = (v.evo2 ? `2차 진화 ‘${FX_EVO2[id]}’ · ` : v.evo ? `진화 ‘${FX_EVO[id]}’ · ` : '') + (v.a > 1 ? `각성 +${apc(v.a - 1)}% · ` : '');
   if (v.pierce) return e + `뒤의 좀비 ${v.n > 2 ? '일직선 전부' : v.n === 2 ? '둘' : '하나'}에 ${apc(v.pierce)}%${v.wall > 1 ? ` · 벽·장갑문 +${apc(v.wall - 1)}%` : ''}${v.ramp ? ` · 뚫을 때마다 다음 +${apc(v.ramp)}%` : ''}`;
   if (v.splash) return e + `둘레 ${v.r}m에 ${apc(v.splash)}%${v.chain ? ' · 처치된 좀비도 터져요' : ''}`;
   if (v.slow) return e + `${v.T}초 동안 ${apc(v.slow)}% 느리게${v.loss < 1 ? ` · 느려진 좀비에게 잃는 병사 −${apc(1 - v.loss)}%` : ''}${v.spread ? ' · 느려진 좀비가 죽으면 둘레도 느려져요' : ''}`;
@@ -431,6 +444,15 @@ export function fx2Text(id, lv) {
    - rocket 쌍발: 한 번에 로켓 2발(둘째는 조금 늦게 같은 자리에)
    - flame 불바다: 불 지대 길이 ×v
    - medic 소생: 잃은 병사가 v만큼(%p) 더 돌아온다(회복 몫에 더한다, 게이트·짓밟기 제외) */
+/* 특수병 각성·2차 진화(개편 판 — 18.4): Lv6~9는 그 역할의 값(위력·회복) +15%씩(구간 13부터), Lv10은 아래 2차 진화, 그 위는 숙련(+4%씩) [수치는 초안]
+   sniper 터지는 저격: 저격에 죽은 좀비가 터져 둘레에 제 체력의 v · rocket 불씨 로켓: 떨어진 자리에 불 지대 · flame 따라오는 불: 불 지대가 분대를 따라온다 ·
+   medic 마지막 응급: 구간마다 한 번 전멸 직전에 병력이 그 구간 바닥선의 v로 돌아온다 */
+export const SP_EVO2 = {
+  sniper: { name: '터지는 저격', v: 0.5, text: () => `Lv10: 저격에 죽은 좀비가 터져 둘레 1.6m에 제 체력의 ${apc(SP_EVO2.sniper.v)}%` },
+  rocket: { name: '불씨 로켓', text: () => 'Lv10: 로켓이 떨어진 자리에 불 지대가 남아요' },
+  flame: { name: '따라오는 불', text: () => 'Lv10: 불 지대가 분대를 따라와요' },
+  medic: { name: '마지막 응급', v: 0.5, text: () => `Lv10: 구간마다 한 번, 전멸 직전에 그 구간 바닥선의 ${apc(SP_EVO2.medic.v)}%로 돌아와요` },
+};
 export const SP_EVO = {
   sniper: { name: '거물 사냥', v: 3, cap: 0.5, text: () => `Lv5: 보스·정예·거구·독침 좀비에게 저격 위력 ×${SP_EVO.sniper.v}, 보스전 추가 피해 한도 +${apc(SP_EVO.sniper.cap)}%` },
   rocket: { name: '쌍발', text: () => 'Lv5: 한 번에 로켓 2발을 쏴요' },
