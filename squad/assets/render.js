@@ -27,6 +27,7 @@ export const RELIC_COL = '#9B6BFF', RELIC_GOLD = '#FFD84A';
 const GOLD_BULLET = '#FFD84A';
 const FORM_N_MAX = 9999;     // 대형으로 그리는 병력의 끝(전차 9대 몫) — 그 위는 숫자만 커진다
 const AMMO_COL = { pierce: '#F4F7FF', burst: '#FFB347', rapid: '#FFF4B0', frost: '#8FD3FF' };   // 탄종 머리 색(roster.AMMO와 같은 id)
+const GUN_COL = { shotgun: '#FF8A5B', marksman: '#7FE3FF', rifle: '#FFE38A' };   // 총 종류(21절) 색 — roster.GUNS와 같은 id
 /* 총알 모양을 고를 탄종: 출격 탄종(s.ammo — 대신 쪽까지 진 탄), 없으면 무한모드 2단계 판의 탄 효과 중 가장 높은 레벨(같으면 위 순서).
    카드·상자로 얻은 효과도 모양으로 알린다(관통을 얻으면 바늘). 효과가 없는 판은 '' — 예전 그대로 */
 export function shotAmmo(s) {
@@ -2089,7 +2090,7 @@ export function createRenderer(cvs) {
     const mx = (face.ax + face.bx) / 2, my = face.ay - h / 2;
     const fxOk = !!(p.reward && p.reward.type === 'fx' && fxCan(s, p.reward.a));
     // 파워업 상자(무기 · 탄 효과)는 위로 빛기둥이 선다 — 멀리서도 '저 상자가 강화'가 보인다. 가까우면 별이 피어오른다
-    const rt = p.reward && p.reward.type, pw = fxOk ? AMMO_COL[p.reward.a] : (!rt || rt === 'gun') && (sq.tier | 0) < tierMax(s) ? WTIER[Math.min(WTIER.length - 1, (sq.tier | 0) + 1)] : null;
+    const rt = p.reward && p.reward.type, pw = fxOk ? AMMO_COL[p.reward.a] : rt === 'gunx' && GUN_COL[p.reward.g] ? GUN_COL[p.reward.g] : (!rt || rt === 'gun') && (sq.tier | 0) < tierMax(s) ? WTIER[Math.min(WTIER.length - 1, (sq.tier | 0) + 1)] : null;   // 다른 총 상자(21.8): 그 총 색 빛기둥
     if (pw) {
       const bw = Math.max(2, (face.bx - face.ax) * 0.55), bh = Math.max(6, (face.ay - top.ty) * 3.2), flick = 0.75 + 0.25 * Math.sin(time * 5 + p.id);
       beam(mx, top.ty - bh, top.ty, bw, pw, flick);
@@ -3094,6 +3095,23 @@ export function createRenderer(cvs) {
         ctx.fillRect(hx - 2, hy, wide + 4, 3);
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = 'source-over';
+      }
+      if (b.g === 's') {   // 산탄 펠릿(21절): 작은 둥근 알 — 멀어질수록(감쇠) 흐리게
+        ctx.globalAlpha = Math.max(0.45, 1 - b.d / 30);
+        ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 1, 3, 3);
+        ctx.fillStyle = col; ctx.fillRect(hx, hy, 1, 1);
+        ctx.fillStyle = GUN_COL.shotgun; ctx.fillRect(hx - 1, hy, 1, 1);
+        ctx.globalAlpha = 1;
+        continue;
+      }
+      if (b.g === 'm') {   // 저격 예광탄(21절): 길고 밝은 줄 + 하늘색 머리
+        if (!project(view, b.x, 0.75, b.z + ext - 5)) continue;
+        const len = Math.max(3, Math.round(P.y) - hy);
+        ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 1, 4, len + 2);
+        ctx.fillStyle = col; ctx.fillRect(hx, hy, 2, len);
+        ctx.fillStyle = GUN_COL.marksman; ctx.fillRect(hx, hy, 2, Math.max(2, len >> 2));
+        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx, hy, 1, 1);
+        continue;
       }
       const u = (Math.abs(b.x) * 37.73) % 1;
       const shape = u < shotCum[0] ? 0 : u < shotCum[1] ? 1 : u < shotCum[2] ? 2 : 3;

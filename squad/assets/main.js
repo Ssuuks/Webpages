@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, ENH, PET_SLOTS, comboText, unitVal, fx2Val } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, ENH, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -677,6 +677,42 @@ function renderAmmo() {
     list.appendChild(card);
   }
 }
+/* 총 종류(ENDGAME.md 21절 — 무한모드 개편 판): 고른 총이 모은 별로 열려 있으면 그 id, 아니면 소총 */
+const gunOpen = (id, stars) => !!GUNS[id] && stars >= GUNS[id].stars;
+function gunForRun() {
+  const id = data.gun && data.gun.sel;
+  return id && gunOpen(id, totalStars(data)) ? id : 'rifle';
+}
+function renderGun() {
+  const stars = totalStars(data);
+  $('gunStars').textContent = `★ ${stars}`;
+  const list = $('gunList');
+  list.textContent = '';
+  const cur = gunForRun();
+  for (const id of GUN_IDS) {
+    const G = GUNS[id], open = gunOpen(id, stars);
+    const card = document.createElement('div');
+    card.className = 'upg' + (open ? '' : ' locked');
+    const head = document.createElement('div');
+    head.className = 'upg-head';
+    const b = document.createElement('b');
+    b.textContent = `${G.name} — ${G.line}`;
+    head.appendChild(b);
+    card.appendChild(head);
+    const eff = document.createElement('p');
+    eff.className = 'upg-eff';
+    eff.textContent = `${G.text()} · Lv5 ‘${GUN_EVO[id]}’`;
+    card.appendChild(eff);
+    const btn = document.createElement('button');
+    btn.className = 'buy';
+    btn.textContent = !open ? `★ ${G.stars}개` : id === cur ? '사용 중' : '고르기';
+    btn.disabled = !open || id === cur;
+    if (!open) btn.setAttribute('aria-label', `${G.name} — 별 ${G.stars}개를 모으면 열려요(지금 ${stars}개)`);
+    btn.addEventListener('click', () => { data.gun.sel = id; save(data); sfx.click(); renderGun(); });
+    card.appendChild(btn);
+    list.appendChild(card);
+  }
+}
 function petFaceEl(id, scale) {
   try { const c = renderer.petFace && renderer.petFace(id, scale); if (c) { c.classList.add('pix'); return c; } } catch { /* 아직 그림이 없다 */ }
   const sp = document.createElement('span');
@@ -986,6 +1022,7 @@ function renderLevels() {
 /* ---------- 강화 ---------- */
 function renderUpg() {
   renderAmmo();
+  renderGun();
   $('uCoins').textContent = compact(data.coins);
   const list = $('upgList');
   list.textContent = '';
@@ -1354,7 +1391,7 @@ function prepareRun(L) {
   chip.textContent = '';
   if (hero) {
     chip.appendChild(faceEl(hero.id, 1));
-    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''}${run.ammo ? ` · ${AMMO[run.ammo].name}` : ''} ▸`);
+    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''}${run.ammo ? ` · ${AMMO[run.ammo].name}` : ''}${run.mode === 'endless' && run.gun && GUNS[run.gun] ? ` · ${GUNS[run.gun].name}` : ''} ▸`);
     chip.hidden = false;
   } else if ((runCycle > 1 || L >= UNLOCK.hero) && HERO_IDS.some((id) => ownedHero(id))) {
     chip.append('영웅 고르기 ▸');
@@ -1545,7 +1582,8 @@ function prepareEndless() {
   // 그 단계가 아닌 값은 newEndless가 버린다(1단계 판은 예전 그대로). 이어하기는 모두 스냅숏에서 온다
   const U = endlessUnlocksNow();
   const ammoList = AMMO_IDS.filter((id) => ammoOpen(id, totalStars(data)));
-  s = newEndless({ seed, start, fire: run.fire, hero, pets: petsForRun(), build: 2, ammo: run.ammo, unl: U.unl, ammoOpen: ammoList, flame: U.flame, relicsOpen: U.relics, ...(testUnl.hold ? { relics: testUnl.hold } : {}) });
+  run.gun = gunForRun();
+  s = newEndless({ seed, start, fire: run.fire, hero, pets: petsForRun(), build: 2, ammo: run.ammo, gun: run.gun, unl: U.unl, ammoOpen: ammoList, flame: U.flame, relicsOpen: U.relics, ...(testUnl.hold ? { relics: testUnl.hold } : {}) });
   lv = levelOfSeg();
   run.L = s.L;
   par = 0;
@@ -1560,7 +1598,7 @@ function prepareEndless() {
   chip.textContent = '';
   if (hero) {
     chip.appendChild(faceEl(hero.id, 1));
-    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''}${run.ammo ? ` · ${AMMO[run.ammo].name}` : ''} ▸`);
+    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''}${run.ammo ? ` · ${AMMO[run.ammo].name}` : ''}${run.mode === 'endless' && run.gun && GUNS[run.gun] ? ` · ${GUNS[run.gun].name}` : ''} ▸`);
     chip.hidden = false;
   } else if (HERO_IDS.some((id) => ownedHero(id))) {
     chip.append('영웅 고르기 ▸');
@@ -1707,6 +1745,19 @@ const spDesc = (u) => (u === 'rocket' && bldOf(s) ? `${spUp('rocket', 1)}. 벽�
 function cardText(c) {
   if (c.k === 'curse') return { kind: '위험한 계약', lead: '', from: '', to: `카드 ${c.more}장 더`, det: `지금 카드를 ${c.more}장 더 골라요`, cost: `다음 구간 위협 ×${c.mul}`, col: '#FF5E7A', icon: 'star', curse: true };
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
+  if (c.k === 'gunlv') {   // 총 Lv(21.9): 그 총의 능력
+    const G = GUNS[c.g];
+    const evo = c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 ‘${GUN_EVO[c.g]}’` : '';
+    return { kind: '총 Lv', lead: G.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${gunText(c.g, c.to)}${evo}${enhText(c)}`, delta: `지금 ${gunText(c.g, c.from)} → 고르면 Lv${c.to}`, col: G.color, icon: 'gun', n: c.n };
+  }
+  if (c.k === 'swap') {   // 총 바꾸기(21.8)
+    const G = GUNS[c.g], F = GUNS[c.from] || GUNS.rifle;
+    return { kind: '총 바꾸기', lead: '', from: `${F.name} Lv${c.fromLv}`, to: `${G.name} Lv${c.to}`, det: `${G.line} · ${gunText(c.g, c.to)} · ★은 그대로, ${F.name} Lv은 기억해요`, delta: `지금 ${gunText(c.from, c.fromLv)}`, col: G.color, icon: 'gun' };
+  }
+  if (c.k === 'keep') {
+    const G = GUNS[c.g], F = GUNS[(bldOf(s) || {}).gt] || GUNS.rifle;
+    return { kind: '그대로', lead: F.name, from: tierName(c.from), to: tierName(c.to), det: `${G.name}은 두고 지금 총을 계속 써요 — 대신 ★ +1`, delta: `지금 총알 피해 ×${WEAPON[c.from]} → 고르면 ×${WEAPON[c.to]}`, col: '#FFC93C', icon: 'gun' };
+  }
   if (c.k === 'gun') { const bs = bldOf(s); return { kind: bs ? '총 ★' : '무기', lead: bs ? '총' : '무기', from: bs ? tierName(c.from) : c.from ? `${c.from}` : '기본', to: tierName(c.to), det: bs ? `최대 ★${tierMax(s) + 1}` : `총알 피해 ×${WEAPON[c.from]} → ×${WEAPON[c.to]} · 최대 ${tierMax(s)}단계`, delta: bs ? `지금 총알 피해 ×${WEAPON[c.from]} → 고르면 ×${WEAPON[c.to]}` : '', col: '#FFC93C', icon: 'gun' }; }
   if (c.k === 'relic') {
     // 유물(3·5단계 — 대왕 보스 뒤): 이름, 좋은 점, '대신' 줄(대신 쪽이 있는 유물만 — 나침반·주사위·서약·방패막은 없다). 글·수치는 roster.js RELICS
@@ -1753,6 +1804,9 @@ function cardDone(c) {
   if (c.k === 'curse') return `위험한 계약 — 카드 ${c.more}장 더`;
   if (c.k === 'men') return `병력 +${fmtN(c.to - c.from)}`;
   if (c.k === 'gun') return `무기 ${tierName(c.to)}`;
+  if (c.k === 'gunlv') return `${GUNS[c.g].name} Lv${c.to}`;
+  if (c.k === 'swap') return `${GUNS[c.g].name}으로 바꿨어요`;
+  if (c.k === 'keep') return `${(GUNS[(bldOf(s) || {}).gt] || GUNS.rifle).name} 그대로 — ${tierName(c.to)}`;
   if (c.k === 'unit') { const nm = UNITS[c.u] ? UNITS[c.u].name : '특수병'; return c.from ? `${nm} Lv${c.to}` : `${nm} 합류`; }
   if (c.k === 'fx') return `${fxName(c.a)} 효과 Lv${c.to}`;
   if (c.k === 'relic') return `유물 ${RELICS[c.r] ? RELICS[c.r].name : ''}`;
@@ -2062,6 +2116,11 @@ function renderPauseUnits() {
     row.appendChild(t);
     box.appendChild(row);
   };
+  if (Bd && Bd.gt && GUNS[Bd.gt]) {   // 총(21절): 지금 총과 Lv, 기억해 둔 다른 총 Lv
+    const lv = (Bd.gl && Bd.gl[Bd.gt]) || 1;
+    const other = GUN_IDS.filter((g) => g !== Bd.gt && Bd.gl && Bd.gl[g]).map((g) => `${GUNS[g].name} Lv${Bd.gl[g]}`).join(', ');
+    addRow('gun', `${GUNS[Bd.gt].name} Lv${lv} · ${tierName(s.squad.tier)}`, `${gunText(Bd.gt, lv)}${other ? ` · 기억한 총: ${other}` : ''}${Bd.gp && GUNS[Bd.gp] ? ` · 다음 보스 뒤 ${GUNS[Bd.gp].name}으로 바꿀지 골라요` : ''}`);
+  }
   if (fx) for (const a of AMMO_IDS) {
     const lv = fx[a] | 0;
     if (!lv) continue;
@@ -2071,7 +2130,7 @@ function renderPauseUnits() {
   if (Bd) {
     for (const id of Object.keys(ENH)) for (const [kind, key] of [['rare', 'r'], ['legend', 'l']]) {   // 카드 강화(희귀·전설)
       const n = enhN(s, id, key);
-      if (n) addRow(UNITS[id] ? id : 'fx_' + id, `${kind === 'rare' ? '희귀' : '전설'} 강화 ‘${ENH[id][kind].name}’${n > 1 ? ` ×${n}` : ''}`, ENH[id][kind].text());
+      if (n) addRow(UNITS[id] ? id : GUNS[id] ? 'gun' : 'fx_' + id, `${kind === 'rare' ? '희귀' : '전설'} 강화 ‘${ENH[id][kind].name}’${n > 1 ? ` ×${n}` : ''}`, ENH[id][kind].text());
     }
     if (Bd.gun) addRow('gun', `무기 개조 Lv${Bd.gun}`, `총알 화력 +${pct(BUILD.gun * Bd.gun)}%`);
     for (const m of sp) if (SP_EVO[m.k] && (m.lv || 1) >= BUILD.evo) addRow(m.k, `${UNITS[m.k].name} ‘${SP_EVO[m.k].name}’${(m.lv || 1) >= 10 ? ` · ‘${SP_EVO2[m.k].name}’` : ''}${(m.lv || 1) > BUILD.evo ? ` · 각성 +${Math.round((awk(m.lv || 1) - 1) * 100)}%` : ''}`, SP_EVO[m.k].text() + ((m.lv || 1) >= 10 ? ' · ' + SP_EVO2[m.k].text() : ''));   // Lv5 고유 능력·Lv10 2차 진화·각성
@@ -2260,8 +2319,13 @@ function handleEvents(ev) {
           vibe([15, 30, 15]);
           toast(`탄종 상자 · ${fxName(e.a)} 효과 Lv${e.lv}${combos ? ` · 시너지 ${comboNames(combos)}!` : ''}`, 2200);
           combosShown = true;
-        } else if (e.type === 'gun') { sfx.power(e.tier | 0); if (music) music.boost(4); vibe(25); } else if (e.type === 'coin') sfx.coin(); else sfx.crate();
+        } else if (e.type === 'gun') { sfx.power(e.tier | 0); if (music) music.boost(4); vibe(25); } else if (e.type === 'gunx' && GUNS[e.g]) {
+          // 다른 총 상자(21.8): 바꿀지는 다음 보스 뒤에 고른다
+          sfx.power(2); vibe([15, 30, 15]);
+          toast(`${GUNS[e.g].name} 상자! 다음 보스 뒤에 바꿀지 골라요 — ${GUNS[e.g].line}`, 2400);
+        } else if (e.type === 'coin') sfx.coin(); else sfx.crate();
         break;
+      case 'gunSwap': if (GUNS[e.g]) toast(`${GUNS[e.g].name} Lv${e.lv}로 바꿨어요 — ${GUNS[e.g].line}`, 2200); break;
       case 'fxUp':
         // 탄 효과를 얻었다(카드·탄종 상자 — 소리·알림은 그쪽 이벤트가 낸다)
         tip('fx', `탄 효과는 좋은 점만 있어요. 같은 효과를 또 얻으면 레벨이 끝없이 오르고, 칸이 차면 가진 효과만 나와요`);
@@ -2565,6 +2629,7 @@ function finish() {
   // 모은 별로 새로 열린 탄종(한 번만 알린다)
   const starsNow = totalStars(data);
   const newAmmo = AMMO_IDS.filter((id) => AMMO[id].stars > (data.ammo.seen | 0) && starsNow >= AMMO[id].stars);
+  const newGun = GUN_IDS.filter((id) => GUNS[id].stars > 0 && GUNS[id].stars > (data.ammo.seen | 0) && starsNow >= GUNS[id].stars);   // 새로 열린 총(탄종과 같은 별 문턱 기록을 쓴다)
   if (starsNow > (data.ammo.seen | 0)) data.ammo.seen = starsNow;
   if (anyInput && L === 1) data.tips.moved = 1;
   tutorial = false;
@@ -2603,6 +2668,7 @@ function finish() {
   if (egg) lines.push(['펫 알', '+1개 (대왕 첫 격파)']);
   if (joined.length) lines.push(['새 영웅 합류', joined.map((id) => HEROES[id].name).join(', ')]);
   if (newAmmo.length) lines.push(['새 탄종 열림', newAmmo.map((id) => AMMO[id].name).join(', ') + ' — 강화 화면에서 골라요']);
+  if (newGun.length) lines.push(['새 총 열림', newGun.map((id) => GUNS[id].name).join(', ') + ' — 강화 화면에서 골라요(무한모드)']);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
   renderNear(won);
   const cause = !won && !anyInput
@@ -2728,17 +2794,20 @@ function updateSpChips() {
   if (fx) for (const a of AMMO_IDS) mix(fx[a] | 0);
   mix(ammoChip ? AMMO_IDS.indexOf(ammoChip) + 1 : 0);
   if (rl) for (const id of rl) mix((RELIC_IDS.indexOf(id) + 1) * 3 + (spent.includes(id) ? 1 : 0));
+  const Bg = s && bldOf(s);   // 총 종류(21절): 총·총 Lv·바꿀 총
+  if (Bg && Bg.gt) { mix(GUN_IDS.indexOf(Bg.gt) + 1); mix((Bg.gl && Bg.gl[Bg.gt]) || 1); mix(GUN_IDS.indexOf(Bg.gp) + 2); }
   if (key === spKey) return;
   spKey = key;
   const box = $('spChips');
   box.textContent = '';
   // 무기 단계(상자·카드로 얻은 총알 파워업): 1단계부터 칩으로 — 테두리·숫자는 그 단계의 총알 색
-  if (tier > 0) {
+  if (tier > 0 || (Bg && Bg.gt)) {
     const chip = document.createElement('span');
     chip.className = 'sp-chip fx-chip gun-chip' + (tier >= tierMax(s) ? ' lv3' : '');
     chip.style.setProperty('--acc', WTIER[Math.min(WTIER.length - 1, tier)]);
     chip.appendChild(iconEl('gun', 2));
-    chip.append(s && bldOf(s) ? '총' : '무기');
+    const gl = Bg && Bg.gt ? (Bg.gl && Bg.gl[Bg.gt]) || 1 : 0;
+    chip.append(Bg && Bg.gt && GUNS[Bg.gt] ? `${GUNS[Bg.gt].name}${gl > 1 ? ` Lv${gl}` : ''}${Bg.gp && GUNS[Bg.gp] ? ` → ${GUNS[Bg.gp].name}?` : ''}` : s && bldOf(s) ? '총' : '무기');   // 개편 판: 총 이름·Lv(바꿀 총이 있으면 '→ 산탄총?')
     const b = document.createElement('b');
     b.textContent = s && bldOf(s) ? '★' + (tier + 1) : tier + '단계';
     chip.appendChild(b);

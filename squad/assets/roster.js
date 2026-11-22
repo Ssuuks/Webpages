@@ -514,7 +514,7 @@ export function gunVal(id, lv) {
   if (id === 'marksman') {
     const hRaw = evo ? 0.2 + 0.1 * (a - 1) : 0, over = Math.max(0, hRaw - 0.5);   // 헤드샷 문턱 50% 상한 → 넘친 몫은 피해로(21.10)
     const K = GUNK.marksman;
-    return { hz: l >= 4 ? K.hz * 1.2 : K.hz, rounds: true, spread: 0, aim: l >= 2 ? K.aim + 1 : K.aim, range: 50, thru: true, dmg: r3(K.dmg * (1 + 0.5 * over)), wall: 1, boss: r3((l >= 3 ? K.boss + 0.3 : K.boss) + 0.3 * (a - 1)), head: r3(Math.min(0.5, hRaw)), pop: evo2 ? 0.5 : 0, over: r3(over), evo, evo2, a };
+    return { hz: r3(l >= 4 ? K.hz * 1.2 : K.hz), rounds: true, spread: 0, aim: l >= 2 ? K.aim + 1 : K.aim, range: 50, thru: true, dmg: r3(K.dmg * (1 + 0.5 * over)), wall: 1, boss: r3((l >= 3 ? K.boss + 0.3 : K.boss) + 0.3 * (a - 1)), head: r3(Math.min(0.5, hRaw)), pop: evo2 ? 0.5 : 0, over: r3(over), evo, evo2, a };
   }
   const hRaw = (l >= 2 ? 11 : 10) * (1 + 0.3 * (a - 1)), over = Math.max(0, hRaw - 18);   // 소총: 쏘는 속도 초당 18 상한 → 넘친 몫은 피해로
   return { hz: r3(Math.min(18, hRaw)), spread: l >= 3 ? 0.8 : 0.3, range: l >= 4 ? 35 : 30, dmg: r3(1 + over / 18), wall: 1, boss: 1, burst: evo ? { every: 4, k: r3(2 + 0.5 * (a - 1)), thru: evo2 } : null, over: r3(over), evo, evo2, a };
