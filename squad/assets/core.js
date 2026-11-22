@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SPECS, COMBO_IDS2, deep, SETS, SET_IDS, setTier, comboV } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SPECS, COMBO_IDS2, deep, SETS, SET_IDS, setTier, comboV } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -1743,7 +1743,7 @@ function cardInfoB(s, c, B) {
       if (cb.length) o.combos = cb;
       return o;
     }
-    if (c.k === 'fx') { const lv = fxLv(s, c.a); const o = { k: 'fx', a: c.a, from: lv, to: lv + n, n }; const cb = combosBy(s, c.a); if (cb.length) o.combos = cb; return o; }
+    if (c.k === 'fx') { const lv = fxLv(s, c.a); const o = { k: 'fx', a: c.a, from: lv, to: Math.min(BUILD.evo, lv + n), n }; const cb = combosBy(s, c.a); if (cb.length) o.combos = cb; return o; }
   }
   if (c.k === 'relic') return RELICS[c.r] ? { k: 'relic', r: c.r } : null;
   return null;
@@ -1818,7 +1818,7 @@ const fxCount = (fx) => AMMO_IDS.reduce((n, a) => n + (fx[a] ? 1 : 0), 0);
 export function fxCan(s, a) {
   const fx = fxOf(s);
   if (!fx || !AMMO[a]) return false;
-  return fx[a] ? true : fxCount(fx) < fxSlots(s);
+  return fx[a] ? (!bldOf(s) || fx[a] < BUILD.evo) : fxCount(fx) < fxSlots(s);   // 개편 판은 Lv5(진화)가 상한 — 각성 Lv6~10은 아직 없다
 }
 /* 시너지 재료: 탄종 id = 그 탄 효과(출격 탄종이든 카드든), 병과 = 그 특수병(레벨 상관없이), 영웅 id = 출격 영웅 */
 function hasPart(s, id) {
@@ -2788,7 +2788,7 @@ function sawsUpdate(s, R) {
 function foesUpdate(s, R) {
   const q = s.squad;
   const fx = s.endless && s.endless.fx;
-  const slowK = fx ? (fx.frost ? fxVal('frost', fx.frost).slow : 0) : AMMO.frost.slow;
+  const slowK = fx ? (fx.frost ? fxV(s, 'frost', fx.frost).slow : 0) : AMMO.frost.slow;
   const rl = mutLv(s, 'rush'), rushK = rl ? MUTATIONS.rush.v[rl - 1] : 1;
   for (const f of s.foes) {
     if (!f.alive) continue;
@@ -2820,7 +2820,9 @@ function foesUpdate(s, R) {
     if (touches(f.x - q.x, f.z - q.z, hitHalf(R), SQUAD_DEPTH * R, f.r * FOE_HX, f.r)) {
       f.alive = false;
       emit(s, { t: 'bite', kind: f.kind, x: f.x, z: f.z });
-      lose(s, contactCost(f.hp), s.phase === 'arena' ? 'summon' : f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
+      let cost = contactCost(f.hp);
+      if (f.slowT > s.t && fx && s.endless.bld && fx.frost) cost = Math.max(1, Math.round(cost * fx2Val('frost', fx.frost).loss));   // 빙결 Lv3+: 느려진 좀비에게 잃는 병사 −30%
+      lose(s, cost, s.phase === 'arena' ? 'summon' : f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
       continue;
     }
     if (f.z < q.z - 4) f.alive = false;   // 지나쳐 갔다
@@ -2981,7 +2983,12 @@ export const PET_WIDE_AVG = 0.2;
 function fire(s, R) {
   const q = s.squad;
   if (q.n <= 0) return;
-  q.fireAcc += DT;
+  const FXR = s.endless && s.endless.bld && s.endless.fx && s.endless.fx.rapid ? fx2Val('rapid', s.endless.fx.rapid) : null;   // 속사(개편 판): 쏘는 속도·보스 피해·과열
+  if (FXR && FXR.heat > 1) {
+    const engaged = !!s.boss || s.foes.some((f) => f.alive && f.z > q.z && f.z - q.z < BULLET_RANGE);
+    q.heat = engaged ? (q.heat || 0) + DT : 0;
+  } else if (q.heat) q.heat = 0;
+  q.fireAcc += DT * (FXR ? FXR.rate : 1);
   const per = 1 / VOLLEY_HZ;
   while (q.fireAcc >= per) {
     q.fireAcc -= per;
@@ -2994,7 +3001,7 @@ function fire(s, R) {
     if (FX) {
       // 2단계: 출격 탄종의 대신 쪽(한 발 피해 −)은 그대로, 속사 효과의 좋은 점(화력 +)은 그 레벨만큼
       if (A && A.dmg < 1) dmg *= A.dmg;
-      if (FX.rapid) dmg *= fxV(s, 'rapid', FX.rapid).dmg;
+      if (FX.rapid) dmg *= fxV(s, 'rapid', FX.rapid).dmg * (FXR && FXR.heat > 1 && q.heat >= FX_HEAT ? FXR.heat : 1);
     } else if (A && A.dmg) dmg *= A.dmg;
     const B = s.endless && s.endless.bld;
     if (B && B.gun) dmg *= 1 + BUILD.gun * deep(B.gun);
@@ -3052,8 +3059,8 @@ function bulletsUpdate(s) {
   const FX = s.endless && s.endless.fx;
   // 개편 판: 관통·작렬 효과가 벽·장갑문·보스에도 든다(wallK — 덧효과가 좀비에만 들면 벽 앞에서 빌드가 꺼진다), 빙결은 언 적이 받는 총알 피해를 키운다
   const B2 = FX && s.endless.bld ? FX : null;
-  const wallK = B2 ? 1 + (B2.pierce ? 0.5 * fx2Val('pierce', B2.pierce).pierce : 0) + (B2.burst ? fx2Val('burst', B2.burst).splash : 0) : 1;
-  const iceK = B2 && B2.frost ? fx2Val('frost', B2.frost).amp : 1;
+  const wallK = B2 && B2.pierce ? fx2Val('pierce', B2.pierce).wall : 1;   // 관통 Lv3+: 벽·장갑문 피해 +50%
+  const bossK = B2 && B2.rapid ? fx2Val('rapid', B2.rapid).boss : 1;   // 속사 Lv3+: 보스에게 +30%
   let w = 0;
   for (let i = 0; i < list.length; i++) {
     const b = list[i];
@@ -3103,14 +3110,14 @@ function bulletsUpdate(s) {
     }
     // 장갑문은 총알 종류만큼(doorMul), 방패 정예는 정면 총알을 막는다(shieldMul — 관통 효과면 제 피해). 둘 다 2단계 판의 4구간부터만 있다
     if (B2 && hitKind === 2) { const wd = hitObj.kind === 'wall' || hitObj.kind === 'door'; hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK : 1)); continue; }
-    if (B2 && hitKind === 3) { hitFoe(s, hitObj, (hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg) * (iceK > 1 && hitObj.slowT > s.t ? iceK : 1) * (hitObj.arm && !(fxOf(s) && fxOf(s).pierce) ? hitObj.arm : 1), 'gun'); fxHit2(s, b, hitObj, near, FX); continue; }
+    if (B2 && hitKind === 3) { hitFoe(s, hitObj, (hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg) * (hitObj.arm && !(fxOf(s) && fxOf(s).pierce) ? hitObj.arm : 1), 'gun'); fxHit2(s, b, hitObj, near, FX); continue; }
     if (hitKind === 2) { hitProp(s, hitObj, hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg); continue; }
     if (hitKind === 3) { hitFoe(s, hitObj, hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg, 'gun'); if (FX) fxHit(s, b, hitObj, near, FX); else if (s.ammo) ammoHit(s, b, hitObj, near); continue; }
     if (hitKind === 4) {
       // 뭉치 스킬로 늘어난 몫은 특수병·영웅 보너스 예산에서만 들어간다(보스가 너무 빨리 녹지 않게)
-      const base = (b.hm > 1 ? b.dmg / b.hm : b.dmg) * wallK;
+      const base = (b.hm > 1 ? b.dmg / b.hm : b.dmg) * bossK;
       bo.hp -= base;
-      if (base < b.dmg * wallK) hitBossBonus(s, b.dmg * wallK - base);
+      if (base < b.dmg * bossK) hitBossBonus(s, b.dmg * bossK - base);
       bo.hitT = s.t;
       continue;
     }
@@ -3182,7 +3189,7 @@ function fxHit2(s, b, f, near, fx) {
     }
     line.sort((a, c) => a.z - c.z || a.id - c.id);
     const n = Math.min(v.n, line.length, PIERCE_MAX);
-    for (let i = 0; i < n; i++) { hits.push(line[i]); hitFoe(s, line[i], b.dmg * v.pierce, 'gun'); }
+    for (let i = 0; i < n; i++) { hits.push(line[i]); hitFoe(s, line[i], b.dmg * v.pierce * (1 + v.ramp * i), 'gun'); }   // Lv5: 뚫을 때마다 다음 대상 피해 +ramp
     if (n) emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: line[n - 1].z });
   }
   if (fx.burst) {
@@ -3245,6 +3252,32 @@ function drumBlast(s, p, by) {
     } else if (o.kind === 'drum') drumBlast(s, o, 'chain');
   }
 }
+/* 죽은 좀비에서 번지는 탄 효과(개편 판 Lv5): 작렬 — 그 좀비가 터져 둘레 r의 좀비에 제 체력의 FX_CHAIN배(그 좀비들이 죽으면 또 터진다 — 연쇄, 한 번에 FX_CHAIN_MAX까지),
+   빙결 — 느려진 좀비가 죽으면 둘레 1.5m의 좀비가 느려진다 */
+const FX_CHAIN_MAX = 12;
+let fxChainN = 0;
+function fxDeath(s, f) {
+  const fx = s.endless.fx;
+  if (fx.burst >= BUILD.evo && fxChainN < FX_CHAIN_MAX) {
+    const v = fx2Val('burst', fx.burst);
+    const r2 = v.r * v.r, d = f.max * v.chain;
+    let n = 0;
+    fxChainN++;
+    for (const o of s.foes) {
+      if (!o.alive || o === f) continue;
+      const dx = o.x - f.x, dz = o.z - f.z;
+      if (dx * dx + dz * dz > r2) continue;
+      n++;
+      hitFoe(s, o, d, 'chain');
+    }
+    fxChainN--;
+    if (n) emit(s, { t: 'splash', x: f.x, z: f.z, r: v.r, n });
+  }
+  if (fx.frost >= BUILD.evo && f.slowT > s.t) {
+    const v = fx2Val('frost', fx.frost);
+    for (const o of s.foes) if (o.alive && o !== f && (o.x - f.x) ** 2 + (o.z - f.z) ** 2 <= 2.25) o.slowT = s.t + v.T;
+  }
+}
 function hitFoe(s, f, dmg, by) {
   // 빌드 세트 '한파': 느려진 적이 받는 모든 피해 +
   if (f.slowT > s.t && s.endless && s.endless.bld && s.endless.bld.sets.frost) dmg *= 1 + SETS.frost.v[s.endless.bld.sets.frost - 1].amp;
@@ -3256,6 +3289,7 @@ function hitFoe(s, f, dmg, by) {
   s.stats.killHp += f.max;
   emit(s, { t: 'kill', kind: f.kind, x: f.x, z: f.z, by, elite: f.elite });
   if (f.elite) eliteDeath(s, f);
+  if (s.endless && s.endless.bld && s.endless.fx) fxDeath(s, f);   // 작렬 Lv5 유폭 · 빙결 Lv5 번지는 얼음
   chargeHero(s, 0.01);
   // 펫 '기운 내': 처치마다 확률로 영웅 게이지 +PET_CHEER
   const pc = s.hero ? petBy(s, 'cheer') : null;
@@ -4561,6 +4595,7 @@ export function stateHash(s) {
   for (const m of q.sp) h = hash(h, m.k, m.cd.toFixed(4), m.lv || 1);
   h = hash(h, q.pool.toFixed(4), q.recent.toFixed(4), q.healAcc.toFixed(4), q.lossFrac.toFixed(4));
   if (q.fogAcc) h = hash(h, 'fog', q.fogAcc.toFixed(4));
+  if (q.heat) h = hash(h, 'heat', q.heat.toFixed(3));
   if (s.endless && s.endless.mut && s.endless.mut.length) h = hash(h, 'mut', s.endless.mut.join(','));
   if (s.boss) h = hash(h, s.boss.bonus.toFixed(4));
   for (const rk of s.rockets) h = hash(h, rk.x.toFixed(4), rk.z.toFixed(4), rk.t.toFixed(4));

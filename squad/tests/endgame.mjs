@@ -3875,15 +3875,71 @@ test('빌드 개편: 게이트 방패는 빨간 게이트 손실을 구간마다
   assert.ok(m && m.lv === 3, JSON.stringify(u.squad.sp));
   assert.deepEqual(u.endless.bld.down, []);
 });
-test('빌드 개편: 깊이 보상 — 같은 레벨 수라도 한 가지에 몰면 값이 더 크다. 탄 효과는 Lv5에 진화한다', () => {
+test('빌드 개편: 깊이 보상(특수병·영웅·생존 카드용) — 한 가지에 몰면 값이 더 크다', () => {
   assert.ok(R.deep(6) > 2 * R.deep(3));
+});
+test('탄 Lv1~5(개편 판, 18.3): 레벨마다 정해진 능력 — 관통(1마리·2마리·벽 +50%·일직선 전부·뚫을수록 +20%) · 작렬(1m·1.5m·50%·2m·유폭) · 속사(+10%·속도 +10%·보스 +30%·속도 더·과열) · 빙결(0.8초 25%·40%·잃는 병사 −30%·1.5초·번짐). Lv5가 진화·상한', () => {
+  const V = (a, l) => R.fx2Val(a, l);
+  assert.deepEqual([1, 2, 3, 4, 5].map((l) => [V('pierce', l).n, V('pierce', l).wall, V('pierce', l).ramp]), [[1, 1, 0], [2, 1, 0], [2, 1.5, 0], [99, 1.5, 0], [99, 1.5, 0.2]]);
+  assert.deepEqual([1, 2, 3, 4, 5].map((l) => [V('burst', l).r, V('burst', l).splash, V('burst', l).chain > 0]), [[1, 0.3, false], [1.5, 0.3, false], [1.5, 0.5, false], [2, 0.5, false], [2, 0.5, true]]);
+  assert.deepEqual([1, 2, 3, 4, 5].map((l) => [V('rapid', l).dmg, V('rapid', l).rate, V('rapid', l).boss, V('rapid', l).heat]), [[1.1, 1, 1, 1], [1.1, 1.1, 1, 1], [1.1, 1.1, 1.3, 1], [1.1, 1.21, 1.3, 1], [1.1, 1.21, 1.3, 1.5]]);
+  assert.deepEqual([1, 2, 3, 4, 5].map((l) => [V('frost', l).slow, V('frost', l).T, V('frost', l).loss, V('frost', l).spread]), [[0.25, 0.8, 1, false], [0.4, 0.8, 1, false], [0.4, 0.8, 0.7, false], [0.4, 1.5, 0.7, false], [0.4, 1.5, 0.7, true]]);
   for (const a of R.AMMO_IDS) {
-    assert.equal(!!R.fx2Val(a, R.BUILD.evo - 1).evo, false);
-    assert.equal(R.fx2Val(a, R.BUILD.evo).evo, true);
+    assert.equal(!!V(a, R.BUILD.evo - 1).evo, false);
+    assert.equal(V(a, R.BUILD.evo).evo, true);
+    assert.equal(V(a, 9).evo, true, 'Lv5가 상한(각성 Lv6~10은 아직 없다)');
     assert.ok(R.fx2Text(a, R.BUILD.evo).includes(R.FX_EVO[a]));
+    for (let l = 1; l <= 5; l++) assert.ok(R.fx2Text(a, l).length > 6, `${a} Lv${l}`);
+    assert.equal(V(a, 1).amp, undefined, '언 적 피해 증폭은 없앴다');
   }
-  assert.ok(R.fx2Val('rapid', 5).dmg > R.fx2Val('rapid', 4).dmg * 1.25);
-  assert.equal(R.fx2Val('pierce', 5).n, 99);
+  // 이 글이 레벨마다 다르다(숫자만 오르는 레벨이 없다)
+  for (const a of R.AMMO_IDS) assert.equal(new Set([1, 2, 3, 4, 5].map((l) => R.fx2Text(a, l))).size, 5, a);
+  // 상한: 개편 판의 탄 효과는 Lv5에서 더 안 오른다(카드·상자·fxCan)
+  const s = C.newEndless({ seed: 31, ...BLD });
+  s.endless.fx = { pierce: 4, burst: 5 };
+  assert.deepEqual([C.fxCan(s, 'pierce'), C.fxCan(s, 'burst')], [true, false]);
+  assert.deepEqual({ ...C.cardInfo(s, { k: 'fx', a: 'pierce', n: 3 }), set: undefined }, { k: 'fx', a: 'pierce', from: 4, to: 5, n: 3, set: undefined }, '카드도 Lv5에서 자른다');
+});
+test('탄 Lv 효과(개편 판): 관통 뒤 대상 · 벽 +50% · 뚫을수록 +20% / 작렬 유폭 / 속사 속도·과열 / 빙결 잃는 병사 −30%·번짐', () => {
+  const mk = (fx) => { const u = C.newEndless({ seed: 31, ...BLD }); u.endless.fx = { ...fx }; u.squad.n = 300; u.props = []; u.rows = []; u.saws = []; u.bullets = []; delete u.divs; u.squad.fireAcc = -9; return u; };
+  const foe = (u, id, dz, hp, extra = {}) => ({ id, kind: 'grunt', x: 0, z: u.squad.z + dz, hp, max: hp, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9, ...extra });
+  // 관통: 첫 대상 뒤 일렬 세 마리 — 총알 100이 첫 대상에 들고 뒤에는 50(%), Lv5는 뚫을 때마다 +20%
+  const pierce = (lv) => {
+    const u = mk({ pierce: lv });
+    const f = [foe(u, 99010, 6, 1e6), foe(u, 99011, 7.2, 1e6), foe(u, 99012, 8.4, 1e6), foe(u, 99013, 9.6, 1e6)];
+    u.foes = f;
+    u.bullets = [{ x: 0, z: f[0].z - 0.3, d: 5, dmg: 100, hm: 1 }];
+    C.step(u, { dir: 0 });
+    return f.map((x) => Math.round(1e6 - x.hp));
+  };
+  assert.deepEqual(pierce(1), [100, 50, 0, 0], 'Lv1: 뒤 1마리');
+  assert.deepEqual(pierce(2), [100, 50, 50, 0], 'Lv2: 뒤 2마리');
+  assert.deepEqual(pierce(4), [100, 50, 50, 50], 'Lv4: 일직선 전부');
+  assert.deepEqual(pierce(5), [100, 50, 60, 70], 'Lv5: 뚫을 때마다 다음 +20%');
+  // 벽: 관통 Lv3부터 벽·장갑문이 총알 피해의 1.5배
+  const wall = (lv) => { const u = mk({ pierce: lv }); const w = { id: 99020, kind: 'wall', x0: -1, x1: 1, z: u.squad.z + 6, hp: 1e6, max: 1e6, alive: true, hitT: -9 }; u.props = [w]; u.bullets = [{ x: 0, z: w.z - 0.5, d: 5, dmg: 100, hm: 1 }]; C.step(u, { dir: 0 }); return Math.round(1e6 - w.hp); };
+  assert.deepEqual([wall(1), wall(2), wall(3), wall(5)], [100, 100, 150, 150]);
+  // 작렬 Lv5: 죽은 좀비가 터져 이웃에 제 체력의 30% — Lv4와의 차이가 그 몫
+  const burst = (lv) => { const u = mk({ burst: lv }); const a = foe(u, 99030, 6, 60), b = foe(u, 99031, 6, 1e6, { x: 1.2 }); u.foes = [a, b]; u.bullets = [{ x: 0, z: a.z - 0.3, d: 5, dmg: 100, hm: 1 }]; C.step(u, { dir: 0 }); return { dead: !a.alive, b: Math.round((1e6 - b.hp) * 100) / 100 }; };
+  const b4 = burst(4), b5 = burst(5);
+  assert.deepEqual([b4.dead, b5.dead, b4.b], [true, true, 50]);
+  assert.equal(b5.b, 50 + 60 * R.FX_CHAIN, '유폭: 죽은 좀비 체력의 30%가 둘레에 더');
+  // 속사: Lv2부터 쏘는 속도 +10%, Lv4 +21% — 같은 시간에 나가는 일제 사격 수. Lv5는 3초 계속 쏘면 피해 ×1.5
+  const volleys = (lv, ticks = 360) => { const u = mk({ rapid: lv }); u.foes = [foe(u, 99040, 60, 1e12)]; for (let i = 0; i < ticks; i++) { u.squad.fireAcc = Math.max(u.squad.fireAcc, 0); C.step(u, { dir: 0 }); u.foes[0].z = u.squad.z + 30; u.foes[0].hp = 1e12; } return u.squad.volley; };
+  const v1 = volleys(1), v2 = volleys(2), v4 = volleys(4);
+  assert.ok(Math.abs(v2 / v1 - 1.1) < 0.04 && Math.abs(v4 / v1 - 1.21) < 0.04, `일제 사격 ${v1} ${v2} ${v4}`);
+  const heat = (lv) => { const u = mk({ rapid: lv }); u.squad.fireAcc = 0; u.foes = [foe(u, 99041, 60, 1e12)]; const d = []; for (let i = 0; i < 260; i++) { C.step(u, { dir: 0 }); u.foes[0].z = u.squad.z + 30; u.foes[0].hp = 1e12; if (u.bullets.length) d.push(u.bullets.at(-1).dmg); } return [d[0], d.at(-1)]; };   // 처음 일제 사격과 3초 뒤의 일제 사격
+  const h4 = heat(4), h5 = heat(5);
+  assert.ok(Math.abs(h4[1] / h4[0] - 1) < 1e-9, '과열은 Lv5부터');
+  assert.ok(Math.abs(h5[1] / h5[0] - R.fx2Val('rapid', 5).heat) < 1e-9, `과열 ${h5}`);
+  // 빙결 Lv3: 느려진 좀비가 닿으면 잃는 병사 −30%, 느리지 않은 좀비는 그대로
+  const bite = (lv, slow) => { const u = mk({ frost: lv }); const f = foe(u, 99050, 0.1, 60 * 20, { spd: 1 }); if (slow) f.slowT = u.t + 5; u.foes = [f]; const n0 = u.squad.n; C.step(u, { dir: 0 }); return n0 - u.squad.n; };
+  const l2 = bite(2, true), l3 = bite(3, true);
+  assert.ok(l2 > 0 && l3 === Math.max(1, Math.round(l2 * 0.7)), `느려진 좀비 ${l2} → ${l3}`);
+  assert.equal(bite(3, false), bite(2, false), '느리지 않은 좀비는 그대로');
+  // 빙결 Lv5: 느려진 좀비가 죽으면 둘레 1.5m가 느려진다(Lv4는 안 번진다)
+  const spread = (lv) => { const u = mk({ frost: lv }); const a = foe(u, 99060, 6, 60, { slowT: u.t + 5 }), b = foe(u, 99061, 6, 1e6, { x: 1 }), c = foe(u, 99062, 6, 1e6, { x: 3 }); u.foes = [a, b, c]; u.bullets = [{ x: 0, z: a.z - 0.3, d: 5, dmg: 100, hm: 1 }]; C.step(u, { dir: 0 }); return [b.slowT > u.t, c.slowT > u.t]; };
+  assert.deepEqual([spread(4), spread(5)], [[false, false], [true, false]]);
 });
 test('펫 여러 마리: 첫 마리는 예전 그대로(s.pet — 한 마리 판의 해시 그대로), 나머지는 s.pets — 효과가 모두 든다. 저장은 자리 수만큼만 출격 목록에', () => {
   const lv = C.prepareLevel(12);

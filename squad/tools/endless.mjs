@@ -105,7 +105,7 @@ export function thinkScore(s, c, K = THINK) {
 }
 /* 개편 판(s.endless.bld)의 카드 점수 = 직접 값(총·탄 효과·특수병·생존·영웅 레벨의 깊이 보상 deep() 몫) + 세트 진행(cardInfo의 set: from·to·tier·up·next — 단계에 오르는 몫과 다음 단계를 향한 걸음).
    - 무기 개조: 화력 ln((1 + gun·deep(to)) / (1 + gun·deep(from)))
-   - 속사: 화력 ln(dmg(to) / dmg(from)) (fx2Val)
+   - 속사: 화력 ln(pow(to) / pow(from)) (fx2Val — 피해·속도·보스·과열을 화력으로 어림한 값)
    - 그 밖의 탄 효과·특수병·영웅·게이트 방패: w[부품] × (deep(to) − deep(from)), 처음 얻으면 first를 더
    - 방탄복: ln((1 + armor·deep(to)) / (1 + armor·deep(from)))
    - 전문화 spec · 위험한 계약 curse: 정한 값
@@ -118,7 +118,7 @@ function thinkScoreB(s, c, f, K) {
   let v = 0;
   const part = f.k === 'gun' ? 'gun' : f.k === 'unit' ? f.u : f.k === 'fx' ? f.a : f.k === 'hero' ? f.h : f.g;
   if (f.k === 'gun') v = g(C.WEAPON[f.to], C.WEAPON[f.from]);   // 총 ★(무기 단계)
-  else if (f.k === 'fx' && f.a === 'rapid') v = g(fx2Val('rapid', f.to).dmg, f.from ? fx2Val('rapid', f.from).dmg : 1);
+  else if (f.k === 'fx' && f.a === 'rapid') v = g(fx2Val('rapid', f.to).pow, f.from ? fx2Val('rapid', f.from).pow : 1);
   else if (f.k === 'guard' && f.g === 'armor') v = g(1 + BUILD.armor * deep(f.to), 1 + BUILD.armor * deep(f.from));
   else v = (K.w[part] || 0.02) * (deep(f.to) - deep(f.from)) + (f.from ? 0 : K.first);
   if (f.combos) v += (K.combo ?? THINK.combo) * f.combos.length;
