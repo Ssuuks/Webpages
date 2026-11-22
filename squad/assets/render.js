@@ -1315,6 +1315,13 @@ export function createRenderer(cvs) {
           break;
         case 'surge': surgeT = time; break;
         case 'clash': shake(0.3); break;
+        case 'bossChargeWarn':   // 돌진 숨 고르기: 보스 발밑에 붉은 고리(개편 판 보스 패턴)
+          if (s.boss) { ring(s.boss.x, s.boss.z, 0.5, 4, e.warn || 0.8, '#FF7A45', { thick: 2 }); fx('glow', s.boss.x, 2, s.boss.z - 0.5, e.warn || 0.8, { col: '#FF5A3C', r: 5 }); }
+          break;
+        case 'bossCharge':   // 돌진: 먼지와 흔들림
+          shake(0.25);
+          if (s.boss) burst(s.boss.x, 0.2, s.boss.z, 12, bfx().dust, 4, 2);
+          break;
         case 'stomp':
           stompT = time;   // 짓밟기는 길 전체를 흔든다(SIM: 옆 위치와 상관없이 맞는다) — 보스 발에서 분대까지 땅이 번쩍인다
           shake(0.3);

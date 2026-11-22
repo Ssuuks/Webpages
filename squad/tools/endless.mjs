@@ -57,7 +57,7 @@ export const THINK = {
   // 빌드 개편 판(thinkScoreB — 아래 식): 값은 '화력이 이만큼(자연로그) 는다'로 어림한 것 [초안 — 잰 값은 ENDGAME.md 19절]
   b: {
     w: { pierce: 0.02, burst: 0.03, frost: 0.03, sniper: 0.05, rocket: 0.025, flame: 0.03, medic: 0.025, shield: 0.06, chg: 0.01, dur: 0.02 },   // 유효 레벨(deep) 하나의 몫
-    enhRare: 0.06, enhLegend: 0.14,   // 희귀·전설 강화 하나의 몫(초안)
+    enhRare: 0.06, enhLegend: 0.4,    // 희귀·전설 강화 하나의 몫(초안 — 전설은 2차 진화 즉시 + 핵심 수치 ×2라 크게, ENDGAME.md 20절)
     first: 0.08,    // 새 특수병·탄 효과를 처음 얻는 몫(레벨 1이 나머지보다 얼마나 더 값진가 — 자리를 잡는 일)
     tier: {         // 세트가 단계마다 더하는 몫(누적이 아니라 그 단계에 오를 때 더해지는 값)
       barrage: [0.11, 0.26, 0.32], blast: [0.17, 0.33, 0.4], precise: [0.2, 0.3, 0.4], frost: [0.15, 0.3, 0.45], command: [0.1, 0.1, 0.15],

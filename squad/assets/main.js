@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, ENH, PET_SLOTS, comboText } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, fx2Text, SP_EVO, SP_EVO2, awk, ENH, PET_SLOTS, comboText, unitVal } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1677,6 +1677,13 @@ function spPowText(u, lv) {
   if (P) return ` · 위력 ×${(P.dmg * (1 + P.lv * (Math.min(lv, BUILD.evo) - 1)) * awk(lv)).toFixed(1)}`;
   return u === 'medic' ? ` · 좀비·보스에게 잃는 병사 −${pct(1 - 1 / (1 + BUILD.med * lv))}%, 회복 +${50 * lv}%` : '';
 }
+/* 특수병 레벨 글(개편 판의 로켓병은 간격·조준이 다르다 — BUILD.rocket) */
+function spUp(u, lv) {
+  if (u !== 'rocket' || !bldOf(s)) return UNITS[u].up(lv);
+  const L = Math.min(lv, BUILD.evo);
+  return `${Math.round(unitVal('rocket', 'every', L) * BUILD.rocket.cd * 100) / 100}초마다 로켓(폭발 반경 ${unitVal('rocket', 'r', L)}m) — 길을 막은 벽을 먼저 뚫어요(벽 피해 ×${BUILD.rocket.wall})`;
+}
+const spDesc = (u) => (u === 'rocket' && bldOf(s) ? `${spUp('rocket', 1)}. 벽이 없으면 가장 큰 무리, 보스전에서는 보스` : UNITS[u].desc);
 function cardText(c) {
   if (c.k === 'curse') return { kind: '위험한 계약', lead: '', from: '', to: `카드 ${c.more}장 더`, det: `지금 카드를 ${c.more}장 더 골라요`, cost: `다음 구간 위협 ×${c.mul}`, col: '#FF5E7A', icon: 'star', curse: true };
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
@@ -1693,18 +1700,18 @@ function cardText(c) {
     if (c.n) {
       // 개편 판: 등급만큼 한 번에 오른다(합류도 Lv n으로). 위력 배수·전문화 안내
       const hint = SP_EVO[c.u] && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 ‘${SP_EVO[c.u].name}’` : '';
-      return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, col: U.color, icon: c.u, n: c.n }
-        : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${U.desc}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, col: U.color, icon: c.u, n: c.n };
+      return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${spUp(c.u, c.to)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, col: U.color, icon: c.u, n: c.n }
+        : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${spDesc(c.u)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, col: U.color, icon: c.u, n: c.n };
     }
     return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${U.up(c.to)}${pair}`, col: U.color, icon: c.u }
       : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류`, det: U.desc + pair, col: U.color, icon: c.u };
   }
   if (c.k === 'fx') {
     // 탄 효과(2단계): 가진 효과면 '관통 효과 Lv1 → Lv2', 새것이면 '새 효과: 작렬'(빈 칸 수와 함께) — 풀이는 그 레벨의 값(fxText).
-    // 출격 탄종이 오르면 좋은 점만 세지고 대신 쪽(피해·사거리)은 그대로다
+    // 출격 탄종이 오르면 좋은 점만 세지고 약점(피해·사거리)은 그대로다 — 개편 판은 약점이 없다(ENDGAME.md 18.2)
     const nm = fxName(c.a), col = AMMO[c.a] ? AMMO[c.a].color : '#fff';
     const evo = c.n && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 진화` : '';
-    if (c.from) return { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${fxT(c.a, c.to)}${s && s.ammo === c.a ? ' · 대신 쪽은 그대로' : ''}${evo}${enhText(c)}`, col, icon: 'fx_' + c.a, n: c.n };
+    if (c.from) return { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${fxT(c.a, c.to)}${s && s.ammo === c.a && !bldOf(s) ? ' · 약점은 그대로' : ''}${evo}${enhText(c)}`, col, icon: 'fx_' + c.a, n: c.n };
     const fx = fxOf(s) || {};
     const used = AMMO_IDS.filter((a) => fx[a]).length;
     return { kind: '탄 효과', lead: '새 효과:', from: '', to: c.to > 1 ? `${nm} Lv${c.to}` : nm, det: `Lv${c.to}: ${fxT(c.a, c.to)} · 칸 ${used + 1}/${fxSlots(s)}${evo}${enhText(c)}`, col, icon: 'fx_' + c.a, n: c.n };
@@ -2009,7 +2016,7 @@ function renderPauseUnits() {
     t.innerHTML = `<b></b> — `;
     const lv = m.lv || 1;
     t.querySelector('b').textContent = lv > 1 ? `${U.name} Lv${lv}` : U.name;
-    t.append(lv > 1 ? `${U.role}. 지금 ${U.up(lv)}` : U.desc);
+    t.append(lv > 1 ? `${U.role}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k));
     // 짝 영웅과 함께면 그 짝 효과(화염병 + 뭉치: 돌격 나팔 동안 불 지대 폭 — 화염병 줄을 연 무한모드 판에만 화염병이 있다)
     if (U.pair && s.hero && HEROES[s.hero.id] && HEROES[s.hero.id].match === m.k) t.append(` · 짝 효과: ${U.pair(lv)}`);
     if (lv < spLvMax(s)) t.append(` · 또 구하면 Lv${lv + 1}`);
@@ -2034,7 +2041,7 @@ function renderPauseUnits() {
   if (fx) for (const a of AMMO_IDS) {
     const lv = fx[a] | 0;
     if (!lv) continue;
-    addRow('fx_' + a, `${fxName(a)} 효과 Lv${lv}`, `${fxT(a, lv)}${s.ammo === a ? ' · 출격 탄종(대신 쪽 그대로)' : ''} · 또 얻으면 Lv${lv + 1}`);
+    addRow('fx_' + a, `${fxName(a)} 효과 Lv${lv}`, `${fxT(a, lv)}${s.ammo === a && !bldOf(s) ? ' · 출격 탄종(약점 그대로)' : ''} · 또 얻으면 Lv${lv + 1}`);
   }
   // 빌드 개편: 무기 개조·영웅·생존 카드·전문화
   if (Bd) {
@@ -2261,7 +2268,7 @@ function handleEvents(ev) {
         sfx.levelUp();
         vibe([15, 30, 15]);
         const U = UNITS[e.k];
-        if (U) toast(`${U.name} Lv${e.lv}! ${U.up(e.lv)}`, 2000);
+        if (U) toast(`${U.name} Lv${e.lv}! ${spUp(e.k, e.lv)}`, 2000);
         tip('spUp', `같은 특수병을 또 구하면 레벨이 올라요(${s && s.endless ? '무한모드는 상한 없이' : `Lv${SP_LV_MAX}까지`}). 영웅 짝(나비·저격수, 보리·의무병${flameOn(s) ? ', 뭉치·화염병' : ''})도 함께 세져요`);
         break;
       }
@@ -2362,6 +2369,9 @@ function handleEvents(ev) {
       case 'slamWarn': sfx.slamWarn(e.warn); break;
       case 'slam': sfx.slam(); vibe(60); break;
       case 'summon': sfx.roar(); vibe(20); break;
+      case 'bossPat': toast(`보스 ‘${e.name}’ — ${e.text}`, 1800); break;   // 개편 판 보스 패턴(처음 쓸 때 한 번)
+      case 'bossChargeWarn': sfx.roar(); vibe([20, 30, 20]); break;
+      case 'bossCharge': vibe(40); break;
       case 'stomp': sfx.stomp(); vibe(30); break;
       case 'enrage': $('bossBar').classList.add('rage'); sfx.enrage(); vibe([30, 40, 30, 40, 60]); if (music) music.setMood(1, true); break;
       case 'bossDead':
