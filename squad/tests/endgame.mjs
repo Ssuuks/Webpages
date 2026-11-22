@@ -4478,6 +4478,66 @@ test('21.8 — 총 바꾸기: GUN_SWAP.from구간부터 무기 상자 일부에 
   C.step(cr, { dir: 0 });
   assert.deepEqual([p.alive, cr.endless.bld.gt, cr.endless.bld.gp], [false, 'rifle', 'shotgun']);
 });
+/* ---------- 22절: 칸막이 구간 — 행운 길 · 칸막이 미로 ---------- */
+const laneSeg = (seg, seed = 77) => C.buildSegment(seed, seg, 30000, 4, 0, { obs: true, flame: true, mul: C.bldThreat(seg), fe: 10, bk: true, terrain: true });
+test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구간부터, 행운 길은 luckFrom구간부터 — 행운 길은 세 칸에 소·중·대 상자 하나씩, 미로는 토막마다 벽 없는 칸이 열린 곳으로 이어진다', () => {
+  const L = C.LANES;
+  let maze = 0, luck = 0;
+  for (let seed = 1; seed <= 12; seed++) for (let seg = 2; seg <= 30; seg++) {
+    const lv = laneSeg(seg, seed);
+    for (const l of lv.lanes || []) {
+      if (l.k === 'maze') { maze++; assert.ok(seg >= L.mazeFrom, `미로 ${seg}구간`); }
+      if (l.k === 'luck') {
+        luck++; assert.ok(seg >= L.luckFrom, `행운 길 ${seg}구간`);
+        const cr = lv.props.filter((p) => p.luck && p.z > l.z0 && p.z < l.z1);
+        assert.deepEqual(cr.map((p) => p.reward.size).sort(), [1, 2, 3]);
+        assert.deepEqual(cr.map((p) => C.laneCell((p.x0 + p.x1) / 2)).sort(), [0, 1, 2], '세 칸에 하나씩');
+      }
+      if (l.k === 'maze') {
+        // 토막마다 벽 없는 칸, 열린 곳은 칸막이 하나씩(한 칸씩만 건넌다)
+        const n = L.stretch, sl = (l.z1 - l.z0 - C.FORK_TAPER) / n;
+        const walls = lv.props.filter((p) => p.maze);
+        for (let i = 0; i < n; i++) {
+          const za = l.z0 + C.FORK_TAPER + i * sl;
+          const blocked = new Set(walls.filter((w) => w.z >= za && w.z < za + sl).map((w) => C.laneCell((w.x0 + w.x1) / 2)));
+          assert.ok(blocked.size < 3, `${seed}/${seg}구간 ${i}번째 토막이 다 막혔다`);
+        }
+        assert.equal(l.open.length, n - 1);
+        for (const o of l.open) assert.ok(o[0] === 0 || o[0] === 1);
+      }
+    }
+  }
+  assert.ok(maze > 20 && luck > 10, `미로 ${maze} · 행운 길 ${luck}`);
+  // 개편 판이 아니면(지형 없음) 없다
+  for (let seg = 2; seg <= 30; seg++) assert.equal(C.buildSegment(77, seg, 30000, 4, 0, { obs: true }).lanes, undefined);
+});
+test('22 — 칸막이 안에서는 분대·좀비가 제 칸을 못 넘고, 열린 곳에서만 옆 칸으로 건넌다', () => {
+  const mk = (open) => {
+    const u = C.newEndless({ seed: 31, ...BLD });
+    u.endless.seg = 10; u.squad.n = 200; u.props = []; u.rows = []; u.saws = []; u.bullets = []; delete u.divs; u.squad.fireAcc = -99; u.squad.x = 0;
+    u.lanes = [{ id: 99950, k: 'maze', z0: u.squad.z - 20, z1: u.squad.z + 200, open: open ? [[1, u.squad.z - 5, u.squad.z + 200]] : [] }];
+    u.foes = [{ id: 99951, kind: 'grunt', x: 0, z: u.squad.z + 12, hp: 1e9, max: 1e9, spd: 3, home: 5, homeDist: 30, r: 0.42, alive: true, awake: true, hitT: -9 }];
+    return u;
+  };
+  // 오른쪽으로 계속 눌러도 닫힌 칸막이는 못 넘는다
+  const u = mk(false);
+  for (let i = 0; i < 120; i++) C.step(u, { dir: 1 });
+  assert.equal(C.laneCell(u.squad.x), 1, `분대 x ${u.squad.x.toFixed(2)}`);
+  assert.ok(u.squad.x <= C.LANE_X[1] - C.hitHalf(C.radius(u.squad.n)) + 1e-6);
+  // 열린 곳이면 건넌다
+  const v = mk(true);
+  for (let i = 0; i < 120; i++) C.step(v, { dir: 1 });
+  assert.equal(C.laneCell(v.squad.x), 2);
+  // 좀비: 옆 칸의 분대를 따라가도 칸막이를 못 넘는다
+  const w = mk(false);
+  w.squad.x = -3.3; w.foes[0].x = 0;
+  for (let i = 0; i < 40; i++) { C.step(w, { dir: 0 }); w.squad.x = -3.3; }
+  assert.equal(C.laneCell(w.foes[0].x), 1, `좀비 x ${w.foes[0].x.toFixed(2)}`);
+  // 행운 상자: 소·중·대
+  const open = (size) => { const z = C.newEndless({ seed: 31, ...BLD }); z.squad.n = 1000; z.squad.tier = 0; z.squad.fireAcc = -99; const p = { id: 99960, kind: 'crate', x0: -1, x1: 1, z: z.squad.z + 3, hp: 1, max: 1, alive: true, hitT: -9, reward: { type: 'lucky', size } }; z.props = [p]; z.foes = []; z.rows = []; z.bullets = [{ x: 0, z: p.z - 0.2, d: 2, dmg: 10, hm: 1 }]; const n0 = z.squad.n; C.step(z, { dir: 0 }); return { dn: z.squad.n - n0, tier: z.squad.tier, ev: z.ev.find((e) => e.t === 'crate') }; };
+  const [a, b, c] = [open(1), open(2), open(3)];
+  assert.ok(a.dn < b.dn && b.dn < c.dn && c.tier === 1 && a.tier === 0 && c.ev.type === 'lucky' && c.ev.size === 3, JSON.stringify([a, b, c]));
+});
 test('개편 판의 앞 구간: 위협을 실제 강화(fire)로 만든다 — 기준(ENDLESS.fire)보다 높은 강화의 몫을 BUILD.earlyK만큼 따라가고 BUILD.early구간에 걸쳐 기준으로 돌아간다. 기준 이하·앞 단계 판은 그대로', () => {
   const E = C.ENDLESS, B = R.BUILD;
   assert.equal(C.bldFe(1, E.fire), E.fire);

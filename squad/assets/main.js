@@ -2387,12 +2387,20 @@ function handleEvents(ev) {
           vibe([15, 30, 15]);
           toast(`탄종 상자 · ${fxName(e.a)} 효과 Lv${e.lv}${combos ? ` · 시너지 ${comboNames(combos)}!` : ''}`, 2200);
           combosShown = true;
-        } else if (e.type === 'gun') { sfx.power(e.tier | 0); if (music) music.boost(4); vibe(25); } else if (e.type === 'gunx' && GUNS[e.g]) {
+        } else if (e.type === 'gun') { sfx.power(e.tier | 0); if (music) music.boost(4); vibe(25); } else if (e.type === 'lucky') {
+          sfx.power(e.size); vibe(e.size >= 3 ? [20, 30, 20, 30, 40] : 20);
+          toast(e.size >= 3 ? '행운 대! ★ +1 · 병력 +40%' : e.size === 2 ? '행운 중 · 병력 +30%' : '행운 소 · 코인 · 병력 +10%', 1800);
+        } else if (e.type === 'gunx' && GUNS[e.g]) {
           // 다른 총 상자(21.8): 바꿀지는 다음 보스 뒤에 고른다
           sfx.power(2); vibe([15, 30, 15]);
           if (!data.tips.gunx) tip('gunx', `${GUNS[e.g].name} 상자를 열었어요! 바로 바뀌지 않고, 다음 보스를 잡은 뒤 카드 화면 맨 앞에서 바꿀지(★은 그대로) 그대로 쓸지(대신 ★ +1) 골라요.\n${GUNS[e.g].name}: ${GUNS[e.g].line}`, true, '총 상자');
           else toast(`${GUNS[e.g].name} 상자! 다음 보스 뒤에 바꿀지 골라요`, 1800);
         } else if (e.type === 'coin') sfx.coin(); else sfx.crate();
+        break;
+      case 'lanes':   // 칸막이 구간(22절): 처음엔 멈추고 설명, 그 뒤로는 짧게
+        if (e.k === 'luck') { if (!data.tips.luckLane) tip('luckLane', '행운 길! 세 칸 끝에 가려진 상자가 하나씩 있어요. 소·중·대 중 무엇이 나올지는 운 — 어느 칸이든 손해는 없어요. 들어가면 옆 칸으로 못 넘어가요.', true, '행운 길'); else toast('행운 길 — 칸을 골라요', 1400); }
+        else if (!data.tips.mazeLane) tip('mazeLane', '칸막이 미로! 칸막이 안에서는 제 칸에만 있어요(좀비도 못 넘어와요). 바닥이 초록인 열린 곳에서만 옆 칸으로 한 칸씩 건너요. 벽 없는 칸이 늘 이어져 있어요.', true, '칸막이 미로');
+        else toast('칸막이 미로 — 초록 열린 곳에서 옆 칸으로', 1400);
         break;
       case 'gunSwap': if (GUNS[e.g]) toast(`${GUNS[e.g].name} Lv${e.lv}로 바꿨어요 — ${GUNS[e.g].line}`, 2200); break;
       case 'fxUp':

@@ -483,6 +483,8 @@ function planChunks(p, g) {
   // 무한모드 2구간부터 구간마다 갈림길 하나를 끼운다(다른 청크를 대신하지 않는다 — 구간의 성장·위협 흐름은 그대로)
   if (p.endless && p.seg >= FORK_FROM) plan.splice(2, 0, 'fork');
   if (p.chain) plan.splice(3, 0, 'fork');   // 연속 갈림길(바퀴 5부터): 앞 선택이 다음 선택을 묶는다
+  if (p.maze && chance(g, LANES.mazeP)) plan.splice(plan.length - 3, 0, 'maze');   // 칸막이(22절 — 개편 판만): 보스 앞 몰이 전에
+  if (p.luck && chance(g, LANES.luckP)) plan.splice(1, 0, 'luck');
   return plan;
 }
 
@@ -936,6 +938,22 @@ export const FORK_FROM = 2;
 /* 지형(ENDGAME.md 18.7 — 빌드 개편 판만, 바퀴 3·4·5부터): 늦게 보이는 길(갈림길 위험한 쪽의 벽·문 숫자가 HIDE_DIST m 안에서야 보인다, 대신 병사 보상 ×HIDE_BONUS),
    촘촘한 함정(쉼 줄이 30 → TIGHT_REST m, 톱날 하나 더), 연속 갈림길(갈림길 바로 뒤에 또 하나). 세 갈래는 분대 몸(반지름 2.4m)이 칸(3.3m)에 안 들어가 넣지 않는다 [수치는 초안] */
 export const TERRAIN = { hideFrom: 13, hideDist: 16, hideBonus: 1.3, tightFrom: 19, tightRest: 16, chainFrom: 25 };
+/* 칸막이 구간(ENDGAME.md 22절 — 개편 판만, 몸이 좁아(BUILD.narrow) 세 칸에 들어간다): 길을 칸막이 둘(LANE_X)로 세 칸으로 나눈다.
+   s.lanes = [{ id, k: 'luck'|'maze', z0, z1, open: [[칸막이 번호, za, zb], …] }] — 열린 곳(open)에서만 옆 칸으로 한 칸씩 건넌다. 분대·좀비 모두 칸을 못 넘는다.
+   - luck 행운 길(luckFrom구간부터 luckP): 세 칸 모두 가려진 상자(소·중·대가 무작위) — 손해는 없고 무엇이 나올지가 운(18.8)
+   - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막마다 칸막이 하나에 열린 곳(open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
+export const LANE_X = [-ROAD / 3, ROAD / 3];
+export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 34, mazeLen: 84, stretch: 4, open: 7, wallP: 0.75 };
+export const laneCell = (x) => (x < LANE_X[0] ? 0 : x < LANE_X[1] ? 1 : 2);
+const laneOpen = (l, di, z) => l.open.some((o) => o[0] === di && z >= o[1] && z <= o[2]);
+export function laneAt(s, z) { if (!s.lanes) return null; for (const l of s.lanes) if (z >= l.z0 && z <= l.z1) return l; return null; }
+/* 칸 c에서 몸(반폭 pad)이 갈 수 있는 x 범위: 닫힌 칸막이 쪽은 칸막이 − pad(입구·열린 곳이 끝난 뒤 FORK_TAPER m에 걸쳐 0 → pad), 열린 쪽은 길 끝까지 */
+export function laneBounds(l, c, z, pad) {
+  const tp = (di) => { let from = l.z0; for (const o of l.open) if (o[0] === di && o[2] <= z && o[2] > from) from = o[2]; return pad * clamp((z - from) / FORK_TAPER, 0, 1); };
+  const lo = c === 0 || laneOpen(l, c - 1, z) ? -EDGE : LANE_X[c - 1] + tp(c - 1);
+  const hi = c === 2 || laneOpen(l, c, z) ? EDGE : LANE_X[c] - tp(c);
+  return [lo, Math.max(lo, hi)];
+}
 export const FORK_TAPER = 8;
 export const FORK = { nose: 22, wall: 26, after: 14, men: 0.15, safe: 0.3, tail: 16 };
 export const FORK_WALL = [0.85, 1.0];
@@ -1262,6 +1280,48 @@ const CHUNK = {
     return { len: z1 - z + FORK.tail, ng };
   },
 
+  /* 행운 길(22절): 칸막이로 나뉜 세 칸 끝에 가려진 상자 셋 — 소·중·대가 무작위(어느 칸이든 손해는 없다). 상자는 약하다(지나가며 쏘면 열린다) */
+  luck(lv, g, p, z, ng) {
+    const D = threatD(lv, ng);
+    const z0 = z + 14, z1 = z0 + LANES.luckLen;
+    const sizes = shuffle(g, [1, 2, 3]);
+    for (let c = 0; c < 3; c++) {
+      const x0 = c === 0 ? -ROAD : LANE_X[c - 1], x1 = c === 2 ? ROAD : LANE_X[c], cx = (x0 + x1) / 2;
+      const hp = Math.max(1, Math.round(D * 0.06));   // 아주 약하게 — 칸에서 못 비키니 지나가며 쏘면 늘 열린다
+      lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.0, x1: cx + 1.0, z: z1 - 8, hp, max: hp, alive: true, hitT: -9, reward: { type: 'lucky', size: sizes[c] }, luck: true });
+    }
+    (lv.lanes || (lv.lanes = [])).push({ id: lv.nextId++, k: 'luck', z0, z1, open: [] });
+    return { len: z1 - z + 10, ng };
+  },
+  /* 칸막이 미로(22절): stretch토막. 토막이 바뀌는 곳마다 칸막이 하나가 LANES.open m 열린다(한 칸씩만 건넌다). 토막마다 '빈 칸'(벽 없음)이 하나 있고
+     다음 토막의 빈 칸은 그 옆이나 그대로 — 열린 곳을 따라가면 늘 벽 없이 지난다. 나머지 칸은 단단한 벽(wallP)이나 좀비 무리 */
+  maze(lv, g, p, z, ng) {
+    const D = threatD(lv, ng);
+    const z0 = z + 10, z1 = z0 + LANES.mazeLen, n = LANES.stretch, sl = (z1 - z0 - FORK_TAPER) / n;
+    const lane = { id: 0, k: 'maze', z0, z1, open: [] };
+    let free = Math.floor(rand(g) * 3);
+    const hp = gruntHp(lv, ng);
+    for (let i = 0; i < n; i++) {
+      const za = z0 + FORK_TAPER + i * sl;
+      if (i > 0) {
+        const nb = free === 0 ? 1 : free === 2 ? 1 : chance(g, 0.5) ? 0 : 2;   // 옆 칸
+        lane.open.push([Math.min(free, nb), za - 2, za + LANES.open]);
+        if (chance(g, 0.75)) free = nb;
+      }
+      for (let c = 0; c < 3; c++) {
+        const x0 = c === 0 ? -ROAD : LANE_X[c - 1], x1 = c === 2 ? ROAD : LANE_X[c];
+        if (c !== free && chance(g, i === 0 ? 0.5 : LANES.wallP)) wallProp(lv, x0 + 0.15, x1 - 0.15, za + sl * 0.62, D * U(g, 2.2, 3.4), { maze: true });
+        else if (c !== free || chance(g, 0.5)) {
+          const m = 3 + Math.floor(rand(g) * 3);
+          for (let k = 0; k < m; k++) addFoe(lv, g, 'grunt', U(g, x0 + 0.6, x1 - 0.6), za + 3 + U(g, 0, sl - 6), hp, { maze: true });
+        }
+      }
+    }
+    lane.id = lv.nextId++;
+    (lv.lanes || (lv.lanes = [])).push(lane);
+    return { len: z1 - z + 12, ng };
+  },
+
   /* 열쇠(P10, 어려움·매우 어려움): 한 차선에 표시된 열쇠 상자(무기 강화), 다른 차선에 다른 보상(지원병 상자). 같은 거리라 둘 다는 못 깬다.
      열쇠는 그 레벨의 가장 센 무리(몰이) 두 청크 앞 */
   key(lv, g, p, z, ng) {
@@ -1533,7 +1593,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
 function buildSegment0(seed, k, n, tier, attempt, opt) {
   const p = segParams(k);
   const E = ENDLESS;
-  if (opt && opt.terrain) { p.hide = p.seg >= TERRAIN.hideFrom; p.tight = p.seg >= TERRAIN.tightFrom; p.chain = p.seg >= TERRAIN.chainFrom; }   // 지형(개편 판만 — 바퀴 3·4·5부터)
+  if (opt && opt.terrain) { p.hide = p.seg >= TERRAIN.hideFrom; p.tight = p.seg >= TERRAIN.tightFrom; p.chain = p.seg >= TERRAIN.chainFrom; p.maze = p.seg >= LANES.mazeFrom; p.luck = p.seg >= LANES.luckFrom; }   // 지형(개편 판만 — 바퀴 3·4·5부터)
   const g = { rs: hash(VERSION, 'endless', seed >>> 0, p.seg, attempt) };
   const n0 = clamp(Math.floor(n), 1, E.maxN);
   // 뒤처진 분대(바닥선 아래)에게는 위협이 바닥선 병력 기준(화력 ∝ 병력^0.8)
@@ -2281,6 +2341,7 @@ function nextSegment(s) {
   for (const w of seg.saws) { w.id += off; w.z += dz; }
   for (const m of seg.marks) m.z += dz;
   if (seg.divs && seg.divs.length) { for (const d of seg.divs) { d.id += off; if (d.wall) d.wall += off; d.z0 += dz; d.z1 += dz; } s.divs = seg.divs; } else delete s.divs;
+  if (seg.lanes && seg.lanes.length) { for (const l of seg.lanes) { l.id += off; l.z0 += dz; l.z1 += dz; for (const o of l.open) { o[1] += dz; o[2] += dz; } } s.lanes = seg.lanes; } else delete s.lanes;   // 칸막이 구간(22절)
   s.nextId = off + seg.nextId + 1;
   s.rows = seg.rows; s.foes = seg.foes; s.props = seg.props; s.saws = seg.saws; s.marks = seg.marks;
   s.spits = []; s.rockets = [];
@@ -2341,6 +2402,7 @@ export function newGame(lv, opt = {}) {
   // 펫(ENDGAME.md 6절): 데려간 판에만 s.pet이 있다 — 펫 전용 난수 흐름(rs)을 따로 써서 판의 난수(s.rs)를 건드리지 않는다.
   // avg(별 기준을 재는 기준 봇용): 확률 대신 기대값으로 고르게 — par가 한 판의 운에 흔들리지 않게
   if (lv.divs && lv.divs.length) s.divs = structuredClone(lv.divs);   // 분리대(무한모드 갈림길 — 없는 판에는 필드도 없다)
+  if (lv.lanes && lv.lanes.length) s.lanes = structuredClone(lv.lanes);   // 칸막이 구간(22절 — 개편 판만)
   // 탄종(ARSENAL.md 3절): 고른 판에만 s.ammo가 있다(보통탄이면 없다 — 해시 그대로)
   if (opt.ammo && AMMO[opt.ammo]) s.ammo = opt.ammo;
   // 여러 마리(opt.pets — 서로 다른 펫, PET_TEAM_MAX까지): 첫 마리는 s.pet(예전 그대로), 나머지는 s.pets — 한 마리 판에는 s.pets 필드가 없다(해시 그대로)
@@ -2691,6 +2753,16 @@ export function step(s, input) {
     }
   }
 
+  // 칸막이 구간(22절): 45m 앞 알림, 안에서는 제 칸에 갇힌다(열린 곳에서만 옆 칸으로)
+  if (s.lanes && s.phase === 'run') {
+    for (const l of s.lanes) if (!l.seen && q.z + MARK_AHEAD >= l.z0) { l.seen = 1; emit(s, { t: 'lanes', k: l.k, z: l.z0 }); }
+    const zn = q.z + s.speed * DT, l = laneAt(s, zn);
+    if (l) {
+      const [lo, hi] = laneBounds(l, laneCell(xPrev), zn, hitHalf(R) + 0.05);
+      if (q.x < lo) { q.x = lo; if (q.vx < 0) q.vx = 0; }
+      if (q.x > hi) { q.x = hi; if (q.vx > 0) q.vx = 0; }
+    }
+  }
   /* 전진 */
   if (s.phase === 'run') {
     q.vz = s.speed;
@@ -2907,12 +2979,14 @@ function foesUpdate(s, R) {
       if (frostEvo2 && f.slowT > s.t && !(f.freezeT > s.t) && s.t - (f.slowFrom ?? s.t) >= frzAfter) { f.freezeT = s.t + frzT; f.slowFrom = s.t + frzT; }   // 빙결 Lv10: 느려진 채 3초가 지나면 1초 얼어붙는다
       if (f.freezeT > s.t) continue;
       if (frostLeg && f.slowT > s.t && s.foes.some((o) => o !== f && o.alive && o.slowT > s.t && o.z < f.z && f.z - o.z < 0.9 && Math.abs(o.x - f.x) < 0.9)) continue;   // 전설 강화 '얼음 정체': 앞의 느려진 좀비에 막혀 멈춘다
+      const fx0 = f.x;
       f.z -= (f.slowT > s.t ? f.spd * (1 - slowK) : f.spd) * rushK * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로), 질주(변이)면 더 빠르다
       if (dz < f.homeDist) {
         const d = q.x - f.x;
         const m = f.home * DT;
         f.x += d > m ? m : d < -m ? -m : d;
       }
+      if (s.lanes) { const l = laneAt(s, f.z); if (l) { const [lo, hi] = laneBounds(l, laneCell(fx0), f.z, f.r); f.x = clamp(f.x, lo, hi); } }   // 칸막이(22절): 좀비도 칸을 못 넘는다
     }
     if (touches(f.x - q.x, f.z - q.z, hitHalf(R), SQUAD_DEPTH * R, f.r * FOE_HX, f.r)) {
       f.alive = false;
@@ -3552,6 +3626,14 @@ function openCrate(s, p) {
     else { gain(s, crateMen(q.n, r), x, p.z, 'crate'); emit(s, { t: 'crate', type: 'men', x, z: p.z }); }
     return;
   }
+  if (r.type === 'lucky') {   // 행운 길(22절): 소 — 코인 + 병력 10%, 중 — 병력 30%, 대 — ★ +1(상한이면 병력 30%) + 병력 40%
+    const sz = clamp(r.size | 0, 1, 3);
+    if (sz === 1) { s.stats.coins += 10 + 3 * ((s.endless && s.endless.seg) || 1); gain(s, Math.max(1, Math.round(q.n * 0.1)), x, p.z, 'crate'); }
+    else if (sz === 2) gain(s, Math.max(1, Math.round(q.n * 0.3)), x, p.z, 'crate');
+    else { if (q.tier < tierMax(s)) q.tier++; else gain(s, Math.max(1, Math.round(q.n * 0.3)), x, p.z, 'crate'); gain(s, Math.max(1, Math.round(q.n * 0.4)), x, p.z, 'crate'); }
+    emit(s, { t: 'crate', type: 'lucky', size: sz, tier: q.tier, x, z: p.z });
+    return;
+  }
   if (r.type === 'gunx' && bldOf(s)) {   // 총 바꾸기 상자(21.8): 바꿀지는 다음 보스 뒤에 고른다(달리는 중에는 멈추지 않는다)
     const B = bldOf(s);
     if (GUNS[r.g] && r.g !== B.gt) B.gp = r.g;
@@ -4171,6 +4253,7 @@ function divSteer(s, tx) {
 export function steer(s, tx, dead = 0.15) {
   const q = s.squad;
   if (s.divs) tx = divSteer(s, tx);
+  if (s.lanes) { const l = laneAt(s, q.z + 2); if (l) { const [lo, hi] = laneBounds(l, laneCell(q.x), q.z + 2, 0); if (tx < lo || tx > hi) tx = clamp(tx, lo + 0.2, hi - 0.2); } }   // 칸막이(22절): 갈 수 없는 칸을 밀지 않는다
   const d = tx - q.x;
   // 멈추는 데 걸리는 거리를 생각해 미리 놓는다
   const stopDist = (q.vx * q.vx) / (2 * 100);
@@ -4974,6 +5057,7 @@ export function stateHash(s) {
   if (s.ammo) { h = hash(h, s.ammo); for (const f of s.foes) if (f.alive && f.slowT > s.t) h = hash(h, f.id, f.slowT.toFixed(4)); }
   // 무한모드(캠페인 판에는 없다 — 해시 그대로)
   if (s.divs) for (const d of s.divs) h = hash(h, d.id, d.z0.toFixed(3), d.z1.toFixed(3), d.risk);
+  if (s.lanes) for (const l of s.lanes) h = hash(h, 'lane', l.id, l.k, l.z0.toFixed(3), l.z1.toFixed(3), l.open.map((o) => o.map((v) => +(+v).toFixed(3)).join(':')).join(','));
   if (s.pools) for (const p of s.pools) h = hash(h, p.id, p.x.toFixed(4), p.z.toFixed(4), p.t.toFixed(4), p.life.toFixed(4), p.hit);
   // 불 지대(화염병 줄을 연 판에 화염병이 놓은 동안만 필드가 있다 — 없는 판은 해시 그대로)
   if (s.flames) for (const zn of s.flames) h = hash(h, 'fire', zn.id, zn.x.toFixed(4), zn.z.toFixed(4), zn.w.toFixed(4), zn.len.toFixed(4), zn.t.toFixed(4), zn.d.toFixed(4));

@@ -2,7 +2,7 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, mutLv, relicOn, TERRAIN, forkPeek, tierMax, nMax, radiusCap } from './core.js';
+import { FORK_TAPER, LANE_X, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, mutLv, relicOn, TERRAIN, forkPeek, tierMax, nMax, radiusCap } from './core.js';
 import { HEROES, biomeOf, bossNameOf, OBSTACLES, unitVal, FOG_X } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, BIOME_GROUP, biomeSheets, PET_ART } from './pix/art.js';
@@ -1252,6 +1252,12 @@ export function createRenderer(cvs) {
         case 'crate': {
           burst(e.x, 1, e.z, 22, FX_COL.wood, 5, 5, 0.7);
           fx('puff', e.x, 0.8, e.z, 0.3);
+          if (e.type === 'lucky') {   // 행운 상자(22절): 소·중·대 크기만큼 별이 튄다
+            const col = e.size >= 3 ? '#FFD84A' : e.size === 2 ? '#7CFF8A' : '#8FD3FF';
+            float(e.x, 2.6, e.z, '+'.repeat(Math.max(1, Math.min(3, e.size | 0))), '#FFE38A', { life: 1.4 });   // 글꼴에 한글이 없다 — + ++ +++
+            for (let k = 0; k < 6 * e.size; k++) part(e.x + (Math.random() - 0.5) * 1.6, 1 + Math.random(), e.z, (Math.random() - 0.5) * 3, 3 + Math.random() * 3, q.vz || 0, 0.9, col, 1, 3, 'star');
+            if (e.size >= 3) { screenFlash(0.2, '255,216,74'); powerSurge(WTIER[e.tier | 0] || col, true); }
+          }
           if (e.type === 'gun') {
             // 무기 강화: 새 단계 색 빛기둥이 분대에서 솟고(powerSurge), 상자 자리에서 별이 튄다
             const tc = WTIER[e.tier | 0] || WTIER[1];
@@ -2067,7 +2073,7 @@ export function createRenderer(cvs) {
   }
   /* 탄종 상자(무한모드 2단계, reward { type: 'fx', a })는 무기 아이콘 대신 그 탄 효과의 총알 — 무기 상자로 읽히지 않게.
      그새 얻을 수 없게 됐으면(앞 상자로 칸이 찼다 — core도 병사를 준다) 병사 아이콘: 그린 것이 받는 것 */
-  function crateIcon(r, fxOk) { const t = r && r.type; return t === 'coin' ? 'coin' : t === 'men' ? 'men' : t === 'fx' ? (fxOk && AMMO_COL[r.a] ? 'fx_' + r.a : 'men') : 'gun'; }
+  function crateIcon(r, fxOk) { const t = r && r.type; return t === 'coin' ? 'coin' : t === 'men' ? 'men' : t === 'lucky' ? 'star' : t === 'fx' ? (fxOk && AMMO_COL[r.a] ? 'fx_' + r.a : 'men') : 'gun'; }   // 행운 상자(22절)는 별 — 속은 열어야 안다
   function drawCrate(s, p) {
     const top = boxFaces(p, 1.7);
     if (!top) return;
@@ -2103,9 +2109,10 @@ export function createRenderer(cvs) {
       ctx.fillRect(Math.round(mx - ic.w / 2) - 1, Math.round(my - ic.h / 2) - 1, ic.w + 2, ic.h + 2);
       atlas.blit(ctx, ic, Math.round(mx - ic.w / 2), Math.round(my - ic.h / 2));
     }
-    const t = String(Math.max(1, Math.ceil(p.hp)));
+    const lucky = p.reward && p.reward.type === 'lucky';   // 행운 상자(22절): 숫자 대신 '?'(소·중·대는 열어야 안다)
+    const t = lucky ? '?' : String(Math.max(1, Math.ceil(p.hp)));
     const big = h > 16;
-    font.draw(ctx, t, mx, top.ty - (big ? 6 : 4), { size: big ? 'big' : 'small', fill: '#FFE08A' });
+    font.draw(ctx, t, mx, top.ty - (big ? 6 : 4), { size: big ? 'big' : 'small', fill: lucky ? '#FFFFFF' : '#FFE08A' });   // 구워 둔 색 짝(GLYPH_PAIRS)만
     let yTop = top.ty - (big ? 6 : 4) - font.height(big ? 'big' : 'small') / 2;
     // 꼭 깨야 하는 보급 상자(prop.key): 금테 안에 내용물 — 탄종 상자는 그 탄 효과 표시가 금테를 두른다(표시는 하나만)
     if (p.key === true && !fxOk) yTop = keyMark(mx, yTop, w, crateIcon(p.reward, false));
@@ -3439,6 +3446,7 @@ export function createRenderer(cvs) {
       ctx.globalAlpha = 1;
     }
     if (s.divs) for (const d of s.divs) drawDivider(d);
+    if (s.lanes) for (const l of s.lanes) drawLaneWalls(l);   // 칸막이 구간(22절)
     for (const c of scorches) {
       if (!c.on) continue;
       if (!project(view, c.x, 0.02, c.z)) continue;
@@ -3461,6 +3469,25 @@ export function createRenderer(cvs) {
 
   /* 분리대(무한모드 갈림길): 코(z0)에서 FORK_TAPER m 동안 노란 빗금 쐐기(여기서 몸이 가운데에서 밀려난다), 그 뒤 끝(z1)까지 콘크리트 턱.
      턱은 2m 토막으로 그려 노랑·검정 경고 띠가 번갈아 보인다 — 멀리서도 '여기부터 못 넘어간다'가 읽히게 */
+  /* 칸막이 구간(22절): 칸막이 둘(LANE_X) — 열린 곳(open)은 비우고 바닥에 초록 화살표 띠. 행운 길은 금빛, 미로는 회색 띠 */
+  function drawLaneWalls(l) {
+    const zN = view.camZ + 1.5, zF = view.camZ + view.zFar;
+    if (l.z1 < zN || l.z0 > zF) return;
+    const top = l.k === 'luck' ? '#7CFF8A' : '#FFD84A';
+    for (let di = 0; di < 2; di++) {
+      const x = LANE_X[di];
+      for (let z = l.z0, i = 0; z < l.z1; z += 2, i++) {
+        const z2 = Math.min(l.z1, z + 2);
+        if (z2 < zN || z > zF) continue;
+        const open = l.open.some((o) => o[0] === di && z + 1 >= o[1] && z + 1 <= o[2]);
+        if (open) { ctx.fillStyle = '#3FE07A'; groundQuad(x - 0.5, x + 0.5, z + 0.6, z + 1.4, 0.015); continue; }   // 열린 곳: 바닥 초록 띠
+        const nose = Math.min(1, (z - l.z0) / FORK_TAPER + 0.25);
+        ctx.fillStyle = '#2A2E3A'; groundQuad(x - 0.3 * nose, x + 0.3 * nose, z, z2, 0.02);
+        ctx.fillStyle = '#7C8494'; groundQuad(x - 0.22 * nose, x + 0.22 * nose, z, z2, 0.3);
+        ctx.fillStyle = i & 1 ? '#2A2E3A' : top; groundQuad(-0.17 * nose + x, x + 0.17 * nose, z, z2, 0.6);
+      }
+    }
+  }
   function drawDivider(d) {
     const zN = view.camZ + 1.5, zF = view.camZ + view.zFar;
     if (d.z1 < zN || d.z0 > zF) return;
