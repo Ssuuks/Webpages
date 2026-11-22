@@ -3604,13 +3604,13 @@ test('총 ★(개편 판): 무기 단계와 무기 개조가 하나로 — 상�
 
 test('적 변이(개편 판): 대왕을 잡으면 다음 바퀴의 변이가 시드·구간으로 정해지고(직전과 같은 것은 안 나온다, 또 나오면 2단계) mutation 이벤트로 알려진다. 개편 판이 아니면 없다', () => {
   const evs = [];
-  const k = bldRun(32, 6, { n: 9000, each: (s) => { for (const e of s.ev) if (e.t === 'mutation') evs.push(e); } });
+  const k = bldRun(32, 6, { n: 9000, each: (s) => { for (const e of s.ev) if (e.t === 'mutation') evs.push(e); if (s.squad.n < 9000) s.squad.n = 9000; } });   // 규칙을 보는 판 — 죽지 않게 병력을 채운다(보스 패턴 뒤 대왕이 세졌다)
   assert.equal(k.endless.bosses, 6);
   assert.equal(k.endless.mut.length, 1, '첫 대왕 뒤 변이 하나');
   assert.ok(R.MUT_IDS.includes(k.endless.mut[0]));
   assert.equal(C.mutLv(k, k.endless.mut[0]), 1);
   assert.deepEqual(evs.map(({ t, ...e }) => e), [{ id: k.endless.mut[0], lv: 1, seg: 7 }], 'mutation 이벤트(대왕을 잡은 틱에 한 번)');
-  assert.deepEqual(bldRun(32, 6, { n: 9000 }).endless.mut, k.endless.mut, '같은 시드는 같은 변이');
+  assert.deepEqual(bldRun(32, 6, { n: 9000, each: (s) => { if (s.squad.n < 9000) s.squad.n = 9000; } }).endless.mut, k.endless.mut, '같은 시드는 같은 변이');
   // 규칙: 연달아 같은 것은 안 나오고, 또 나오면 2단계(최대 2), 같은 시드·구간이면 같은 굴림
   const roll = (seed, segs) => {
     const s = C.newEndless({ seed, ...BLD });
@@ -3735,7 +3735,8 @@ test('덧셈 칸 = 구간 기준 병력 B(k)(개편 판, 18.8): 같은 구간이
     const maxOf = (l) => Math.max(...l.map(([v]) => Math.abs(v)));
     const B = R.BUILD.bk.mul * C.segFloor(k);
     for (const l of [a, b, c]) assert.ok(maxOf(l) <= B * 1.2 && maxOf(l) >= B * 0.05, `${k}구간 가장 큰 칸 ${maxOf(l)} (B ${Math.round(B)})`);
-    assert.ok(maxOf(a) / maxOf(c) < 4 && maxOf(c) / maxOf(a) < 4, `병력 200과 30만에서 칸의 크기가 비슷하다 ${maxOf(a)} ${maxOf(c)}`);
+    // 20.1 뒤: 작은 분대의 골든 패스가 더는 무너지지 않아 보스 앞 줄의 큰 +a가 B(k) 가까이 남는다(뒤처지면 + 칸이 크다 — 18.8의 뜻) — 5.3배까지 벌어져 6으로
+    assert.ok(maxOf(a) / maxOf(c) < 6 && maxOf(c) / maxOf(a) < 6, `병력 200과 30만에서 칸의 크기가 비슷하다 ${maxOf(a)} ${maxOf(c)}`);
   }
   // 앞 단계 판(bk 없음)은 병력에 비례한다
   const old = (n) => Math.max(...adds(seg(8, n, false)).map(([v]) => Math.abs(v)));
@@ -3814,7 +3815,7 @@ test('빌드 개편: 다시 뽑기는 카드를 바꾸고 횟수를 쓴다 — �
   assert.notEqual(JSON.stringify(C.offerOf(s)), before);
   assert.equal(C.rerollsOf(s), R.BUILD.reroll - 1);
   assert.equal(C.rerollCards(s), false);
-  const k = bldRun(32, 6, { n: 9000 });
+  const k = bldRun(32, 6, { n: 9000, each: (s) => { if (s.squad.n < 9000) s.squad.n = 9000; } });
   assert.ok(k.endless.bosses >= 6 && C.rerollsOf(k) >= 1, `대왕 뒤 다시 뽑기 ${C.rerollsOf(k)}`);
 });
 test('빌드 개편: 카드를 고르면 그만큼 오르고(총 ★은 화력에), 다음 구간이 시작되며 자동 보급(+20%)을 받는다', () => {
@@ -3838,7 +3839,8 @@ test('빌드 개편: 정예(3구간) 보스 뒤에는 유물을 먼저 고르고
   assert.equal(s.endless.relics.length, 1);
   const of2 = C.offerOf(s);
   assert.ok(of2 && of2.every((c) => c.k !== 'relic'), '유물 뒤에 카드');
-  assert.ok(of2.filter((c) => c.k !== 'spec').every((c) => c.n >= 2), '정예 뒤 카드는 희귀부터');
+  const first = of2.find((c) => c.k !== 'gun');
+  assert.ok(!first || first.n >= 2, '정예 뒤 첫 카드의 첫 (총이 아닌) 장은 희귀 이상(20절 — 나머지 장은 보통 확률)');
   assert.equal(s.endless.seg, 3, '아직 다음 구간이 아니다');
   C.pickCard(s, 0);
   assert.equal(s.endless.seg, 4);
