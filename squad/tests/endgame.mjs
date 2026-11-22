@@ -17,6 +17,7 @@ import { ammoBench } from '../tools/ammobench.mjs';
 const POOL = makePool(Math.max(1, Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length)));
 after(() => POOL.close());
 
+const R_TERRAIN = C.TERRAIN;
 const UP10 = { start: C.START_N + 20, fire: 10, hero: { id: 'mungchi', lv: 5 } };
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 /* 봇 한 종류로 n판: 잡은 보스 수들 */
@@ -3681,6 +3682,60 @@ test('적 변이의 효과: 장갑(일반 좀비 절반이 정면 총알 ×0.3 �
   const noB = C.snapshot(ar); noB.endless.bld = undefined; delete noB.endless.bld;
   assert.ok(!('mut' in C.restore(noB).endless), '개편 판이 아니면 변이를 버린다');
   assert.ok(walls >= 1, '벽이 있는 구간');
+});
+
+test('지형(개편 판): 늦게 보이는 길(13구간~, 벽·문 숫자가 가려진다 — 병사 보상 ×1.3) · 촘촘한 함정(19구간~, 쉼 30 → 16m, 톱날 하나 더) · 연속 갈림길(25구간~, 갈림길 바로 뒤에 또 하나). 개편 판이 아니면 없다', () => {
+  const seg = (seedN, k, terrain) => C.buildSegment(seedN, k, 5000, 0, 0, terrain ? { terrain: true } : null);
+  const kinds = (lv) => lv.chunks.map((c) => c.kind);
+  // 늦게 보이는 길: 13구간부터, 벽·문 갈림길에만(떼는 눈에 보여 가릴 것이 없다), 가려진 벽은 hide 표시
+  let hidden = 0, forks = 0;
+  for (let x = 1; x <= 40; x++) {
+    const lv = seg(x, 13, true);
+    for (const d of lv.divs || []) {
+      forks++;
+      if (!d.hidden) continue;
+      hidden++;
+      assert.ok(d.kind !== 'horde', '떼 갈림길은 안 가린다');
+      const w = lv.props.find((q) => q.id === d.wall);
+      assert.ok(w && w.hide === true, '가려진 벽·문에 hide');
+    }
+    for (const q of lv.props) if (q.hide) assert.ok((lv.divs || []).some((d) => d.hidden && d.wall === q.id));
+    assert.ok(!(seg(x, 12, true).divs || []).some((d) => d.hidden), '12구간 아래는 안 가린다');
+    assert.ok(!(seg(x, 13, false).divs || []).some((d) => d.hidden), '개편 판이 아니면 안 가린다');
+  }
+  assert.ok(hidden >= 6 && hidden < forks, `가려진 길 ${hidden}/${forks}`);
+  // 촘촘한 함정: 19구간부터 쉼 줄이 16m, 톱날 줄은 톱날이 둘 이상
+  for (let x = 1; x <= 30; x++) {
+    const a = seg(x, 19, true), b = seg(x, 18, true), c = seg(x, 19, false);
+    for (const [lv, tight] of [[a, true], [b, false], [c, false]]) for (const ch of lv.chunks) if (ch.kind === 'rest') assert.equal(ch.len, tight ? R_TERRAIN.tightRest : 30, `${x} rest`);
+    for (const [lv, tight] of [[a, true], [c, false]]) for (const ch of lv.chunks) if (ch.kind === 'saw' && tight) assert.ok(lv.saws.filter((w) => w.z >= ch.z && w.z <= ch.z + ch.len).length >= 2, `${x} 톱날`);
+  }
+  // 연속 갈림길: 25구간부터 갈림길 둘이 이어지고, 그 아래는 하나
+  let chained = 0;
+  for (let x = 1; x <= 20; x++) {
+    const kk = kinds(seg(x, 25, true));
+    const adj = kk.some((c, i) => c === 'fork' && kk[i + 1] === 'fork');
+    assert.equal(adj, true, `${x}: ${kk}`);
+    assert.equal(kk.filter((c) => c === 'fork').length, 2);
+    if (adj) chained++;
+    assert.equal(kinds(seg(x, 24, true)).filter((c) => c === 'fork').length, 1);
+    assert.equal(kinds(seg(x, 25, false)).filter((c) => c === 'fork').length, 1, '개편 판이 아니면 하나');
+  }
+  assert.equal(chained, 20);
+  // 실제 판: 구간을 이어 붙일 때 terrain이 걸린다(25구간에 갈림길 둘 이상)
+  const base = bldRun(31, 1);
+  const next = (k, mod = () => {}) => { const o = C.snapshot(base); o.endless.seg = k - 1; mod(o); const u = C.restore(o); C.pickCard(u, 0); return u; };
+  assert.equal(next(25).endless.seg, 25);
+  assert.equal((next(25).divs || []).length, 2, '25구간: 갈림길 둘');
+  assert.equal((next(24).divs || []).length, 1);
+  let h2 = 0;
+  for (let x = 1; x <= 30; x++) if ((next(14, (o) => { o.endless.seed = x; }).divs || []).some((d) => d.hidden)) h2++;
+  assert.ok(h2 >= 4, `이어 붙인 판에서 가려진 길 ${h2}/30`);
+  // 이어하기·해시: hide·hidden은 구간 상태에 실려 이어진다
+  const hid = [...Array(40).keys()].map((x) => next(14, (o) => { o.endless.seed = x + 1; })).find((u) => (u.divs || []).some((d) => d.hidden));
+  const rr = C.restore(JSON.parse(JSON.stringify(C.snapshot(hid))));
+  assert.equal(C.stateHash(rr), C.stateHash(hid));
+  assert.ok(rr.props.some((q) => q.hide === true));
 });
 
 test('빌드 개편: 다시 뽑기는 카드를 바꾸고 횟수를 쓴다 — 다 쓰면 못 뽑는다. 대왕을 잡으면 +1', () => {

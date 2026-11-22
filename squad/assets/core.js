@@ -448,6 +448,7 @@ function planChunks(p, g) {
   }
   // 무한모드 2구간부터 구간마다 갈림길 하나를 끼운다(다른 청크를 대신하지 않는다 — 구간의 성장·위협 흐름은 그대로)
   if (p.endless && p.seg >= FORK_FROM) plan.splice(2, 0, 'fork');
+  if (p.chain) plan.splice(3, 0, 'fork');   // 연속 갈림길(바퀴 5부터): 앞 선택이 다음 선택을 묶는다
   return plan;
 }
 
@@ -895,6 +896,9 @@ export const RIVAL_WIN = [0.6, 0.75];
 /* 갈림길(분리대) 상수. nose: 청크 시작부터 코까지, FORK_TAPER: 코에서 완전히 갈릴 때까지(이 사이에 분대 몸이 가운데에서 밀려난다),
    wall: 완전히 갈린 뒤 벽까지, after: 벽 뒤 분리대 끝까지(보상 상자는 벽 7m 뒤), men: 지원병 상자 크기(병력 몫) */
 export const FORK_FROM = 2;
+/* 지형(ENDGAME.md 18.7 — 빌드 개편 판만, 바퀴 3·4·5부터): 늦게 보이는 길(갈림길 위험한 쪽의 벽·문 숫자가 HIDE_DIST m 안에서야 보인다, 대신 병사 보상 ×HIDE_BONUS),
+   촘촘한 함정(쉼 줄이 30 → TIGHT_REST m, 톱날 하나 더), 연속 갈림길(갈림길 바로 뒤에 또 하나). 세 갈래는 분대 몸(반지름 2.4m)이 칸(3.3m)에 안 들어가 넣지 않는다 [수치는 초안] */
+export const TERRAIN = { hideFrom: 13, hideDist: 16, hideBonus: 1.3, tightFrom: 19, tightRest: 16, chainFrom: 25 };
 export const FORK_TAPER = 8;
 export const FORK = { nose: 22, wall: 26, after: 14, men: 0.15, safe: 0.3, tail: 16 };
 export const FORK_WALL = [0.85, 1.0];
@@ -933,7 +937,7 @@ export const divPad = (d, z, R) => R * clamp((z - d.z0) / FORK_TAPER, 0, 1);
 
 const CHUNK = {
   rest(lv, g, p, z, ng) {
-    return { len: 30, ng };
+    return { len: p.tight ? TERRAIN.tightRest : 30, ng };
   },
 
   gate(lv, g, p, z, ng, target, ctx) {
@@ -1116,7 +1120,7 @@ const CHUNK = {
   },
 
   saw(lv, g, p, z, ng) {
-    const n = p.L >= 14 && chance(g, 0.5) ? 2 : 1;
+    const n = (p.L >= 14 && chance(g, 0.5) ? 2 : 1) + (p.tight ? 1 : 0);   // 촘촘한 함정(바퀴 4부터): 톱날 하나 더
     for (let i = 0; i < n; i++) {
       const full = chance(g, 0.5);
       const half = chance(g, 0.5) ? -1 : 1;
@@ -1180,6 +1184,8 @@ const CHUNK = {
     const reward = chance(g, 0.6) ? { type: 'gun' } : { type: 'men', v: Math.max(6, nice(ng * FORK.men)) };
     const ch = Math.max(1, Math.round(hp * 0.12));
     const horde = p.seg >= FORK_HORDE_FROM && chance(g, FORK_HORDE_P);
+    const hidden = !!p.hide && !horde && chance(g, 0.5);   // 늦게 보이는 길(바퀴 3부터): 벽·문 숫자가 가까이 가야 보인다 — 대신 병사 보상이 크다
+    if (hidden && reward.type === 'men') reward.v = Math.round(reward.v * TERRAIN.hideBonus);
     const div = { id: 0, z0, z1, risk, wall: 0 };
     let doorId = 0;
     if (horde) {
@@ -1208,6 +1214,7 @@ const CHUNK = {
       else { lv.props.push({ id: doorId, kind: 'door', x0: rl.x0 + 0.15, x1: rl.x1 - 0.15, z: wz, hp: h, max: h, alive: true, hitT: -9, fork: true }); div.wall = doorId; }
       div.kind = 'door';
     }
+    if (hidden) { div.hidden = true; const w = lv.props.find((q) => q.id === div.wall); if (w) w.hide = true; }
     lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.1, x1: cx + 1.1, z: wz + 7, hp: ch, max: ch, alive: true, hitT: -9, reward, fork: true });
     const sl = lane(-risk);
     // 안전한 쪽 졸개 다섯: 체력 합이 그 차선에서 다가오는 동안 쏟는 양의 FORK.safe배 — 서서 쏘기만 해도 다 잡힌다
@@ -1470,6 +1477,7 @@ export function segParams(k) {
 export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
   const p = segParams(k);
   const E = ENDLESS;
+  if (opt && opt.terrain) { p.hide = p.seg >= TERRAIN.hideFrom; p.tight = p.seg >= TERRAIN.tightFrom; p.chain = p.seg >= TERRAIN.chainFrom; }   // 지형(개편 판만 — 바퀴 3·4·5부터)
   const g = { rs: hash(VERSION, 'endless', seed >>> 0, p.seg, attempt) };
   const n0 = clamp(Math.floor(n), 1, E.maxN);
   // 뒤처진 분대(바닥선 아래)에게는 위협이 바닥선 병력 기준(화력 ∝ 병력^0.8)
@@ -2197,7 +2205,7 @@ function nextSegment(s) {
   const e = s.endless;
   e.seg++;
   // 개편 판: 위협 배수 = 계약(curse) × 빌드가 쌓이는 만큼 더 가파른 곡선(BUILD.thr — from구간 뒤로 구간마다 ×step)
-  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv), swarm: mutLv(s, 'swarm') ? MUTATIONS.swarm.n[mutLv(s, 'swarm') - 1] : 1, swarmHp: mutLv(s, 'swarm') ? MUTATIONS.swarm.hp[mutLv(s, 'swarm') - 1] : 1 } : segOpt(e));
+  const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv), terrain: true, swarm: mutLv(s, 'swarm') ? MUTATIONS.swarm.n[mutLv(s, 'swarm') - 1] : 1, swarmHp: mutLv(s, 'swarm') ? MUTATIONS.swarm.hp[mutLv(s, 'swarm') - 1] : 1 } : segOpt(e));
   const dz = q.z + ENDLESS.lead;
   const off = s.nextId;
   for (const r of seg.rows) { r.id += off; r.z += dz; }
@@ -2581,6 +2589,7 @@ export function step(s, input) {
       if (d.seen || q.z + MARK_AHEAD < d.z0) continue;
       d.seen = 1;   // 갈림길 45m 앞 알림(한 번). 나침반(유물)이 있으면 위험한 쪽 보상 상자의 속(reward)도 — 화면은 forkPeek로 벽 위에 띄운다
       const ev = { t: 'fork', z: d.z0, risk: d.risk, kind: d.kind || 'wall' };
+      if (d.hidden) ev.hidden = true;
       const pk = forkPeek(s, d);
       if (pk) ev.reward = { ...pk.reward };
       emit(s, ev);

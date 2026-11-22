@@ -155,7 +155,7 @@ s.boss.dead                              // 무한모드: 쓰러지는 연출 �
 endlessCoins(s, bonusPct)                // 적립한 보스 코인 + 처치 10마리당 1(보급 %) + 상자 코인
 progress(s)                              // 무한모드는 이번 구간의 출발 자리(z0)부터
 // 이벤트: segClear { seg, coins, tag }(보스를 잡음 — 코인 적립), segStart { seg, L }(다음 구간이 이어짐). 'win'은 나오지 않는다
-// 단계 해금: fxUp { a, lv, via }, combo { id }, crate type 'fx', snipe thru, obstacle { kind, z }(처음 볼 때), blast, crateLost, relic { id }, relicUse { id:'ward', cause:'saw'|'spit' }, mutation { id, lv, seg }, flame { x, z, w, len, T, lv, boss }, kill.by 'drum'|'flame', offer.relic
+// 단계 해금: fxUp { a, lv, via }, combo { id }, crate type 'fx', snipe thru, obstacle { kind, z }(처음 볼 때), blast, crateLost, relic { id }, relicUse { id:'ward', cause:'saw'|'spit' }, mutation { id, lv, seg }, fork { …, hidden }, flame { x, z, w, len, T, lv, boss }, kill.by 'drum'|'flame', offer.relic
 // hitShapes: 'door'·'drum'·'blast'(원)·'fire'
 // 3택 1: offer { n, seg }(카드가 떴다 — 화면은 'pick' 모드로), card { k, from, to, u?, a?, x, z }(고른 카드 — 그 앞에 segStart, 효과의 gain·spGet·spUp)
 
