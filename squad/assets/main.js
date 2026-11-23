@@ -249,6 +249,7 @@ function armHistory() {
 window.addEventListener('popstate', () => {
   historyArmed = false;
   if (!$('scrJoin').hidden) { joinAfter = null; closeJoin(false); armHistory(); return; }
+  if (!$('infoPop').hidden) { closeInfo(); armHistory(); return; }   // 설명 팝업(38절)
   if (!$('scrNotice').hidden) { $('scrNotice').hidden = true; armHistory(); return; }
   if (mode === 'play' || mode === 'pick') { pause(); armHistory(); return; }
   if (mode === 'pause' || mode === 'card') { armHistory(); return; }
@@ -2379,13 +2380,9 @@ function renderPausePanes(box) {
   const det = document.createElement('div');
   det.className = 'inv-detail';
   const all = [];
-  const show = (it) => {
+  const show = (it, pop = true) => {   // 38절: 누르면 그 자리에서 팝업(아래 설명 칸 대신)
     for (const el of all) el.classList.toggle('on', el._it === it);
-    det.textContent = '';
-    const h = document.createElement('b');
-    h.textContent = it.name;
-    det.append(h);
-    for (const ln of it.lines) det.append(document.createElement('br'), ln);
+    if (pop) popInfo(it.name, it.lines);
   };
   const cell = (grid, it) => {
     const c = document.createElement('button');
@@ -2401,7 +2398,7 @@ function renderPausePanes(box) {
     if (it.sub) { const sm = document.createElement('small'); sm.textContent = it.sub; c.appendChild(sm); }
     if (it.need) { const em = document.createElement('em'); em.textContent = it.need; c.appendChild(em); }
     c.setAttribute('aria-label', `${it.name}: ${it.lines.join(' ')}`);
-    c.addEventListener('click', () => { sfx.click(); show(it); det.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+    c.addEventListener('click', () => { sfx.click(); invSel = all.indexOf(c); show(it); });
     all.push(c);
     grid.appendChild(c);
   };
@@ -2485,10 +2482,20 @@ function renderPausePanes(box) {
     if (!Rl) { const c = document.createElement('span'); c.className = 'inv-cell empty'; c.setAttribute('aria-label', '빈 유물 칸'); g3.appendChild(c); continue; }
     cell(g3, { icon: 'relic_' + id, short: Rl.name, sub: relicGood(id), name: `유물 ${Rl.name}${Rl.tribe ? ` · ${TRIBE[Rl.tribe] || ''}` : ''}`, lines: [relicGood(id)], cls: 'relicc', badge: Rl.tribe ? TRIBE[Rl.tribe] : '' });
   }
-  box.appendChild(det);
-  if (all.length) show(all[Math.min(invSel, all.length - 1)]._it);
+  void det;   // 38절: 설명은 팝업으로(아래 칸 없음)
+  if (all.length) show(all[Math.min(invSel, all.length - 1)]._it, false);
+  const hint = document.createElement('p'); hint.className = 'muted inv-hint'; hint.textContent = '칸을 누르면 설명이 떠요'; box.appendChild(hint);
 }
 const TRIBE = RELIC_TRIBE;
+/* 설명 팝업(38절): 일시정지 칸을 누르면 가운데에 이름과 설명 — 아무 데나 누르거나 닫기·뒤로 가기로 닫는다 */
+function popInfo(name, lines) {
+  $('infoHead').textContent = name;
+  const b = $('infoBody'); b.textContent = '';
+  for (const ln of lines) { const p = document.createElement('p'); p.textContent = ln; b.appendChild(p); }
+  $('infoPop').hidden = false;
+  setTimeout(() => $('infoOk').focus({ preventScroll: true }), 30);
+}
+function closeInfo() { $('infoPop').hidden = true; }
 function renderPauseUnits() {
   const box = $('pSp');
   box.textContent = '';
@@ -2551,13 +2558,10 @@ function renderPauseUnits() {
     const det = document.createElement('div');
     det.className = 'inv-detail';
     invSel = Math.min(invSel, items.length - 1);
-    const pick = (i) => {
+    const pick = (i, pop = true) => {   // 38절: 누르면 팝업
       invSel = i;
       for (const [j, el] of [...grid.children].entries()) el.classList.toggle('on', j === i);
-      det.textContent = '';
-      const h = document.createElement('b');
-      h.textContent = items[i].name;
-      det.append(h, document.createElement('br'), items[i].text);
+      if (pop) popInfo(items[i].name, [items[i].text]);
     };
     items.forEach((it, i) => {
       const c = document.createElement('button');
@@ -2569,11 +2573,13 @@ function renderPauseUnits() {
       c.appendChild(nm);
       if (it.badge) { const bd = document.createElement('i'); bd.textContent = it.badge; c.appendChild(bd); }
       c.setAttribute('aria-label', `${it.name}: ${it.text}`);
-      c.addEventListener('click', () => { sfx.click(); pick(i); det.scrollIntoView({ block: 'center', behavior: 'smooth' }); });   // 누른 칸의 설명이 보이게
+      c.addEventListener('click', () => { sfx.click(); pick(i); });
       grid.appendChild(c);
     });
-    box.append(grid, det);
-    pick(invSel);
+    void det;
+    const hint = document.createElement('p'); hint.className = 'muted inv-hint'; hint.textContent = '칸을 누르면 설명이 떠요';
+    box.append(grid, hint);
+    pick(invSel, false);
   }
   box.hidden = false;
 }
@@ -3566,6 +3572,8 @@ on('endEndless', () => { sfx.click(); mode = 'title'; goTitle(); tryEndless(); }
 on('endMenu', () => { sfx.click(); goTitle(); });
 on('btnLevels', () => { sfx.click(); mode = 'levels'; levelsCycle = data.cycle; renderLevels(); show('scrLevels'); armHistory(); });
 on('btnHero', () => { sfx.click(); mode = 'hero'; heroPickFromCard = false; heroView = data.heroes.sel; renderHero(); show('scrHero'); armHistory(); });
+on('infoOk', () => { sfx.click(); closeInfo(); });
+$('infoPop').addEventListener('click', (e) => { if (e.target === $('infoPop')) closeInfo(); });
 on('setLog', () => { sfx.click(); mode = 'log'; logVer = PATCH.ver; renderLog(); show('scrLog'); armHistory(); });
 on('logAll', () => { sfx.click(); logVer = logVer ? '' : PATCH.ver; renderLog(); });
 on('logCopy', () => {

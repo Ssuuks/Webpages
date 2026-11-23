@@ -260,6 +260,13 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .gname.g1 { color: #D9DCE3; } .gname.g2 { color: var(--g-rare); } .gname.g3 { color: var(--g-legend); font-weight: 700; text-shadow: 0 0 6px rgba(255, 159, 67, 0.6); }
 .inv-cell span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inv-cell i { position: absolute; top: 2px; right: 3px; font-style: normal; font-size: 10px; font-weight: 700; color: #FFFFFF; background: rgba(14, 10, 26, 0.85); border-radius: 6px; padding: 0 4px; }
+#infoPop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(10, 6, 20, 0.55); }
+#infoPop[hidden] { display: none; }
+.info-card { width: min(420px, 100%); max-height: 80vh; overflow: auto; background: var(--panel); border: 3px solid var(--edge); border-radius: 16px; box-shadow: inset 5px 0 0 var(--amber), 0 6px 0 var(--edge); padding: 14px 16px; display: grid; gap: 8px; }
+.info-card b { font-family: var(--display); font-weight: 400; font-size: 20px; color: var(--amber); }
+.info-card p { margin: 0; font-size: 15px; line-height: 1.5; }
+.info-card .btn { justify-self: end; }
+.inv-hint { font-size: 12px; margin: 6px 0 0; text-align: center; }
 .sp-list .inv-detail { display: block; min-height: 3.2em; background: rgba(14, 10, 26, 0.55); border-radius: 10px; padding: 8px 10px; }
 /* 일시정지의 '지금 내 부대' 목록: 무한모드 2·3단계면 탄 효과·시너지·유물까지 열 줄을 넘어 계속하기·나가기 단추를 화면 밖으로 밀어냈다 —
    길어지면 목록만 스크롤한다(캠페인의 특수병 셋은 이 높이 안이라 그대로) */
@@ -574,6 +581,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
 <div id="guide" hidden role="dialog" aria-modal="true" aria-labelledby="guideText"><div class="guide-card"><small id="guideHead">안내</small><p id="guideText"></p><button id="guideOk" class="btn primary">확인 · 눌러서 계속</button></div></div>
 <div id="rotate" role="alert"><div><span aria-hidden="true">📱</span>세로로 돌려 주세요</div></div>
 <div id="toast" hidden role="status"></div>
+<div id="infoPop" hidden role="dialog" aria-modal="true" aria-labelledby="infoHead"><div class="info-card"><b id="infoHead"></b><div id="infoBody"></div><button id="infoOk" class="btn small">닫기</button></div></div>
 
 <section id="scrTitle" class="screen" hidden>
   <div>
