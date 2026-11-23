@@ -4334,6 +4334,19 @@ export function heroWantsAuto(s) {
 const SNIPE_W = { spit: 4, brute: 2, runner: 1.5, grunt: 1 };
 
 /* 저격 표적: 독침 > 거구 > 질주 > 졸개(남은 체력 × 가중치), 없으면 보스 */
+/* 개편 판: 분대가 지나갈 길(분대 폭과 겹치는) near~far m 안의 가장 가까운 상자·철창(37절) */
+function bldProp(s, near, far) {
+  if (!bldOf(s)) return null;
+  const q = s.squad, R = radius(q.n);
+  let best = null;
+  for (const p of s.props) {
+    if (!p.alive || p.passed || (p.kind !== 'crate' && p.kind !== 'cage')) continue;
+    const dz = p.z - q.z;
+    if (dz < near || dz > far || overlap(q.x - R, q.x + R, p.x0, p.x1) <= 0) continue;
+    if (!best || p.z < best.z) best = p;
+  }
+  return best;
+}
 function snipeTarget(s, near, far) {
   const q = s.squad;
   let best = null;
@@ -4346,7 +4359,10 @@ function snipeTarget(s, near, far) {
     if (sc > bestScore || (sc === bestScore && f.id < best.o.id)) { bestScore = sc; best = { kind: 'foe', o: f }; }
   }
   if (best) return best;
-  // 상자·철창은 쏘지 않는다(보상은 분대가 직접 쏴서 얻는 것)
+  // 상자·철창: 앞 단계 판은 쏘지 않는다(보상은 분대가 직접 쏴서 얻는 것). 개편 판(37절)은 쏠 좀비가 없을 때 분대가 지나갈 길의 상자·철창을 거든다 —
+  // 특수병 위주 빌드에서 상자·철창이 안 깎이던 것(총이 피해의 1할 남짓). 드럼통·옆 칸 상자는 안 쏜다(고르는 것은 분대)
+  const bp = bldProp(s, near, far);
+  if (bp) return { kind: 'prop', o: bp };
   if (s.boss && s.boss.hp > 0 && s.boss.z - q.z < far) return { kind: 'boss', o: s.boss };
   return null;
 }
@@ -4374,7 +4390,7 @@ function snipe(s, dmg, src, big = 1, boom = false) {
       emit(s, { t: 'melt', x: x1, z: z1 });
     }
   }
-  else if (t.kind === 'prop') { x1 = (t.o.x0 + t.o.x1) / 2; z1 = t.o.z; hitProp(s, t.o, dmg); kill = !t.o.alive; }
+  else if (t.kind === 'prop') { x1 = (t.o.x0 + t.o.x1) / 2; z1 = t.o.z; hitProp(s, t.o, t.o.kind === 'crate' || t.o.kind === 'cage' ? dmg * BUILD.spCrate : dmg); kill = !t.o.alive; }   // 37절: 상자·철창에는 저격 몫만
   else { x1 = t.o.x; z1 = t.o.z - 1; hitBossBonus(s, dmg, src); if (src === 'sniper' && legOn(s, 'sniper')) t.o.markT = s.t + ENH.sniper.legend.T; }
   emit(s, { t: 'snipe', x0: q.x, z0: q.z, x1, z1, src, kill });
   if (boom && kill && t.kind === 'foe') fxBoom(s, x1, z1, 1.6, t.o.max * SP_EVO2.sniper.v, t.o);   // 저격수 Lv10 터지는 저격
@@ -4442,6 +4458,7 @@ function rocketTarget(s, D, r = SP.rocket.r, wallFirst = 0) {
   }
   best = crowdAt(s, D, r, r, SP.rocket.near, SP.rocket.far);
   if (best) return best;
+  { const bp = bldProp(s, 4, SP.rocket.far); if (bp) return { x: clamp(q.x, bp.x0, bp.x1), z: bp.z, fid: -1 }; }   // 37절: 개편 판은 무리가 없으면 길의 상자·철창
   for (const p of s.props) {
     if (!p.alive || p.passed || (p.kind !== 'wall' && p.kind !== 'door')) continue;
     const dz = p.z - q.z;
@@ -4615,7 +4632,7 @@ function specialsUpdate(s, R) {
       }
       for (const p of s.props) {
         if (!p.alive || p.passed || Math.abs(p.z - rk.z) > rk.r || overlap(rk.x - rk.r, rk.x + rk.r, p.x0, p.x1) <= 0) continue;
-        hitProp(s, p, (p.kind === 'door' ? rk.dmg * OBSTACLES.door.rocket : rk.dmg) * (rk.wk || 1));   // 장갑문에는 로켓이 잘 든다(개편 판은 벽·문 모두 ×wk)
+        hitProp(s, p, (p.kind === 'door' ? rk.dmg * OBSTACLES.door.rocket : rk.dmg) * (p.kind === 'wall' || p.kind === 'door' ? rk.wk || 1 : 1));   // 장갑문에는 로켓이 잘 든다(개편 판은 벽·문 모두 ×wk — 37절: 상자·철창은 ×wk 없이)
       }
       const b = s.boss;
       if (b && b.hp > 0 && Math.abs(b.z - 1 - rk.z) < rk.r + 1 && Math.abs(b.x - rk.x) < rk.r + b.r) hitBossBonus(s, rk.dmg, 'rocket');

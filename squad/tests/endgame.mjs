@@ -5043,3 +5043,23 @@ test('36절 — 총 전설은 그 총의 진화와 겹치지 않는다: 저격�
   for (const g of R.GUN_IDS) for (const lv of [1, 5, 10, 12]) assert.ok(!R.gunText(g, lv).includes('‘'), `${g} Lv${lv}: ${R.gunText(g, lv)}`);
   for (const g of R.GUN_IDS) assert.ok(R.GUN_EVO_TEXT[g] && R.GUN_EVO_TEXT[g].length > 5);
 });
+
+test('37절 — 개편 판 저격수·로켓병은 쏠 좀비가 없으면 분대가 지나갈 길의 상자·철창을 거든다(저격은 spCrate 몫, 로켓은 벽 배수 없이). 옆 칸 상자·드럼통은 안 친다, 앞 단계 판은 그대로', () => {
+  const run = (co, sp, x0 = -1.1, x1 = 1.1, kind = 'cage') => {
+    const s = C.newEndless({ seed: 31, ...co });
+    s.squad.n = 200; s.foes = []; s.rows = []; s.saws = []; delete s.divs; s.props = []; s.squad.x = 0; if (s.hero) s.hero = null;
+    s.squad.sp = sp.map((k, i) => ({ id: 900 + i, k, cd: 0, lv: 3 }));
+    const p = { id: s.nextId++, kind, x0, x1, z: s.squad.z + 14, hp: 1e9, max: 1e9, alive: true, hitT: -9, reward: kind === 'cage' ? { type: 'unit', k: 'medic' } : { type: 'men', n: 5 } };
+    s.props.push(p);
+    let snipeAt = 0, rocketAt = 0;
+    for (let i = 0; i < 150; i++) { C.step(s, { dir: 0, tx: 0 }); p.z = s.squad.z + 14; for (const e of s.ev) { if (e.t === 'snipe' && e.src === 'sniper') snipeAt++; if (e.t === 'rocket') rocketAt++; } }
+    return { snipeAt, rocketAt };
+  };
+  const a = run(BLD, ['sniper', 'rocket']);
+  assert.ok(a.snipeAt > 0 && a.rocketAt > 0, `개편 판: 길의 철창을 친다 ${JSON.stringify(a)}`);
+  const side = run(BLD, ['sniper', 'rocket'], 3.3, 4.4, 'crate');
+  assert.deepEqual([side.snipeAt, side.rocketAt], [0, 0], '옆 칸 상자는 안 친다');
+  const old = run({ ...UP10, unl: 3, ammoOpen: R.AMMO_IDS, relicsOpen: R.RELIC_IDS.filter((id) => !R.RELICS[id].b2), flame: true }, ['sniper', 'rocket']);
+  assert.deepEqual([old.snipeAt, old.rocketAt], [0, 0], '앞 단계 판은 상자·철창을 안 친다');
+  assert.ok(R.BUILD.spCrate > 0 && R.BUILD.spCrate < 1);
+});
