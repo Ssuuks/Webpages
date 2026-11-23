@@ -4940,3 +4940,28 @@ test('28절 — 칸막이 미로 보상: 끝에는 길을 따라온 빈 칸에 �
   assert.ok(mazes > 20 && small > mazes, `미로 ${mazes} · 작은 상자 ${small}`);
   assert.ok(big[2] > 0 && big[3] > 0, `보물 중 ${big[2]} · 대 ${big[3]}`);
 });
+
+test('30절 — 보스 피해의 바닥: 개편 판 보스의 밟기는 그 구간 기준 병력(bossRef)의 BOSS_FLOOR.stomp보다 덜 빼지 않는다(밀린 판이 끌리지 않게), 병력이 넉넉하면 예전 몫 그대로, 캠페인은 그대로', () => {
+  const s = C.newEndless({ seed: 31, ...BLD });
+  const pol = makeBot('strong', 1031, { skill: true });
+  for (let g = 0; g < 400000 && !(s.boss && s.endless.seg >= 2); g++) { const of = C.offerOf(s); if (of) { C.pickCard(s, 0); continue; } C.step(s, pol(s)); }
+  const b = s.boss, q = s.squad;
+  assert.ok(s.bossRef > 0, '기준 병력');
+  b.hp = b.max = 1e15; b.pat = []; b.slam = null; b.slamCd = 99; b.summonCd = 99; s.foes.forEach((f) => { f.alive = false; }); q.sp = [];
+  const stompLoss = (n) => {
+    q.n = n; b.clash = true; b.clashHp = b.hp; b.clashCd = C.DT / 2; b.z = q.z + 0.55 * C.radius(n) + b.r * 0.6;
+    C.step(s, { dir: 0 });
+    return s.ev.filter((e) => e.t === 'loss' && e.cause === 'boss').reduce((a, e) => a + e.n, 0);
+  };
+  const ref = s.bossRef;
+  const weak = Math.max(10, Math.round(ref * 0.2));
+  assert.ok(stompLoss(weak) >= Math.min(weak, Math.ceil(R.BOSS_FLOOR.stomp * ref)), '약하면 기준 병력의 몫만큼은 잃는다');
+  const strong = Math.round(ref * 2);
+  assert.equal(stompLoss(strong), Math.ceil(0.12 * strong) + 1, '넉넉하면 예전 몫');
+  // 캠페인 보스는 그대로
+  const c = C.newGame(C.prepareLevel(12), { start: 3000, fire: 10 });
+  for (let g = 0; g < 200000 && !c.boss; g++) C.step(c, C.botInput(c));
+  const cb = c.boss; cb.hp = cb.max = 1e12; c.squad.n = 10; cb.clash = true; cb.clashCd = C.DT / 2; cb.z = c.squad.z + 0.55 * C.radius(10) + cb.r * 0.6;
+  C.step(c, { dir: 0 });
+  assert.equal(c.ev.filter((e) => e.t === 'loss' && e.cause === 'boss').reduce((a, e) => a + e.n, 0), Math.ceil(0.12 * 10) + 1, '캠페인은 지금 병력의 몫');
+});

@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, SUPPLY, GUNS, GUN_IDS, gunVal, GUN_SWAP } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, SUPPLY, BOSS_FLOOR, GUNS, GUN_IDS, gunVal, GUN_SWAP } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -3165,7 +3165,7 @@ function spitsUpdate(s, R) {
     const ov = overlap(q.x - H, q.x + H, sp.x - sr, sp.x + sr) / (2 * H);
     const hit = ov > 0 && Math.abs(sp.z - q.z) < R + 1.5;
     emit(s, { t: 'spitHit', x: sp.x, z: sp.z, hit });
-    if (hit && !wardBlock(s, 'spit', sp.id ?? 0, sp.x, sp.z)) lose(s, Math.max(1, Math.ceil((sp.boss ? BOSS_PAT.volley.hit : 0.3) * ov * q.n)), 'spit', sp.x, sp.z);   // 보스 독침 세례는 덜 아프다   // 방패막(유물): 구간마다 처음 맞은 독침
+    if (hit && !wardBlock(s, 'spit', sp.id ?? 0, sp.x, sp.z)) lose(s, Math.max(1, Math.ceil((sp.boss ? BOSS_PAT.volley.hit : 0.3) * ov * q.n), sp.boss ? Math.floor(bossLoss(s, 0, 'spit') * ov) : 0), 'spit', sp.x, sp.z);   // 보스 독침 세례는 덜 아프다   // 방패막(유물): 구간마다 처음 맞은 독침
   }
   if (s.spits.length) s.spits = s.spits.filter((sp) => sp.t > 0);
 }
@@ -3987,6 +3987,11 @@ function bossPatUpdate(s, R, b) {
     patSay(s, b, 'line');
   }
 }
+/* 보스 공격으로 잃는 병사: 지금 병력의 몫 a, 무한모드 개편 판은 그 구간 기준 병력의 BOSS_FLOOR[k]보다 적지 않게(30절 — 밀린 판이 끌리지 않게) */
+function bossLoss(s, a, k) {
+  if (!s.endless || !s.endless.bld || !(s.bossRef > 0)) return a;
+  return Math.max(a, Math.ceil(BOSS_FLOOR[k] * s.bossRef));
+}
 function bossUpdate(s, R) {
   const q = s.squad;
   const b = s.boss;
@@ -4070,7 +4075,7 @@ function bossUpdate(s, R) {
     if (b.clashCd <= 0) {
       b.clashCd = 0.5;
       emit(s, { t: 'stomp', x: b.x, z: b.z });
-      lose(s, Math.ceil(0.12 * q.n) + 1, 'boss', undefined, undefined, 'stomp');
+      lose(s, bossLoss(s, Math.ceil(0.12 * q.n) + 1, 'stomp'), 'boss', undefined, undefined, 'stomp');
     }
     return;
   }
@@ -4080,7 +4085,7 @@ function bossUpdate(s, R) {
     if (b.slam.t <= 0) {
       const hit = slamHits(q.x, R, b.slam);
       emit(s, { t: 'slam', x0: b.slam.x0, x1: b.slam.x1, hit });
-      if (hit) lose(s, Math.ceil(SLAM_HIT * q.n), 'boss', q.x, q.z, 'slam');
+      if (hit) lose(s, bossLoss(s, Math.ceil(SLAM_HIT * q.n), 'slam'), 'boss', q.x, q.z, 'slam');
       const one = !b.slam.wide && !b.slam.dbl;
       const wide1 = b.slam.wide && !b.slam.w2 ? b.slam.safe : -1;
       b.slam = null;
