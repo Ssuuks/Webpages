@@ -201,6 +201,12 @@ const pp = (id, lv) => Math.round(petP(id, lv) * 1000) / 10;
 export const petCost = (lv) => ({ coins: 200 * lv, shards: lv });
 /* 알: 값(코인), 안 가진 펫이 남아 있을 때 새 펫이 나올 확률, 천장(이 수의 알 안에 새 펫 하나), 중복일 때 받는 조각 */
 export const EGG = { price: 600, pNew: 0.4, pity: 5, shards: 3, pEndless: 0.15 };
+/* 남는 펫 조각 → 코인(ENDGAME.md 31절): 최고 레벨까지 올리는 데 드는 조각보다 많은 몫만, 조각 하나에 SHARD_COIN코인(알 값 600 ÷ 조각 3 = 200의 절반) */
+export const SHARD_COIN = 100;
+/* 이 레벨에서 최고 레벨까지 올리는 데 드는 조각 합 */
+export const petShardsToMax = (lv) => { let n = 0; for (let l = Math.max(1, lv | 0); l < PET_MAX_LV; l++) n += petCost(l).shards; return n; };
+/* 팔 수 있는(남는) 조각: 가진 조각 − 최고 레벨까지 드는 조각 */
+export const petSpareShards = (own) => (own ? Math.max(0, (own.sh | 0) - petShardsToMax(own.lv)) : 0);
 /* 알 하나 열기(뽑기 난수는 시뮬레이션 밖 — rnd: 0~1 난수 함수). pets = { own: { id: { lv, sh } }, pity } 를 고친다.
    안 가진 펫이 있으면 pNew 확률(가진 펫이 없으면 반드시, 천장에 닿으면 반드시)로 새 펫, 아니면 가진 펫 하나의 조각 +EGG.shards — 꽝이 없다.
    돌려주는 것: { id, fresh(새 펫인가), shards } */
@@ -342,24 +348,25 @@ export const OBSTACLE_IDS = Object.keys(OBSTACLES);
    - drum 진격 북: 보스전에 들어가면 영웅 게이지 가득, 보스전 동안 특수병 쿨다운 ×cd · charge 폭약 배낭: 벽·장갑문이 무너지면 둘레 r m 좀비에게 그 벽 최대 체력 × v
    - ladder 사다리: 구간마다 한 번 칸막이·갈림길 분리대를 넘는다 · lucky 행운의 동전: 행운 길 p로 잦아지고 상자가 한 단계 위로(대는 병력 +big 더)
    - manual 훈련 교본: 같은 대상(탄·특수병·총 Lv)을 every번 고를 때마다 한 레벨 더 */
+const LANES_LUCK_P = 0.35;   // core LANES.luckP(행운 길 기본 확률 — 행운의 동전 글에만, tests/endgame.mjs가 같은지 본다)
 export const RELICS = {
-  compass: { name: '나침반', kings: 0, tribe: 'luck', ahead: 45, v: 1.5, text: () => `갈림길 보상 상자 속이 ${RELICS.compass.ahead}m 앞에서 보이고, 위험한 쪽 보상 병사 ×${RELICS.compass.v}`, cost: () => '' },
-  dice: { name: '재굴림 주사위', kings: 0, tribe: 'build', n: 3, king: 1, text: () => `다시 뽑기를 바로 ${RELICS.dice.n}번 더, 대왕을 잡을 때마다 ${1 + RELICS.dice.king}번씩`, cost: () => '' },
-  megaphone: { name: '빨간 확성기', kings: 0, tribe: 'grow', red: 1.5, blue: 0.8, text: () => `빨간 덧셈 칸이 ${RELICS.megaphone.red}배 빨리 올라요`, cost: () => `파란 칸은 ${RELICS.megaphone.blue}배` },
-  coil: { name: '과부하 코일', kings: 0, tribe: 'build', tier: 4, men: 0.7, text: () => `총 ★ 상한 +1 (보통 판은 무기 단계 3 → ${RELICS.coil.tier})`, cost: () => `지원병 상자 병력 −${apc(1 - RELICS.coil.men)}%` },
-  loot: { name: '전리품 자루', kings: 1, tribe: 'build', b2: true, n: 1, text: () => `보스 뒤 카드 3장 → ${3 + RELICS.loot.n}장`, cost: () => '' },
-  scope: { name: '황금 조준경', kings: 1, tribe: 'grow', b2: true, v: 1.5, text: () => `덧셈 칸을 쏘아 올리는 폭 ×${RELICS.scope.v}`, cost: () => '' },
-  fourth: { name: '넷째 자리', kings: 2, tribe: 'build', slots: 4, escort: 6, text: () => `특수병 자리 3 → ${RELICS.fourth.slots}`, cost: () => `특수병마다 호위 병사 4 → ${RELICS.fourth.escort}명` },
-  resonator: { name: '공명기', kings: 2, tribe: 'build', b2: true, v: 1.5, half: 0.5, text: () => `짝 효과 ×${RELICS.resonator.v} · 재료가 하나 모자란 짝도 반의 힘으로 켜져요(수치가 있는 짝)`, cost: () => '' },
-  pledge: { name: '부활 서약', kings: 3, tribe: 'live', text: () => `쓰러진 특수병이 보스 뒤에 레벨의 ${apc(BUILD.spBack)}%가 아니라 제 레벨로 돌아와요`, cost: () => '' },
-  drum: { name: '진격 북', kings: 3, tribe: 'boss', b2: true, cd: 0.7, text: () => `보스전에 들어가면 영웅 게이지가 가득 · 보스전 동안 특수병 쿨다운 ×${RELICS.drum.cd}`, cost: () => '' },
+  compass: { name: '나침반', kings: 0, tribe: 'luck', ahead: 45, v: 1.5, text: () => `갈림길 상자 속이 ${RELICS.compass.ahead}m 앞에서 보이고, 위험한 쪽 상자 병사 ×${RELICS.compass.v}`, cost: () => '' },
+  dice: { name: '재굴림 주사위', kings: 0, tribe: 'build', n: 3, king: 1, text: () => `카드 다시 뽑기를 지금 ${RELICS.dice.n}번 더, 대왕을 잡을 때마다 ${1 + RELICS.dice.king}번씩 더 받아요`, cost: () => '' },
+  megaphone: { name: '빨간 확성기', kings: 0, tribe: 'grow', red: 1.5, blue: 0.8, text: () => `빨간(−) 게이트를 쏘면 숫자가 ${RELICS.megaphone.red}배 빨리 올라요`, cost: () => `파란(+) 게이트는 ${RELICS.megaphone.blue}배로 느리게` },
+  coil: { name: '과부하 코일', kings: 0, tribe: 'build', tier: 4, men: 0.7, text: () => `총 ★을 한 칸 더 올릴 수 있어요(★ 상한 +1)`, cost: () => `지원병 상자의 병사 −${apc(1 - RELICS.coil.men)}%` },
+  loot: { name: '전리품 자루', kings: 1, tribe: 'build', b2: true, n: 1, text: () => `보스를 잡은 뒤 고르는 카드가 3장 → ${3 + RELICS.loot.n}장`, cost: () => '' },
+  scope: { name: '황금 조준경', kings: 1, tribe: 'grow', b2: true, v: 1.5, text: () => `게이트를 쏘면 숫자가 ${RELICS.scope.v}배 빨리 올라요`, cost: () => '' },
+  fourth: { name: '넷째 자리', kings: 2, tribe: 'build', slots: 4, escort: 6, text: () => `특수병을 3명 → ${RELICS.fourth.slots}명까지 데려가요`, cost: () => `특수병 한 명마다 필요한 병사 4 → ${RELICS.fourth.escort}명` },
+  resonator: { name: '공명기', kings: 2, tribe: 'build', b2: true, v: 1.5, half: 0.5, text: () => `시너지(🔗)가 ${RELICS.resonator.v}배 세지고, 짝 하나만 있어도 절반 힘으로 켜져요`, cost: () => '' },
+  pledge: { name: '부활 서약', kings: 3, tribe: 'live', text: () => `쓰러진 특수병이 보스 뒤에 레벨 그대로 돌아와요(원래는 ${apc(BUILD.spBack)}%로 깎여요)`, cost: () => '' },
+  drum: { name: '진격 북', kings: 3, tribe: 'boss', b2: true, cd: 0.7, text: () => `보스전이 시작되면 영웅 스킬이 바로 준비되고, 특수병 대기 시간 −${apc(1 - RELICS.drum.cd)}%`, cost: () => '' },
   bag: { name: '수집가의 가방', kings: 4, tribe: 'luck', egg: 0.35, cards: 2, text: () => `일반 보스의 알 확률 ${apc(EGG.pEndless)} → ${apc(RELICS.bag.egg)}%`, cost: () => `카드 3장 → ${RELICS.bag.cards}장` },
-  charge: { name: '폭약 배낭', kings: 4, tribe: 'land', b2: true, r: 3, v: 0.3, text: () => `벽·장갑문이 무너지면 둘레 ${RELICS.charge.r}m 좀비에게 그 벽 최대 체력의 ${apc(RELICS.charge.v)}%`, cost: () => '' },
-  ladder: { name: '사다리', kings: 4, tribe: 'land', b2: true, text: () => '구간마다 한 번 칸막이·갈림길 분리대를 넘어 옆으로 가요(밀면 넘어가요)', cost: () => '' },
-  pouch: { name: '넓은 탄낭', kings: 5, tribe: 'build', slots: 3, text: () => `탄 효과 슬롯 ${FX_SLOTS} → ${RELICS.pouch.slots}`, cost: () => '증원 카드가 나오지 않아요' },
-  ward: { name: '방패막', kings: 5, tribe: 'live', text: () => '구간마다 처음 닿은 톱날·처음 맞은 독침의 피해를 한 번 막아요', cost: () => '' },
-  lucky: { name: '행운의 동전', kings: 6, tribe: 'luck', b2: true, p: 0.6, big: 0.2, text: () => `행운 길이 ${apc(RELICS.lucky.p)}%로 잦아지고, 상자가 한 단계 위로 열려요(대는 병력 +${apc(RELICS.lucky.big)}% 더)`, cost: () => '' },
-  manual: { name: '훈련 교본', kings: 7, tribe: 'build', b2: true, every: 3, text: () => `같은 탄·특수병·총을 ${RELICS.manual.every}번 고를 때마다 한 레벨 더`, cost: () => '' },
+  charge: { name: '폭약 배낭', kings: 4, tribe: 'land', b2: true, r: 3, v: 0.3, text: () => `벽·장갑문이 무너질 때 터져서 둘레 ${RELICS.charge.r}m 좀비에게 벽 체력의 ${apc(RELICS.charge.v)}% 피해`, cost: () => '' },
+  ladder: { name: '사다리', kings: 4, tribe: 'land', b2: true, text: () => '구간마다 한 번, 칸막이·갈림길 벽을 넘어 옆 칸으로 가요(밀면 넘어가요)', cost: () => '' },
+  pouch: { name: '넓은 탄낭', kings: 5, tribe: 'build', slots: 3, text: () => `탄 효과를 ${FX_SLOTS}개 → ${RELICS.pouch.slots}개까지 가질 수 있어요`, cost: () => '병력을 늘리는 증원 카드가 안 나와요' },
+  ward: { name: '방패막', kings: 5, tribe: 'live', text: () => '구간마다 톱날에 처음 닿을 때·독침에 처음 맞을 때는 병사를 안 잃어요', cost: () => '' },
+  lucky: { name: '행운의 동전', kings: 6, tribe: 'luck', b2: true, p: 0.6, big: 0.2, text: () => `? 상자가 한 단계 좋게 열리고(대는 병사 +${apc(RELICS.lucky.big)}%), ? 상자 길이 ${apc(LANES_LUCK_P)} → ${apc(RELICS.lucky.p)}%로 잦아요`, cost: () => '' },
+  manual: { name: '훈련 교본', kings: 7, tribe: 'build', b2: true, every: 3, text: () => `같은 탄·특수병·총 카드를 ${RELICS.manual.every}번 고를 때마다 레벨이 하나 더 올라요`, cost: () => '' },
 };
 export const RELIC_TRIBE = { build: '빌드', grow: '성장', boss: '보스', land: '지형', luck: '운', live: '생존' };
 export const RELIC_IDS = Object.keys(RELICS);
@@ -401,10 +408,10 @@ export const BUILD = {
   awakeFrom: 7,         // 각성(Lv6~10)·숙련이 열리는 구간(첫 대왕 뒤 — 예전 13: Lv5에 너무 일찍 닿아 성장이 멈춘 느낌이었다, ENDGAME.md 20절). 그 전에는 Lv5가 상한
   awk: 0.15,            // 각성 Lv6~9: 그 역할의 값 레벨마다 +15%, Lv10은 2차 진화
   mastery: 0.1,         // 숙련(Lv10 위, 끝없음): 같은 카드를 또 고를 때마다 그 대상 효과 +10%(더한다 — 예전 +4%는 거의 안 느껴졌다, ENDGAME.md 21.10)
-  legendUp: 0.0015,     // 6구간 뒤로 구간마다 전설 확률 +0.15%p(일반에서 가져온다 — 후반일수록 전설이 오른다), legendMax: 최대 +이만큼(예전 +1%p·최대 15%p — ENDGAME.md 20절)
-  legendMax: 0.02,
-  rare: [0.9, 0.09, 0.01],    // 카드 등급(일반·희귀·전설) 확률 — 예전 0.72·0.23·0.05에 정예·대왕 뒤 카드가 모두 희귀 이상이라 너무 흔했다(20절)
-  tagRare: { hard: [0, 0.85, 0.15], super: [0, 0.6, 0.4] },   // 정예·대왕 보스 뒤 첫 카드의 첫 (총이 아닌) 장만 이 확률(희귀 이상), 나머지 자리는 rare. 등급은 다시 뽑기로 안 바뀐다
+  legendUp: 0.0003,   // 34절: 0.0015 → 0.0003(전설은 판에 하나 볼까 말까)     // 6구간 뒤로 구간마다 전설 확률 +0.15%p(일반에서 가져온다 — 후반일수록 전설이 오른다), legendMax: 최대 +이만큼(예전 +1%p·최대 15%p — ENDGAME.md 20절)
+  legendMax: 0.004,
+  rare: [0.9, 0.097, 0.003],   // 34절: 전설 0.01 → 0.003 — 전설이 새 규칙(진화 미리보기가 아니라)으로 세져서 판에 하나 볼까 말까로    // 카드 등급(일반·희귀·전설) 확률 — 예전 0.72·0.23·0.05에 정예·대왕 뒤 카드가 모두 희귀 이상이라 너무 흔했다(20절)
+  tagRare: { hard: [0, 0.97, 0.03], super: [0, 0.88, 0.12] },   // 34절: 15·40% → 3·12%   // 정예·대왕 보스 뒤 첫 카드의 첫 (총이 아닌) 장만 이 확률(희귀 이상), 나머지 자리는 rare. 등급은 다시 뽑기로 안 바뀐다
   own: 3,               // 이미 가진 것(탄 효과·특수병)의 카드가 나올 가중치
   reroll: 1,            // 판마다 다시 뽑기 횟수(대왕을 잡을 때마다 +1)
   curse: { p: 0.18, mul: 1.25, more: 2, from: 2 },   // 위험한 계약: from번째 보스 뒤부터 p 확률로 한 장 — 다음 구간 위협 ×mul, 대신 카드 more장 더
@@ -412,10 +419,11 @@ export const BUILD = {
   relicFrom: 3,         // 이 구간부터 정예·대왕 보스 뒤에 유물(예전 6 — 대왕만)
   pouch: 4,             // 넓은 탄낭의 슬롯(예전 3 — 증원 카드가 없어 대신 쪽도 없다)
   // 특수병 위력(쉽게 쓰러지는 만큼 세게): dmg 배수 × (1 + lv·(레벨 − 1)). 의무병은 레벨마다 좀비·보스에게 잃는 병사 ÷(1 + med·레벨), 회복 +50%
-  sp: { sniper: { dmg: 3, lv: 0.72 }, rocket: { dmg: 1, lv: 0.062 }, flame: { dmg: 2, lv: 0.31 } },   // lv: 레벨(−1)마다 위력 +이만큼(깊이 보상 deep()을 없애며 Lv5 값이 그대로이도록 deep(4)/4 ≈ 2.05배)
+  sp: { sniper: { dmg: 3, lv: 0.72 }, rocket: { dmg: 0.8, lv: 0.062 }, flame: { dmg: 2, lv: 0.31 } },   // 33절: 로켓 1 → 0.8(높은 레벨에서 피해 몫 46% — 화면을 덮었다)   // lv: 레벨(−1)마다 위력 +이만큼(깊이 보상 deep()을 없애며 Lv5 값이 그대로이도록 deep(4)/4 ≈ 2.05배)
   med: 0.048,           // 의무병 레벨마다 좀비·보스에게 잃는 병사 ÷(1 + med × 레벨)(깊이 보상을 없애며 Lv5 값이 그대로이도록 올렸다)
   spBoss: 0.06,         // 특수병 레벨 1당 보스전 추가 피해 한도(예전 0.02)
-  rocket: { cd: 0.6, speed: 55, wallZ: 26, wall: 3 },
+  spCrate: 0.3,   // 37절: 개편 판 저격수가 상자·철창을 칠 때 몫(저격은 한 발이 커서 그대로면 상자가 바로 녹는다)
+  rocket: { cd: 0.6, speed: 55, wallZ: 26, wall: 3, twin: 0.6, fire: { w: 1, T: 1.2, d: 0.25 } },   // fire: 불씨 로켓(Lv10)의 불 지대 — 폭 반경×w, T초, 초당 로켓 피해×d(34절: 예전 1.6·2·0.4)   // twin: Lv5 쌍발의 둘째 로켓 피해 몫(33절 — 예전 1)
   wall: { from: 6, cut: 0.6, lo: 0.05 },   // cut 0.5 → 0.6(20.1 뒤 — 25구간~ 벽 파괴율이 40%로 내려갔다)
   bossHp: { from: 7, k: 0, max: 2.5, king: 1.5 },   // king: 대왕 체력 ×(23.4 — 문턱 셋을 지나며 특수 패턴 넷을 다 보여 주려면 대왕전 12~18초가 필요하다)   // 개편 판 보스 체력 덧배수 = min(max, 1 + k × (구간 − from + 1)). 보스전이 3초 안팎(후반 0.5초)으로 끝났던 진짜 까닭은 18구간쯤부터 골든 패스가 무너진 것(20.1) — 고친 뒤 보스전이 6~12초라 k = 0(손잡이만 남김)
   narrow: 1.4,          // 개편 판 분대 몸 반지름 상한(보통 2.4 — 몸 폭 4.8m가 세 칸 길(3.3m)에 안 들어갔다. 1.4면 맞는 폭 ±1.28m — ENDGAME.md 20.2)
@@ -445,6 +453,19 @@ export const BOSS_PAT = {
   wide: { name: '넓은 내려찍기', pad: 0.25, then2: 0.6, text: () => '세 칸 중 두 칸을 한꺼번에 내려찍어요 — 남은 가장자리 칸으로' },
   double: { name: '연속 내려찍기', then: 0.3, text: () => '내려찍은 뒤 지금 선 칸을 곧바로 한 번 더' },   // 옛 저장(23절 전)의 보스만 — 지금은 내려찍기의 간격 강화판
 };
+/* 출격 보급품(무한모드 개편 판 — ENDGAME.md 27절): 출격 카드의 '함께 출격'에서 코인으로 사서 그 판에만 쓴다(출격하는 순간 코인이 빠지고 고른 것은 비워진다).
+   men: 시작 병력 ×v · legend: 보스 뒤 첫 카드에서 강화가 있는 장 하나가 전설 · revive: 병력이 0이 되는 순간 한 번, 그 구간 바닥선의 v배로 되살아난다
+   relic: 열린 유물 하나를 처음부터 쥐고 출발 [값은 초안 — 보스 30마리 판의 벌이가 4,800코인쯤] */
+/* 보스 피해의 바닥(무한모드 개편 판 — ENDGAME.md 30절): 보스 공격은 지금 병력의 몫(밟기 12% · 내려찍기 25% · 독침 세례)이라 병력이 줄수록 덜 아파,
+   이미 밀린 판이 한참 끌렸다. 그 구간 기준 병력(s.bossRef — 보스 앞에 도착할 것으로 본 병력)의 이 몫보다는 덜 잃지 않는다(병력이 기준의 절반쯤 넘으면 그대로) */
+export const BOSS_FLOOR = { stomp: 0.04, slam: 0.1, spit: 0.04 };   // 0.06·0.15·0.06에서는 약한 빌드(정밀)가 빌드 균형 띠 밖으로 밀려 낮췄다
+export const SUPPLY = {
+  men: { name: '증원 부대', cost: 300, v: 1.5, text: () => `시작 병력 ×${SUPPLY.men.v}` },
+  legend: { name: '전설 보급', cost: 800, text: () => '첫 보스 뒤 카드 하나가 전설' },
+  revive: { name: '불굴 보급', cost: 1000, v: 1, text: () => '전멸하는 순간 한 번 되살아나요(그 구간 바닥선만큼)' },
+  relic: { name: '시작 유물', cost: 1500, text: () => '열린 유물 하나를 쥐고 출발' },
+};
+export const SUPPLY_IDS = ['men', 'legend', 'revive'];
 /* 넉백(개편 판 보스): 붙은(clash) 동안 보스 최대 체력의 hp 몫을 깎으면 dist m 뒤로 튕겨 stun초 비틀거린다(걷기·내려찍기·패턴 멈춤) — 붙어도 쏘아서 떼어낼 수 있게 */
 export const BOSS_KNOCK = { hp: 0.035, dist: 3, stun: 1 };
 export const BOSS_PAT_IDS = ['slam', 'volley', 'line', 'charge', 'wide'];
@@ -534,7 +555,7 @@ export function fx2Text(id, lv) { return fx2Base(id, lv) + (fx2Val(id, lv).evo2 
 function fx2Base(id, lv) {
   const v = fx2Val(id, lv);
   const l = Math.min(BUILD.evo, Math.max(1, lv | 0));
-  const e = (v.evo2 ? `2차 진화 ‘${FX_EVO2[id]}’ · ` : v.evo ? `진화 ‘${FX_EVO[id]}’ · ` : '') + (v.a > 1 ? `${lv > 10 ? '각성·숙련' : '각성'} +${apc(v.a - 1)}% · ` : '');
+  const e = v.a > 1 ? `레벨 보너스 +${apc(v.a - 1)}% · ` : '';   // 36절: 진화 이름을 빼고 효과만(아래 글이 진화가 하는 일을 쓴다)
   const mx = v.over > 0 ? '(최대)' : '';   // 넘침 전환(21.10): 상한에 닿은 값에 '(최대)' — 넘친 몫은 다음 효과로 간다
   if (v.pierce) return e + `뒤의 좀비 ${v.n > 2 ? '일직선 전부' : v.n === 2 ? '둘' : '하나'}에 ${apc(v.pierce)}%${mx}${v.wall > 1 ? ` · 벽·장갑문 +${apc(v.wall - 1)}%` : ''}${v.ramp ? ` · 뚫을 때마다 다음 +${apc(v.ramp)}%` : ''}`;
   if (v.splash) return e + `둘레 ${v.r}m${v.r >= OVER.burst.rMax ? '(최대)' : ''}에 ${apc(v.splash)}%${v.chain ? ` · 처치된 좀비도 터져요(${apc(v.chain)}%)` : ''}`;
@@ -559,6 +580,8 @@ export const GUNS = {
 };
 export const GUN_IDS = Object.keys(GUNS);
 export const GUN_EVO = { rifle: '점사', shotgun: '슬러그', marksman: '헤드샷' };
+/* 36절: 화면 글에는 이름 대신 무엇을 하는지(이름은 일시정지 칸 이름에만) */
+export const GUN_EVO_TEXT = { rifle: '4번째 일제 사격마다 피해 ×2', shotgun: '맨 앞 적을 밀어내요', marksman: '체력 20% 아래 좀비는 한 발에 쓰러져요' };
 export const GUN_EVO2 = { rifle: '관통 점사', shotgun: '파편', marksman: '터지는 한 발' };
 const GUN_EVO2_TEXT = { rifle: '점사가 남는 피해를 뒤로 이어 간다(관통)', shotgun: '부순 벽의 파편이 벽 뒤 좀비에게', marksman: '쓰러뜨린 적이 터진다' };
 /* 총의 바탕 수치(Lv1) — 봇으로 맞춘다(21.12). 산탄: 피해·퍼짐·사거리·감쇠(near m부터 range에서 fall까지)·벽 / 저격: 초당 발·조준 폭·피해·보스 */
@@ -584,11 +607,11 @@ export function gunVal(id, lv) {
 }
 export function gunText(id, lv) {
   const v = gunVal(id, lv), L = Math.max(1, lv | 0);
-  const e = (v.evo2 ? `2차 진화 ‘${GUN_EVO2[id]}’ · ` : v.evo ? `진화 ‘${GUN_EVO[id]}’ · ` : '') + (v.a > 1 ? `${L > 10 ? '각성·숙련' : '각성'} +${apc(v.a - 1)}% · ` : '');
+  const e = v.a > 1 ? `레벨 보너스 +${apc(v.a - 1)}% · ` : '';   // 36절: 진화 이름을 빼고 효과만
   const tail = v.evo2 ? ` · ${GUN_EVO2_TEXT[id]}` : '';
   if (id === 'shotgun') return e + `펠릿 ×${v.pel} · 피해 ×${v.dmg}(${v.near}m 넘으면 줄어요) · 벽·장갑문 ×${v.wall}${v.slug ? ' · 맨 앞 적을 밀어내요' : ''}` + tail;
   if (id === 'marksman') return e + `초당 ${v.hz}발 · 조준 폭 ±${v.aim}m · 보스 ×${v.boss}${v.head ? ` · 체력 ${apc(v.head)}%${v.head >= 0.5 ? '(최대)' : ''} 아래 좀비는 바로 쓰러져요` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
-  return e + `초당 ${v.hz}번${v.hz >= 18 ? '(최대)' : ''} · 퍼짐 ±${v.spread}m · 사거리 ${v.range}m${v.burst ? ` · ${v.burst.every}번째마다 ×${v.burst.k}` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
+  return e + `초당 ${v.hz}번${v.hz >= 18 ? '(최대)' : ''} · 퍼짐 ±${v.spread}m · 사거리 ${v.range}m${v.burst ? ` · ${v.burst.every}번째 사격마다 피해 ×${v.burst.k}` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
 }
 /* 총 바꾸기(21.8): from구간부터 무기 상자의 p 몫에 다른 총, 대왕 뒤 카드에 king 확률로 '총 바꾸기' 한 장. 처음 잡는 총은 지금 총 Lv의 keep 몫(내림, 최소 1) */
 export const GUN_SWAP = { from: 7, p: 0.25, king: 0.2, keep: 0.5 };
@@ -607,11 +630,11 @@ const ka = (f, k = 1, k0) => (k0 ? `${f(k0)} → ${f(k)}` : f(k));
 export const ENH = {
   pierce: {
     rare: { name: '터지는 총알', v: 0.3, text: (k, k0) => `벽·장갑문에 박힌 총알이 터져 벽 피해 ${ka((x) => `+${apc(ENH.pierce.rare.v * x)}%`, k, k0)}` },
-    legend: { name: '벽 뚫기', text: () => `2차 진화 ‘벽 너머 관통’을 바로 · 벽·장갑문 피해 ${legX()} · 뚫린 좀비도 제 피해 100%` },
+    legend: { name: '도탄', n: 3, reach: 12, side: 3, text: () => `벽·장갑문에 맞은 총알이 튕겨 나와 그 앞 좀비 ${ENH.pierce.legend.n}마리를 제 피해로 맞혀요` },
   },
   burst: {
     rare: { name: '불씨 폭발', t: 1.2, text: (k = 1, k0) => `폭발한 자리에 ${ENH.burst.rare.t}초 동안 불이 남아요${k0 || k > 1 ? ` · 불 세기 ${ka((x) => `×${r2(x)}`, k, k0)}` : ''}` },
-    legend: { name: '대폭발', text: () => `2차 진화 ‘벽·보스 유폭’을 바로(레벨과 상관없이 처치된 좀비가 터져요) · 둘레 피해·연쇄 폭발 ${legX()}` },
+    legend: { name: '블랙홀', pull: 1.4, mul: 1.6, text: () => `폭발이 두 배 넓이의 좀비를 가운데로 끌어모으고, 둘레 피해 ×${ENH.burst.legend.mul}` },
   },
   rapid: {
     rare: { name: '신바람', v: 1.25, T: 1.5, text: (k, k0) => `좀비를 잡으면 ${ENH.rapid.rare.T}초 동안 쏘는 속도 ${ka((x) => `+${apc((ENH.rapid.rare.v - 1) * x)}%`, k, k0)}` },
@@ -619,47 +642,47 @@ export const ENH = {
   },
   frost: {
     rare: { name: '얼음 폭탄', v: 0.5, text: (k, k0) => `느려진 좀비가 닿으면 터져 둘레에 제 체력의 ${ka((x) => `${apc(ENH.frost.rare.v * x)}%`, k, k0)}` },
-    legend: { name: '절대 영도', after: 1, T: 1.5, text: () => `2차 진화를 앞당겨 느려진 채 ${ENH.frost.legend.after}초면 ${ENH.frost.legend.T}초 얼어붙어요(보스 제외) · 느려지는 시간 ${legX()} · 앞의 느려진 좀비에 막혀 멈춰요` },
+    legend: { name: '얼음 갑옷', text: () => '느려진 좀비는 닿으면 얼어 부서져요 — 병사를 안 잃어요' },
   },
   sniper: {
     rare: { name: '사기 충전', v: 0.05, text: (k, k0) => `저격으로 잡으면 영웅 게이지 ${ka((x) => `+${apc(ENH.sniper.rare.v * x)}%`, k, k0)}` },
-    legend: { name: '꿰뚫는 저격', n: 3, text: () => `2차 진화 ‘터지는 저격’을 바로 · 저격 피해 ${legX()} · 일직선 뒤 ${ENH.sniper.legend.n}마리까지 뚫어요` },
+    legend: { name: '약점 표시', v: 0.5, T: 4, text: () => `저격당한 적은 ${ENH.sniper.legend.T}초 동안 모든 피해를 +${apc(ENH.sniper.legend.v)}% 받아요(보스도)` },
   },
   rocket: {
     rare: { name: '이어 터짐', v: 0.5, text: (k, k0) => `로켓이 한 번 더 터져요(피해 ${ka((x) => `${apc(ENH.rocket.rare.v * x)}%`, k, k0)})` },
-    legend: { name: '융단 폭격', v: 1.5, text: () => `2차 진화 ‘불씨 로켓’을 바로 · 로켓 피해 ${legX()} · 폭발 반경 ×${ENH.rocket.legend.v}` },
+    legend: { name: '집속탄', n: 5, v: 0.45, text: () => `로켓이 터지면 작은 폭탄 ${ENH.rocket.legend.n}개가 흩어져 터져요(하나에 ${apc(ENH.rocket.legend.v)}%)` },
   },
   flame: {
     rare: { name: '뜨거운 기운', v: 1.2, text: (k, k0) => `불 지대 위에 서 있으면 쏘는 속도 ${ka((x) => `+${apc((ENH.flame.rare.v - 1) * x)}%`, k, k0)}` },
-    legend: { name: '불의 행진', text: () => `2차 진화 ‘따라오는 불’을 바로(불 지대가 분대를 따라와요) · 불 피해 ${legX()}` },
+    legend: { name: '불꽃 방패', v: 0.75, text: () => `불 지대 위에 서 있으면 좀비에게 닿아 잃는 병사 −${apc(ENH.flame.legend.v)}%` },
   },
   shock: {   // 24절 새 탄
     rare: { name: '정전기', n: 1, text: (k, k0) => `사슬이 튀는 좀비 수 ${ka((x) => `+${Math.round(ENH.shock.rare.n * x)}`, k, k0)}` },
-    legend: { name: '천둥 신', text: () => `2차 진화 ‘뇌운’을 바로 · 튀는 피해 ${legX()}` },
+    legend: { name: '감전', T: 1, text: () => `사슬에 맞은 좀비가 ${ENH.shock.legend.T}초 동안 멈춰요(보스 제외)` },
   },
   acid: {
     rare: { name: '진한 산', T: 6, text: (k, k0) => `부식이 ${FX_NEW.acid.T}초가 아니라 ${ka((x) => `${r2(ENH.acid.rare.T * x)}초`, k, k0)}가요` },
-    legend: { name: '용해', text: () => `2차 진화 ‘산성 웅덩이’를 바로 · 부식 피해 ${legX()}` },
+    legend: { name: '전염', r: 3, text: () => `부식된 좀비가 죽으면 둘레 ${ENH.acid.legend.r}m 좀비에게 부식이 그대로 옮아요` },
   },
   cure: {
     rare: { name: '백신', n: 2, text: (k, k0) => `거구·정예를 잡으면 치료 몫 ${ka((x) => `×${r2(ENH.cure.rare.n * x)}`, k, k0)} 더` },
-    legend: { name: '기적의 백신', text: () => `2차 진화 ‘구조대’를 바로 · 치료 확률 ${legX()}` },
+    legend: { name: '영웅의 귀환', v: 0.05, text: () => `치료로 병사가 돌아올 때마다 영웅 게이지 +${apc(ENH.cure.legend.v)}%` },
   },
   rifle: {   // 총 강화(21.9) — 총 Lv 카드가 희귀·전설이면
     rare: { name: '확장 탄창', v: 1.15, text: (k, k0) => `쏘는 속도 ${ka((x) => `×${r2(1 + (ENH.rifle.rare.v - 1) * x)}`, k, k0)}` },
-    legend: { name: '전술 소총', text: () => `2차 진화 ‘관통 점사’를 바로(점사도 바로) · 점사 배수 ${legX()}` },
+    legend: { name: '집중 사격', step: 0.12, max: 0.8, text: () => `같은 좀비를 맞힐 때마다 그 좀비가 받는 총알 피해 +${apc(ENH.rifle.legend.step)}%(최대 +${apc(ENH.rifle.legend.max)}%)` },
   },
   shotgun: {
     rare: { name: '넓은 총구', v: 0.6, pel: 1.2, text: (k, k0) => `퍼짐 ${ka((x) => `+${r2(ENH.shotgun.rare.v * x)}m`, k, k0)} · 펠릿 ${ka((x) => `×${r2(1 + (ENH.shotgun.rare.pel - 1) * x)}`, k, k0)}` },
-    legend: { name: '파쇄 산탄', text: () => `2차 진화 ‘파편’을 바로(슬러그도 바로) · 벽·장갑문 피해 ${legX()}` },
+    legend: { name: '산탄 폭발', near: 8, r: 1.6, v: 0.6, text: () => `${ENH.shotgun.legend.near}m 안 좀비를 쓰러뜨리면 그 자리가 터져 둘레에 그 좀비 체력의 ${apc(ENH.shotgun.legend.v)}%` },
   },
   marksman: {
     rare: { name: '안정 조준', v: 1.5, text: (k, k0) => `조준 폭 ${ka((x) => `+${r2(ENH.marksman.rare.v * x)}m`, k, k0)}` },
-    legend: { name: '대물 저격', head: 0.2, text: () => `2차 진화 ‘터지는 한 발’을 바로(헤드샷 ${apc(ENH.marksman.legend.head)}%도 바로) · 보스 ${legX()}` },
+    legend: { name: '연발', v: 0.3, text: () => '좀비를 쓰러뜨릴 때마다 다음 발이 바로 나가요' },
   },
   medic: {
     rare: { name: '숨 돌리기', v: 0.3, text: (k, k0) => `회복할 때마다 특수병의 다음 차례가 ${ka((x) => `${r2(ENH.medic.rare.v * x)}초`, k, k0)} 앞당겨져요` },
-    legend: { name: '기적의 손', v: 0.3, text: () => `2차 진화 ‘마지막 응급’을 바로 · 잃은 병사가 ${apc(ENH.medic.legend.v)}%p 더 돌아오고 회복 ${legX()} 빠르게` },
+    legend: { name: '응급 수혈', v: 0.5, text: () => `구간마다 한 번, 병력이 구간 시작의 절반 아래가 되면 잃은 병사의 ${apc(ENH.medic.legend.v)}%가 바로 돌아와요` },
   },
 };
 /* 특수병 Lv5 고유 능력(개편 판 — ENDGAME.md 18.3: 전문화 카드(둘 중 고르기)는 없어졌다). Lv1 합류, Lv2~4는 간격·피해, Lv5에 아래 능력 — Lv5가 상한(각성은 4단계) [수치는 초안]

@@ -37,7 +37,8 @@ export function defaults() {
     endless: { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0, rel: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수, 알린 해금 단계, 대왕 누적 처치, 출발 카드가 알린 유물 수
     pets: { own: {}, sel: '', team: [], slots: 1, eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
     ammo: { sel: '', selE: '', seen: 0 },   // 탄종(ARSENAL.md 3절): 캠페인에 고른 탄종('' = 보통탄), 무한모드 준비 화면에서 고른 탄종(selE — 무한모드 전용 탄 포함), 열림 안내를 본 별 문턱. 열림은 저장하지 않고 모은 별로 센다
-    gun: { sel: 'rifle' },           // 총 종류(ENDGAME.md 21절 — 무한모드 개편 판): 출격 때 들고 갈 총. 열림은 탄종처럼 모은 별로 센다
+    gun: { sel: 'rifle' },
+    supply: { men: false, legend: false, revive: false, relic: '' },   // 무한모드 출격 보급품(ENDGAME.md 27절): 다음 출격에 살 것 — 출격하는 순간 코인을 내고 비운다           // 총 종류(ENDGAME.md 21절 — 무한모드 개편 판): 출격 때 들고 갈 총. 열림은 탄종처럼 모은 별로 센다
   };
 }
 /* 회차 하나는 L1~CYCLE_LEVELS. 그 회차의 L60을 깨면(maxL > 60) 끝난 회차다 */
@@ -181,6 +182,8 @@ export function normalize(o) {
   // 캠페인(sel)과 무한모드(selE)는 따로 고른다 — 옛 저장(한 칸)은 무한모드에 그 탄을, 캠페인에는 무한모드 전용 탄이 아니면 그대로
   const selE = AMMO[am.selE] ? am.selE : AMMO[am.sel] ? am.sel : '';
   out.ammo = { sel: AMMO[am.sel] && !AMMO[am.sel].b2 ? am.sel : '', selE, seen: Math.max(0, Math.floor(num(am.seen))) };
+  const su = o.supply && typeof o.supply === 'object' ? o.supply : {};
+  out.supply = { men: su.men === true, legend: su.legend === true, revive: su.revive === true, relic: typeof su.relic === 'string' && su.relic.length < 24 ? su.relic : '' };
   const gn = o.gun && typeof o.gun === 'object' ? o.gun : {};
   out.gun = { sel: GUNS[gn.sel] ? gn.sel : 'rifle' };
   return out;

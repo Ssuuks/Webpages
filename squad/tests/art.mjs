@@ -1096,7 +1096,7 @@ test('유물 그림: relic_<id> 아이콘(9×9, 실루엣이 서로·다른 아�
   for (const re of [/case 'relic': \{/, /case 'relicUse': \{[\s\S]*?ring\(cx, cz, 0\.2, 3\.6, 0\.55, '#4FD1C5'[\s\S]*?float\(cx, 2\.7, cz, '', '#FFFFFF', \{ icon: 'relic_' \+ e\.id,/, /const crisis = q\.n >= 8 && /]) assert.match(src, re);
   assert.doesNotMatch(src, /heartAt|HEART_GLOW/, '불굴의 심장이 빠져 되살림 번짐은 없다');
   // 화면(main.js): 유물 카드(이름·좋은 점·대신 줄, 보라·금빛), 머리글, HUD 유물 칩(쓴 것 흐리게), 알 확률은 core.eggP, 결과 줄, 무기 카드의 상한
-  assert.match(main, /if \(c\.k === 'relic'\) \{[\s\S]*?det: relicGood\(c\.r\), cost: relicBad\(c\.r\), col: RELIC_COL, icon: 'relic_' \+ c\.r, relic: true/);
+  assert.match(main, /if \(c\.k === 'relic'\) \{[\s\S]*?det: relicGood\(c\.r\), cost: relicBad\(c\.r\), delta: relicNow\(c\.r\), col: RELIC_COL, icon: 'relic_' \+ c\.r, relic: true/);
   assert.match(main, /cs\.textContent = `대신 \$\{T\.cost\}`;/);
   assert.match(main, /\$\('scrPick'\)\.classList\.toggle\('relic', relic\);/);
   assert.match(main, /Math\.random\(\) < eggP\(s\)/, '수집가의 가방: 알 확률은 core.eggP');

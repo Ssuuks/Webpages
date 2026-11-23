@@ -1517,10 +1517,14 @@ export function createRenderer(cvs) {
         case 'boom': {
           // 폭발 고리는 실제 반경(e.r)까지만 — 로켓병 레벨(반경 2.2 · 2.6 · 3.0m)이 높을수록 파편이 많고, Lv3은 충격파 고리 하나 더 + 바닥 그을음
           const br = e.r || 2.2, blv = br >= 2.9 ? 3 : br >= 2.5 ? 2 : 1;
-          fx('boom', e.x, 0.8, e.z, blv >= 3 ? 0.4 : 0.32);
-          fx('glow', e.x, 0.8, e.z, 0.28, { col: '#FFB347', r: br * 1.3 });
-          ring(e.x, e.z, 0.3, br, 0.35, '#FFF4B0', { thick: 2 });
-          burst(e.x, 0.8, e.z, blv === 1 ? 16 : blv === 2 ? 24 : 30, FX_COL.boom, blv >= 3 ? 6 : 5, 4, 0.6);
+          // 잦은 로켓(높은 레벨·쌍발)은 화면을 덮지 않게: 0.35초 안에 또 터지거나 쌍발의 둘째면 빛·흔들림 없이 작은 펑과 고리만(33절)
+          const busy = time - boomT < 0.35 || e.small;
+          if (!busy) boomT = time;
+          fx('boom', e.x, 0.8, e.z, busy ? 0.24 : blv >= 3 ? 0.4 : 0.32);
+          if (!busy) fx('glow', e.x, 0.8, e.z, 0.24, { col: '#FFB347', r: Math.min(3.2, br * 1.1) });
+          ring(e.x, e.z, 0.3, br, 0.35, '#FFF4B0', { thick: busy ? 1 : 2 });
+          burst(e.x, 0.8, e.z, busy ? 6 : blv === 1 ? 16 : blv === 2 ? 22 : 26, FX_COL.boom, blv >= 3 ? 6 : 5, 4, 0.6);
+          if (busy) break;
           if (blv >= 3) {
             ring(e.x, e.z, br * 0.45, br, 0.5, '#FFFFFF');
             let c = scorches[0];
@@ -1607,10 +1611,13 @@ export function createRenderer(cvs) {
           break;
         case 'field': ring(q.x, q.z, 0.4, R + 1.2, 0.5, '#FF8FB8', { follow: 'sq', thick: 2 }); break;
         case 'splash':
-          // 작렬탄: 실제 둘레(e.r)만큼의 작은 고리(초당 12번까지만 그린다)
-          if (time - splashT > 0.08) { splashT = time; ring(e.x, e.z, 0.15, e.r, 0.18, '#FFB347'); burst(e.x, 0.6, e.z, 3, FX_COL.boom, 2.5, 2.5, 0.3); }
+          // 작렬탄: 실제 둘레(e.r)만큼의 작은 고리(초당 12번까지만 그린다). 블랙홀(34절 전설)이면 바깥에서 안으로 말려 드는 보라 고리
+          if (time - splashT > 0.08) { splashT = time; ring(e.x, e.z, 0.15, e.r, 0.18, '#FFB347'); burst(e.x, 0.6, e.z, 3, FX_COL.boom, 2.5, 2.5, 0.3); if (e.pull) ring(e.x, e.z, e.pull, 0.2, 0.3, '#B26BFF', { thick: 2 }); }
           break;
         case 'heroReady': readyT = time; break;
+        // 34절 전설 그림(글자 없이): 도탄 = 벽에서 좀비로 튀는 흰 꼬리, 전염 = 초록 고리 + 방울, 블랙홀 = 안으로 말려 드는 보라 고리
+        case 'ricochet': if (time - pierceT > 0.03) { pierceT = time; tracer(e.x0, 0.9, e.z0, e.x1, 0.75, e.z1, '#F4F7FF', 0.12, 2, '#FFFFFF'); fx('spark', e.x1, 0.75, e.z1, 0.08); } break;
+        case 'acidSpread': ring(e.x, e.z, 0.3, e.r, 0.4, '#9BE36B', { thick: 2 }); burst(e.x, 0.6, e.z, 8, ['#9BE36B', '#3FA65A', '#E8FFB0'], 3, 2, 0.45); break;
         // 얼음 폭탄(빙결 — 희귀 강화·넘침): 느려진 좀비가 터진다 — 얼음 조각과 하늘빛 고리(강화가 겹칠수록 크게)
         case 'shatter': {
           const k = 1 + 0.5 * Math.max(0, (e.k | 0) - 1);
@@ -1623,6 +1630,14 @@ export function createRenderer(cvs) {
           if (lowFx()) break;
           const hz = heroZ(q, R), T = 0.45, n = 3 + 2 * Math.max(0, (e.k | 0) - 1);
           for (let i = 0; i < n; i++) part(e.x + (Math.random() - 0.5) * 0.4, 1.2, e.z, (q.x - e.x) / T, 9 * T * 0.5 + 0.8, (hz - e.z) / T + (q.vz || 0), T, i & 1 ? '#7FF0E2' : GOLD_BULLET, 1, 9, 'star');
+          break;
+        }
+        // 불굴 보급(27절)·마지막 응급: 전멸 직전에 되살아났다 — 금빛 기둥 고리와 별
+        case 'revive': {
+          ring(q.x, q.z, 0.3, R + 3, 0.6, '#FFD84A', { follow: 'sq', thick: 2 });
+          ring(q.x, q.z, 0.2, R + 1.5, 0.45, '#FFFFFF', { follow: 'sq' });
+          for (let i = 0; i < 14; i++) part(q.x + (Math.random() - 0.5) * 2 * R, 0.3, q.z + (Math.random() - 0.5) * R, (Math.random() - 0.5) * 1.5, 3 + Math.random() * 2, q.vz || 0, 0.9, i & 1 ? '#FFD84A' : '#FFFFFF', 1, 2, 'star');
+          screenFlash(0.25, '255,232,150');
           break;
         }
         // 숨 돌리기(의무병 희귀 강화): 특수병이 잠깐 하얗게 반짝
@@ -2097,7 +2112,7 @@ export function createRenderer(cvs) {
      전격 = 보라 지직, 부식 = 흘러내리는 초록, 빙결 = 서리). 체력이 25·50·75% 줄 때마다 금이 늘고 부스러기가 튄다(단계가 오른 순간). 같은 강화를 겹칠수록 더 크고 잦다 */
   const marks = new Map();   // prop id → { list: [{ u, v, k, t, seed, x, y, z, pop }], stage }
   const MARK_MAX = 12;
-  let breathT = -9, knockT = -9, pierceT = -9;
+  let breathT = -9, knockT = -9, pierceT = -9, boomT = -9;
   const MARK_FX = ['pierce', 'burst', 'shock', 'acid', 'frost'];
   /* 지금 총알에 실린 탄 효과(무한모드 2단계 = 가진 효과 전부, 캠페인 = 출격 탄종) 중 자국으로 보일 것 */
   function bulletFx(s) {
@@ -2284,7 +2299,7 @@ export function createRenderer(cvs) {
     const mx = (face.ax + face.bx) / 2, my = face.ay - h / 2;
     const fxOk = !!(p.reward && p.reward.type === 'fx' && fxCan(s, p.reward.a));
     // 파워업 상자(무기 · 탄 효과)는 위로 빛기둥이 선다 — 멀리서도 '저 상자가 강화'가 보인다. 가까우면 별이 피어오른다
-    const rt = p.reward && p.reward.type, pw = fxOk ? AMMO_COL[p.reward.a] : rt === 'gunx' && GUN_COL[p.reward.g] ? GUN_COL[p.reward.g] : (!rt || rt === 'gun') && (sq.tier | 0) < tierMax(s) ? WTIER[Math.min(WTIER.length - 1, (sq.tier | 0) + 1)] : null;   // 다른 총 상자(21.8): 그 총 색 빛기둥
+    const rt = p.reward && p.reward.type, pw = fxOk ? AMMO_COL[p.reward.a] : rt === 'gunx' && GUN_COL[p.reward.g] ? GUN_COL[p.reward.g] : (!rt || rt === 'gun') && (sq.tier | 0) < tierMax(s) ? WTIER[Math.min(WTIER.length - 1, (sq.tier | 0) + 1)] : p.treasure ? '#FFD84A' : null;   // 미로 끝 보물(28절): 금빛 빛기둥   // 다른 총 상자(21.8): 그 총 색 빛기둥
     if (pw) {
       const bw = Math.max(2, (face.bx - face.ax) * 0.55), bh = Math.max(6, (face.ay - top.ty) * 3.2), flick = 0.75 + 0.25 * Math.sin(time * 5 + p.id);
       beam(mx, top.ty - bh, top.ty, bw, pw, flick);
@@ -2734,6 +2749,19 @@ export function createRenderer(cvs) {
       const fx0 = Math.round(pxs), fy0 = Math.round(pys);
       ctx.fillStyle = '#8FD3FF'; ellRing(pxs, pys, Math.max(3, f.r * 1.3 * ps), Math.max(1.5, f.r * 0.5 * ps), 1);
       ctx.fillStyle = '#FFFFFF'; ctx.fillRect(fx0 - 2 + ((f60 >> 2) & 1) * 3, fy0 - rr.ay - 1, 1, 1); ctx.fillRect(fx0 + 1 - ((f60 >> 2) & 1) * 2, fy0 - rr.ay + 2, 1, 1);
+    }
+    if (f.stunT > s.t) {
+      // 34절 전격 전설 '감전': 멈춘 동안 머리 위 노랑·보라 지직(프레임마다 모양이 바뀐다)
+      const hx = Math.round(pxs), hy = Math.round(pys) - rr.ay - 3;
+      ctx.fillStyle = (f60 & 2) ? '#FFF09A' : '#B9A6FF';
+      pline(hx - 3, hy, hx - 1, hy - 2 - (f60 & 1)); pline(hx - 1, hy - 2, hx + 1, hy); pline(hx + 1, hy, hx + 3, hy - 2 + (f60 & 1));
+    }
+    if (f.markT > s.t) {
+      // 34절 저격수 전설 '약점 표시': 몸에 붉은 조준선(네 귀퉁이)
+      const cx = Math.round(pxs), cy = Math.round(pys - rr.ay / 2), w = Math.max(4, Math.round(rr.w * 0.45)), h = Math.max(4, Math.round(rr.ay * 0.55));
+      ctx.fillStyle = (f60 & 4) ? '#FF5D5D' : '#FFFFFF';
+      ctx.fillRect(cx - w, cy - h, 3, 1); ctx.fillRect(cx - w, cy - h, 1, 3); ctx.fillRect(cx + w - 2, cy - h, 3, 1); ctx.fillRect(cx + w, cy - h, 1, 3);
+      ctx.fillRect(cx - w, cy + h, 3, 1); ctx.fillRect(cx - w, cy + h - 2, 1, 3); ctx.fillRect(cx + w - 2, cy + h, 3, 1); ctx.fillRect(cx + w, cy + h - 2, 1, 3);
     }
     if (f.acid > 0 && f.acT > s.t && st < 2) {
       // 부식이 쌓인 동안: 몸에서 초록 방울이 떨어지고(겹이 많을수록 잦다) 발밑에 초록 얼룩

@@ -102,6 +102,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .btn.primary:active { box-shadow: 0 1px 0 var(--amber-dark), 0 3px 0 var(--edge); }
 .btn.glow { box-shadow: 0 0 0 3px var(--amber) inset, 0 4px 0 var(--edge); }
 .btn.small { min-height: 44px; font-size: 16px; padding: 0 12px; }
+/* 함께 출격 시트(출격 카드의 칩 → 영웅·펫·탄종·총을 한 장에서) */
+.ld-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.ld-opt { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 4px 10px; border-radius: 12px; background: var(--panel2); border: 3px solid var(--edge); color: var(--text); font: 600 14px var(--body); cursor: pointer; }
+.ld-opt.on { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber) inset; }
+.ld-opt:disabled { opacity: 0.45; cursor: default; }
+.ld-opt canvas, .ld-opt .fallback { width: 28px; height: 28px; }
+.ld-opt .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--edge); }
+.ld-info { font-size: 13px; margin: 6px 0 0; min-height: 1.2em; }
+.ld-total { margin: 10px 0 0; font-size: 14px; font-weight: 700; color: var(--amber); }
+.ld-opt small { color: var(--muted); font-size: 12px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; gap: 10px; }
 .row > * { flex: 1; min-width: 0; }
@@ -132,6 +142,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .menu-grid .btn small { font-family: var(--body); font-size: 11px; color: var(--muted); font-weight: 600; }
 .stars-total { text-align: center; font-size: 13px; color: var(--muted); }
 .stars-total b { color: #FFD84A; }
+.notes-link { display: block; margin: 2px auto 0; padding: 6px 12px; background: none; border: 0; color: var(--muted); font: 600 12px var(--body); text-decoration: underline; cursor: pointer; }
+.notes-meta { margin: -4px 0 10px; font-size: 13px; color: var(--muted); }
+.notes-list { margin: 0 0 6px; padding-left: 18px; font-size: 14px; line-height: 1.5; }
+.notes-list li { margin: 4px 0; }
+.log-bars { display: grid; gap: 4px; }
+.log-row { display: grid; grid-template-columns: 9em 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
+.log-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-row i { display: block; height: 10px; border-radius: 5px; background: var(--amber); min-width: 2px; }
+.log-row b { font-size: 12px; color: var(--muted); white-space: nowrap; }
 #storeChip { align-self: center; font-size: 12px; font-weight: 700; color: #3A2306; background: #FFD84A; border: 2px solid var(--edge); border-radius: 999px; padding: 4px 10px; }
 #resumeCard { width: min(380px, 100%); background: var(--panel); border: 3px solid var(--edge); border-radius: 16px; padding: 12px; box-shadow: 0 4px 0 var(--edge); display: grid; gap: 8px; }
 #resumeCard b { font-family: var(--display); font-weight: 400; font-size: 20px; color: var(--amber); }
@@ -241,6 +260,13 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .gname.g1 { color: #D9DCE3; } .gname.g2 { color: var(--g-rare); } .gname.g3 { color: var(--g-legend); font-weight: 700; text-shadow: 0 0 6px rgba(255, 159, 67, 0.6); }
 .inv-cell span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inv-cell i { position: absolute; top: 2px; right: 3px; font-style: normal; font-size: 10px; font-weight: 700; color: #FFFFFF; background: rgba(14, 10, 26, 0.85); border-radius: 6px; padding: 0 4px; }
+#infoPop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(10, 6, 20, 0.55); }
+#infoPop[hidden] { display: none; }
+.info-card { width: min(420px, 100%); max-height: 80vh; overflow: auto; background: var(--panel); border: 3px solid var(--edge); border-radius: 16px; box-shadow: inset 5px 0 0 var(--amber), 0 6px 0 var(--edge); padding: 14px 16px; display: grid; gap: 8px; }
+.info-card b { font-family: var(--display); font-weight: 400; font-size: 20px; color: var(--amber); }
+.info-card p { margin: 0; font-size: 15px; line-height: 1.5; }
+.info-card .btn { justify-self: end; }
+.inv-hint { font-size: 12px; margin: 6px 0 0; text-align: center; }
 .sp-list .inv-detail { display: block; min-height: 3.2em; background: rgba(14, 10, 26, 0.55); border-radius: 10px; padding: 8px 10px; }
 /* 일시정지의 '지금 내 부대' 목록: 무한모드 2·3단계면 탄 효과·시너지·유물까지 열 줄을 넘어 계속하기·나가기 단추를 화면 밖으로 밀어냈다 —
    길어지면 목록만 스크롤한다(캠페인의 특수병 셋은 이 높이 안이라 그대로) */
@@ -250,6 +276,8 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .card-hero { pointer-events: auto; margin-top: 10px; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--panel); border: 3px solid var(--edge); font-family: var(--display); font-size: 15px; box-shadow: 0 3px 0 var(--edge); }
 .card-hero canvas, .card-hero .fallback { width: 32px; height: 32px; border-radius: 50%; background: var(--panel2); }
 .card-go { pointer-events: auto; margin-top: 10px; }
+/* 숨은 동안에도 자리는 차지한다 — 칩을 누르는 순간 버튼이 나타나 칩이 밀리면 손을 뗄 때 칩 밖이 되어 눌림이 사라졌다 */
+.card-go.off { visibility: hidden; pointer-events: none; }
 @keyframes cardIn { from { transform: scale(1.3); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* HUD */
@@ -295,6 +323,7 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .sp-chip.lv3 { border-color: #FFD84A; box-shadow: 0 0 0 2px rgba(255, 216, 74, 0.35); }
 /* 탄 효과 칩(무한모드 2단계): 특수병 칩과 같은 모양, 테두리만 탄종 색 — 총알 아이콘은 네모(둥글게 자르지 않는다) */
 .fx-chip { border-color: var(--acc, var(--edge)); }
+.mut-chip { border-color: #8FD16A; color: #DFF7C9; }   /* 적 변이(35절) */
 .fx-chip canvas { border-radius: 0; }
 /* 유물 칩(무한모드 3·5단계): 아이콘만 얻은 순서대로, 보라 테두리. 쓴 것은 흐리게 */
 .relic-chip { gap: 3px; padding: 3px 5px; border-color: #9B6BFF; background: rgba(38, 20, 72, 0.78); }
@@ -552,6 +581,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
 <div id="guide" hidden role="dialog" aria-modal="true" aria-labelledby="guideText"><div class="guide-card"><small id="guideHead">안내</small><p id="guideText"></p><button id="guideOk" class="btn primary">확인 · 눌러서 계속</button></div></div>
 <div id="rotate" role="alert"><div><span aria-hidden="true">📱</span>세로로 돌려 주세요</div></div>
 <div id="toast" hidden role="status"></div>
+<div id="infoPop" hidden role="dialog" aria-modal="true" aria-labelledby="infoHead"><div class="info-card"><b id="infoHead"></b><div id="infoBody"></div><button id="infoOk" class="btn small">닫기</button></div></div>
 
 <section id="scrTitle" class="screen" hidden>
   <div>
@@ -581,6 +611,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
       <button id="btnSet" class="btn">설정</button>
     </div>
     <p class="stars-total">모은 별 <b>★ <span id="tStars">0</span></b></p>
+    <button id="btnNotes" class="notes-link">패치 노트 · v<span id="tVer"></span></button>
   </div>
 </section>
 
@@ -606,7 +637,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <h2>강화 <span class="coinchip" id="uCoins">0</span></h2>
     <div id="upgList" class="stack"></div>
     <h3>탄종 <small id="ammoStars" class="muted"></small></h3>
-    <p class="muted" style="font-size:13px;margin:0 0 8px">캠페인에 들고 갈 탄종이에요. 별을 모으면 열려요. 별은 줄지 않아요. 좋은 점과 대신 잃는 점이 있어요. 무한모드 탄종·총은 무한모드 준비 화면에서 골라요.</p>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">캠페인에 들고 갈 탄종이에요. 별을 모으면 열려요. 별은 줄지 않아요. 좋은 점과 대신 잃는 점이 있어요. 출격 카드의 ‘함께 출격’에서도 고를 수 있어요(무한모드 탄종·총은 무한모드 출격 카드에서).</p>
     <div id="ammoList" class="stack"></div>
     <button id="upgBack" class="btn" data-back="title" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
   </div>
@@ -617,6 +648,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <h2>설정</h2>
     <div id="setList"></div>
     <h3>데이터</h3>
+    <button id="setLog" class="btn small" style="width:100%;margin-bottom:8px">플레이 기록 — 어떤 무기가 셌나 · 어디서 졌나</button>
     <p class="muted" id="dataInfo"></p>
     <div class="data-box">
       <div class="row"><button id="bkMake" class="btn small">백업 코드 만들기</button><button id="bkEnter" class="btn small">백업 코드 넣기</button></div>
@@ -667,7 +699,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <div class="goal" id="cardGoal"></div>
     <div class="unit-tip" id="cardUnit" hidden></div>
     <button class="card-hero" id="cardHero" hidden></button>
-    <button class="btn primary card-go" id="cardGo" hidden>출격!</button>
+    <button class="btn primary card-go off" id="cardGo">출격!</button>
   </div>
 </section>
 
@@ -724,17 +756,44 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
   </div>
 </section>
 
-<section id="scrEndPrep" class="screen dim" hidden>
+<section id="scrLoad" class="screen dim" hidden>
   <div class="sheet">
-    <h2>무한모드 준비 <button class="back" data-back="title">닫기</button></h2>
-    <p class="muted" id="endPrepWho" style="font-size:13px;margin:0 0 8px"></p>
-    <h3>탄종 <small id="endAmmoStars" class="muted"></small></h3>
-    <p class="muted" style="font-size:13px;margin:0 0 8px">무한모드에 들고 갈 탄종이에요. 전격·부식·치료탄은 무한모드에서만 써요.</p>
-    <div id="endAmmoList" class="stack"></div>
-    <h3>총 <small id="gunStars" class="muted"></small></h3>
-    <p class="muted" style="font-size:13px;margin:0 0 8px">판 안에서 다른 총이 든 상자를 열면 다음 보스 뒤에 바꿀지 골라요.</p>
-    <div id="gunList" class="stack"></div>
-    <button id="endPrepGo" class="btn primary" style="width:100%;margin-top:14px" data-focus>출격</button>
+    <h2>함께 출격</h2>
+    <div id="ldHeroWrap"><h3>영웅</h3><div id="ldHero" class="ld-grid"></div></div>
+    <div id="ldPetWrap"><h3>펫 <small id="ldPetN" class="muted"></small></h3><div id="ldPet" class="ld-grid"></div></div>
+    <div id="ldAmmoWrap"><h3>탄종 <small id="ldStars" class="muted"></small></h3><div id="ldAmmo" class="ld-grid"></div><p id="ldAmmoInfo" class="muted ld-info"></p></div>
+    <div id="ldGunWrap"><h3>총</h3><div id="ldGun" class="ld-grid"></div><p id="ldGunInfo" class="muted ld-info"></p></div>
+    <div id="ldSupWrap"><h3>보급품 <small class="muted">이번 판만 · 출격할 때 코인을 내요</small></h3><div id="ldSup" class="ld-grid"></div>
+      <div id="ldRelicWrap"><h3>시작 유물 <small class="muted" id="ldRelicCost"></small></h3><div id="ldRelic" class="ld-grid"></div><p id="ldRelicInfo" class="muted ld-info"></p></div>
+      <p class="ld-total" id="ldTotal"></p></div>
+    <button id="ldOk" class="btn primary" data-back="card" style="width:100%;margin-top:14px" data-focus>확인</button>
+  </div>
+</section>
+
+<section id="scrNotes" class="screen dim" hidden>
+  <div class="sheet">
+    <h2>패치 노트</h2>
+    <p class="notes-meta" id="notesMeta"></p>
+    <div id="notesBody"></div>
+    <button class="btn" data-back="title" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
+  </div>
+</section>
+
+<section id="scrLog" class="screen dim" hidden>
+  <div class="sheet">
+    <h2>플레이 기록</h2>
+    <p class="notes-meta" id="logMeta"></p>
+    <div class="row"><button id="logAll" class="btn small"></button><button id="logCopy" class="btn small">JSON 복사</button><button id="logClear" class="btn small">지우기</button></div>
+    <textarea id="logRaw" hidden readonly style="width:100%;height:120px;margin-top:8px"></textarea>
+    <h3>피해 몫 <small class="muted">무한모드 · 판마다 몫의 평균</small></h3><div id="logDmg" class="log-bars"></div>
+    <h3>총별 평균 보스</h3><div id="logGun" class="log-bars"></div>
+    <h3>주력(피해 1위)별 평균 보스</h3><div id="logMain" class="log-bars"></div>
+    <h3>전멸한 까닭</h3><div id="logDeath" class="log-bars"></div>
+    <h3>전멸한 구간</h3><div id="logBand" class="log-bars"></div>
+    <h3>병사를 잃은 까닭 <small class="muted">판마다 몫의 평균</small></h3><div id="logLost" class="log-bars"></div>
+    <h3>최근 판</h3><ul id="logList" class="notes-list"></ul>
+    <p class="muted" style="font-size:12px">기록은 이 기기에만 쌓여요(최근 300판). 판이 끝나거나 무한모드를 새로 시작할 때 한 줄씩.</p>
+    <button class="btn" data-back="set" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
   </div>
 </section>
 

@@ -1624,6 +1624,14 @@ test('오프라인 캐시 목록에 게임이 불러오는 모든 파일이 있�
   for (const f of seenFiles) assert.ok(shell.has(f), `sw.js SHELL에 ${f}가 없다`);
 });
 
+test('패치 노트 버전(assets/patch.js)은 오프라인 캐시 버전(sw.js VERSION)과 같다 — 화면의 버전 글씨로 새 판이 불러와졌는지 본다', async () => {
+  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const { PATCH } = await import('../assets/patch.js');
+  assert.ok(sw.includes(`const VERSION = 'squad-v${PATCH.ver}';`), `sw.js VERSION ≠ squad-v${PATCH.ver}`);
+  assert.ok(PATCH.groups.length && PATCH.groups.every((g) => g.title && g.items.length), '묶음마다 제목과 항목');
+});
+
 test('보정 표는 실제 보정과 같다(규칙을 바꾸면 node squad/tools/caltable.mjs 로 다시 만든다)', async () => {
   assert.equal(CAL.sim, C.SIM, '보정 표의 SIM이 낡았다');
   assert.ok(TABLE_MAX >= 120, `표는 L1~${TABLE_MAX}`);
