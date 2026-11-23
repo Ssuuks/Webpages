@@ -4301,7 +4301,8 @@ test('23.4 — 대왕: 체력 문턱(75·50·25%)마다 특수 패턴 하나를 
     assert.ok(maxOn <= 2, `켜진 특수 패턴 ≤ 2 (${maxOn})`);
     assert.deepEqual(phases.map((p) => p.ph), [1, 2, 3], `${seg}구간 문턱 셋`);
     assert.deepEqual(phases.map((p) => p.pat), [[sp[0], sp[1]], [sp[1], sp[2]], [sp[2], sp[3]]], '둘씩 밀려 간다');
-    for (const p of phases) for (const k of p.fresh) if (k !== 'wide' && firstUse[k] != null && firstUse[k] >= p.t) assert.ok(firstUse[k] - p.t <= R.BUILD.bossPat.calm + R.BUILD.bossPat.first + 0.5, `${k}: 문턱 뒤 ${(firstUse[k] - p.t).toFixed(2)}초에 처음`);
+    // 새 패턴은 숨 고르기 뒤 곧(문턱을 넘을 때 이미 뜬 내려찍기 예고는 끝까지 간다 — 그 몫 1초까지 봐 준다)
+    for (const p of phases) for (const k of p.fresh) if (k !== 'wide' && firstUse[k] != null && firstUse[k] >= p.t) assert.ok(firstUse[k] - p.t <= R.BUILD.bossPat.calm + R.BUILD.bossPat.first + 1.0, `${k}: 문턱 뒤 ${(firstUse[k] - p.t).toFixed(2)}초에 처음`);
   }
 });
 test('23.2 — 강화판: 독침 세례 범위(발 수·폭)·간격, 돌진 범위, 좀비 장벽 범위(두 줄 — 빈틈은 그대로, 서로 다른 칸), 넓은 내려찍기 간격(매번)·범위(안전 칸이 반대쪽으로 한 번 더), 내려찍기 범위(띠가 칸 경계를 넘는다). 다시 쓰기는 원래 cd × cdFloor 아래로 안 내려간다', () => {
