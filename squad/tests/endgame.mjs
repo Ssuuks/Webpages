@@ -4292,7 +4292,7 @@ test('23.4 — 대왕: 체력 문턱(75·50·25%)마다 특수 패턴 하나를 
     assert.deepEqual(b.pat, [sp[0]], '처음엔 첫 특수 패턴 하나');
     // 체력을 문턱마다 깎아 가며 본다
     let maxOn = 0, phases = [], firstUse = {};
-    s.squad.n = 1e7;
+    s.squad.n = Math.max(1e7, 10 * s.bossRef);   // 기준 병력보다 넉넉하게(30절 보스 피해 바닥에 걸리지 않게)
     for (let i = 0; i < 4000 && b.hp > 0; i++) {
       if (i % 300 === 299) b.hp -= b.max * 0.26;
       C.step(s, { dir: 0 });
@@ -4482,7 +4482,7 @@ test('20절 — 보스 패턴의 규칙: 넓은 내려찍기는 가장자리 한
   { const s = arena('volley'); const b = s.boss; b.pcd.volley = 0; b.slamCd = 5; let n = 0;
     for (let i = 0; i < 180; i++) { C.step(s, { dir: 0 }); n += s.ev.filter((e) => e.t === 'spitFire' && e.boss).length; b.slamCd = 5; }
     assert.equal(n, R.BOSS_PAT.volley.n);
-    const hitBy = (boss) => { const s2 = arena('volley'); const q = s2.squad; q.n = 1000; s2.spits = [{ id: 1, x: q.x, z: q.z, sx: 0, sz: q.z + 9, t: C.DT / 2, T: 1, ...(boss ? { boss: 1 } : {}) }]; C.step(s2, { dir: 0 }); return s2.ev.filter((e) => e.t === 'loss').reduce((a, e) => a + e.n, 0); };
+    const hitBy = (boss) => { const s2 = arena('volley'); const q = s2.squad; q.n = Math.max(1000, 10 * s2.bossRef);   // 기준 병력보다 넉넉하게(30절 바닥) s2.spits = [{ id: 1, x: q.x, z: q.z, sx: 0, sz: q.z + 9, t: C.DT / 2, T: 1, ...(boss ? { boss: 1 } : {}) }]; C.step(s2, { dir: 0 }); return s2.ev.filter((e) => e.t === 'loss').reduce((a, e) => a + e.n, 0); };
     const lb = hitBy(true), ln = hitBy(false);
     assert.ok(lb > 0 && Math.abs(lb / ln - R.BOSS_PAT.volley.hit / 0.3) < 0.03, `보스 독침 ${lb} · 길 독침 ${ln}`); }
   // 돌진

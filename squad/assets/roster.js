@@ -457,7 +457,7 @@ export const BOSS_PAT = {
    relic: 열린 유물 하나를 처음부터 쥐고 출발 [값은 초안 — 보스 30마리 판의 벌이가 4,800코인쯤] */
 /* 보스 피해의 바닥(무한모드 개편 판 — ENDGAME.md 30절): 보스 공격은 지금 병력의 몫(밟기 12% · 내려찍기 25% · 독침 세례)이라 병력이 줄수록 덜 아파,
    이미 밀린 판이 한참 끌렸다. 그 구간 기준 병력(s.bossRef — 보스 앞에 도착할 것으로 본 병력)의 이 몫보다는 덜 잃지 않는다(병력이 기준의 절반쯤 넘으면 그대로) */
-export const BOSS_FLOOR = { stomp: 0.06, slam: 0.15, spit: 0.06 };
+export const BOSS_FLOOR = { stomp: 0.04, slam: 0.1, spit: 0.04 };   // 0.06·0.15·0.06에서는 약한 빌드(정밀)가 빌드 균형 띠 밖으로 밀려 낮췄다
 export const SUPPLY = {
   men: { name: '증원 부대', cost: 300, v: 1.5, text: () => `시작 병력 ×${SUPPLY.men.v}` },
   legend: { name: '전설 보급', cost: 800, text: () => '첫 보스 뒤 카드 하나가 전설' },
