@@ -629,7 +629,7 @@ export const ENH = {
     legend: { name: '불의 행진', text: () => `2차 진화 ‘따라오는 불’을 바로(불 지대가 분대를 따라와요) · 불 피해 ${legX()}` },
   },
   shock: {   // 24절 새 탄
-    rare: { name: '정전기', n: 1, text: () => `튀는 수 +${ENH.shock.rare.n}` },
+    rare: { name: '정전기', n: 1, text: () => `사슬이 튀는 좀비 수 +${ENH.shock.rare.n}` },
     legend: { name: '천둥 신', text: () => `2차 진화 ‘뇌운’을 바로 · 튀는 피해 ${legX()}` },
   },
   acid: {

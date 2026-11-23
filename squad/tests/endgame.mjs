@@ -708,7 +708,7 @@ test('단계 해금(store.endlessUnlocks): 1회차 엔딩 → 1, + 무한모드 
   assert.equal(C.CARD.stageMax, 3, '선형 단계는 3(유물)까지 — 5단계는 유물이 하나씩 더 열릴 뿐');
   assert.equal(S.endlessStage(sv({ ...ended1, endless: { best: 9 } })), 1);
   assert.equal(S.endlessUnlocks(sv({ ...ended1, endless: { best: 9 } }), C.CARD.stageMax).unl, 3);
-  assert.deepEqual(S.endlessUnlocks(sv({ ...ended1, endless: { best: 9 } }), C.CARD.stageMax).relics, base4, 'best ≥ 6이면 대왕 1번으로 친다(넷째 자리는 2번부터)');
+  assert.deepEqual(S.endlessUnlocks(sv({ ...ended1, endless: { best: 9 } }), C.CARD.stageMax).relics, [...base4, 'loot', 'scope'], 'best ≥ 6이면 대왕 1번으로 친다(넷째 자리는 2번부터 — 24절 전리품 자루·황금 조준경은 1번)');
 });
 
 test('2단계 옵션: s.endless에는 그 단계가 열려 뜻이 있을 때만 싣는다 — fx(unl ≥ 2, 출격 탄종 Lv2), flame(카드가 있는 판에 true일 때만), relicsOpen(unl ≥ 3). 이어하기는 이상한 값을 고친다', () => {
