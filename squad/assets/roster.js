@@ -554,7 +554,7 @@ export function fx2Text(id, lv) { return fx2Base(id, lv) + (fx2Val(id, lv).evo2 
 function fx2Base(id, lv) {
   const v = fx2Val(id, lv);
   const l = Math.min(BUILD.evo, Math.max(1, lv | 0));
-  const e = (v.evo2 ? `2차 진화 ‘${FX_EVO2[id]}’ · ` : v.evo ? `진화 ‘${FX_EVO[id]}’ · ` : '') + (v.a > 1 ? `${lv > 10 ? '각성·숙련' : '각성'} +${apc(v.a - 1)}% · ` : '');
+  const e = v.a > 1 ? `레벨 보너스 +${apc(v.a - 1)}% · ` : '';   // 36절: 진화 이름을 빼고 효과만(아래 글이 진화가 하는 일을 쓴다)
   const mx = v.over > 0 ? '(최대)' : '';   // 넘침 전환(21.10): 상한에 닿은 값에 '(최대)' — 넘친 몫은 다음 효과로 간다
   if (v.pierce) return e + `뒤의 좀비 ${v.n > 2 ? '일직선 전부' : v.n === 2 ? '둘' : '하나'}에 ${apc(v.pierce)}%${mx}${v.wall > 1 ? ` · 벽·장갑문 +${apc(v.wall - 1)}%` : ''}${v.ramp ? ` · 뚫을 때마다 다음 +${apc(v.ramp)}%` : ''}`;
   if (v.splash) return e + `둘레 ${v.r}m${v.r >= OVER.burst.rMax ? '(최대)' : ''}에 ${apc(v.splash)}%${v.chain ? ` · 처치된 좀비도 터져요(${apc(v.chain)}%)` : ''}`;
@@ -579,6 +579,8 @@ export const GUNS = {
 };
 export const GUN_IDS = Object.keys(GUNS);
 export const GUN_EVO = { rifle: '점사', shotgun: '슬러그', marksman: '헤드샷' };
+/* 36절: 화면 글에는 이름 대신 무엇을 하는지(이름은 일시정지 칸 이름에만) */
+export const GUN_EVO_TEXT = { rifle: '4번째 일제 사격마다 피해 ×2', shotgun: '맨 앞 적을 밀어내요', marksman: '체력 20% 아래 좀비는 한 발에 쓰러져요' };
 export const GUN_EVO2 = { rifle: '관통 점사', shotgun: '파편', marksman: '터지는 한 발' };
 const GUN_EVO2_TEXT = { rifle: '점사가 남는 피해를 뒤로 이어 간다(관통)', shotgun: '부순 벽의 파편이 벽 뒤 좀비에게', marksman: '쓰러뜨린 적이 터진다' };
 /* 총의 바탕 수치(Lv1) — 봇으로 맞춘다(21.12). 산탄: 피해·퍼짐·사거리·감쇠(near m부터 range에서 fall까지)·벽 / 저격: 초당 발·조준 폭·피해·보스 */
@@ -604,11 +606,11 @@ export function gunVal(id, lv) {
 }
 export function gunText(id, lv) {
   const v = gunVal(id, lv), L = Math.max(1, lv | 0);
-  const e = (v.evo2 ? `2차 진화 ‘${GUN_EVO2[id]}’ · ` : v.evo ? `진화 ‘${GUN_EVO[id]}’ · ` : '') + (v.a > 1 ? `${L > 10 ? '각성·숙련' : '각성'} +${apc(v.a - 1)}% · ` : '');
+  const e = v.a > 1 ? `레벨 보너스 +${apc(v.a - 1)}% · ` : '';   // 36절: 진화 이름을 빼고 효과만
   const tail = v.evo2 ? ` · ${GUN_EVO2_TEXT[id]}` : '';
   if (id === 'shotgun') return e + `펠릿 ×${v.pel} · 피해 ×${v.dmg}(${v.near}m 넘으면 줄어요) · 벽·장갑문 ×${v.wall}${v.slug ? ' · 맨 앞 적을 밀어내요' : ''}` + tail;
   if (id === 'marksman') return e + `초당 ${v.hz}발 · 조준 폭 ±${v.aim}m · 보스 ×${v.boss}${v.head ? ` · 체력 ${apc(v.head)}%${v.head >= 0.5 ? '(최대)' : ''} 아래 좀비는 바로 쓰러져요` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
-  return e + `초당 ${v.hz}번${v.hz >= 18 ? '(최대)' : ''} · 퍼짐 ±${v.spread}m · 사거리 ${v.range}m${v.burst ? ` · ${v.burst.every}번째마다 ×${v.burst.k}` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
+  return e + `초당 ${v.hz}번${v.hz >= 18 ? '(최대)' : ''} · 퍼짐 ±${v.spread}m · 사거리 ${v.range}m${v.burst ? ` · ${v.burst.every}번째 사격마다 피해 ×${v.burst.k}` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
 }
 /* 총 바꾸기(21.8): from구간부터 무기 상자의 p 몫에 다른 총, 대왕 뒤 카드에 king 확률로 '총 바꾸기' 한 장. 처음 잡는 총은 지금 총 Lv의 keep 몫(내림, 최소 1) */
 export const GUN_SWAP = { from: 7, p: 0.25, king: 0.2, keep: 0.5 };
@@ -671,11 +673,11 @@ export const ENH = {
   },
   shotgun: {
     rare: { name: '넓은 총구', v: 0.6, pel: 1.2, text: (k, k0) => `퍼짐 ${ka((x) => `+${r2(ENH.shotgun.rare.v * x)}m`, k, k0)} · 펠릿 ${ka((x) => `×${r2(1 + (ENH.shotgun.rare.pel - 1) * x)}`, k, k0)}` },
-    legend: { name: '밀쳐내기', push: 0.5, near: 10, text: () => `${ENH.shotgun.legend.near}m 안 좀비를 맞히면 뒤로 밀어내요(거구는 반만)` },
+    legend: { name: '산탄 폭발', near: 8, r: 1.6, v: 0.6, text: () => `${ENH.shotgun.legend.near}m 안 좀비를 쓰러뜨리면 그 자리가 터져 둘레에 그 좀비 체력의 ${apc(ENH.shotgun.legend.v)}%` },
   },
   marksman: {
     rare: { name: '안정 조준', v: 1.5, text: (k, k0) => `조준 폭 ${ka((x) => `+${r2(ENH.marksman.rare.v * x)}m`, k, k0)}` },
-    legend: { name: '처형', v: 0.3, text: () => `체력이 ${apc(ENH.marksman.legend.v)}% 아래인 좀비는 총알 한 발에 쓰러져요(보스 제외)` },
+    legend: { name: '연발', v: 0.3, text: () => '좀비를 쓰러뜨릴 때마다 다음 발이 바로 나가요' },
   },
   medic: {
     rare: { name: '숨 돌리기', v: 0.3, text: (k, k0) => `회복할 때마다 특수병의 다음 차례가 ${ka((x) => `${r2(ENH.medic.rare.v * x)}초`, k, k0)} 앞당겨져요` },

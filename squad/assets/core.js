@@ -3421,7 +3421,7 @@ function bulletsUpdate(s) {
       continue;
     }
     if (B2 && hitKind === 2) { const wd = hitObj.kind === 'wall' || hitObj.kind === 'door'; if (wd && B2.acid) acidAdd(s, hitObj, B2); hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK : 1)); if (wd && B2.pierce && B2.pierce >= 10) wallThru(s, b, hitObj, near, B2.pierce); if (wd && legOn(s, 'pierce')) ricochet(s, b, hitObj); continue; }   // 관통 Lv10 · 전설 강화 '벽 뚫기'
-    if (B2 && hitKind === 3) { if (hitObj.alive && GU && GU.id === 'shotgun' && legOn(s, 'shotgun') && hitObj.z - q.z < ENH.shotgun.legend.near) hitObj.z += ENH.shotgun.legend.push * (hitObj.kind === 'brute' ? 0.5 : 1); hitFoe(s, hitObj, (hitObj.elite === 'shield' && !acidArm ? b.dmg * shieldMul(s) : b.dmg) * (hitObj.arm && !((fxOf(s) && fxOf(s).pierce) || acidArm) ? hitObj.arm : 1), 'gun'); fxHit2(s, b, hitObj, near, FX); continue; }
+    if (B2 && hitKind === 3) { hitFoe(s, hitObj, (hitObj.elite === 'shield' && !acidArm ? b.dmg * shieldMul(s) : b.dmg) * (hitObj.arm && !((fxOf(s) && fxOf(s).pierce) || acidArm) ? hitObj.arm : 1), 'gun'); fxHit2(s, b, hitObj, near, FX); continue; }
     if (hitKind === 2) { hitProp(s, hitObj, hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg); continue; }
     if (hitKind === 3) { hitFoe(s, hitObj, hitObj.elite === 'shield' ? b.dmg * shieldMul(s) : b.dmg, 'gun'); if (FX) fxHit(s, b, hitObj, near, FX); else if (s.ammo) ammoHit(s, b, hitObj, near); continue; }
     if (hitKind === 4) {
@@ -3829,7 +3829,6 @@ function hitFoe(s, f, dmg, by) {
   if (by === 'gun') {
     const B = bldOf(s);
     if (B && B.gt === 'rifle' && legOn(s, 'rifle')) { const L = ENH.rifle.legend; f.stk = Math.min(L.max * legK2(s, 'rifle'), (f.stk || 0) + L.step); dmg *= 1 + f.stk; }   // 34절 소총 전설 '집중 사격'
-    else if (B && B.gt === 'marksman' && legOn(s, 'marksman') && f.hp - dmg < ENH.marksman.legend.v * f.max) dmg = Math.max(dmg, f.hp);   // 34절 저격총 전설 '처형'
   }
   dmgLog(s, by, Math.min(dmg, Math.max(0, f.hp)));
   f.hp -= dmg;
@@ -3842,6 +3841,11 @@ function hitFoe(s, f, dmg, by) {
   emit(s, { t: 'kill', kind: f.kind, x: f.x, z: f.z, by, elite: f.elite });
   if (f.elite) eliteDeath(s, f);
   if (s.endless && s.endless.bld && enhN(s, 'rapid', 'r')) s.squad.rushT = s.t + ENH.rapid.rare.T;   // 신바람
+  if (by === 'gun' && s.endless && s.endless.bld) {
+    const B = s.endless.bld, q = s.squad;
+    if (B.gt === 'marksman' && legOn(s, 'marksman')) q.fireAcc = Math.min(q.fireAcc + ENH.marksman.legend.v, 2 * ENH.marksman.legend.v);   // 36절 저격총 전설 '연발': 쓰러뜨리면 다음 발이 바로
+    else if (B.gt === 'shotgun' && legOn(s, 'shotgun') && f.z - q.z < ENH.shotgun.legend.near) { const SL = ENH.shotgun.legend; fxBoom(s, f.x, f.z, SL.r, f.max * SL.v * legK2(s, 'shotgun'), f); emit(s, { t: 'boom', x: f.x, z: f.z, r: SL.r, small: 1 }); }   // 36절 산탄총 전설 '산탄 폭발'
+  }
   if (f.acid > 0 && f.acT > s.t && legOn(s, 'acid')) {   // 34절 부식 전설 '전염': 죽은 좀비의 부식 겹이 둘레 좀비에게 그대로 옮는다
     const r2 = ENH.acid.legend.r * ENH.acid.legend.r; let n = 0;
     for (const o of s.foes) { if (!o.alive || o === f) continue; const dx = o.x - f.x, dz = o.z - f.z; if (dx * dx + dz * dz > r2) continue; o.acid = Math.max(o.acid | 0, f.acid); o.acT = Math.max(o.acT || 0, f.acT); if (++n >= 12) break; }

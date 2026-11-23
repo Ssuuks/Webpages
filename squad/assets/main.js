@@ -17,7 +17,7 @@ import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.j
 import { PATCH } from './patch.js';
 import { entryOf, addLog, loadLog, clearLog, summarize, SRC_NAME, LOSS_NAME } from './playlog.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, SHARD_COIN, petSpareShards, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO, SUPPLY, SUPPLY_IDS } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO, GUN_EVO_TEXT, SUPPLY, SUPPLY_IDS } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1549,7 +1549,7 @@ function renderLoad() {
       gl.appendChild(ldOpt(id === curG, open ? G.name : `${G.name} ★${G.stars}`, null, () => { data.gun.sel = id; }, !open, open ? '' : `${G.name} — 별 ${G.stars}개를 모으면 열려요`));
     }
     const G = GUNS[curG];
-    $('ldGunInfo').textContent = G ? `${G.line} · ${G.text()} · Lv5 ‘${GUN_EVO[curG]}’` : '';
+    $('ldGunInfo').textContent = G ? `${G.line} · ${G.text()} · Lv5: ${GUN_EVO_TEXT[curG]}` : '';
   }
   // 보급품·시작 유물(무한모드 개편 판 — 27절): 고르면 출격할 때 코인을 낸다. 합계가 가진 코인을 넘는 것은 못 고른다
   const U = endless ? endlessUnlocksNow() : null;
@@ -1911,8 +1911,9 @@ function relicNow(id) {
       const on = [], half = [];
       for (const c of comboList(s)) {
         const p = comboParts(s, c);
-        if (!p.miss.length) on.push(COMBOS[c].name);
-        else if (p.miss.length === 1 && p.have.length && COMBO_HALF.includes(c)) { const m = p.miss[0]; half.push(`${COMBOS[c].name}(${AMMO[m] ? AMMO[m].name : UNITS[m] ? UNITS[m].name : HEROES[m] ? HEROES[m].name : m} 없이)`); }
+        const pn = (x) => (AMMO[x] ? AMMO[x].name.replace(/탄$/, '') : UNITS[x] ? UNITS[x].name : HEROES[x] ? HEROES[x].name : x);
+        if (!p.miss.length) on.push(COMBOS[c].need.map(pn).join('+'));
+        else if (p.miss.length === 1 && p.have.length && COMBO_HALF.includes(c)) { half.push(`${p.have.map(pn).join('+')}(${pn(p.miss[0])} 없이)`); }
       }
       if (!on.length && !half.length) return '지금은 켜질 시너지가 없어요 — 짝이 맞는 탄·특수병을 모으면 켜져요';
       return `지금: ${[on.length ? `${on.join('·')} 1.5배` : '', half.length ? `${half.join('·')} 절반 힘으로 새로 켜짐` : ''].filter(Boolean).join(' · ')}`;
@@ -1978,7 +1979,7 @@ function cardText(c) {
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
   if (c.k === 'gunlv') {   // 총 Lv(21.9): 그 총의 능력
     const G = GUNS[c.g];
-    const evo = c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 ‘${GUN_EVO[c.g]}’` : '';
+    const evo = c.to < BUILD.evo ? ` · Lv${BUILD.evo}부터 ${GUN_EVO_TEXT[c.g]}` : '';
     return { kind: '총 Lv', lead: G.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${gunText(c.g, c.to)}${evo}${enhText(c)}`, delta: `지금 ${gunText(c.g, c.from)} → 고르면 Lv${c.to}`, col: G.color, icon: 'gun', n: c.n };
   }
   if (c.k === 'swap') {   // 총 바꾸기(21.8)
@@ -2001,7 +2002,7 @@ function cardText(c) {
     const pair = U.pair && s && s.hero && HEROES[s.hero.id] && HEROES[s.hero.id].match === c.u ? ` · ${U.pair(c.to || 1)}` : '';
     if (c.n) {
       // 개편 판: 등급만큼 한 번에 오른다(합류도 Lv n으로). 위력 배수·전문화 안내
-      const hint = SP_EVO[c.u] && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 ‘${SP_EVO[c.u].name}’` : '';
+      const hint = SP_EVO[c.u] && c.to < BUILD.evo ? ` · Lv${BUILD.evo}부터 ${SP_EVO[c.u].text().replace(/^Lv\d+: /, '')}` : '';
       const delta = deltaOf('unit', c.u, c.from || 0, c.to);
       return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${spUp(c.u, c.to)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, delta, col: U.color, icon: c.u, n: c.n }
         : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${spDesc(c.u)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, delta, col: U.color, icon: c.u, n: c.n };
@@ -2032,7 +2033,7 @@ function enhText(c) {
   if (!E) return '';
   const n = enhN(s, c.enhId, c.enh === 'rare' ? 'r' : 'l');   // 이미 가진 수 — 있으면 '전 → 후'로(무엇이 얼마나 세지는지)
   const body = c.enh === 'rare' ? E.text(enhStr(n + 1), n ? enhStr(n) : undefined) : E.text() + (n ? ` · 세기 ×${enhStr(n)} → ×${enhStr(n + 1)}` : '');
-  return ` · ${c.enh === 'rare' ? '희귀' : '전설'} 강화 ‘${E.name}${enhRoman(n + 1)}’: ${body}`;
+  return ` · ${c.enh === 'rare' ? '희귀' : '전설'} 강화${enhRoman(n + 1)}: ${body}`;   // 36절: 강화 이름 대신 효과만(이름은 일시정지 칸에)
 }
 /* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
 function cardDone(c) {
@@ -2365,7 +2366,7 @@ const partName = (x) => (AMMO[x] ? fxName(x) : UNITS[x] ? UNITS[x].name : HEROES
 function enhLines(id) {
   const out = [];
   if (!ENH[id]) return out;
-  for (const [kind, key, nm] of [['legend', 'l', '전설'], ['rare', 'r', '희귀']]) { const n = enhN(s, id, key); if (n) out.push(`${nm} 강화 ‘${ENH[id][kind].name}${enhRoman(n)}’: ${ENH[id][kind].text(enhStr(n))}`); }
+  for (const [kind, key, nm] of [['legend', 'l', '전설'], ['rare', 'r', '희귀']]) { const n = enhN(s, id, key); if (n) out.push(`${nm} 강화${enhRoman(n)}: ${ENH[id][kind].text(enhStr(n))}`); }
   return out;
 }
 /* 개편 판 일시정지: 수치 표 → 적 변이 칩 줄 → 칸 셋(① 탄종 · ② 시너지 · ③ 유물) → 누른 칸의 설명(23.7) */
@@ -2452,7 +2453,7 @@ function renderPausePanes(box) {
     const lines = [lv > 1 ? `${U.role}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k)];
     if (SP_EVO[m.k] && lv >= BUILD.evo) lines.push(`진화 ‘${SP_EVO[m.k].name}’: ${SP_EVO[m.k].text()}`);
     if (SP_EVO2[m.k] && lv >= 10) lines.push(`2차 진화 ‘${SP_EVO2[m.k].name}’: ${SP_EVO2[m.k].text()}`);
-    if (lv > BUILD.evo) lines.push(`각성 +${Math.round((awk(lv) - 1) * 100)}%`);
+    if (lv > BUILD.evo) lines.push(`레벨 보너스 +${Math.round((awk(lv) - 1) * 100)}%`);
     lines.push(...enhLines(m.k));
     if (U.pair && s.hero && HEROES[s.hero.id] && HEROES[s.hero.id].match === m.k) lines.push(`짝 효과: ${U.pair(lv)}`);
     if (lv < spLvMax(s)) lines.push(`또 구하면 Lv${lv + 1}`);

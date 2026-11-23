@@ -4076,7 +4076,7 @@ test('각성·숙련(개편 판, 18.4·20절): 첫 대왕 뒤(BUILD.awakeFrom)�
   assert.equal(R.fx2Val('rapid', 4).heat, 1, '진화 전에는 과열이 없다');
   assert.ok(R.fx2Val('rapid', 10).heat > R.fx2Val('rapid', 6).heat && R.fx2Val('rapid', 12).heat > R.fx2Val('rapid', 10).heat, '과열도 각성·숙련으로 오른다');
   assert.deepEqual([R.fx2Val('pierce', 9).evo2, R.fx2Val('pierce', 10).evo2], [false, true]);
-  for (const a of R.AMMO_IDS) assert.ok(R.fx2Text(a, 10).includes(R.FX_EVO2[a]) && R.fx2Text(a, 7).includes('각성 +30%'), a);
+  for (const a of R.AMMO_IDS) assert.ok(!R.fx2Text(a, 10).includes('‘') && R.fx2Text(a, 7).includes('레벨 보너스 +30%') && R.fx2Text(a, 10).length > R.fx2Text(a, 5).length, a);
   // 특수병: Lv6+는 위력이 각성 배수만큼(간격·범위 식은 Lv5 그대로)
   const dmgAt = (lv) => { const u = C.newEndless({ seed: 31, ...BLD }); u.endless.seg = 13; u.endless.fx = {}; u.squad.n = 600; u.props = []; u.rows = []; u.saws = []; u.bullets = []; delete u.divs; u.squad.fireAcc = -99; u.squad.sp = [{ id: 7, k: 'rocket', cd: 0, lv }]; u.foes = [{ id: 99200, kind: 'grunt', x: 0, z: u.squad.z + 25, hp: 1e9, max: 1e9, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9 }]; C.step(u, { dir: 0 }); return u.rockets[0] && u.rockets[0].dmg; };
   const d5 = dmgAt(5), d7 = dmgAt(7), d10 = dmgAt(10);
@@ -5028,4 +5028,18 @@ test('32절 — 플레이 기록: 끝난 판에서 버전·빌드·출처별 피
   const L = PL.loadLog(mem);
   assert.equal(L.length, PL.LOG_MAX); assert.equal(L[0].i, 5);
   PL.clearLog(mem); assert.deepEqual(PL.loadLog(mem), []);
+});
+
+test('36절 — 총 전설은 그 총의 진화와 겹치지 않는다: 저격총 연발(쓰러뜨리면 다음 발이 바로), 산탄총 산탄 폭발(가까이서 쓰러뜨리면 터진다). 화면 글에는 진화 이름 대신 효과', () => {
+  const mk = (gun, enh) => { const u = C.newEndless({ seed: 31, ...BLD, gun }); u.endless.seg = 5; u.endless.fx = {}; u.endless.bld.enh = enh; u.squad.n = 600; u.props = []; u.rows = []; u.saws = []; u.bullets = []; delete u.divs; u.squad.sp = []; return u; };
+  const foe = (u, id, dz, hp, x = 0) => ({ id, kind: 'grunt', x, z: u.squad.z + dz, hp, max: hp, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9 });
+  // 연발: 총알로 쓰러뜨리면 사격 누적이 한 발만큼 찬다
+  const rapid = (enh) => { const u = mk('marksman', enh); u.squad.fireAcc = -99; const a = foe(u, 99901, 6, 50); u.foes = [a]; u.bullets = [{ x: 0, z: a.z - 0.3, d: 5, dmg: 100, hm: 1 }]; const f0 = u.squad.fireAcc; C.step(u, { dir: 0 }); return u.squad.fireAcc - f0; };
+  assert.ok(rapid({ marksman: { r: 0, l: 1 } }) - rapid(undefined) > R.ENH.marksman.legend.v * 0.9, '연발');
+  // 산탄 폭발: 가까이(near m 안)에서 쓰러뜨리면 둘레 좀비가 그 체력의 v만큼 맞는다
+  const pop = (enh) => { const u = mk('shotgun', enh); u.squad.fireAcc = -99; const a = foe(u, 99902, 4, 50), b = foe(u, 99903, 4.6, 1e6, 0.5); u.foes = [a, b]; u.bullets = [{ x: 0, z: a.z - 0.3, d: 5, dmg: 100, hm: 1 }]; C.step(u, { dir: 0 }); return Math.round(1e6 - b.hp); };
+  assert.deepEqual([pop(undefined), pop({ shotgun: { r: 0, l: 1 } })], [0, Math.round(50 * R.ENH.shotgun.legend.v)]);
+  // 글: 진화 이름(‘…’) 없이
+  for (const g of R.GUN_IDS) for (const lv of [1, 5, 10, 12]) assert.ok(!R.gunText(g, lv).includes('‘'), `${g} Lv${lv}: ${R.gunText(g, lv)}`);
+  for (const g of R.GUN_IDS) assert.ok(R.GUN_EVO_TEXT[g] && R.GUN_EVO_TEXT[g].length > 5);
 });
