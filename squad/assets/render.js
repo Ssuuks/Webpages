@@ -1517,10 +1517,14 @@ export function createRenderer(cvs) {
         case 'boom': {
           // 폭발 고리는 실제 반경(e.r)까지만 — 로켓병 레벨(반경 2.2 · 2.6 · 3.0m)이 높을수록 파편이 많고, Lv3은 충격파 고리 하나 더 + 바닥 그을음
           const br = e.r || 2.2, blv = br >= 2.9 ? 3 : br >= 2.5 ? 2 : 1;
-          fx('boom', e.x, 0.8, e.z, blv >= 3 ? 0.4 : 0.32);
-          fx('glow', e.x, 0.8, e.z, 0.28, { col: '#FFB347', r: br * 1.3 });
-          ring(e.x, e.z, 0.3, br, 0.35, '#FFF4B0', { thick: 2 });
-          burst(e.x, 0.8, e.z, blv === 1 ? 16 : blv === 2 ? 24 : 30, FX_COL.boom, blv >= 3 ? 6 : 5, 4, 0.6);
+          // 잦은 로켓(높은 레벨·쌍발)은 화면을 덮지 않게: 0.35초 안에 또 터지거나 쌍발의 둘째면 빛·흔들림 없이 작은 펑과 고리만(33절)
+          const busy = time - boomT < 0.35 || e.small;
+          if (!busy) boomT = time;
+          fx('boom', e.x, 0.8, e.z, busy ? 0.24 : blv >= 3 ? 0.4 : 0.32);
+          if (!busy) fx('glow', e.x, 0.8, e.z, 0.24, { col: '#FFB347', r: Math.min(3.2, br * 1.1) });
+          ring(e.x, e.z, 0.3, br, 0.35, '#FFF4B0', { thick: busy ? 1 : 2 });
+          burst(e.x, 0.8, e.z, busy ? 6 : blv === 1 ? 16 : blv === 2 ? 22 : 26, FX_COL.boom, blv >= 3 ? 6 : 5, 4, 0.6);
+          if (busy) break;
           if (blv >= 3) {
             ring(e.x, e.z, br * 0.45, br, 0.5, '#FFFFFF');
             let c = scorches[0];
@@ -2105,7 +2109,7 @@ export function createRenderer(cvs) {
      전격 = 보라 지직, 부식 = 흘러내리는 초록, 빙결 = 서리). 체력이 25·50·75% 줄 때마다 금이 늘고 부스러기가 튄다(단계가 오른 순간). 같은 강화를 겹칠수록 더 크고 잦다 */
   const marks = new Map();   // prop id → { list: [{ u, v, k, t, seed, x, y, z, pop }], stage }
   const MARK_MAX = 12;
-  let breathT = -9, knockT = -9, pierceT = -9;
+  let breathT = -9, knockT = -9, pierceT = -9, boomT = -9;
   const MARK_FX = ['pierce', 'burst', 'shock', 'acid', 'frost'];
   /* 지금 총알에 실린 탄 효과(무한모드 2단계 = 가진 효과 전부, 캠페인 = 출격 탄종) 중 자국으로 보일 것 */
   function bulletFx(s) {

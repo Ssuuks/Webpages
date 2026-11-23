@@ -4454,7 +4454,7 @@ function specialActB(s, m, lv, D, B) {
     s.rockets.push(rk);
     emit(s, { t: 'rocket', id: rk.id, x0: rk.x0, z0: rk.z0, x: rk.x, z: rk.z });
     if (evo) {   // 로켓병 Lv5 쌍발: 한 발 더(조금 늦게 같은 자리에)
-      const r2 = { ...rk, id: s.nextId++, t: T + 0.15, T: T + 0.15 };
+      const r2 = { ...rk, id: s.nextId++, t: T + 0.15, T: T + 0.15, dmg: rk.dmg * BUILD.rocket.twin, small: 1 };   // 둘째 로켓은 twin 몫(33절)
       s.rockets.push(r2);
       emit(s, { t: 'rocket', id: r2.id, x0: r2.x0, z0: r2.z0, x: r2.x, z: r2.z });
     }
@@ -4564,7 +4564,7 @@ function specialsUpdate(s, R) {
       }
       const b = s.boss;
       if (b && b.hp > 0 && Math.abs(b.z - 1 - rk.z) < rk.r + 1 && Math.abs(b.x - rk.x) < rk.r + b.r) hitBossBonus(s, rk.dmg, 'rocket');
-      emit(s, { t: 'boom', x: rk.x, z: rk.z, r: rk.r });
+      emit(s, { t: 'boom', x: rk.x, z: rk.z, r: rk.r, small: rk.small });
       if (rk.again) s.rockets.push({ ...rk, id: s.nextId++, t: 0.4, T: 0.4, dmg: rk.dmg * rk.again, again: 0, fire: false, fid: -1 });
       if (rk.fire) {   // 불씨 로켓(Lv10): 떨어진 자리에 불 지대(2초)
         const zn = { id: s.nextId++, x: rk.x, z: rk.z, w: rk.r * 1.6, len: rk.r * 1.6, t: 2, T: 2, d: rk.dmg * 0.4, lv: 1 };
