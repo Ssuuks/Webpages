@@ -295,7 +295,7 @@ function notice(title, text, buttons) {
 }
 
 /* ---------- 화면 전환 ---------- */
-const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPick', 'scrPause', 'scrResult', 'scrEnding', 'scrPet', 'scrEndPrep'];
+const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPick', 'scrPause', 'scrResult', 'scrEnding', 'scrPet', 'scrLoad'];
 function show(id) {
   for (const k of SCREENS) $(k).hidden = k !== id;
   $('hud').hidden = !(mode === 'play' || mode === 'pause' || mode === 'card' || mode === 'pick' || mode === 'result');
@@ -649,10 +649,11 @@ function ammoForRun(endless = false) {
   const id = data.ammo && (endless ? data.ammo.selE : data.ammo.sel);
   return id && ammoOpen(id, totalStars(data)) && (endless || !AMMO[id].b2) ? id : '';
 }
-function renderAmmo(endless = false) {
+function renderAmmo() {
+  const endless = false;   // 강화 화면은 캠페인 탄 넷 — 무한모드 탄은 무한모드 출격 카드의 '함께 출격'에서
   const stars = totalStars(data);
-  $(endless ? 'endAmmoStars' : 'ammoStars').textContent = `★ ${stars}`;
-  const list = $(endless ? 'endAmmoList' : 'ammoList');
+  $('ammoStars').textContent = `★ ${stars}`;
+  const list = $('ammoList');
   list.textContent = '';
   const cur = ammoForRun(endless);
   for (const id of ['', ...(endless ? AMMO_IDS2 : AMMO_IDS)]) {
@@ -676,7 +677,7 @@ function renderAmmo(endless = false) {
     btn.textContent = !open ? `★ ${A.stars}개` : id === cur ? '사용 중' : '고르기';
     btn.disabled = !open || id === cur;
     if (!open) btn.setAttribute('aria-label', `${A.name} — 별 ${A.stars}개를 모으면 열려요(지금 ${stars}개)`);
-    btn.addEventListener('click', () => { if (endless) data.ammo.selE = id; else data.ammo.sel = id; save(data); sfx.click(); renderAmmo(endless); });
+    btn.addEventListener('click', () => { data.ammo.sel = id; save(data); sfx.click(); renderAmmo(); });
     card.appendChild(btn);
     list.appendChild(card);
   }
@@ -686,36 +687,6 @@ const gunOpen = (id, stars) => !!GUNS[id] && stars >= GUNS[id].stars;
 function gunForRun() {
   const id = data.gun && data.gun.sel;
   return id && gunOpen(id, totalStars(data)) ? id : 'rifle';
-}
-function renderGun() {
-  const stars = totalStars(data);
-  $('gunStars').textContent = `★ ${stars}`;
-  const list = $('gunList');
-  list.textContent = '';
-  const cur = gunForRun();
-  for (const id of GUN_IDS) {
-    const G = GUNS[id], open = gunOpen(id, stars);
-    const card = document.createElement('div');
-    card.className = 'upg' + (open ? '' : ' locked');
-    const head = document.createElement('div');
-    head.className = 'upg-head';
-    const b = document.createElement('b');
-    b.textContent = `${G.name} — ${G.line}`;
-    head.appendChild(b);
-    card.appendChild(head);
-    const eff = document.createElement('p');
-    eff.className = 'upg-eff';
-    eff.textContent = `${G.text()} · Lv5 ‘${GUN_EVO[id]}’`;
-    card.appendChild(eff);
-    const btn = document.createElement('button');
-    btn.className = 'buy';
-    btn.textContent = !open ? `★ ${G.stars}개` : id === cur ? '사용 중' : '고르기';
-    btn.disabled = !open || id === cur;
-    if (!open) btn.setAttribute('aria-label', `${G.name} — 별 ${G.stars}개를 모으면 열려요(지금 ${stars}개)`);
-    btn.addEventListener('click', () => { data.gun.sel = id; save(data); sfx.click(); renderGun(); });
-    card.appendChild(btn);
-    list.appendChild(card);
-  }
 }
 function petFaceEl(id, scale) {
   try { const c = renderer.petFace && renderer.petFace(id, scale); if (c) { c.classList.add('pix'); return c; } } catch { /* 아직 그림이 없다 */ }
@@ -1332,7 +1303,7 @@ function startLevel(L, opts = {}) {
   const tg = fillCard(L);
   $('cardGoal').textContent = '준비 중…';
   $('cardHero').hidden = true;
-  $('cardGo').hidden = true;
+  $('cardGo').classList.add('off');
   $('hudL').textContent = L;
   $('bossBar').hidden = true;
   $('bossBar').classList.remove('rage');
@@ -1419,25 +1390,91 @@ function prepareRun(L) {
   renderer.reset();
   const g = starGoals(par, lv);
   $('cardGoal').textContent = support ? `지원 병력 +${support}명 (별 최대 1개)` : `★★★ 목표: 보스를 잡고 ${g.three}명 이상 남기기`;
-  const chip = $('cardHero');
-  chip.textContent = '';
-  if (hero) {
-    chip.appendChild(faceEl(hero.id, 1));
-    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''}${run.ammo ? ` · ${AMMO[run.ammo].name}` : ''}${run.mode === 'endless' && run.gun && GUNS[run.gun] ? ` · ${GUNS[run.gun].name}` : ''} ▸`);
-    chip.hidden = false;
-  } else if ((runCycle > 1 || L >= UNLOCK.hero) && HERO_IDS.some((id) => ownedHero(id))) {
-    chip.append('영웅 고르기 ▸');
-    chip.hidden = false;
-  }
+  cardChip(hero, pet, runCycle > 1 || L >= UNLOCK.hero);
   seen(data, 'biome', biomeOf(L).id);
 }
 
+/* 함께 출격 시트: 출격 카드의 칩에서 영웅·펫·탄종(무한모드는 전용 탄까지)·총(무한모드)을 한 장에서 고른다.
+   확인(또는 뒤로)이면 카드로 돌아가 고른 것으로 판을 다시 짠다(backToCard) */
+function openLoad() {
+  mode = 'load';
+  renderLoad();
+  show('scrLoad');
+  armHistory();
+}
+function ldOpt(on, label, face, click, disabled = false, aria = '') {
+  const b = document.createElement('button');
+  b.className = 'ld-opt' + (on ? ' on' : '');
+  b.type = 'button';
+  if (face) b.appendChild(face);
+  b.append(label);
+  b.disabled = disabled;
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (aria) b.setAttribute('aria-label', aria);
+  b.addEventListener('click', () => { sfx.click(); click(); save(data); renderLoad(); });
+  return b;
+}
+function renderLoad() {
+  const endless = !!(run && run.mode === 'endless');
+  const stars = totalStars(data);
+  // 영웅
+  const heroes = HERO_IDS.filter((id) => ownedHero(id));
+  const heroOk = endless || runCycle > 1 || (run && run.L >= UNLOCK.hero);
+  $('ldHeroWrap').hidden = !heroOk || !heroes.length;
+  const hl = $('ldHero'); hl.textContent = '';
+  for (const id of heroes) hl.appendChild(ldOpt(data.heroes.sel === id, `${HEROES[id].name} Lv${ownedHero(id)}`, faceEl(id, 1), () => { data.heroes.sel = id; }));
+  // 펫(자리 수만큼)
+  const pets = petOpen() ? PET_IDS.filter((id) => data.pets.own[id]) : [];
+  $('ldPetWrap').hidden = !pets.length;
+  $('ldPetN').textContent = `${data.pets.team.length}/${data.pets.slots}`;
+  const pl = $('ldPet'); pl.textContent = '';
+  for (const id of pets) pl.appendChild(ldOpt(data.pets.team.includes(id), `${PETS[id].name} Lv${data.pets.own[id].lv}`, petFaceEl(id, 1), () => { if (!togglePet(id)) toast(`펫 자리는 ${data.pets.slots}칸이에요 — 하나를 빼고 넣어요`); }));
+  // 탄종(캠페인 넷 · 무한모드 일곱)
+  $('ldStars').textContent = `★ ${stars}`;
+  const al = $('ldAmmo'); al.textContent = '';
+  const curA = ammoForRun(endless);
+  const anyA = (endless ? AMMO_IDS2 : AMMO_IDS).some((id) => ammoOpen(id, stars));
+  $('ldAmmoWrap').hidden = !anyA;
+  for (const id of ['', ...(endless ? AMMO_IDS2 : AMMO_IDS)]) {
+    const A = id ? AMMO[id] : { name: '보통탄', color: '#C9CED6' };
+    const open = !id || ammoOpen(id, stars);
+    const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = A.color || '#fff';
+    al.appendChild(ldOpt(id === curA, open ? A.name : `${A.name} ★${A.stars}`, dot, () => { if (endless) data.ammo.selE = id; else data.ammo.sel = id; }, !open, open ? '' : `${A.name} — 별 ${A.stars}개를 모으면 열려요`));
+  }
+  const at = ammoText(curA);
+  $('ldAmmoInfo').textContent = (at.bad ? `${at.good} · 대신 ${at.bad}` : at.good).replace('(무한모드 전용)', '');
+  // 총(무한모드)
+  $('ldGunWrap').hidden = !endless;
+  const gl = $('ldGun'); gl.textContent = '';
+  if (endless) {
+    const curG = gunForRun();
+    for (const id of GUN_IDS) {
+      const G = GUNS[id], open = gunOpen(id, stars);
+      gl.appendChild(ldOpt(id === curG, open ? G.name : `${G.name} ★${G.stars}`, null, () => { data.gun.sel = id; }, !open, open ? '' : `${G.name} — 별 ${G.stars}개를 모으면 열려요`));
+    }
+    const G = GUNS[curG];
+    $('ldGunInfo').textContent = G ? `${G.line} · ${G.text()} · Lv5 ‘${GUN_EVO[curG]}’` : '';
+  }
+}
+/* 출격 카드의 '함께 출격' 칩: 고른 영웅·펫·탄종·총. 고를 것이 하나라도 있으면 칩을 띄운다(누르면 함께 출격 시트) */
+function cardChip(hero, pet, heroOk) {
+  const chip = $('cardHero');
+  chip.textContent = '';
+  const endless = run.mode === 'endless';
+  const parts = [hero ? `${HEROES[hero.id].name} Lv${hero.lv}` : '', pet ? PETS[pet.id].name : '', run.ammo ? AMMO[run.ammo].name : '', endless && run.gun && GUNS[run.gun] ? GUNS[run.gun].name : ''].filter(Boolean);
+  const stars = totalStars(data);
+  const any = (heroOk && HERO_IDS.some((id) => ownedHero(id))) || (petOpen() && PET_IDS.some((id) => data.pets.own[id])) || (endless ? AMMO_IDS2 : AMMO_IDS).some((id) => ammoOpen(id, stars)) || endless;
+  chip.hidden = !any;
+  if (!any) return;
+  if (hero) chip.appendChild(faceEl(hero.id, 1));
+  chip.append(parts.length ? ` 함께 출격: ${parts.join(' · ')} ▸` : '함께 출격 고르기 ▸');
+}
 function backToCard() {
   mode = 'card';
   show('scrCard');
   if (run && run.mode === 'endless') prepareEndless();
   else prepareRun(run ? run.L : curProg().cur);
-  $('cardGo').hidden = false;
+  $('cardGo').classList.remove('off');
 }
 
 /* ---------- 무한모드(ENDGAME.md 5절) ---------- */
@@ -1529,30 +1566,20 @@ function setHudLevel() {
 function tryEndless() {
   if (modalOpen() || !endlessOpen()) return;
   const r = pendingRun();
-  if (!r) { openEndPrep(); return; }
+  if (!r) { startEndless(); return; }
   if (r.mode === 'endless') {
     notice('하던 무한모드 판이 있어요', `${runName(r)}부터 이어서 할까요? 새로 시작하면 하던 판은 끝나고 모은 코인을 받아요.`, [
       { label: '이어서 하기', primary: true, fn: resumeRun },
-      { label: '새로 시작', fn: () => { abandonRun(r); openEndPrep(); } },
+      { label: '새로 시작', fn: () => { abandonRun(r); startEndless(); } },
       { label: '취소' },
     ]);
     return;
   }
   const counts = restartCounts(r.state);
   notice('진행 중인 판이 있어요', `레벨 ${r.L}${eul(r.L)} 포기하고 무한모드를 시작할까요?${counts ? ' 포기한 판은 진 판으로 기록돼요.' : ''}`, [
-    { label: '포기하고 시작', primary: true, fn: () => { abandonRun(r); openEndPrep(); } },
+    { label: '포기하고 시작', primary: true, fn: () => { abandonRun(r); startEndless(); } },
     { label: '취소' },
   ]);
-}
-/* 무한모드 준비 화면: 무한모드에 들고 갈 탄종(전용 탄 포함)·총을 고르고 출격 — 캠페인 강화 화면과 나눴다 */
-function openEndPrep() {
-  mode = 'endprep';
-  renderAmmo(true);
-  renderGun();
-  const h = data.heroes && data.heroes.sel;
-  $('endPrepWho').textContent = [h && HEROES[h] ? `영웅 ${HEROES[h].name}` : '', data.pets.sel && PETS[data.pets.sel] ? `펫 ${PETS[data.pets.sel].name}` : ''].filter(Boolean).join(' · ');
-  show('scrEndPrep');
-  armHistory();
 }
 /* 무한모드 카드 → 출발. opts.quick: 카드 없이 바로(다시 하기) */
 function startEndless(opts = {}) {
@@ -1579,7 +1606,7 @@ function startEndless(opts = {}) {
   $('cardUnit').textContent = nx;
   $('cardGoal').textContent = '준비 중…';
   $('cardHero').hidden = true;
-  $('cardGo').hidden = true;
+  $('cardGo').classList.add('off');
   $('bossBar').hidden = true;
   $('bossBar').classList.remove('rage');
   hideEta();
@@ -1636,16 +1663,7 @@ function prepareEndless() {
   prepBiome(segInfo(2).L);
   setHudLevel();
   $('cardGoal').textContent = `보스마다 코인 적립 · 전멸해도 받아요`;
-  const chip = $('cardHero');
-  chip.textContent = '';
-  if (hero) {
-    chip.appendChild(faceEl(hero.id, 1));
-    chip.append(` 함께 출격: ${HEROES[hero.id].name} Lv${hero.lv}${pet ? ` · ${PETS[pet.id].name}` : ''}${run.ammo ? ` · ${AMMO[run.ammo].name}` : ''}${run.mode === 'endless' && run.gun && GUNS[run.gun] ? ` · ${GUNS[run.gun].name}` : ''} ▸`);
-    chip.hidden = false;
-  } else if (HERO_IDS.some((id) => ownedHero(id))) {
-    chip.append('영웅 고르기 ▸');
-    chip.hidden = false;
-  }
+  cardChip(hero, pet, true);
   seen(data, 'biome', BIOMES[0].id);
 }
 /* 무한모드 판 정산(전멸·포기·다시 시작): 적립한 코인과 기록. 같은 판을 두 번 정산하지 않는다(lastRunId) */
@@ -2081,7 +2099,7 @@ function begin(L) {
   tutorial = L === 1 && !data.tips.moved;
   $('tut').hidden = !tutorial;
   if (tutorial && FINE) $('tutText').textContent = '←/→ 키나 화면 왼쪽·오른쪽을 눌러 이동';
-  $('cardGo').hidden = true;
+  $('cardGo').classList.add('off');
   slowUntil = 0;
   tipQueue.length = 0;
   tipUntil = 0;
@@ -3355,7 +3373,6 @@ on('endEndless', () => { sfx.click(); mode = 'title'; goTitle(); tryEndless(); }
 on('endMenu', () => { sfx.click(); goTitle(); });
 on('btnLevels', () => { sfx.click(); mode = 'levels'; levelsCycle = data.cycle; renderLevels(); show('scrLevels'); armHistory(); });
 on('btnHero', () => { sfx.click(); mode = 'hero'; heroPickFromCard = false; heroView = data.heroes.sel; renderHero(); show('scrHero'); armHistory(); });
-on('endPrepGo', () => { if (mode === 'endprep') startEndless(); });
 on('btnUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); armHistory(); });
 on('btnSet', () => { sfx.click(); mode = 'set'; renderSet(); show('scrSet'); armHistory(); });
 for (const b of document.querySelectorAll('[data-back]')) {
@@ -3446,17 +3463,11 @@ on('resumeDrop', () => { sfx.click(); $('resumeConfirm').hidden = false; });
 on('resumeDropNo', () => { sfx.click(); $('resumeConfirm').hidden = true; });
 on('resumeDropYes', () => { sfx.click(); const r = pendingRun(); if (r) abandonRun(r); renderTitle(); });
 // 영웅 칩에 손가락이 닿으면 자동 출발을 멈추고 출격 버튼을 보인다(떼기 전에 출발해 버리지 않게)
-$('cardHero').addEventListener('pointerdown', () => { if (mode !== 'card') return; startToken++; $('cardGo').hidden = false; });
+$('cardHero').addEventListener('pointerdown', () => { if (mode !== 'card') return; startToken++; $('cardGo').classList.remove('off'); });
 on('cardHero', () => {
   sfx.click();
   startToken++;          // 자동 출발을 멈춘다
-  heroPickFromCard = true;
-  heroView = data.heroes.sel;
-  mode = 'hero';
-  $('heroBack').dataset.back = 'card';
-  renderHero();
-  show('scrHero');
-  armHistory();
+  openLoad();
 });
 on('cardGo', () => { if (mode === 'card') begin(run && run.mode !== 'endless' ? run.L : run ? 0 : curProg().cur); });
 on('joinTake', () => { sfx.click(); closeJoin(true); });

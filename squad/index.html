@@ -102,6 +102,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .btn.primary:active { box-shadow: 0 1px 0 var(--amber-dark), 0 3px 0 var(--edge); }
 .btn.glow { box-shadow: 0 0 0 3px var(--amber) inset, 0 4px 0 var(--edge); }
 .btn.small { min-height: 44px; font-size: 16px; padding: 0 12px; }
+/* 함께 출격 시트(출격 카드의 칩 → 영웅·펫·탄종·총을 한 장에서) */
+.ld-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.ld-opt { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 4px 10px; border-radius: 12px; background: var(--panel2); border: 3px solid var(--edge); color: var(--text); font: 600 14px var(--body); cursor: pointer; }
+.ld-opt.on { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber) inset; }
+.ld-opt:disabled { opacity: 0.45; cursor: default; }
+.ld-opt canvas, .ld-opt .fallback { width: 28px; height: 28px; }
+.ld-opt .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--edge); }
+.ld-info { font-size: 13px; margin: 6px 0 0; min-height: 1.2em; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; gap: 10px; }
 .row > * { flex: 1; min-width: 0; }
@@ -250,6 +258,8 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .card-hero { pointer-events: auto; margin-top: 10px; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--panel); border: 3px solid var(--edge); font-family: var(--display); font-size: 15px; box-shadow: 0 3px 0 var(--edge); }
 .card-hero canvas, .card-hero .fallback { width: 32px; height: 32px; border-radius: 50%; background: var(--panel2); }
 .card-go { pointer-events: auto; margin-top: 10px; }
+/* 숨은 동안에도 자리는 차지한다 — 칩을 누르는 순간 버튼이 나타나 칩이 밀리면 손을 뗄 때 칩 밖이 되어 눌림이 사라졌다 */
+.card-go.off { visibility: hidden; pointer-events: none; }
 @keyframes cardIn { from { transform: scale(1.3); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* HUD */
@@ -606,7 +616,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <h2>강화 <span class="coinchip" id="uCoins">0</span></h2>
     <div id="upgList" class="stack"></div>
     <h3>탄종 <small id="ammoStars" class="muted"></small></h3>
-    <p class="muted" style="font-size:13px;margin:0 0 8px">캠페인에 들고 갈 탄종이에요. 별을 모으면 열려요. 별은 줄지 않아요. 좋은 점과 대신 잃는 점이 있어요. 무한모드 탄종·총은 무한모드 준비 화면에서 골라요.</p>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">캠페인에 들고 갈 탄종이에요. 별을 모으면 열려요. 별은 줄지 않아요. 좋은 점과 대신 잃는 점이 있어요. 출격 카드의 ‘함께 출격’에서도 고를 수 있어요(무한모드 탄종·총은 무한모드 출격 카드에서).</p>
     <div id="ammoList" class="stack"></div>
     <button id="upgBack" class="btn" data-back="title" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
   </div>
@@ -667,7 +677,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <div class="goal" id="cardGoal"></div>
     <div class="unit-tip" id="cardUnit" hidden></div>
     <button class="card-hero" id="cardHero" hidden></button>
-    <button class="btn primary card-go" id="cardGo" hidden>출격!</button>
+    <button class="btn primary card-go off" id="cardGo">출격!</button>
   </div>
 </section>
 
@@ -724,17 +734,14 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
   </div>
 </section>
 
-<section id="scrEndPrep" class="screen dim" hidden>
+<section id="scrLoad" class="screen dim" hidden>
   <div class="sheet">
-    <h2>무한모드 준비 <button class="back" data-back="title">닫기</button></h2>
-    <p class="muted" id="endPrepWho" style="font-size:13px;margin:0 0 8px"></p>
-    <h3>탄종 <small id="endAmmoStars" class="muted"></small></h3>
-    <p class="muted" style="font-size:13px;margin:0 0 8px">무한모드에 들고 갈 탄종이에요. 전격·부식·치료탄은 무한모드에서만 써요.</p>
-    <div id="endAmmoList" class="stack"></div>
-    <h3>총 <small id="gunStars" class="muted"></small></h3>
-    <p class="muted" style="font-size:13px;margin:0 0 8px">판 안에서 다른 총이 든 상자를 열면 다음 보스 뒤에 바꿀지 골라요.</p>
-    <div id="gunList" class="stack"></div>
-    <button id="endPrepGo" class="btn primary" style="width:100%;margin-top:14px" data-focus>출격</button>
+    <h2>함께 출격</h2>
+    <div id="ldHeroWrap"><h3>영웅</h3><div id="ldHero" class="ld-grid"></div></div>
+    <div id="ldPetWrap"><h3>펫 <small id="ldPetN" class="muted"></small></h3><div id="ldPet" class="ld-grid"></div></div>
+    <div id="ldAmmoWrap"><h3>탄종 <small id="ldStars" class="muted"></small></h3><div id="ldAmmo" class="ld-grid"></div><p id="ldAmmoInfo" class="muted ld-info"></p></div>
+    <div id="ldGunWrap"><h3>총</h3><div id="ldGun" class="ld-grid"></div><p id="ldGunInfo" class="muted ld-info"></p></div>
+    <button id="ldOk" class="btn primary" data-back="card" style="width:100%;margin-top:14px" data-focus>확인</button>
   </div>
 </section>
 
