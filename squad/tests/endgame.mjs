@@ -4804,3 +4804,76 @@ test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사�
     else await t.test(name, { todo: '16판의 흔들림(±1.7) 안일 수 있다 — 32판으로 다시 재 볼 것' }, () => { assert.ok(ok); });
   }
 });
+
+test('26절 — 개편 판 보스 돌진: 숨 고르기 동안 멈춰 서고, 분대 앞 stop m에서 멈춘다. 붙은 뒤 최대 체력의 BOSS_KNOCK.hp를 깎으면 뒤로 튕겨 비틀거린다(캠페인 보스는 그대로 붙어 있다)', () => {
+  const arena = (pat) => {
+    const s = C.newEndless({ seed: 31, ...BLD });
+    const pol = makeBot('strong', 1031, { skill: true });
+    s.squad.n = 4000;
+    for (let g = 0; g < 400000 && !(s.boss && s.endless.seg >= 2); g++) { const of = C.offerOf(s); if (of) { C.pickCard(s, 0); continue; } C.step(s, pol(s)); }
+    const b = s.boss;
+    b.hp = b.max = 1e12; b.all = [pat]; b.pat = [pat]; b.up = {}; b.pcd = {}; b.seen = []; b.slam = null; b.slamCd = 99; b.summonCd = 99; b.vol = null; b.dash = null; b.king = 0; s.spits = []; s.squad.sp = [];
+    s.foes.forEach((f) => { f.alive = false; });
+    if (s.hero) s.hero.charge = 0;
+    return s;
+  };
+  const V = R.BOSS_PAT.charge, K = R.BOSS_KNOCK;
+  const reachOf = (s) => s.squad.z + 0.55 * C.radius(s.squad.n) + s.boss.r * 0.6;
+  // 돌진: 숨 고르기 동안 멈춤 → 뛰어들어도 stop m 앞에서 멈춘다(바로 붙지 않는다)
+  { const s = arena('charge'); const b = s.boss; b.z = reachOf(s) + V.dist + V.stop + 3; b.pcd.charge = 0;
+    C.step(s, { dir: 0 }); assert.ok(b.dash && !b.dash.go, '숨 고르기');
+    const zw = b.z; for (let i = 0; i < Math.round(V.warn / C.DT) - 2; i++) C.step(s, { dir: 0 });
+    assert.ok(Math.abs(b.z - zw) < 1e-9 || s.squad.vz, `숨 고르는 동안 서 있다 ${(zw - b.z).toFixed(3)}`);
+    for (let i = 0; i < Math.round((V.dash + 0.2) / C.DT); i++) C.step(s, { dir: 0 });
+    assert.ok(!b.clash, '돌진 끝에 바로 붙지 않는다');
+    assert.ok(b.z - reachOf(s) > 0.5, `분대 앞에서 멈춘다 ${(b.z - reachOf(s)).toFixed(2)}m`); }
+  // 넉백
+  { const s = arena('charge'); const b = s.boss; b.pcd.charge = 99; b.z = reachOf(s);
+    C.step(s, { dir: 0 }); assert.ok(b.clash, '붙었다');
+    b.hp -= (K.hp + 0.001) * b.max; C.step(s, { dir: 0 });
+    assert.ok(!b.clash && b.stun > 0, '튕겨 나가 비틀거린다');
+    assert.ok(s.ev.some((e) => e.t === 'bossKnock'), '넉백 이벤트');
+    assert.ok(Math.abs(b.z - reachOf(s) - K.dist) < 0.2, `뒤로 ${(b.z - reachOf(s)).toFixed(2)}m`);
+    const z1 = b.z; let stomp = 0;
+    for (let i = 0; i < Math.round(K.stun / C.DT) - 2; i++) { C.step(s, { dir: 0 }); stomp += s.ev.filter((e) => e.t === 'stomp').length; }
+    assert.equal(stomp, 0, '비틀거리는 동안 밟지 않는다'); assert.ok(Math.abs(b.z - z1) < 1e-9, '비틀거리는 동안 서 있다'); }
+  // 캠페인 보스(패턴 없음)는 넉백이 없다
+  { const s = C.newGame(C.prepareLevel(12), { start: 3000, fire: 10 });
+    for (let g = 0; g < 200000 && !s.boss; g++) C.step(s, C.botInput(s));
+    const b = s.boss; assert.ok(b && !b.pat, '캠페인 보스');
+    b.hp = b.max = 1e12; b.z = reachOf(s); C.step(s, { dir: 0 }); assert.ok(b.clash);
+    b.hp -= 0.5 * b.max; C.step(s, { dir: 0 }); assert.ok(b.clash, '그대로 붙어 있다'); }
+});
+
+test('26.1 — 사람의 자동 발동(heroWantsAuto): 뭉치는 앞이 비었을 때만 게이트에 쓰고, 좀비가 오고 있으면 아껴 두며, 앞의 큰 무리에는 쓴다. 봇 규칙(heroWants)은 그대로', () => {
+  const s = C.newGame(C.prepareLevel(12), { hero: { id: 'mungchi', lv: 5 } });
+  const q = s.squad;
+  s.phase = 'run'; s.hero.charge = 1; s.foes = [];
+  const row = s.rows.find((r) => !r.done);
+  row.z = q.z + 18;
+  for (const c of row.cells) { c.op = 'add'; c.v = 5; c.cap = 60; }
+  assert.equal(C.heroWantsAuto(s), true, '앞이 비고 덜 찬 덧셈 칸 → 쓴다');
+  const D = C.dps(q.n, q.tier, s.fireLv);
+  const foe = (dz, hp, kind = 'grunt') => ({ id: s.nextId++, kind, x: q.x, z: q.z + dz, hp, max: hp, alive: true, awake: true, hitT: -9, cd: 0, seed: 1, r: 0.4, spd: 0 });
+  s.foes = [foe(32, 0.5 * D)];
+  assert.equal(C.heroWantsAuto(s), false, '좀비가 오고 있으면 게이트에 안 쓴다');
+  assert.equal(C.heroWants(s), true, '봇 규칙은 예전 그대로(게이트)');
+  s.foes = [foe(15, 1.5 * D)];
+  assert.equal(C.heroWantsAuto(s), true, '앞의 큰 무리 → 쓴다');
+  s.foes = [foe(34, 0.5 * D, 'brute')];
+  assert.equal(C.heroWantsAuto(s), false, '거구가 곧 온다 → 아껴 둔다');
+  s.hero.id = 'nabi';
+  assert.equal(C.heroWantsAuto(s), C.heroWants(s), '다른 영웅은 같은 규칙');
+});
+
+test('26.3·26.4 — 희귀 강화 글은 지금 세기(또 뽑으면 전 → 후), 탄종은 캠페인(sel)·무한모드(selE)를 따로 저장한다(옛 저장의 전용 탄은 무한모드로)', () => {
+  assert.match(R.ENH.rapid.rare.text(), /\+25%/);
+  assert.match(R.ENH.rapid.rare.text(R.enhStr(2), R.enhStr(1)), /\+25% → \+38%/);
+  for (const id of Object.keys(R.ENH)) { assert.equal(typeof R.ENH[id].rare.text(1.5, 1), 'string', id); assert.ok(!R.ENH[id].rare.text(1.5, 1).includes('NaN'), id); }
+  const a = S.normalize({ v: 2, ammo: { sel: 'shock', seen: 225 } });
+  assert.equal(a.ammo.sel, '', '캠페인에는 전용 탄을 안 들고 간다');
+  assert.equal(a.ammo.selE, 'shock', '무한모드에는 그대로');
+  const b = S.normalize({ v: 2, ammo: { sel: 'frost', selE: 'acid' } });
+  assert.deepEqual([b.ammo.sel, b.ammo.selE], ['frost', 'acid']);
+  assert.equal(S.defaults().ammo.selE, '');
+});

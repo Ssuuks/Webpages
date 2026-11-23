@@ -1,6 +1,6 @@
 /* 숫자부대 돌격 — 게임 루프, 조작, 화면 흐름, 저장 */
 import {
-  DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
+  DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWantsAuto, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
@@ -170,7 +170,7 @@ function currentInput() {
   if (keys.left !== keys.right) { dir = keys.left ? -1 : 1; tx = null; }
   $('touchL').classList.toggle('on', (!!p && !p.drag && p.side < 0) || keys.left);
   $('touchR').classList.toggle('on', (!!p && !p.drag && p.side > 0) || keys.right);
-  return { dir, tx, skill: skillPressed || (data.set.autoSkill && heroWants(s)) };
+  return { dir, tx, skill: skillPressed || (data.set.autoSkill && heroWantsAuto(s)) };   // 사람의 자동 발동(뭉치는 싸움 먼저 — 26.1)
 }
 
 cvs.addEventListener('pointerdown', onDown, { passive: false });

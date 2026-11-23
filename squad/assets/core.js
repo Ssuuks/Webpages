@@ -4176,7 +4176,8 @@ function castHero(s) {
   }
 }
 
-/* 스킬을 지금 쓰면 좋은가 — 자동 발동 설정과 봇이 같은 규칙을 쓴다 */
+/* 스킬을 지금 쓰면 좋은가 — 봇·보정표(caltable·cyctable·지문)가 쓰는 규칙(바꾸면 SIM을 올리고 표를 다시 만든다).
+   사람의 '스킬 자동 발동' 설정은 heroWantsAuto(뭉치만 다르다 — ENDGAME.md 26.1) */
 export function heroWants(s) {
   const h = s.hero;
   if (!h || h.charge < 1 || h.act > 0 || (s.phase !== 'run' && s.phase !== 'arena')) return false;
@@ -4185,36 +4186,56 @@ export function heroWants(s) {
   if (h.id === 'bori') return q.recent >= Math.max(4, 0.12 * q.n) || !!(s.boss && s.boss.clash);
   if (boss) return true;
   if (h.id === 'mungchi') {
-    // 싸움 먼저, 게이트는 앞이 비었을 때만: 예전에는 '앞에 덜 찬 덧셈 칸'만 있어도 써서(거의 늘 있다) 좀비 떼가 오기 전에 다 써 버렸다
     const D = dps(q.n, q.tier, s.fireLv);
     const R = radius(q.n);
-    let threat = 0, near = 0, big = false;
-    for (const f of s.foes) {
-      if (!f.alive) continue;
-      const dz = f.z - q.z;
-      if (dz <= 0 || dz > 40 || Math.abs(f.x - q.x) > R + 2.5) continue;
-      if (dz < 25) { threat += f.hp; if (f.kind === 'brute' || f.elite) big = true; }
-      else if (f.kind === 'brute' || f.elite || f.hp >= 2 * D) return false;   // 센 적이 곧 온다 — 아껴 둔다
-      near += f.hp;
-    }
-    if (threat >= 1.2 * D || (big && threat >= 0.6 * D)) return true;
-    // 앞을 막은 벽·장갑문(무한모드)도 몰아 쏠 거리
-    for (const p of s.props || []) {
-      if (!p.alive || (p.kind !== 'wall' && p.kind !== 'door')) continue;
-      const dz = p.z - q.z;
-      if (dz > 0 && dz < 22 && q.x + R > p.x0 && q.x - R < p.x1 && p.hp >= 1.5 * D) return true;
-    }
-    if (near >= 0.3 * D) return false;   // 좀비가 오고 있으면 게이트에 쓰지 않는다
+    let threat = 0;
+    for (const f of s.foes) if (f.alive && f.z > q.z && f.z - q.z < 25 && Math.abs(f.x - q.x) < R + 1.5) threat += f.hp;
+    if (threat >= 1.2 * D) return true;
     for (const row of s.rows) {
       const dz = row.z - q.z;
-      if (row.done || dz < 12 || dz > 25) continue;
+      if (row.done || dz < 10 || dz > 30) continue;
       const c = row.cells[pickCell(row, q.x)];
-      if (c.op === 'add' && c.v > 0 && c.cap - c.v >= 0.3 * Math.abs(c.cap)) return true;   // 꽤 덜 찬 덧셈 칸만
+      if (c.op === 'add' && c.v < c.cap) return true;
     }
     return false;
   }
   if (h.id === 'nabi') {
     for (const f of s.foes) if (f.alive && (f.kind === 'spit' || f.kind === 'brute') && f.z - q.z > 2 && f.z - q.z < 36) return true;
+  }
+  return false;
+}
+/* 사람의 '스킬 자동 발동': 뭉치는 싸움 먼저, 게이트는 앞이 비었을 때만(ENDGAME.md 26.1 — 예전 규칙은 '앞에 덜 찬 덧셈 칸'만 있어도 써서
+   거의 늘 게이트에 써 버렸다). 다른 영웅은 heroWants 그대로 */
+export function heroWantsAuto(s) {
+  const h = s.hero;
+  if (!h || h.id !== 'mungchi') return heroWants(s);
+  if (h.charge < 1 || h.act > 0 || (s.phase !== 'run' && s.phase !== 'arena')) return false;
+  if (s.boss && s.boss.hp > 0) return true;
+  const q = s.squad;
+  const D = dps(q.n, q.tier, s.fireLv);
+  const R = radius(q.n);
+  let threat = 0, near = 0, big = false;
+  for (const f of s.foes) {
+    if (!f.alive) continue;
+    const dz = f.z - q.z;
+    if (dz <= 0 || dz > 40 || Math.abs(f.x - q.x) > R + 2.5) continue;
+    if (dz < 25) { threat += f.hp; if (f.kind === 'brute' || f.elite) big = true; }
+    else if (f.kind === 'brute' || f.elite || f.hp >= 2 * D) return false;   // 센 적이 곧 온다 — 아껴 둔다
+    near += f.hp;
+  }
+  if (threat >= 1.2 * D || (big && threat >= 0.6 * D)) return true;
+  // 앞을 막은 벽·장갑문(무한모드)도 몰아 쏠 거리
+  for (const p of s.props || []) {
+    if (!p.alive || (p.kind !== 'wall' && p.kind !== 'door')) continue;
+    const dz = p.z - q.z;
+    if (dz > 0 && dz < 22 && q.x + R > p.x0 && q.x - R < p.x1 && p.hp >= 1.5 * D) return true;
+  }
+  if (near >= 0.3 * D) return false;   // 좀비가 오고 있으면 게이트에 쓰지 않는다
+  for (const row of s.rows) {
+    const dz = row.z - q.z;
+    if (row.done || dz < 12 || dz > 25) continue;
+    const c = row.cells[pickCell(row, q.x)];
+    if (c.op === 'add' && c.v > 0 && c.cap - c.v >= 0.3 * Math.abs(c.cap)) return true;   // 꽤 덜 찬 덧셈 칸만
   }
   return false;
 }
