@@ -14,6 +14,7 @@ import {
   prog, endedCycles, maxCycle, upgLv, addUpg, heroLvOf, addHeroLv, cycleStars, CYCLE_LEVELS, endlessUnlocks,
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
+import { PATCH } from './patch.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
   FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO } from './roster.js';
 import {
@@ -295,7 +296,7 @@ function notice(title, text, buttons) {
 }
 
 /* ---------- 화면 전환 ---------- */
-const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPick', 'scrPause', 'scrResult', 'scrEnding', 'scrPet', 'scrLoad'];
+const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPick', 'scrPause', 'scrResult', 'scrEnding', 'scrPet', 'scrLoad', 'scrNotes'];
 function show(id) {
   for (const k of SCREENS) $(k).hidden = k !== id;
   $('hud').hidden = !(mode === 'play' || mode === 'pause' || mode === 'card' || mode === 'pick' || mode === 'result');
@@ -352,6 +353,7 @@ function pendingRun() {
 }
 
 function renderTitle() {
+  $('tVer').textContent = PATCH.ver;   // 패치 노트 버전(새 코드가 불러와졌는지)
   $('tPlayL').textContent = curProg().cur;
   $('tCycle').hidden = topCycle() <= 1;
   $('tCycle').textContent = cycName(data.cycle) + ' · ';
@@ -1394,6 +1396,20 @@ function prepareRun(L) {
   seen(data, 'biome', biomeOf(L).id);
 }
 
+/* 패치 노트(assets/patch.js): 이번 판에 바뀐 것 — 타이틀의 버전 글씨로 새 코드가 불러와졌는지 본다 */
+function renderNotes() {
+  $('notesMeta').textContent = `v${PATCH.ver} · ${PATCH.date}`;
+  const body = $('notesBody');
+  body.textContent = '';
+  for (const g of PATCH.groups) {
+    const h = document.createElement('h3');
+    h.textContent = g.title;
+    const ul = document.createElement('ul');
+    ul.className = 'notes-list';
+    for (const it of g.items) { const li = document.createElement('li'); li.textContent = it; ul.appendChild(li); }
+    body.append(h, ul);
+  }
+}
 /* 함께 출격 시트: 출격 카드의 칩에서 영웅·펫·탄종(무한모드는 전용 탄까지)·총(무한모드)을 한 장에서 고른다.
    확인(또는 뒤로)이면 카드로 돌아가 고른 것으로 판을 다시 짠다(backToCard) */
 function openLoad() {
@@ -3373,6 +3389,7 @@ on('endEndless', () => { sfx.click(); mode = 'title'; goTitle(); tryEndless(); }
 on('endMenu', () => { sfx.click(); goTitle(); });
 on('btnLevels', () => { sfx.click(); mode = 'levels'; levelsCycle = data.cycle; renderLevels(); show('scrLevels'); armHistory(); });
 on('btnHero', () => { sfx.click(); mode = 'hero'; heroPickFromCard = false; heroView = data.heroes.sel; renderHero(); show('scrHero'); armHistory(); });
+on('btnNotes', () => { sfx.click(); mode = 'notes'; renderNotes(); show('scrNotes'); armHistory(); });
 on('btnUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); armHistory(); });
 on('btnSet', () => { sfx.click(); mode = 'set'; renderSet(); show('scrSet'); armHistory(); });
 for (const b of document.querySelectorAll('[data-back]')) {

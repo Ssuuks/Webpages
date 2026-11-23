@@ -140,6 +140,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .menu-grid .btn small { font-family: var(--body); font-size: 11px; color: var(--muted); font-weight: 600; }
 .stars-total { text-align: center; font-size: 13px; color: var(--muted); }
 .stars-total b { color: #FFD84A; }
+.notes-link { display: block; margin: 2px auto 0; padding: 6px 12px; background: none; border: 0; color: var(--muted); font: 600 12px var(--body); text-decoration: underline; cursor: pointer; }
+.notes-meta { margin: -4px 0 10px; font-size: 13px; color: var(--muted); }
+.notes-list { margin: 0 0 6px; padding-left: 18px; font-size: 14px; line-height: 1.5; }
+.notes-list li { margin: 4px 0; }
 #storeChip { align-self: center; font-size: 12px; font-weight: 700; color: #3A2306; background: #FFD84A; border: 2px solid var(--edge); border-radius: 999px; padding: 4px 10px; }
 #resumeCard { width: min(380px, 100%); background: var(--panel); border: 3px solid var(--edge); border-radius: 16px; padding: 12px; box-shadow: 0 4px 0 var(--edge); display: grid; gap: 8px; }
 #resumeCard b { font-family: var(--display); font-weight: 400; font-size: 20px; color: var(--amber); }
@@ -591,6 +595,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
       <button id="btnSet" class="btn">설정</button>
     </div>
     <p class="stars-total">모은 별 <b>★ <span id="tStars">0</span></b></p>
+    <button id="btnNotes" class="notes-link">패치 노트 · v<span id="tVer"></span></button>
   </div>
 </section>
 
@@ -742,6 +747,15 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <div id="ldAmmoWrap"><h3>탄종 <small id="ldStars" class="muted"></small></h3><div id="ldAmmo" class="ld-grid"></div><p id="ldAmmoInfo" class="muted ld-info"></p></div>
     <div id="ldGunWrap"><h3>총</h3><div id="ldGun" class="ld-grid"></div><p id="ldGunInfo" class="muted ld-info"></p></div>
     <button id="ldOk" class="btn primary" data-back="card" style="width:100%;margin-top:14px" data-focus>확인</button>
+  </div>
+</section>
+
+<section id="scrNotes" class="screen dim" hidden>
+  <div class="sheet">
+    <h2>패치 노트</h2>
+    <p class="notes-meta" id="notesMeta"></p>
+    <div id="notesBody"></div>
+    <button class="btn" data-back="title" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
   </div>
 </section>
 
