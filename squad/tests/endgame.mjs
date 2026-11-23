@@ -3905,7 +3905,7 @@ test('탄 Lv1~5(개편 판, 18.3): 레벨마다 정해진 능력 — 관통(1마
     assert.equal(!!V(a, R.BUILD.evo - 1).evo, false);
     assert.equal(V(a, R.BUILD.evo).evo, true);
     assert.equal(V(a, 9).evo, true, 'Lv5가 상한(각성 Lv6~10은 아직 없다)');
-    assert.ok(R.fx2Text(a, R.BUILD.evo).includes(R.FX_EVO[a]));
+    assert.ok(!R.fx2Text(a, R.BUILD.evo).includes('‘') && R.fx2Text(a, R.BUILD.evo) !== R.fx2Text(a, R.BUILD.evo - 1), '36절: 진화 이름 대신 효과(글이 Lv4와 다르다)');
     for (let l = 1; l <= 5; l++) assert.ok(R.fx2Text(a, l).length > 6, `${a} Lv${l}`);
     assert.equal(V(a, 1).amp, undefined, '언 적 피해 증폭은 없앴다');
   }
@@ -4645,7 +4645,7 @@ test('21.9 — 총 Lv 카드: 그 총의 Lv +1(각성 전 Lv5 상한), 희귀·�
   assert.equal(pickAs({ k: 'gunlv', g: 'shotgun', n: 1 }).endless.bld.gl.shotgun, 2);
   const leg = pickAs({ k: 'gunlv', g: 'shotgun', n: 3 });
   assert.deepEqual([leg.endless.bld.gl.shotgun, C.enhN(leg, 'shotgun', 'l')], [2, 1]);
-  assert.ok(C.gunOf(leg).v.wall > R.gunVal('shotgun', 2).wall * 1.9 && C.gunOf(leg).v.shard > 0, '전설: 2차 진화 바로 + 벽 ×2');
+  assert.ok(C.gunOf(leg).v.wall === R.gunVal('shotgun', 2).wall && !C.gunOf(leg).v.shard, '34·36절: 전설은 진화를 앞당기거나 벽 피해를 키우지 않는다(산탄 폭발)');
   assert.equal(C.cardInfo(C.restore(C.snapshot(base)), { k: 'gunlv', g: 'shotgun', n: 2 }).enh, 'rare');
   const cap = pickAs({ k: 'gunlv', g: 'shotgun', n: 1 }, (o) => { o.endless.bld.gl.shotgun = 5; o.endless.seg = R.BUILD.awakeFrom - 1; });
   assert.equal(cap.endless.bld.gl.shotgun, 5, '각성 전 Lv5 상한');
