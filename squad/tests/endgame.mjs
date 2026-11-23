@@ -3072,7 +3072,7 @@ test('탄종: 모은 별로 열리고(45·90·135·180), 보통탄 판은 상태
   // 저장: 모르는 탄종은 보통탄으로
   assert.equal(S.normalize({ ammo: { sel: 'nope' } }).ammo.sel, '');
   assert.equal(S.normalize({ ammo: { sel: 'frost', seen: 50 } }).ammo.sel, 'frost');
-  assert.deepEqual(S.normalize({}).ammo, { sel: '', seen: 0 });
+  assert.deepEqual(S.normalize({}).ammo, { sel: '', selE: '', seen: 0 });   // selE: 무한모드 탄종(26.4)
   // 소개 글은 수치에서 만든다
   for (const id of R.AMMO_IDS) { const t = R.ammoText(id); assert.ok(t.good && t.bad, `${id} 소개 글`); if (R.AMMO[id].range) assert.ok(t.bad.includes(String(R.AMMO[id].range))); }
 });
