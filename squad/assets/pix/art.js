@@ -564,6 +564,8 @@ const ICON_PAL = {
   n: '#F4F7FF', v: '#FFB347', a: '#FFE38A', i: '#8FD3FF',
   // 유물 아이콘(무한모드 3·5단계): 구리 c·C(과부하 코일) · 진홍 R·D(확성기·심장 — 펫 하트의 분홍과 다르게) · 보라 V·N·x(유물 테두리 — 카드·HUD·나침반 표시)
   c: '#C8692E', C: '#F7B672', R: '#E8384F', D: '#A92644', V: '#9B6BFF', N: '#5B3A9E', x: '#D9C4FF',
+  // 글자가 바닥나 숫자 칸(ENDGAME.md 23·24절): 초록 1·2(시너지 고리·독침·행운) · 부식 3(roster AMMO.acid) · 전격 4·5(AMMO.shock) · 치료 6(짙은 분홍)
+  1: '#7CE07A', 2: '#3FA65A', 3: '#9BE36B', 4: '#D6CCFF', 5: '#7A5CFF', 6: '#E0507E',
 };
 
 /* 화염병의 병·불꽃(던진 병 bottle, 불 지대 불꽃 flick): 유리 초록 · 심지 흰색 · 불꽃 주황 → 노랑 → 흰 노랑 */
@@ -704,6 +706,29 @@ export const ICONS = {
   relic_bag: ['...mmm...', '..mWmmM..', '..kkkkk..', '.wwwkwww.', 'wwwwwwwqw', 'wwwwwwwqw', 'wwwwwwqqw', '.wwwwqqq.', '..qqqqq..'],
   relic_pouch: ['.Y..Y..Y.', '.f..f..f.', '.d..d..d.', 'EEEEEEEEE', 'EAAAAAAAE', 'EAAAyAAAE', 'EAAAAAAAE', 'EAAAAAAAE', '.EEEEEEE.'],
   relic_ward: ['.ttttttt.', 'tLLLLLllt', 'tLlllllTt', 'tLllWllTt', 'tLlWWWlTt', '.tlllllt.', '.tllllTt.', '..tlllt..', '...ttt...'],
+  /* 24절 새 유물: 전리품 자루 = 카드 두 장 꽂힌 자루 · 황금 조준경 = 금테 조준 십자 · 공명기 = 초록 울림의 소리굽쇠 · 진격 북 = 북채 둘 진홍 북 ·
+     폭약 배낭 = 심지 붙은 다이너마이트 묶음 · 사다리 = 나무 사다리 · 행운의 동전 = 네잎 금화 · 훈련 교본 = 보라 표지 책 */
+  relic_loot: ['.hHh.hHh.', '.hHh.hHh.', '..q...q..', '.wwwwwww.', 'wwwwqwwww', 'wwwqqqwww', 'wwwwqwwww', 'wwwwwwwww', '.wwwwwww.'],
+  relic_scope: ['...yyy...', '.yy.R.yy.', '.y..R..y.', 'y...R...y', 'yRRRRRRRy', 'y...R...y', '.y..R..y.', '.yy.R.yy.', '...yyy...'],
+  relic_resonator: ['1.uU.Uu.1', '1.uU.Uu.1', '.1uU.Uu1.', '..uU.Uu..', '..uUUUu..', '...uUu...', '....U....', '...uUu...', '..uuuuu..'],
+  relic_drum: ['.k.....k.', '..k...k..', '.RRRRRRR.', 'RhhhhhhhR', 'RyRyRyRyR', 'RRyRyRyRR', 'RyRyRyRyR', 'RhhhhhhhR', '.RRRRRRR.'],
+  relic_charge: ['......Y..', '.....fY..', '....k....', '.RRkRRR..', 'RRRRRRRR.', 'RhRRhRRh.', 'RRRRRRRR.', 'kkkkkkkk.', 'RRRRRRRR.'],
+  relic_ladder: ['.w.....w.', '.wwwwwww.', '.w.....w.', '.w.....w.', '.wwwwwww.', '.w.....w.', '.w.....w.', '.wwwwwww.', '.w.....w.'],
+  relic_lucky: ['...yyy...', '.yY111Yy.', 'yY11211Yd', 'y1121211d', 'y2222222d', 'y1121211d', 'yY11211Yd', '.yYY2YYd.', '...ddd...'],
+  relic_manual: ['.NNNNNNN.', 'NVVVVVVxN', 'NVhhhhVxN', 'NVVVVVVxN', 'NVhhhVVxN', 'NVVVVVVxN', 'NVVVVVVxN', 'NVVVVVVxN', '.NNNNNNN.'],
+  /* 24절 새 탄(카드·상자·HUD 칩): 전격 = 번개 · 부식 = 산 방울 · 치료 = 흰 십자 하트. 가장 많은 색이 탄 색(roster AMMO의 color) */
+  fx_shock: ['....444..', '...445...', '..444....', '.4444444.', '....454..', '...444...', '..444....', '.445.....', '.4.......'],
+  fx_acid: ['....3....', '...333...', '...333...', '..33333..', '.3333332.', '.3W33332.', '.3333322.', '..33222..', '...222...'],
+  fx_cure: ['.PPP.PPP.', 'PPPPPPPP6', 'PPPPWPPP6', 'PPPWWWPP6', 'PPPPWPPP6', '.PPPPPP6.', '..PPPP6..', '...PP6...', '....6....'],
+  /* 시너지 배지(23.6 — 테두리 대신): 맞물린 초록 고리 둘 */
+  link: ['.........', '.111.....', '1...1....', '1..22222.', '1..2.1..2', '.1112...2', '....2...2', '.....222.', '.........'],
+  /* 보스 패턴(23.5 — 보스 막대 이름 옆): 내려찍기 = 띠에 꽂히는 화살 · 독침 = 떨어지는 방울과 고리 · 장벽 = 빈틈 하나 남긴 머리 줄 ·
+     돌진 = 겹화살 · 넓은 내려찍기 = 두 칸 띠와 초록 안전 칸 */
+  pat_slam: ['...RRR...', '...RRR...', '...RRR...', '.RRRRRRR.', '..RRRRR..', '...RRR...', '....R....', 'DDDDDDDDD', 'DDDDDDDDD'],
+  pat_volley: ['....2....', '...212...', '...222...', '....2....', '.........', '..11111..', '.1.....1.', '.1.....1.', '..11111..'],
+  pat_line: ['.........', 'zz.zz..zz', 'zK.zK..zK', 'zz.zz..zz', 'gg.gg..gg', 'gg.gg..gg', '.........', '.........', '.........'],
+  pat_charge: ['R...R....', '.R...R...', '..R...R..', '...R...R.', '....R...R', '...R...R.', '..R...R..', '.R...R...', 'R...R....'],
+  pat_wide: ['RR.RR..1.', 'RR.RR..1.', 'RR.RR..1.', 'RR.RR..1.', 'RR.RR..1.', 'RR.RR..1.', 'RR.RR..1.', 'DD.DD..1.', 'DD.DD..1.'],
 };
 export const ICON_PAL_EXPORT = ICON_PAL;
 

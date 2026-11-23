@@ -897,7 +897,7 @@ test('충돌 크기: 물체마다 맞는 폭 ≤ 그린 폭(좀비 접촉·톱�
   // 빗나간 총알은 보스 뒤로 그린다(팔을 뚫고 가는 것처럼 보이지 않게), 독침 고리 = SPIT_R, 벽·상자·철창은 x0~x1 그대로
   assert.match(src, /push\(s\.boss\.z \+ 0\.05, 11, null\)/, '보스 뒤 총알 그리기 항목');
   assert.match(src, /\(b\.z \+ ext > plane\) !== behind/, '총알 판을 지난 총알만 보스 뒤로');
-  assert.match(src, /ellRing\(P\.x, P\.y, SPIT_R \* P\.s, SPIT_R \* P\.s \* 0\.38, 1\)/, '독침 고리 = SPIT_R');
+  assert.match(src, /const sr = sp\.r \|\| SPIT_R;[\s\S]*?ellRing\(P\.x, P\.y, sr \* P\.s, sr \* P\.s \* 0\.38, 1\)/, '독침 고리 = SPIT_R(보스 독침 범위 강화면 sp.r — 23.2, core도 같은 폭으로 맞힌다)');
   assert.doesNotMatch(src, /1\.2 \* P\.s \* 0\.38/, '독침 고리를 숫자로 그리지 않는다');
   assert.match(src, /function boxFaces\(p, H, depth = 0\.35\) \{\s*const z0 = p\.z - depth, z1 = p\.z \+ depth;\s*if \(!project\(view, p\.x0, H, z1\)\)/, '벽·상자는 x0~x1로 그린다');
   // 충돌 크기 보기는 시뮬레이션의 hitShapes만 그린다
@@ -1216,7 +1216,7 @@ test('화염병 그림: 다른 특수병과 같은 격자·뒷모습(+던지기 
   // 화면(main.js): 칩 열쇠는 굴리는 해시(무한모드는 레벨 상한이 없어 자릿수로 못 쌓는다 — 병과·레벨마다 섞는다), 2회차 엔딩 안내 줄 '화염병 합류'(store.endlessUnlocks의 flame),
   // 캠페인 목록은 소개 레벨(unlock)로만 병과를 고른다 — 화염병에는 unlock이 없어 캠페인 화면에 안 나온다
   assert.match(main, /for \(const m of sp\) \{ mix\(UNIT_IDS\.indexOf\(m\.k\) \+ 1\); mix\(m\.lv \|\| 1\); \}/);
-  assert.match(main, /if \(fx\) for \(const a of AMMO_IDS\) mix\(fx\[a\] \| 0\);/, '탄 효과 레벨도 그대로(Lv4 이상도 칩이 바뀐다)');
+  assert.match(main, /if \(fx\) for \(const a of AMMO_IDS2\) mix\(fx\[a\] \| 0\);/, '탄 효과 레벨도 그대로(Lv4 이상도 칩이 바뀐다 — 개편 판 탄 일곱, 24절)');
   assert.match(main, /\$\('endEndlessInfo'\)\.textContent = c === 2 && endlessUnlocks\(data, CARD\.stageMax\)\.flame \? `화염병 합류!/);
   assert.equal(UNITS.flame.unlock, undefined, '화염병은 캠페인 소개 레벨이 없다');
   assert.ok(UNITS.flame.endless, '무한모드 전용 표시');

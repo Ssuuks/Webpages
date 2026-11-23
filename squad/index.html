@@ -28,6 +28,10 @@
   --muted: #C7BCE0;
   --amber: #FFC93C;
   --amber-dark: #D08A12;
+  /* 등급 색(ENDGAME.md 23.6): 테두리 = 등급. 카드·일시정지 칸·상자 알림·결과 줄이 같은 토큰을 쓴다. 금빛·주황은 등급 말고는 쓰지 않는다 */
+  --g-common: #9AA0AE;
+  --g-rare: #6CC0FF;
+  --g-legend: #FF9F43;
   --amber-ink: #3A2306;
   --blue: #6CC0FF;
   --pink: #FF8FB8;
@@ -215,9 +219,28 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .st-grid b { text-align: right; color: #FFE38A; }
 .sp-list .inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; background: none; padding: 0; }
 .inv-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px 5px; border-radius: 10px; border: 2px solid transparent; background: rgba(14, 10, 26, 0.55); color: inherit; font: inherit; font-size: 11px; line-height: 1.2; cursor: pointer; }
-.inv-cell.on { border-color: #FFD84A; background: rgba(60, 40, 90, 0.7); }
+.inv-cell.on { outline: 2px solid #FFFFFF; outline-offset: 1px; background: rgba(60, 40, 90, 0.7); }
+/* 일시정지 칸 셋(23.7): 테두리 = 등급(일반 1px 회색 · 희귀 2px 파랑 · 전설 3px 주황 + 빛) · 흐린 칸(쓰러짐·모자란 짝) · 유물 빈칸(점선) */
+.inv-cell.g1 { border: 1px solid var(--g-common); padding: 7px 5px 6px; }
+.inv-cell.g2 { border: 2px solid var(--g-rare); }
+.inv-cell.g3 { border: 3px solid var(--g-legend); padding: 5px 3px 4px; box-shadow: 0 0 10px rgba(255, 159, 67, 0.45); }
+.inv-cell.dim { opacity: 0.45; filter: grayscale(0.6); }
+.inv-cell.empty { border: 2px dashed rgba(217, 196, 255, 0.45); background: none; cursor: default; min-height: 58px; }
+.inv-cell.relicc { border: 2px solid #9B6BFF; background: rgba(38, 20, 72, 0.7); }
+.inv-cell small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; font-size: 10px; line-height: 1.25; color: var(--muted); white-space: normal; text-align: center; }
+.inv-cell em { font-style: normal; font-size: 10px; color: #9FE8A8; white-space: normal; text-align: center; }
+.sp-list .inv-head { display: block; margin: 6px 0 0; padding: 0 2px; background: none; font-family: var(--display); font-size: 14px; color: var(--muted); }
+.inv-cell .syn-mark { position: absolute; top: 2px; left: 3px; }
+.inv-cell .syn-mark canvas { width: 12px; height: 12px; }
+.sp-list .mut-row { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; background: none; }
+.mut-row button { display: flex; align-items: center; gap: 3px; padding: 2px 7px 2px 3px; border-radius: 9px; border: 0; background: rgba(120, 30, 50, 0.6); color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
+.mut-row canvas { width: 16px; height: 16px; }
+.inv-none { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+/* 결과 화면 빌드 줄: 이름 색 = 등급(23.6) */
+.gname { white-space: nowrap; }
+.gname.g1 { color: #D9DCE3; } .gname.g2 { color: var(--g-rare); } .gname.g3 { color: var(--g-legend); font-weight: 700; text-shadow: 0 0 6px rgba(255, 159, 67, 0.6); }
 .inv-cell span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.inv-cell i { position: absolute; top: 2px; right: 3px; font-style: normal; font-size: 10px; font-weight: 700; color: #1A1026; background: #FFD84A; border-radius: 6px; padding: 0 4px; }
+.inv-cell i { position: absolute; top: 2px; right: 3px; font-style: normal; font-size: 10px; font-weight: 700; color: #FFFFFF; background: rgba(14, 10, 26, 0.85); border-radius: 6px; padding: 0 4px; }
 .sp-list .inv-detail { display: block; min-height: 3.2em; background: rgba(14, 10, 26, 0.55); border-radius: 10px; padding: 8px 10px; }
 /* 일시정지의 '지금 내 부대' 목록: 무한모드 2·3단계면 탄 효과·시너지·유물까지 열 줄을 넘어 계속하기·나가기 단추를 화면 밖으로 밀어냈다 —
    길어지면 목록만 스크롤한다(캠페인의 특수병 셋은 이 높이 안이라 그대로) */
@@ -248,6 +271,19 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 #bossBar b { position: absolute; inset: 0; background: #FFF1DE; transform-origin: left; transition: transform 0.45s ease-out 0.22s; }
 #bossBar .bar::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0, transparent calc(25% - 2px), rgba(14, 10, 26, 0.75) calc(25% - 2px), rgba(14, 10, 26, 0.75) 25%); }
 #bossBar.rage i { background: linear-gradient(90deg, #FF5A3C, #FFD84A); }
+/* 보스 패턴 아이콘(ENDGAME.md 23.5): 일반 보스 1개, 대왕은 다섯 — 지금 켜진 것은 밝게 · 지나간 것은 흐리게 · 아직 안 온 것은 테두리만. 강화판은 오른쪽 아래 + · ++ */
+.boss-pats { display: flex; gap: 2px; align-items: center; }
+.boss-pats:empty { display: none; }
+.boss-pats > span { position: relative; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: rgba(14, 10, 26, 0.7); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.boss-pats canvas { width: 18px; height: 18px; }
+.boss-pats > span.on { box-shadow: 0 0 0 2px #FFFFFF, 0 0 8px rgba(255, 255, 255, 0.5); }
+.boss-pats > span.past { opacity: 0.45; filter: grayscale(0.7); }
+.boss-pats > span.next { background: none; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55); }
+.boss-pats > span.next canvas { opacity: 0.18; }
+.boss-pats sup { position: absolute; right: -3px; bottom: -4px; font-size: 10px; line-height: 1; color: #FFFFFF; text-shadow: 0 1px 0 var(--edge), 1px 0 0 var(--edge), -1px 0 0 var(--edge); }
+.pick-next .boss-pats { display: inline-flex; vertical-align: middle; margin-left: 4px; }
+.guide-ic { display: inline-grid; place-items: center; vertical-align: middle; margin-right: 6px; }
+.guide-ic canvas { width: 27px; height: 27px; }
 @media (prefers-reduced-motion: reduce) { #bossBar b { transition: none; } }
 #bossBar.rage .bar { animation: rage 0.5s ease-in-out infinite alternate; }
 @keyframes rage { to { box-shadow: 0 0 10px 2px rgba(255, 70, 50, 0.8); } }
@@ -450,28 +486,28 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
 .pick-det { font-size: 12px; line-height: 1.4; color: var(--muted); }
 /* 개편 판: 지금 값 → 고르면 값(숫자로 — 무엇이 얼마나 바뀌는지) */
 .pick-delta { font-size: 12px; line-height: 1.35; font-weight: 700; color: #9FE8A8; }
-/* 시너지를 켜는 카드(2단계): 금빛 테두리와 반짝임 + 켜지는 시너지 한 줄 */
-.pick-card.syn { border-color: #FFD84A; box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 0 0 2px rgba(255, 216, 74, 0.45), 0 0 14px rgba(255, 216, 74, 0.35), 0 4px 0 var(--edge); }
-.pick-card.syn.press, .pick-card.syn:active { box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 0 0 2px rgba(255, 216, 74, 0.45), 0 1px 0 var(--edge); }
-.pick-card.syn.sel { border-color: #FFF4B0; }
-.pick-syn { font-size: 12px; line-height: 1.35; font-weight: 700; color: #FFD84A; }
-/* 유물 고르기(3·5단계 — 대왕 보스 뒤): 카드와 한눈에 다르게 — 보라 바탕·금빛 이중 테두리, 머리글도 금빛·보라. 대신 쪽은 붉은 줄 */
+/* 시너지를 켜는 카드: 테두리는 등급 전용이라(23.6) 오른쪽 위 연결 배지(🔗 도트 아이콘) + 켜지는 시너지 한 줄(초록) */
+.syn-badge { position: absolute; top: -9px; right: 10px; display: flex; align-items: center; gap: 3px; padding: 1px 7px 1px 4px; border-radius: 9px; background: #1E3A2A; box-shadow: 0 0 0 2px #7CE07A; font-family: var(--display); font-size: 12px; color: #C9F7C4; }
+.syn-badge canvas { width: 14px; height: 14px; }
+.pick-syn { font-size: 12px; line-height: 1.35; font-weight: 700; color: #9FE8A8; }
+/* 유물 고르기(정예·대왕 보스 뒤): 카드와 한눈에 다르게 — 보라 바탕·보라 테두리(유물은 등급이 아니라 종류라 금빛을 쓰지 않는다 — 23.6). 대신 쪽은 붉은 줄(앞 단계 판만) */
 #scrPick.relic { background: linear-gradient(180deg, rgba(40, 20, 80, 0) 0%, rgba(40, 20, 80, 0.35) 35%, rgba(26, 12, 52, 0.92) 72%); }
 #scrPick.relic .pick-head { background: rgba(38, 20, 72, 0.85); box-shadow: 0 0 0 2px #9B6BFF; }   /* 테두리(border)는 폭을 4px 먹어 320px 폰에서 머리글이 두 줄로 꺾였다 — 그림자 선은 자리를 안 먹는다 */
-#scrPick.relic .pick-head b { color: #FFD84A; }
+#scrPick.relic .pick-head b { color: #D9C4FF; }
 #scrPick.relic .pick-head span:not(.pick-next) { color: #D9C4FF; }
-.pick-card.relic { background: linear-gradient(135deg, #3A2470, #24164A 70%); border-color: #FFD84A; box-shadow: inset 0 0 0 2px #9B6BFF, 0 0 14px rgba(155, 107, 255, 0.45), 0 4px 0 var(--edge); }
-.pick-card.relic.press, .pick-card.relic:active { box-shadow: inset 0 0 0 2px #9B6BFF, 0 1px 0 var(--edge); }
-.pick-card.relic.sel { border-color: #FFF4B0; box-shadow: inset 0 0 0 2px #D9C4FF, 0 0 18px rgba(255, 216, 74, 0.55), 0 4px 0 var(--edge); }
-.pick-card.relic .pick-ic { background: #1A0F36; border-color: #FFD84A; box-shadow: 0 0 0 2px #9B6BFF; border-radius: 50%; }
+.pick-card.relic { background: linear-gradient(135deg, #3A2470, #24164A 70%); border-color: #9B6BFF; box-shadow: inset 0 0 0 2px #5B3A9E, 0 0 14px rgba(155, 107, 255, 0.45), 0 4px 0 var(--edge); }
+.pick-card.relic.press, .pick-card.relic:active { box-shadow: inset 0 0 0 2px #5B3A9E, 0 1px 0 var(--edge); }
+.pick-card.relic.sel { border-color: #FFFFFF; box-shadow: inset 0 0 0 2px #D9C4FF, 0 0 18px rgba(155, 107, 255, 0.6), 0 4px 0 var(--edge); }
+.pick-card.relic .pick-ic { background: #1A0F36; border-color: #D9C4FF; box-shadow: 0 0 0 2px #9B6BFF; border-radius: 50%; }
 .pick-card.relic .pick-kind { color: #C9A8FF; }
-.pick-card.relic .pick-chg em { color: #FFD84A; }
+.pick-card.relic .pick-chg em { color: #EDE4FF; }
+.relic-tribe { font-family: var(--display); font-size: 12px; padding: 1px 7px; border-radius: 8px; margin-left: 6px; color: #EDE4FF; background: #5B3A9E; }
 .pick-card.relic .pick-det { color: #EDE4FF; }
-/* 빌드 개편: 카드 등급(희귀 파랑·전설 주황), 전문화·계약 카드, 다시 뽑기 */
-.pick-card.rare { border-color: #6CC0FF; box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 0 0 2px rgba(108, 192, 255, 0.4), 0 4px 0 var(--edge); }
-.pick-card.legend { border-color: #FF9F43; box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 0 0 2px rgba(255, 159, 67, 0.5), 0 0 16px rgba(255, 159, 67, 0.45), 0 4px 0 var(--edge); }
-.pick-rank { font-family: var(--display); font-size: 12px; padding: 1px 7px; border-radius: 8px; margin-left: 6px; color: #1A1026; background: #6CC0FF; }
-.pick-card.legend .pick-rank { background: #FF9F43; }
+/* 카드 등급(23.6): 왼쪽 띠 = 종류, 테두리 = 등급 — 희귀 파랑 2px 고리 · 전설 주황 3px 고리 + 빛(색약도 굵기로 갈린다) */
+.pick-card.rare { border-color: var(--g-rare); box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 0 0 2px var(--g-rare), 0 4px 0 var(--edge); }
+.pick-card.legend { border-color: var(--g-legend); box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 0 0 3px var(--g-legend), 0 0 16px rgba(255, 159, 67, 0.55), 0 4px 0 var(--edge); }
+.pick-rank { font-family: var(--display); font-size: 12px; padding: 1px 7px; border-radius: 8px; margin-left: 6px; color: #1A1026; background: var(--g-rare); }
+.pick-card.legend .pick-rank { background: var(--g-legend); }
 .pick-card.curse { border-color: #FF5E7A; background: linear-gradient(135deg, #4A1626, #2A1020 70%); }
 .pick-set { font-size: 12px; line-height: 1.35; font-weight: 700; color: var(--set, #FFD84A); }
 .pick-set.up { color: #1A1026; background: var(--set, #FFD84A); padding: 2px 7px; border-radius: 8px; justify-self: start; }
@@ -504,7 +540,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <span class="hud-coins coinchip" id="hudCoins">0</span>
     <button id="btnPause" aria-label="일시정지" title="일시정지 (Esc)"></button>
   </div>
-  <div id="bossBar" hidden><span id="bossName">보스</span><div class="bar"><b id="bossGhost"></b><i id="bossFill"></i></div><span id="bossEta" hidden role="timer"><span id="bossEtaT"></span></span></div>
+  <div id="bossBar" hidden><span id="bossName">보스</span><span id="bossPats" class="boss-pats" aria-label="보스 패턴"></span><div class="bar"><b id="bossGhost"></b><i id="bossFill"></i></div><span id="bossEta" hidden role="timer"><span id="bossEtaT"></span></span></div>
   <div id="spChips" aria-label="함께하는 특수병"></div>
 </div>
 <div id="touchL" class="touch-hint" hidden aria-hidden="true">◀</div>
