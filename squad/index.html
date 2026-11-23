@@ -151,6 +151,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .log-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-row i { display: block; height: 10px; border-radius: 5px; background: var(--amber); min-width: 2px; }
 .log-row b { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.run-dmg { margin-top: 8px; background: rgba(14, 10, 26, 0.55); border-radius: 10px; padding: 6px 10px 8px; text-align: left; }   /* 39.3: 이 판의 피해 */
+.run-dmg h4 { margin: 4px 0; font-family: var(--display); font-weight: 400; font-size: 14px; color: var(--amber); }
+.run-dmg .log-row { grid-template-columns: 7.5em 1fr auto; }
+.run-dmg .log-row b { color: #FFE38A; }
+.seg-spark { display: block; width: 100%; height: 56px; }
+.seg-spark polyline { fill: none; stroke: var(--amber); stroke-width: 2; stroke-linejoin: round; }
 #storeChip { align-self: center; font-size: 12px; font-weight: 700; color: #3A2306; background: #FFD84A; border: 2px solid var(--edge); border-radius: 999px; padding: 4px 10px; }
 #resumeCard { width: min(380px, 100%); background: var(--panel); border: 3px solid var(--edge); border-radius: 16px; padding: 12px; box-shadow: 0 4px 0 var(--edge); display: grid; gap: 8px; }
 #resumeCard b { font-family: var(--display); font-weight: 400; font-size: 20px; color: var(--amber); }
@@ -268,6 +274,9 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .info-card .btn { justify-self: end; }
 .inv-hint { font-size: 12px; margin: 6px 0 0; text-align: center; }
 .sp-list .inv-detail { display: block; min-height: 3.2em; background: rgba(14, 10, 26, 0.55); border-radius: 10px; padding: 8px 10px; }
+.sp-list .run-dmg { display: block; margin-top: 0; }   /* 39.3: 일시정지 안의 이 판의 피해(.sp-list div의 flex를 덮는다) */
+.sp-list .run-dmg .log-bars { display: grid; background: none; padding: 0; border-radius: 0; }
+.sp-list .run-dmg .log-row { display: grid; background: none; padding: 0; border-radius: 0; }
 /* 일시정지의 '지금 내 부대' 목록: 무한모드 2·3단계면 탄 효과·시너지·유물까지 열 줄을 넘어 계속하기·나가기 단추를 화면 밖으로 밀어냈다 —
    길어지면 목록만 스크롤한다(캠페인의 특수병 셋은 이 높이 안이라 그대로) */
 #pSp { max-height: max(150px, calc(100vh - 400px)); max-height: max(150px, calc(100dvh - 400px)); overflow-y: auto; overscroll-behavior: contain; }
@@ -330,6 +339,7 @@ textarea.code { width: 100%; min-height: 110px; border-radius: 12px; border: 3px
 .relic-chip i { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
 .relic-chip canvas { border-radius: 0; width: 20px; height: 20px; }
 .relic-chip i.off { opacity: 0.35; filter: grayscale(1); }
+.sp-chip.off { opacity: 0.4; filter: grayscale(1); border-style: dashed; }   /* 39.9: 떠난 특수병 */
 
 /* 터치 안내·스킬 버튼 */
 .touch-hint {
@@ -514,7 +524,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
 .pick-chg em { font-style: normal; color: #FFE27A; }
 .pick-det { font-size: 12px; line-height: 1.4; color: var(--muted); }
 /* 개편 판: 지금 값 → 고르면 값(숫자로 — 무엇이 얼마나 바뀌는지) */
-.pick-delta { font-size: 12px; line-height: 1.35; font-weight: 700; color: #9FE8A8; }
+.pick-delta { font-size: 13px; line-height: 1.35; font-weight: 700; color: #FFF3B8; }   /* 39.2: 이번에 얻는 것(바뀌는 값·새 능력·강화) — 밝게 */
 /* 시너지를 켜는 카드: 테두리는 등급 전용이라(23.6) 오른쪽 위 연결 배지(🔗 도트 아이콘) + 켜지는 시너지 한 줄(초록) */
 .syn-badge { position: absolute; top: -9px; right: 10px; display: flex; align-items: center; gap: 3px; padding: 1px 7px 1px 4px; border-radius: 9px; background: #1E3A2A; box-shadow: 0 0 0 2px #7CE07A; font-family: var(--display); font-size: 12px; color: #C9F7C4; }
 .syn-badge canvas { width: 14px; height: 14px; }
@@ -734,6 +744,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <div id="resCause" hidden></div>
     <div id="resNear" hidden></div>
     <div id="resStats"></div>
+    <div id="resDmg"></div>
     <div class="stack">
       <button id="resPrimary" class="btn primary" data-focus>다음 레벨</button>
       <button id="resReplay" class="btn" hidden>다시 하기</button>
@@ -788,6 +799,8 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <h3>피해 몫 <small class="muted">무한모드 · 판마다 몫의 평균</small></h3><div id="logDmg" class="log-bars"></div>
     <h3>총별 평균 보스</h3><div id="logGun" class="log-bars"></div>
     <h3>주력(피해 1위)별 평균 보스</h3><div id="logMain" class="log-bars"></div>
+    <h3>총 + 가장 높은 탄 효과별 평균 보스</h3><div id="logBuild" class="log-bars"></div>
+    <h3>걸린 적 변이별 평균 보스</h3><div id="logMut" class="log-bars"></div>
     <h3>전멸한 까닭</h3><div id="logDeath" class="log-bars"></div>
     <h3>전멸한 구간</h3><div id="logBand" class="log-bars"></div>
     <h3>병사를 잃은 까닭 <small class="muted">판마다 몫의 평균</small></h3><div id="logLost" class="log-bars"></div>

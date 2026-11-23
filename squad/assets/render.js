@@ -1255,7 +1255,11 @@ export function createRenderer(cvs) {
         case 'crate': {
           burst(e.x, 1, e.z, 22, FX_COL.wood, 5, 5, 0.7);
           fx('puff', e.x, 0.8, e.z, 0.3);
-          if (e.type === 'lucky') {   // 행운 상자(22절): 소·중·대 크기만큼 별이 튄다
+          if (e.type === 'lucky' && !(e.size > 0)) {   // 39.6 꽝: 초록 독가스가 피어오른다
+            float(e.x, 2.6, e.z, '-', '#FF5E7A', { life: 1.4 });
+            for (let k = 0; k < 14; k++) part(e.x + (Math.random() - 0.5) * 1.6, 0.6 + Math.random(), e.z, (Math.random() - 0.5) * 2, 1 + Math.random() * 2, q.vz || 0, 1.2, '#8FE36B', 3, -1);
+            fx('puff', e.x, 0.8, e.z, 0.6, { step: 1 });
+          } else if (e.type === 'lucky') {   // 행운 상자(22절): 소·중·대 크기만큼 별이 튄다
             const col = e.size >= 3 ? '#FF9F43' : e.size === 2 ? '#6CC0FF' : '#9AA0AE';   // 등급 색(ENDGAME.md 23.6): 소 = 일반 회색 · 중 = 희귀 파랑 · 대 = 전설 주황
             float(e.x, 2.6, e.z, '+'.repeat(Math.max(1, Math.min(3, e.size | 0))), '#FFE38A', { life: 1.4 });   // 글꼴에 한글이 없다 — + ++ +++
             for (let k = 0; k < 6 * e.size; k++) part(e.x + (Math.random() - 0.5) * 1.6, 1 + Math.random(), e.z, (Math.random() - 0.5) * 3, 3 + Math.random() * 3, q.vz || 0, 0.9, col, 1, 3, 'star');
@@ -1554,6 +1558,7 @@ export function createRenderer(cvs) {
           shake(e.by === 'chain' ? 0.25 : 0.4);
           break;
         }
+        case 'luckSeal':   // 39.4: 셋 중 하나 — 다른 칸 상자가 열려 이 상자는 잠겼다(잔해로)
         case 'crateLost': {
           // 폭발에 휩쓸려 내용물째 부서진 상자·철창: 그을린 파편 + 그 자리에 잔해(분대가 지나갈 때까지). 철창의 포로는 울며 달아난다(합류 없음)
           const cage = e.kind === 'cage';
@@ -3727,9 +3732,14 @@ export function createRenderer(cvs) {
     if (mutLv(s, 'fog') && (s.phase === 'run' || s.phase === 'arena')) {
       ctx.fillStyle = '#7CD26A';
       ctx.globalAlpha = 0.2 + 0.08 * Math.sin(time * 2.4);
-      const fz0 = q.z - 6, fz1 = q.z + 70;
-      groundQuad(-ROAD, -FOG_X, fz0, fz1, 0.03);
-      groundQuad(FOG_X, ROAD, fz0, fz1, 0.03);
+      // 39.4: 칸막이 구간(행운 길·미로)에는 독안개가 없다 — 그 구간을 비워 그린다
+      const fz0 = q.z - 6, fz1 = q.z + 70, cuts = (s.lanes || []).filter((l) => l.z1 > fz0 && l.z0 < fz1).sort((a, b) => a.z0 - b.z0);
+      let za = fz0;
+      for (const l of [...cuts, { z0: fz1, z1: fz1 }]) {
+        const zb = Math.min(fz1, l.z0);
+        if (zb > za) { groundQuad(-ROAD, -FOG_X, za, zb, 0.03); groundQuad(FOG_X, ROAD, za, zb, 0.03); }
+        za = Math.max(za, l.z1);
+      }
       ctx.globalAlpha = 1;
     }
     if (s.divs) for (const d of s.divs) drawDivider(d);

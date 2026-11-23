@@ -488,6 +488,7 @@ function planChunks(p, g) {
   if (p.chain) plan.splice(3, 0, 'fork');   // 연속 갈림길(바퀴 5부터): 앞 선택이 다음 선택을 묶는다
   if (p.maze && chance(g, LANES.mazeP)) plan.splice(plan.length - 3, 0, 'maze');   // 칸막이(22절 — 개편 판만): 보스 앞 몰이 전에
   if (p.luck && chance(g, p.luckP || LANES.luckP)) plan.splice(1, 0, 'luck');   // 행운의 동전(유물)이면 p.luckP
+  if (p.rush && p.rushRoll < RUSH.p) plan.splice(Math.max(1, plan.length - 2), 0, 'rush');   // 게이트 몰이(39.5): 굴림은 따로(p.rushRoll — 위 배치가 밀리지 않게), 마지막 게이트·몰이 앞
   return plan;
 }
 
@@ -946,7 +947,18 @@ export const TERRAIN = { hideFrom: 13, hideDist: 16, hideBonus: 1.3, tightFrom: 
    - luck 행운 길(luckFrom구간부터 luckP): 세 칸 모두 가려진 상자(소·중·대가 무작위) — 손해는 없고 무엇이 나올지가 운(18.8)
    - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막마다 칸막이 하나에 열린 곳(open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
 export const LANE_X = [-ROAD / 3, ROAD / 3];
-export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 34, mazeLen: 84, stretch: 4, open: 7, wallP: 0.75 };
+export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, open: 7, wallP: 0.75, trap: 0.15, big: 0.6 };   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60%
+/* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로 — 쏴서 올리는 덧셈 칸이 많고, ×2 줄 하나·÷2 줄 하나.
+   숫자는 그 구간 기준 병력(bkScale)으로, 굴림은 따로(hash — 다른 청크의 배치가 밀리지 않게). 골든 값은 늘리지 않는다(잘 고르면 앞서 나가고, 못 고르면 뒤처진다)
+   미로 게이트(39.5): 미로 토막 끝마다 칸마다 게이트 — 빈 칸 = 작은 +, 좀비 칸 뒤·벽 뒤 = 큰 +(마지막 토막은 ×2), 벽 칸 몇은 벽 대신 ÷2 */
+export const RUSH = { from: 6, p: 0.3, n: [8, 11], gap: 11, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.4 };
+/* 구간 성격(39.6 — 개편 판만, 2구간부터): 풍요(rich — 좋은 칸 ×good·나쁜 칸 ×bad) · 보통 · 기근(lean). 시드·구간으로 정해 카드 화면에서 다음 구간 것을 미리 보인다 */
+export const MOOD = { from: 2, rich: { p: 0.2, good: 1.6, bad: 0.7 }, lean: { p: 0.25, good: 0.5, bad: 1.6 } };
+export function segMood(seed, k) {
+  if (k < MOOD.from) return '';
+  const r = rand({ rs: hash(VERSION, 'mood', seed >>> 0, k) });
+  return r < MOOD.rich.p ? 'rich' : r < MOOD.rich.p + MOOD.lean.p ? 'lean' : '';
+}
 export const laneCell = (x) => (x < LANE_X[0] ? 0 : x < LANE_X[1] ? 1 : 2);
 const laneOpen = (l, di, z) => l.open.some((o) => o[0] === di && z >= o[1] && z <= o[2]);
 export function laneAt(s, z) { if (!s.lanes) return null; for (const l of s.lanes) if (z >= l.z0 && z <= l.z1) return l; return null; }
@@ -1283,15 +1295,36 @@ const CHUNK = {
     return { len: z1 - z + FORK.tail, ng };
   },
 
+  /* 게이트 몰이(39.5 — RUSH): 게이트 줄이 연달아. 두 칸 줄(+a 대 −b) 사이에 ×2 줄 하나, ÷2 줄 하나, 세 칸 줄 몇. 굴림은 따로(g2) */
+  rush(lv, g, p, z, ng) {
+    const g2 = { rs: hash(VERSION, 'rush', Math.round(z * 10), ng | 0, p.seg | 0) };
+    const n = RUSH.n[0] + Math.floor(rand(g2) * (RUSH.n[1] - RUSH.n[0] + 1));
+    const iMul = 1 + Math.floor(rand(g2) * (n - 2)), iDiv = (iMul + 1 + Math.floor(rand(g2) * (n - 2))) % n;
+    const A = () => Math.max(2, nice(ng * U(g2, RUSH.add[0], RUSH.add[1]))), Bv = () => -Math.max(2, nice(ng * U(g2, RUSH.sub[0], RUSH.sub[1])));
+    for (let i = 0; i < n; i++) {
+      const rowZ = z + 20 + i * RUSH.gap;
+      const three = i % 3 === 2;
+      const edges = three ? [-ROAD, LANE_X[0], LANE_X[1], ROAD] : [-ROAD, 0, ROAD];
+      let ops = i === iMul ? [['mul', 2], ['add', Bv()]] : i === iDiv ? [['div', 2], ['add', A()]] : [['add', A()], ['add', Bv()]];
+      if (three) ops.push(i === iMul || i === iDiv ? ['add', Bv()] : ['add', A()]);
+      ops = shuffle(g2, ops);
+      const cells = ops.map(([op, v], c) => makeCell(op, v, ng, edges[c], edges[c + 1], lv.fireE));
+      makeRow(lv, rowZ, cells, ng, 'gate', 'rush');
+    }
+    (lv.rush || (lv.rush = [])).push({ z0: z + 20, z1: z + 20 + (n - 1) * RUSH.gap });
+    return { len: 20 + n * RUSH.gap + 10, ng };
+  },
+
   /* 행운 길(22절): 칸막이로 나뉜 세 칸 끝에 가려진 상자 셋 — 소·중·대가 무작위(어느 칸이든 손해는 없다). 상자는 약하다(지나가며 쏘면 열린다) */
   luck(lv, g, p, z, ng) {
     const D = threatD(lv, ng);
     const z0 = z + 14, z1 = z0 + LANES.luckLen;
-    const sizes = shuffle(g, [1, 2, 3]);
+    const sizes = shuffle(g, [0, 2, 3]);   // 39.6: 꽝 · 중 · 대(예전 소 · 중 · 대) — 손해 보는 칸이 하나 있다
+    const lg = lv.nextId++;   // 39.4: 셋 중 하나(같은 lg의 상자는 하나만 열린다)
     for (let c = 0; c < 3; c++) {
       const x0 = c === 0 ? -ROAD : LANE_X[c - 1], x1 = c === 2 ? ROAD : LANE_X[c], cx = (x0 + x1) / 2;
       const hp = Math.max(1, Math.round(D * 0.06));   // 아주 약하게 — 칸에서 못 비키니 지나가며 쏘면 늘 열린다
-      lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.0, x1: cx + 1.0, z: z1 - 8, hp, max: hp, alive: true, hitT: -9, reward: { type: 'lucky', size: sizes[c] }, luck: true });
+      lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.0, x1: cx + 1.0, z: z1 - 8, hp, max: hp, alive: true, hitT: -9, reward: { type: 'lucky', size: sizes[c] }, luck: true, lg });
     }
     (lv.lanes || (lv.lanes = [])).push({ id: lv.nextId++, k: 'luck', z0, z1, open: [] });
     return { len: z1 - z + 10, ng };
@@ -1304,8 +1337,10 @@ const CHUNK = {
     const lane = { id: 0, k: 'maze', z0, z1, open: [] };
     let free = Math.floor(rand(g) * 3);
     const hp = gruntHp(lv, ng);
+    const g2 = p.mazeGates ? { rs: hash(VERSION, 'mazeGate', Math.round(z0 * 10), ng | 0) } : null;   // 미로 게이트(39.5): 굴림은 따로
     for (let i = 0; i < n; i++) {
       const za = z0 + FORK_TAPER + i * sl;
+      const kinds = ['', '', ''];
       if (i > 0) {
         const nb = free === 0 ? 1 : free === 2 ? 1 : chance(g, 0.5) ? 0 : 2;   // 옆 칸
         lane.open.push([Math.min(free, nb), za - 2, za + LANES.open]);
@@ -1313,13 +1348,27 @@ const CHUNK = {
       }
       for (let c = 0; c < 3; c++) {
         const x0 = c === 0 ? -ROAD : LANE_X[c - 1], x1 = c === 2 ? ROAD : LANE_X[c];
-        if (c !== free && chance(g, i === 0 ? 0.5 : LANES.wallP)) wallProp(lv, x0 + 0.15, x1 - 0.15, za + sl * 0.62, D * U(g, 2.2, 3.4), { maze: true });
-        else if (c !== free || chance(g, 0.5)) {
+        if (c !== free && chance(g, i === 0 ? 0.5 : LANES.wallP)) {
+          const wh = D * U(g, 2.2, 3.4);
+          if (g2 && rand(g2) < RUSH.mazeDiv) kinds[c] = 'div';   // 벽 대신 ÷2 칸(벽은 없다)
+          else { wallProp(lv, x0 + 0.15, x1 - 0.15, za + sl * 0.62, wh, { maze: true }); kinds[c] = 'wall'; }
+        } else if (c !== free || chance(g, 0.5)) {
+          if (c !== free) kinds[c] = 'foe';
           const m = 3 + Math.floor(rand(g) * 3);
           for (let k = 0; k < m; k++) addFoe(lv, g, 'grunt', U(g, x0 + 0.6, x1 - 0.6), za + 3 + U(g, 0, sl - 6), hp, { maze: true });
           // 미로 보상(28절): 빈 칸이 아닌 좀비 칸은 무리 뒤에 작은 행운 상자 — 뚫고 가면 얻는다(굴림 없이 — 뒤 배치가 밀리지 않게)
           if (c !== free && i > 0) lv.props.push({ id: lv.nextId++, kind: 'crate', x0: (x0 + x1) / 2 - 0.9, x1: (x0 + x1) / 2 + 0.9, z: za + sl - 1.5, hp: Math.max(1, Math.round(D * 0.06)), max: Math.max(1, Math.round(D * 0.06)), alive: true, hitT: -9, reward: { type: 'lucky', size: 1 }, luck: true, mazeBox: true });
         }
+      }
+      if (g2) {   // 토막 끝 게이트 줄: 칸마다 한 칸 — 빈 칸 작은 +, 좀비·벽 뒤 큰 +(마지막 토막은 ×2), 벽 대신 ÷2
+        const last = i === n - 1;
+        const cells = [0, 1, 2].map((c) => {
+          const x0 = c === 0 ? -ROAD : LANE_X[c - 1], x1 = c === 2 ? ROAD : LANE_X[c];
+          if (kinds[c] === 'div') return makeCell('div', 2, ng, x0, x1, lv.fireE);
+          if (kinds[c] === 'foe' || kinds[c] === 'wall') return last ? makeCell('mul', 2, ng, x0, x1, lv.fireE) : makeCell('add', Math.max(2, nice(ng * RUSH.mazeBig * U(g2, 0.8, 1.2))), ng, x0, x1, lv.fireE);
+          return makeCell('add', Math.max(1, nice(ng * RUSH.mazeAdd * U(g2, 0.8, 1.2))), ng, x0, x1, lv.fireE);
+        });
+        makeRow(lv, za + sl - 3, cells, ng, 'gate', 'maze');
       }
     }
     // 미로 끝 보물(28절): 열린 곳을 따라온 마지막 빈 칸 끝에 행운 상자 중·대(길을 읽은 보상). 크기는 따로 굴린다(뒤 배치가 밀리지 않게)
@@ -1602,7 +1651,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
 function buildSegment0(seed, k, n, tier, attempt, opt) {
   const p = segParams(k);
   const E = ENDLESS;
-  if (opt && opt.terrain) { p.hide = p.seg >= TERRAIN.hideFrom; p.tight = p.seg >= TERRAIN.tightFrom; p.chain = p.seg >= TERRAIN.chainFrom; p.maze = p.seg >= LANES.mazeFrom; p.luck = p.seg >= LANES.luckFrom; if (opt.luckP) p.luckP = opt.luckP; }   // 지형(개편 판만 — 바퀴 3·4·5부터)
+  if (opt && opt.terrain) { p.hide = p.seg >= TERRAIN.hideFrom; p.tight = p.seg >= TERRAIN.tightFrom; p.chain = p.seg >= TERRAIN.chainFrom; p.maze = p.seg >= LANES.mazeFrom; p.luck = p.seg >= LANES.luckFrom; if (opt.luckP) p.luckP = opt.luckP; p.rush = p.seg >= RUSH.from; p.rushRoll = rand({ rs: hash(VERSION, 'rushPlan', seed >>> 0, p.seg) }); p.mazeGates = true; p.mood = segMood(seed, p.seg); }   // 지형(개편 판만 — 바퀴 3·4·5부터)
   const g = { rs: hash(VERSION, 'endless', seed >>> 0, p.seg, attempt) };
   const n0 = clamp(Math.floor(n), 1, E.maxN);
   // 뒤처진 분대(바닥선 아래)에게는 위협이 바닥선 병력 기준(화력 ∝ 병력^0.8)
@@ -1657,6 +1706,15 @@ function buildSegment0(seed, k, n, tier, attempt, opt) {
   // MAX 칸(높인 끝)은 쓰지 않는다 — 몰아 쏘기 확인(redFast)을 판 중간에 돌릴 수 없다
   for (const r of lv.rows) for (const c of r.cells) if (c.cap0 != null) { c.cap = c.cap0; delete c.cap0; }
   if (BKON) bkScale(lv, BUILD.bk.mul * (segFloor(p.seg) || E.floor0) / n0);
+  if (p.mood && MOOD[p.mood]) {   // 구간 성격(39.6): 덧셈 칸의 좋은 쪽·나쁜 쪽 크기
+    const M = MOOD[p.mood], sc = (x, k) => Math.sign(x) * Math.max(1, Math.round(Math.abs(x) * k));
+    for (const r of lv.rows) for (const c of r.cells) {
+      if (c.op !== 'add') continue;
+      const k = c.v0 > 0 ? M.good : M.bad;
+      c.v0 = sc(c.v0, k); c.v = c.v0; c.cap = c.cap > 0 ? Math.max(c.v0, sc(c.cap, c.v0 > 0 ? M.good : 1)) : Math.max(c.v0, c.cap);
+    }
+    lv.mood = p.mood;
+  }
   if (BKON) {   // 개편 판: 벽·장갑문 체력은 위협 곡선을 덜 따라간다(ENDGAME.md 20절 — 탄·특수병의 힘은 거의 좀비에게만 들어 11구간쯤부터 벽이 안 깨졌다)
     const W = BUILD.wall, f = clamp(Math.pow((segMul(p.seg) * (opt.mul > 1 ? opt.mul : 1)) / segMul(W.from), -W.cut), W.lo, 1);
     if (f < 1) for (const pr of lv.props) if (pr.kind === 'wall' || pr.kind === 'door') { pr.hp = pr.max = Math.max(1, Math.round(pr.max * f)); }
@@ -1774,6 +1832,7 @@ export function newEndless(opt = {}) {
   if (unl >= 1) {
     s.endless.unl = unl;
     s.endless.ammo = (Array.isArray(opt.ammoOpen) ? opt.ammoOpen : []).filter((a, i, l) => AMMO[a] && l.indexOf(a) === i);
+    if (Array.isArray(opt.ammoStar)) s.endless.ammoStar = opt.ammoStar.filter((a, i, l) => AMMO[a] && l.indexOf(a) === i);   // 39.7: ★로 연 탄(출격 탄) — 판 안에는 다 나오고, 안 연 탄은 카드 무게 BUILD.fxLocked
     s.endless.picks = [];
     s.endless.offer = null;
     // 2단계(탄 효과·시너지): 효과마다 레벨 { 탄종: Lv }(해시는 AMMO_IDS 순서). 출격 탄종은 한 칸을 Lv2로 차지한다 — 대신 쪽은 s.ammo 그대로
@@ -2046,6 +2105,7 @@ export function mutRoll(s) {
   const g = { rs: hash(VERSION, 'mut', e.seed >>> 0, e.seg) };
   const id = left[Math.floor(rand(g) * left.length)];
   e.mut.push(id);
+  if (s.stats) (s.stats.mutAt || (s.stats.mutAt = [])).push([e.seg + 1, id]);
   emit(s, { t: 'mutation', id, lv: mutLv(s, id), seg: e.seg + 1 });
 }
 /* 새 구간에 거는 변이: 장갑(일반 좀비 절반에 arm), 두꺼운 벽(벽·장갑문 체력). 떼거리는 구간을 만들 때(buildSegment opt.swarm), 질주·분노·독안개는 판 중(mutLv)에 본다 */
@@ -2060,7 +2120,7 @@ function mutSeg(s) {
 /* 독안개: 길 가장자리에 서 있으면 병력이 초당 v씩 준다(1명이 안 되는 몫은 모아 둔다 — q.fogAcc) */
 function fogUpdate(s) {
   const lv = mutLv(s, 'fog');
-  if (!lv || Math.abs(s.squad.x) <= FOG_X) return;
+  if (!lv || Math.abs(s.squad.x) <= FOG_X || laneAt(s, s.squad.z)) return;   // 39.4: 칸막이 구간 안에서는 독안개가 없다(옆 칸이 독안개 안이라 갇힌다)
   const q = s.squad;
   q.fogAcc = (q.fogAcc || 0) + MUTATIONS.fog.v[lv - 1] * q.n * DT;
   if (q.fogAcc >= 1) { const k = Math.floor(q.fogAcc); q.fogAcc -= k; lose(s, k, 'fog', q.x, q.z); }
@@ -2232,7 +2292,7 @@ function makeOffer3(s) {
     if (m) cands.push({ c: { k: 'unit', u: k }, w: W.unit * BUILD.own });
     else if (q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1)) cands.push({ c: { k: 'unit', u: k }, w: W.unit });
   }
-  if (e.fx) for (const a of ammoIds(s)) if (((e.ammo || []).includes(a) || s.ammo === a) && fxCan(s, a)) cands.push({ c: { k: 'fx', a }, w: W.fx * (e.fx[a] ? BUILD.own : 1) });
+  if (e.fx) for (const a of ammoIds(s)) if (((e.ammo || []).includes(a) || s.ammo === a) && fxCan(s, a)) cands.push({ c: { k: 'fx', a }, w: W.fx * (e.fx[a] ? BUILD.own : 1) * (e.ammoStar && !e.ammoStar.includes(a) && !e.fx[a] ? BUILD.fxLocked : 1) });
   for (let j = cands.length - 1; j >= 0; j--) if (!(cands[j].w > 0)) cands.splice(j, 1);
   let first = true;
   const lastPick = e.picks && e.picks.length ? e.picks[e.picks.length - 1] : '';
@@ -2316,6 +2376,7 @@ function pickCardB(s, i) {
   else if (c.k === 'relic') { if (relicCan(e, c.r)) relicAdd(s, c.r); B.rel = 0; B.pre = (B.pre | 0) + 1; again = true; }
   else if (c.k === 'gunlv') { if (!B.gl) B.gl = {}; B.gl[c.g] = info.to; enhAdd(B, c.g, n); manualPick(s, B, c.g, () => { B.gl[c.g]++; }); }   // 총 Lv +1, 희귀·전설이면 총 강화
   else if (c.k === 'swap' && GUNS[c.g]) {   // 총 바꾸기: 지금 총의 Lv은 기억해 두고, 처음 잡는 총은 지금 Lv의 keep 몫(★은 그대로)
+    s.stats.swap = (s.stats.swap | 0) + 1;
     if (!B.gl) B.gl = {};
     B.gl[c.g] = info.to;
     B.gt = c.g;
@@ -2382,11 +2443,12 @@ function nextSegment(s) {
   e.seg++;
   // 개편 판: 위협 배수 = 계약(curse) × 빌드가 쌓이는 만큼 더 가파른 곡선(BUILD.thr — from구간 뒤로 구간마다 ×step)
   const seg = buildSegment(e.seed, e.seg, q.n, q.tier, 0, e.bld ? { ...(segOpt(e) || {}), mul: (e.bld.curse > 1 ? e.bld.curse : 1) * bldThreat(e.seg), fe: bldFe(e.seg, s.fireLv), bk: true, terrain: true, ...(relicOn(s, 'lucky') ? { luckP: RELICS.lucky.p } : {}), swarm: mutLv(s, 'swarm') ? MUTATIONS.swarm.n[mutLv(s, 'swarm') - 1] : 1, swarmHp: mutLv(s, 'swarm') ? MUTATIONS.swarm.hp[mutLv(s, 'swarm') - 1] : 1 } : segOpt(e));
+  if (seg.mood) e.mood = seg.mood; else delete e.mood;   // 구간 성격(39.6)
   const dz = q.z + ENDLESS.lead;
   const off = s.nextId;
   for (const r of seg.rows) { r.id += off; r.z += dz; }
   for (const f of seg.foes) { f.id += off; f.z += dz; }
-  for (const pr of seg.props) { pr.id += off; pr.z += dz; }
+  for (const pr of seg.props) { pr.id += off; if (pr.lg) pr.lg += off; pr.z += dz; }
   for (const w of seg.saws) { w.id += off; w.z += dz; }
   for (const m of seg.marks) m.z += dz;
   if (seg.divs && seg.divs.length) { for (const d of seg.divs) { d.id += off; if (d.wall) d.wall += off; d.z0 += dz; d.z1 += dz; } s.divs = seg.divs; } else delete s.divs;
@@ -2446,7 +2508,7 @@ export function newGame(lv, opt = {}) {
     refFire: lv.fireE || 0,
     nextId: lv.nextId + 1,
     ev: [],
-    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0, spUp: 0, flips: 0, dmg: {}, kb: {}, lostBy: {}, death: null },   // dmg·kb·lostBy·death: 플레이 기록(32절 — 출처별 피해·처치, 무엇에 잃었나, 전멸한 곳). 해시에 안 든다
+    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0, spUp: 0, flips: 0, dmg: {}, kb: {}, lostBy: {}, death: null, spPk: {}, segs: [], cur: null, mutAt: [], luck: [0, 0, 0, 0], treasure: 0, gunx: 0, swap: 0 },   // spPk·segs·cur·mutAt·luck·treasure·gunx·swap: 플레이 기록 v2(39.10)   // dmg·kb·lostBy·death: 플레이 기록(32절 — 출처별 피해·처치, 무엇에 잃었나, 전멸한 곳). 해시에 안 든다
   };
   // 펫(ENDGAME.md 6절): 데려간 판에만 s.pet이 있다 — 펫 전용 난수 흐름(rs)을 따로 써서 판의 난수(s.rs)를 건드리지 않는다.
   // avg(별 기준을 재는 기준 봇용): 확률 대신 기대값으로 고르게 — par가 한 판의 운에 흔들리지 않게
@@ -2546,6 +2608,7 @@ export function restore(o) {
       else delete e.mut;
       for (const f of o.foes) if (f.arm !== undefined && !(typeof f.arm === 'number' && f.arm > 0 && f.arm <= 1)) delete f.arm;
       e.ammo = Array.isArray(e.ammo) ? e.ammo.filter((a) => AMMO[a]) : [];
+      if (e.ammoStar !== undefined) { if (Array.isArray(e.ammoStar)) e.ammoStar = e.ammoStar.filter((a) => AMMO[a]); else delete e.ammoStar; }
       e.picks = Array.isArray(e.picks) ? e.picks.filter((x) => typeof x === 'string') : [];
       if (e.flame !== true) delete e.flame;
       // 3단계 유물: 열린 것·얻은 것은 아는 id만 한 번씩, 얻은 것은 RELIC.max개까지, 쓴 것(spent)은 얻은 것 중에서만(탄 효과 슬롯이 넓은 탄낭을 보므로 fx보다 먼저)
@@ -2603,6 +2666,8 @@ function emit(s, e) { s.ev.push(e); }
 
 /* 병사를 잃는다. 게이트·톱날이 아닌 손실은 보리 스킬로 줄고, 일부는 회복 풀(의무병·보리)로 간다.
    한 번에 크게 맞거나 내려찍기에 맞으면 가장 늦게 온 특수병이 쓰러진다. */
+/* 플레이 기록 v2(39.10): 이번 구간에 잃은 병력·게이트 득실·보스 앞 병력 */
+function segAcc(s) { const st = s.stats; return st.cur || (st.cur = { lost: 0, gate: 0, nb: 0 }); }
 function lose(s, k, cause, x, z, sub) {
   const q = s.squad;
   if (k <= 0 || q.n <= 0) return;
@@ -2651,6 +2716,7 @@ function lose(s, k, cause, x, z, sub) {
   q.hurtT = s.t;
   s.stats.lost += real;
   if (s.stats.lostBy) { const lk = sub ? cause + ':' + sub : cause; s.stats.lostBy[lk] = (s.stats.lostBy[lk] || 0) + real; }   // 플레이 기록(32절)
+  if (s.endless) segAcc(s).lost += real;
   { const e3 = s.endless;   // 34절 의무병 전설 '응급 수혈'
     if (e3 && e3.bld && q.n > 0 && e3.n0 > 0 && e3.transAt !== e3.seg && q.n < 0.5 * e3.n0 && legOn(s, 'medic') && spLv(q, 'medic')) {
       e3.transAt = e3.seg;
@@ -2788,6 +2854,7 @@ export function step(s, input) {
   s.t += DT;
   const q = s.squad;
   const R = radius(q.n);
+  if (s.endless && q.sp.length) { const pk = s.stats.spPk || (s.stats.spPk = {}); for (const m of q.sp) if ((m.lv || 1) > (pk[m.k] | 0)) pk[m.k] = m.lv || 1; }   // 플레이 기록 v2: 판 동안 가장 높았던 특수병 레벨(떠나도 남는다)
 
   /* 좌우 이동 */
   const tx = input && input.tx != null ? clamp(input.tx, -EDGE, EDGE) : null;
@@ -2904,6 +2971,7 @@ export const bldBossHp = (k) => Math.min(BUILD.bossHp.max, 1 + BUILD.bossHp.k * 
 const rageCd = (s) => { const l = mutLv(s, 'rage'); return l ? MUTATIONS.rage.cd[l - 1] : 1; };
 function enterArena(s) {
   s.phase = 'arena';
+  if (s.endless) segAcc(s).nb = Math.round(s.squad.n);
   const p = s.params;
   const rg = mutLv(s, 'rage');
   const hp = Math.round((s.bossHp > 0 ? s.bossHp : Math.round(dps(s.bossRef, 0, s.refFire || 0) * p.bossKill)) * (rg ? MUTATIONS.rage.hp[rg - 1] : 1) * (s.endless && s.endless.bld ? bldBossHp(s.endless.seg) : 1));
@@ -2957,6 +3025,7 @@ function rowsUpdate(s) {
     s.stats.gates++;
     // alt: 이 순간 줄의 칸마다 결과(쏴서 올린 값 그대로) — 근소한 패배 화면의 '다른 칸이었다면'
     emit(s, { t: 'gate', op: c.op, v: c.v, k: c.k, before, after, good: after >= before, x: (c.x0 + c.x1) / 2, z: row.z, row: row.id, alt: row.cells.map((d) => applyOp(before, d.op, d.v, nMax(s))) });
+    if (s.endless) segAcc(s).gate += after - before;
     if (after > before) gain(s, after - before, q.x, row.z, 'gate');
     else if (after < before) {
       if (after <= 0) { lose(s, before, 'gate'); }
@@ -3349,6 +3418,8 @@ function fire(s, R) {
   }
 }
 
+/* 39.1: 넘침 관통으로 쓰러뜨리는 동안 1 — 쓰러질 때 탄 효과(유폭·얼음 번짐·전염·치료·산성 웅덩이)를 안 낸다 */
+let noFx = 0;
 function bulletsUpdate(s) {
   const q = s.squad;
   const adv = BULLET_SPEED * DT;
@@ -3411,13 +3482,15 @@ function bulletsUpdate(s) {
     }
     if (gw && hitKind === 3) {   // 개편 판(총 종류): 저격·관통 점사는 남는 피해가 같은 줄 뒤로 이어 간다(관통 예산), 저격 헤드샷·터지는 한 발, 산탄 슬러그
       const f = hitObj, hp0 = f.hp, mul = (f.elite === 'shield' && !acidArm ? shieldMul(s) : 1) * (f.arm && !((fxOf(s) && fxOf(s).pierce) || acidArm) ? f.arm : 1);
+      if (b.th) noFx = 1;   // 39.1: 넘침 관통으로 이어 간 총알(둘째 좀비부터)은 피해만 — 맞을 때·쓰러질 때 탄 효과는 처음 맞힌 좀비에게만
       let kill = hitFoe(s, f, b.dmg * mul, 'gun');
-      if (FX) fxHit2(s, b, f, near, FX); else if (s.ammo) ammoHit(s, b, f, near);   // 탄 효과가 없는 개편 판(1단계)은 출격 탄종 그대로
-      if (!kill && b.g === 'm' && gw.head && f.alive && f.kind !== 'brute' && !f.elite && f.hp <= gw.head * f.max) kill = hitFoe(s, f, f.hp, 'gun');   // 헤드샷
-      if (kill && b.g === 'm' && gw.pop) fxBoom(s, f.x, f.z, 1.6, f.max * gw.pop, f);   // 터지는 한 발
+      noFx = 0;
+      if (!b.th) { if (FX) fxHit2(s, b, f, near, FX); else if (s.ammo) ammoHit(s, b, f, near); }   // 탄 효과가 없는 개편 판(1단계)은 출격 탄종 그대로
+      if (!kill && b.g === 'm' && gw.head && f.alive && f.kind !== 'brute' && !f.elite && f.hp <= gw.head * f.max) { if (b.th) noFx = 1; kill = hitFoe(s, f, f.hp, 'gun'); noFx = 0; }   // 헤드샷(둘째부터는 쓰러질 때 탄 효과 없이)
+      if (kill && b.g === 'm' && gw.pop && !b.th) fxBoom(s, f.x, f.z, 1.6, f.max * gw.pop, f);   // 터지는 한 발
       if (b.slug && f.alive) f.z += b.slug;   // 슬러그: 맨 앞(맞은) 적을 밀어낸다
       const left = kill && b.thru ? b.dmg - hp0 / mul : 0;
-      if (left > b.dmg * 0.02) { b.dmg = left; if (b.g === 's') b.base = left; b.tg = 0; b.z = f.z + 0.01; list[w++] = b; }   // 남은 피해로 계속 날아간다
+      if (left > b.dmg * 0.02) { b.th = 1; b.dmg = left; if (b.g === 's') b.base = left; b.tg = 0; b.z = f.z + 0.01; list[w++] = b; }   // 남은 피해로 계속 날아간다
       continue;
     }
     if (B2 && hitKind === 2) { const wd = hitObj.kind === 'wall' || hitObj.kind === 'door'; if (wd && B2.acid) acidAdd(s, hitObj, B2); hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK : 1)); if (wd && B2.pierce && B2.pierce >= 10) wallThru(s, b, hitObj, near, B2.pierce); if (wd && legOn(s, 'pierce')) ricochet(s, b, hitObj); continue; }   // 관통 Lv10 · 전설 강화 '벽 뚫기'
@@ -3466,7 +3539,7 @@ function ricochet(s, b, w) {
   for (const f of s.foes) { if (!f.alive || f.z > w.z || f.z < q.z || w.z - f.z > L.reach || Math.abs(f.x - b.x) > L.side) continue; list.push(f); }
   if (!list.length) return;
   list.sort((a, c) => (w.z - a.z) + Math.abs(a.x - b.x) - (w.z - c.z) - Math.abs(c.x - b.x) || a.id - c.id);
-  for (let i = 0; i < Math.min(n, list.length); i++) { const f = list[i]; emit(s, { t: 'ricochet', x0: b.x, z0: w.z, x1: f.x, z1: f.z }); hitFoe(s, f, b.dmg, 'gun'); }
+  for (let i = 0; i < Math.min(n, list.length); i++) { const f = list[i]; emit(s, { t: 'ricochet', x0: b.x, z0: w.z, x1: f.x, z1: f.z }); hitFoe(s, f, b.dmg, 'gun', 'pierce'); }
 }
 /* ---------- 24절 새 탄: 전격 · 부식 · 치료(개편 판만) ---------- */
 /* 전격: 맞은 좀비 f에서 v.r m 안 가장 가까운 좀비로 n번 튄다(맞은 적은 다시 안 맞는다). Lv5 전도 — 마지막 자리에서 v.r m 안 덧셈 칸도 올린다 */
@@ -3483,7 +3556,7 @@ function shockChain(s, b, f, near, fx) {
     if (!best) break;
     seen.add(best.id);
     pts.push(best.x, best.z);
-    hitFoe(s, best, d, 'chain');
+    hitFoe(s, best, d, 'chain', 'shock');
     if (best.alive && legOn(s, 'shock')) best.stunT = s.t + ENH.shock.legend.T * legK2(s, 'shock');   // 34절 전설 '감전'
     cur = best;
   }
@@ -3581,7 +3654,7 @@ function fxNewUpdate(s) {
       if (best) {
         const G = gunOf(s), d = dps(q.n, q.tier, s.fireLv) * (G ? G.v.dmg : 1) * legKs(s, 'shock');
         const x = best.x, z = best.z;
-        for (const o of live) if (o.alive && (o.x - x) ** 2 + (o.z - z) ** 2 <= R2) hitFoe(s, o, d, 'chain');
+        for (const o of live) if (o.alive && (o.x - x) ** 2 + (o.z - z) ** 2 <= R2) hitFoe(s, o, d, 'chain', 'shock');
         emit(s, { t: 'bolt', x, z, r: FX_NEW.shock.boltR });
       }
     }
@@ -3599,7 +3672,7 @@ function ammoHit(s, b, f, near) {
       if (Math.abs(o.x - b.x) > o.r + 0.12) continue;
       if (!g || o.z < g.z) g = o;
     }
-    if (g) { emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: g.z }); hitFoe(s, g, b.dmg * A.pierce, 'gun'); }
+    if (g) { emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: g.z }); hitFoe(s, g, b.dmg * A.pierce, 'gun', 'pierce'); }
   } else if (A.splash) {
     const r2 = A.r * A.r;
     let n = 0;
@@ -3607,7 +3680,7 @@ function ammoHit(s, b, f, near) {
       if (!o.alive || o === f) continue;
       const dx = o.x - f.x, dz = o.z - f.z;
       if (dx * dx + dz * dz > r2) continue;
-      hitFoe(s, o, b.dmg * A.splash, 'gun');
+      hitFoe(s, o, b.dmg * A.splash, 'gun', 'splash');
       n++;
     }
     if (n) emit(s, { t: 'splash', x: f.x, z: f.z, r: A.r, n });
@@ -3624,7 +3697,7 @@ function fxHit(s, b, f, near, fx) {
       if (Math.abs(o.x - b.x) > o.r + 0.12) continue;
       if (!g || o.z < g.z) g = o;
     }
-    if (g) { emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: g.z }); hitFoe(s, g, b.dmg * fxVal('pierce', fx.pierce).pierce, 'gun'); }
+    if (g) { emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: g.z }); hitFoe(s, g, b.dmg * fxVal('pierce', fx.pierce).pierce, 'gun', 'pierce'); }
   }
   if (fx.burst) {
     const v = fxVal('burst', fx.burst);
@@ -3640,7 +3713,7 @@ function wallThru(s, b, w, near, lv) {
   const v = fx2Val('pierce', lv);
   const line = near.filter((o) => o.alive && o.z > w.z && o.z - w.z < 12 && Math.abs(o.x - b.x) <= o.r + 0.12).sort((a, c) => a.z - c.z || a.id - c.id).slice(0, 3);
   const pv = v.pierce;
-  for (const o of line) hitFoe(s, o, b.dmg * pv, 'gun');
+  for (const o of line) hitFoe(s, o, b.dmg * pv, 'gun', 'pierce');
   if (line.length) emit(s, { t: 'pierce', x: b.x, z0: w.z, z1: line[line.length - 1].z });
 }
 function fxHit2(s, b, f, near, fx) {
@@ -3657,7 +3730,7 @@ function fxHit2(s, b, f, near, fx) {
     line.sort((a, c) => a.z - c.z || a.id - c.id);
     const n = Math.min(v.n, line.length, PIERCE_MAX);
     const pv = v.pierce;
-    for (let i = 0; i < n; i++) { hits.push(line[i]); hitFoe(s, line[i], b.dmg * pv * (1 + v.ramp * i), 'gun'); }   // Lv5: 뚫을 때마다 다음 대상 피해 +ramp
+    for (let i = 0; i < n; i++) { hits.push(line[i]); hitFoe(s, line[i], b.dmg * pv * (1 + v.ramp * i), 'gun', 'pierce'); }   // Lv5: 뚫을 때마다 다음 대상 피해 +ramp
     if (n) emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: line[n - 1].z });
   }
   if (fx.burst) {
@@ -3691,13 +3764,13 @@ function fxSplash(s, b, f, near, v) {
     if (!o.alive || o === f) continue;
     const dx = o.x - f.x, dz = o.z - f.z;
     if (dx * dx + dz * dz > r2) continue;
-    hitFoe(s, o, b.dmg * v.splash * lk, 'gun');
+    hitFoe(s, o, b.dmg * v.splash * lk, 'gun', 'splash');
     n++;
   }
   if (n || leg) emit(s, { t: 'splash', x: f.x, z: f.z, r: v.r, n, pull: leg ? v.r * 2 : 0 });
   const rb = enhV(s, 'burst', 'r');
   if (rb && (!s.flames || s.flames.length < 12)) {   // 희귀 강화 '불씨 폭발': 폭발한 자리에 잠깐 불
-    const zn = { id: s.nextId++, x: f.x, z: f.z, w: v.r * 1.4, len: v.r * 1.4, t: ENH.burst.rare.t, T: ENH.burst.rare.t, d: b.dmg * v.splash * 2 * rb, lv: 1 };
+    const zn = { id: s.nextId++, x: f.x, z: f.z, w: v.r * 1.4, len: v.r * 1.4, t: ENH.burst.rare.t, T: ENH.burst.rare.t, d: b.dmg * v.splash * 2 * rb, lv: 1, src: 'ember' };
     (s.flames || (s.flames = [])).push(zn);
     emit(s, { t: 'flame', id: zn.id, x0: f.x, z0: f.z, x: zn.x, z: zn.z, w: zn.w, len: zn.len, T: zn.T, lv: 1, boss: false });
   }
@@ -3777,7 +3850,7 @@ function fxBoom(s, x, z, r, d, except) {
     const dx = o.x - x, dz = o.z - z;
     if (dx * dx + dz * dz > r2) continue;
     n++;
-    hitFoe(s, o, d, 'chain');
+    hitFoe(s, o, d, 'chain', 'pop');
   }
   fxChainN--;
   if (n) emit(s, { t: 'splash', x, z, r, n });
@@ -3791,7 +3864,7 @@ function fxDeath(s, f, by) {
     for (const o of s.foes) {
       if (!o.alive || o === f) continue;
       const dx = o.x - f.x, dz = o.z - f.z;
-      if (dx * dx + dz * dz <= r2) hitFoe(s, o, d, 'chain');
+      if (dx * dx + dz * dz <= r2) hitFoe(s, o, d, 'chain', 'burst');
     }
     fxChainN--;
     emit(s, { t: 'splash', x: f.x, z: f.z, r: C2.r, n: 1 });
@@ -3807,13 +3880,13 @@ function fxDeath(s, f, by) {
       const dx = o.x - f.x, dz = o.z - f.z;
       if (dx * dx + dz * dz > r2) continue;
       n++;
-      hitFoe(s, o, d, 'chain');
+      hitFoe(s, o, d, 'chain', 'burst');
     }
     fxChainN--;
     if (v.evo2 || bLeg) {   // 작렬 Lv10 · 전설 강화: 연쇄 폭발이 벽·보스에도 든다
       for (const p of s.props) if (p.alive && !p.passed && (p.kind === 'wall' || p.kind === 'door') && Math.abs(p.z - f.z) < v.r && overlap(f.x - v.r, f.x + v.r, p.x0, p.x1) > 0) hitProp(s, p, d);
       const bo = s.boss;
-      if (bo && bo.hp > 0 && Math.abs(bo.z - 1 - f.z) < v.r + 1 && Math.abs(bo.x - f.x) < v.r + bo.r) hitBossBonus(s, d, 'boom');
+      if (bo && bo.hp > 0 && Math.abs(bo.z - 1 - f.z) < v.r + 1 && Math.abs(bo.x - f.x) < v.r + bo.r) hitBossBonus(s, d, 'boom', 'burst');
     }
     if (n) emit(s, { t: 'splash', x: f.x, z: f.z, r: v.r, n });
   }
@@ -3824,18 +3897,18 @@ function fxDeath(s, f, by) {
 }
 /* 플레이 기록(32절): 출처별로 실제로 깎은 체력(넘친 몫은 빼고) */
 function dmgLog(s, by, d) { const m = s.stats.dmg; if (m && d > 0) m[by || '?'] = (m[by || '?'] || 0) + d; }
-function hitFoe(s, f, dmg, by) {
+function hitFoe(s, f, dmg, by, tag) {
   if (f.markT > s.t) dmg *= 1 + ENH.sniper.legend.v * legK2(s, 'sniper');   // 34절 저격수 전설 '약점 표시'
   if (by === 'gun') {
     const B = bldOf(s);
     if (B && B.gt === 'rifle' && legOn(s, 'rifle')) { const L = ENH.rifle.legend; f.stk = Math.min(L.max * legK2(s, 'rifle'), (f.stk || 0) + L.step); dmg *= 1 + f.stk; }   // 34절 소총 전설 '집중 사격'
   }
-  dmgLog(s, by, Math.min(dmg, Math.max(0, f.hp)));
+  dmgLog(s, tag || by, Math.min(dmg, Math.max(0, f.hp)));
   f.hp -= dmg;
   f.hitT = s.t;
   if (f.hp > 0) return false;
   f.alive = false;
-  if (s.stats.kb) s.stats.kb[by || '?'] = (s.stats.kb[by || '?'] | 0) + 1;
+  if (s.stats.kb) { const k = tag || by || '?'; s.stats.kb[k] = (s.stats.kb[k] | 0) + 1; }
   s.stats.kills++;
   s.stats.killHp += f.max;
   emit(s, { t: 'kill', kind: f.kind, x: f.x, z: f.z, by, elite: f.elite });
@@ -3846,12 +3919,12 @@ function hitFoe(s, f, dmg, by) {
     if (B.gt === 'marksman' && legOn(s, 'marksman')) q.fireAcc = Math.min(q.fireAcc + ENH.marksman.legend.v, 2 * ENH.marksman.legend.v);   // 36절 저격총 전설 '연발': 쓰러뜨리면 다음 발이 바로
     else if (B.gt === 'shotgun' && legOn(s, 'shotgun') && f.z - q.z < ENH.shotgun.legend.near) { const SL = ENH.shotgun.legend; fxBoom(s, f.x, f.z, SL.r, f.max * SL.v * legK2(s, 'shotgun'), f); emit(s, { t: 'boom', x: f.x, z: f.z, r: SL.r, small: 1 }); }   // 36절 산탄총 전설 '산탄 폭발'
   }
-  if (f.acid > 0 && f.acT > s.t && legOn(s, 'acid')) {   // 34절 부식 전설 '전염': 죽은 좀비의 부식 겹이 둘레 좀비에게 그대로 옮는다
+  if (!noFx && f.acid > 0 && f.acT > s.t && legOn(s, 'acid')) {   // 34절 부식 전설 '전염': 죽은 좀비의 부식 겹이 둘레 좀비에게 그대로 옮는다
     const r2 = ENH.acid.legend.r * ENH.acid.legend.r; let n = 0;
     for (const o of s.foes) { if (!o.alive || o === f) continue; const dx = o.x - f.x, dz = o.z - f.z; if (dx * dx + dz * dz > r2) continue; o.acid = Math.max(o.acid | 0, f.acid); o.acT = Math.max(o.acT || 0, f.acT); if (++n >= 12) break; }
     if (n) emit(s, { t: 'acidSpread', x: f.x, z: f.z, r: ENH.acid.legend.r });
   }
-  if (s.endless && s.endless.bld && s.endless.fx) {
+  if (s.endless && s.endless.bld && s.endless.fx && !noFx) {
     fxDeath(s, f, by);   // 작렬 Lv5 유폭 · 빙결 Lv5 번지는 얼음 · 기름불(작렬 + 화염병)
     if (s.endless.fx.cure) cureKill(s, f);   // 치료(24절)
     if (f.kind === 'brute' && s.endless.fx.acid) acidPool(s, f.x, f.z);   // 산성 웅덩이(부식 Lv10)
@@ -3869,12 +3942,12 @@ function hitFoe(s, f, dmg, by) {
   return true;
 }
 /* 특수병·영웅이 보스에게 주는 피해는 병사 화력의 +BONUS_CAP(10%)까지(쌓인 몫 b.bonus 안에서) */
-function hitBossBonus(s, dmg, by = '?') {
+function hitBossBonus(s, dmg, by = '?', tag) {
   const b = s.boss;
   if (!b || b.hp <= 0) return 0;
   const d = Math.min(dmg, b.bonus);
   if (d <= 0) return 0;
-  dmgLog(s, by, Math.min(d, b.hp));
+  dmgLog(s, tag || by, Math.min(d, b.hp));
   b.bonus -= d;
   b.hp -= d;
   b.hitT = s.t;
@@ -3899,20 +3972,29 @@ function openCrate(s, p) {
     else { gain(s, crateMen(q.n, r), x, p.z, 'crate'); emit(s, { t: 'crate', type: 'men', x, z: p.z }); }
     return;
   }
-  if (r.type === 'lucky') {   // 행운 길(22절): 소 — 코인 + 병력 10%, 중 — 병력 30%, 대 — ★ +1(상한이면 병력 30%) + 병력 40%
+  if (r.type === 'lucky') {   // 행운 길(22절): 꽝 — 독가스 병력 −LUCK.trap(39.6), 소 — 코인 + 병력 10%, 중 — 병력 30%, 대 — ★ +1(상한이면 병력 30%) + 병력 LUCK.big
     const coin = relicOn(s, 'lucky') && bldOf(s);   // 행운의 동전(24절): 한 단계 위로, 대는 병력 +big 더
+    if (s.stats.luck) s.stats.luck[clamp(r.size | 0, 0, 3)]++;
+    if (p.treasure) s.stats.treasure = (s.stats.treasure | 0) + 1;
+    if (p.lg) for (const o of s.props) if (o !== p && o.lg === p.lg && o.alive) { o.alive = false; emit(s, { t: 'luckSeal', x: (o.x0 + o.x1) / 2, z: o.z }); }   // 39.4: 행운 길은 셋 중 하나 — 하나가 열리면 나머지는 잠긴다
     if (coin && (r.size | 0) >= 3) gain(s, Math.max(1, Math.round(q.n * RELICS.lucky.big)), x, p.z, 'crate');
-    const sz = clamp((r.size | 0) + (coin ? 1 : 0), 1, 3);
+    const sz = clamp((r.size | 0) + (coin ? 1 : 0), 0, 3);
+    if (sz === 0) { lose(s, Math.max(1, Math.round(q.n * LANES.trap)), 'crate', x, p.z, 'trap'); emit(s, { t: 'crate', type: 'lucky', size: 0, tier: q.tier, x, z: p.z }); return; }
     if (sz === 1) { s.stats.coins += 10 + 3 * ((s.endless && s.endless.seg) || 1); gain(s, Math.max(1, Math.round(q.n * 0.1)), x, p.z, 'crate'); }
     else if (sz === 2) gain(s, Math.max(1, Math.round(q.n * 0.3)), x, p.z, 'crate');
-    else { if (q.tier < tierMax(s)) q.tier++; else gain(s, Math.max(1, Math.round(q.n * 0.3)), x, p.z, 'crate'); gain(s, Math.max(1, Math.round(q.n * 0.4)), x, p.z, 'crate'); }
-    emit(s, { t: 'crate', type: 'lucky', size: sz, tier: q.tier, x, z: p.z });
+    else { if (q.tier < tierMax(s)) q.tier++; else gain(s, Math.max(1, Math.round(q.n * 0.3)), x, p.z, 'crate'); gain(s, Math.max(1, Math.round(q.n * (p.lg ? LANES.big : 0.4))), x, p.z, 'crate'); }
+    emit(s, { t: 'crate', type: 'lucky', size: sz, tier: q.tier, big: p.lg ? LANES.big : 0.4, x, z: p.z });
     return;
   }
   if (r.type === 'gunx' && bldOf(s)) {   // 총 바꾸기 상자(21.8): 바꿀지는 다음 보스 뒤에 고른다(달리는 중에는 멈추지 않는다)
     const B = bldOf(s);
-    if (GUNS[r.g] && r.g !== B.gt) B.gp = r.g;
-    emit(s, { t: 'crate', type: 'gunx', g: r.g, x, z: p.z });
+    if (GUNS[r.g] && r.g !== B.gt) {
+      B.gp = r.g;
+      if (!B.gl) B.gl = {};
+      B.gl[r.g] = (B.gl[r.g] || Math.max(1, Math.floor(((B.gl[B.gt]) || 1) * GUN_SWAP.keep))) + GUN_SWAP.stack;   // 39.8: 주울 때마다 그 총 Lv이 쌓인다(안 바꿔도 — 처음이면 지금 총 Lv의 keep 몫에서)
+      s.stats.gunx = (s.stats.gunx | 0) + 1;
+    }
+    emit(s, { t: 'crate', type: 'gunx', g: r.g, lv: (B.gl && B.gl[r.g]) || 1, x, z: p.z });
     return;
   }
   if (r.type === 'gun') {
@@ -4067,6 +4149,7 @@ function bossUpdate(s, R) {
       b.slam = null;
       e.wait = ENDLESS.wait;
       e.bosses++;
+      { const c = segAcc(s); (s.stats.segs || (s.stats.segs = [])).push([e.seg, c.nb, Math.round(b.t * 10) / 10, Math.round(c.lost), Math.round(c.gate)]); s.stats.cur = null; }   // 플레이 기록 v2: 구간마다 [구간, 보스 앞 병력, 보스전 초, 잃은 병력, 게이트 득실]
       if (e.bld && e.fx && e.fx.cure && fx2Val('cure', e.fx.cure).mass && e.cureSeg === e.seg && e.cureN > 0) { const n = Math.round(e.cureN * FX_NEW.cure.boss); if (n > 0) { gain(s, n, b.x, b.z, 'cure'); emit(s, { t: 'cure', n, x: b.x, z: b.z, boss: true }); } }   // 집단 치료(치료 Lv5): 보스를 잡으면 그 구간 치료의 50% 더
       if (e.bld) { const B = e.bld; B.pi = 0; B.rrn = 0; B.more = 0; B.rel = 1; B.pre = 0; if (p.tag === 'super') { B.rr += 1 + (relicOn(s, 'dice') ? RELICS.dice.king : 0); mutRoll(s); } }
       const coins = segCoins(e.seg);
@@ -4487,8 +4570,8 @@ function flamesUpdate(s) {
   for (const zn of s.flames) {
     if (zn.follow !== undefined) { zn.x = s.squad.x; zn.z = s.squad.z + zn.follow; }   // 화염병 Lv10 따라오는 불: 지대가 분대를 따라온다
     const d = zn.d * DT;
-    for (const f of s.foes) if (f.alive && inFire(zn, f.x, f.z)) hitFoe(s, f, ice > 1 && f.slowT > s.t ? d * ice : d, 'flame');
-    if (b && b.hp > 0 && bossInFire(zn, b)) hitBossBonus(s, d, 'flame');
+    for (const f of s.foes) if (f.alive && inFire(zn, f.x, f.z)) hitFoe(s, f, ice > 1 && f.slowT > s.t ? d * ice : d, 'flame', zn.src);
+    if (b && b.hp > 0 && bossInFire(zn, b)) hitBossBonus(s, d, 'flame', zn.src);
     zn.t -= DT;
   }
   s.flames = s.flames.filter((zn) => zn.t > 1e-9);
@@ -4627,7 +4710,7 @@ function specialsUpdate(s, R) {
         for (const f of zapFrom) {
           let best = null, bd = r2;
           for (const o of s.foes) { if (!o.alive || o === f) continue; const dd = (o.x - f.x) ** 2 + (o.z - f.z) ** 2; if (dd <= bd) { bd = dd; best = o; } }
-          if (best) { hitFoe(s, best, d, 'chain'); emit(s, { t: 'zap', pts: [f.x, f.z, best.x, best.z] }); }
+          if (best) { hitFoe(s, best, d, 'chain', 'shock'); emit(s, { t: 'zap', pts: [f.x, f.z, best.x, best.z] }); }
         }
       }
       for (const p of s.props) {
@@ -4643,7 +4726,7 @@ function specialsUpdate(s, R) {
         for (let i = 0; i < n; i++) { const a = (i / n) * 6.283 + rand(s) * 0.8, d = rk.r * (0.7 + 0.5 * rand(s)); s.rockets.push({ ...rk, id: s.nextId++, x: rk.x + Math.cos(a) * d, z: rk.z + Math.sin(a) * d, t: 0.18 + 0.06 * i, T: 0.18 + 0.06 * i, r: rk.r * 0.45, dmg: rk.dmg * CL.v, again: 0, fire: false, cluster: 0, small: 1, fid: -1 }); }
       }
       if (rk.fire) {   // 불씨 로켓(Lv10): 떨어진 자리에 불 지대(2초)
-        const F = BUILD.rocket.fire, zn = { id: s.nextId++, x: rk.x, z: rk.z, w: rk.r * F.w, len: rk.r * F.w, t: F.T, T: F.T, d: rk.dmg * F.d, lv: 1 };   // 34절: 예전 폭 ×1.6 · 2초 · ×0.4 — 쌍발·잦은 로켓에 겹쳐 길을 덮었다
+        const F = BUILD.rocket.fire, zn = { id: s.nextId++, x: rk.x, z: rk.z, w: rk.r * F.w, len: rk.r * F.w, t: F.T, T: F.T, d: rk.dmg * F.d, lv: 1, src: 'rocket' };   // 34절: 예전 폭 ×1.6 · 2초 · ×0.4 — 쌍발·잦은 로켓에 겹쳐 길을 덮었다
         (s.flames || (s.flames = [])).push(zn);
         emit(s, { t: 'flame', id: zn.id, x0: rk.x, z0: rk.z, x: zn.x, z: zn.z, w: zn.w, len: zn.len, T: zn.T, lv: 1, boss: false });
       }
