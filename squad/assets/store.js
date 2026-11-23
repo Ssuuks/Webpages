@@ -36,7 +36,7 @@ export function defaults() {
     heroX: {},                       // 영웅마다 Lv5 위로 올린 레벨(heroes.lv는 옛 탭이 5로 자른다)
     endless: { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0, rel: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수, 알린 해금 단계, 대왕 누적 처치, 출발 카드가 알린 유물 수
     pets: { own: {}, sel: '', team: [], slots: 1, eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
-    ammo: { sel: '', seen: 0 },      // 탄종(ARSENAL.md 3절): 고른 탄종('' = 보통탄), 열림 안내를 본 별 문턱. 열림은 저장하지 않고 모은 별로 센다
+    ammo: { sel: '', selE: '', seen: 0 },   // 탄종(ARSENAL.md 3절): 캠페인에 고른 탄종('' = 보통탄), 무한모드 준비 화면에서 고른 탄종(selE — 무한모드 전용 탄 포함), 열림 안내를 본 별 문턱. 열림은 저장하지 않고 모은 별로 센다
     gun: { sel: 'rifle' },           // 총 종류(ENDGAME.md 21절 — 무한모드 개편 판): 출격 때 들고 갈 총. 열림은 탄종처럼 모은 별로 센다
   };
 }
@@ -178,7 +178,9 @@ export function normalize(o) {
   out.pets = pets;
   // 탄종: 모르는 id는 보통탄으로(열렸는지는 쓸 때 모은 별로 본다)
   const am = o.ammo && typeof o.ammo === 'object' ? o.ammo : {};
-  out.ammo = { sel: AMMO[am.sel] ? am.sel : '', seen: Math.max(0, Math.floor(num(am.seen))) };
+  // 캠페인(sel)과 무한모드(selE)는 따로 고른다 — 옛 저장(한 칸)은 무한모드에 그 탄을, 캠페인에는 무한모드 전용 탄이 아니면 그대로
+  const selE = AMMO[am.selE] ? am.selE : AMMO[am.sel] ? am.sel : '';
+  out.ammo = { sel: AMMO[am.sel] && !AMMO[am.sel].b2 ? am.sel : '', selE, seen: Math.max(0, Math.floor(num(am.seen))) };
   const gn = o.gun && typeof o.gun === 'object' ? o.gun : {};
   out.gun = { sel: GUNS[gn.sel] ? gn.sel : 'rifle' };
   return out;

@@ -606,11 +606,8 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <h2>강화 <span class="coinchip" id="uCoins">0</span></h2>
     <div id="upgList" class="stack"></div>
     <h3>탄종 <small id="ammoStars" class="muted"></small></h3>
-    <p class="muted" style="font-size:13px;margin:0 0 8px">별을 모으면 열려요. 별은 줄지 않아요. 좋은 점과 대신 잃는 점이 있어요.</p>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">캠페인에 들고 갈 탄종이에요. 별을 모으면 열려요. 별은 줄지 않아요. 좋은 점과 대신 잃는 점이 있어요. 무한모드 탄종·총은 무한모드 준비 화면에서 골라요.</p>
     <div id="ammoList" class="stack"></div>
-    <h3>총 <small id="gunStars" class="muted"></small></h3>
-    <p class="muted" style="font-size:13px;margin:0 0 8px">무한모드에서 들고 갈 총이에요. 판 안에서 다른 총이 든 상자를 열면 다음 보스 뒤에 바꿀지 골라요.</p>
-    <div id="gunList" class="stack"></div>
     <button id="upgBack" class="btn" data-back="title" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
   </div>
 </section>
@@ -724,6 +721,20 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <p class="muted" id="endEndlessInfo"></p>
     <button id="endNext" class="btn primary" data-focus>2회차 시작</button>
     <div class="row"><button id="endEndless" class="btn">무한모드</button><button id="endMenu" class="btn">메뉴로</button></div>
+  </div>
+</section>
+
+<section id="scrEndPrep" class="screen dim" hidden>
+  <div class="sheet">
+    <h2>무한모드 준비 <button class="back" data-back="title">닫기</button></h2>
+    <p class="muted" id="endPrepWho" style="font-size:13px;margin:0 0 8px"></p>
+    <h3>탄종 <small id="endAmmoStars" class="muted"></small></h3>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">무한모드에 들고 갈 탄종이에요. 전격·부식·치료탄은 무한모드에서만 써요.</p>
+    <div id="endAmmoList" class="stack"></div>
+    <h3>총 <small id="gunStars" class="muted"></small></h3>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">판 안에서 다른 총이 든 상자를 열면 다음 보스 뒤에 바꿀지 골라요.</p>
+    <div id="gunList" class="stack"></div>
+    <button id="endPrepGo" class="btn primary" style="width:100%;margin-top:14px" data-focus>출격</button>
   </div>
 </section>
 
