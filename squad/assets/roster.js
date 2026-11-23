@@ -201,6 +201,12 @@ const pp = (id, lv) => Math.round(petP(id, lv) * 1000) / 10;
 export const petCost = (lv) => ({ coins: 200 * lv, shards: lv });
 /* 알: 값(코인), 안 가진 펫이 남아 있을 때 새 펫이 나올 확률, 천장(이 수의 알 안에 새 펫 하나), 중복일 때 받는 조각 */
 export const EGG = { price: 600, pNew: 0.4, pity: 5, shards: 3, pEndless: 0.15 };
+/* 남는 펫 조각 → 코인(ENDGAME.md 31절): 최고 레벨까지 올리는 데 드는 조각보다 많은 몫만, 조각 하나에 SHARD_COIN코인(알 값 600 ÷ 조각 3 = 200의 절반) */
+export const SHARD_COIN = 100;
+/* 이 레벨에서 최고 레벨까지 올리는 데 드는 조각 합 */
+export const petShardsToMax = (lv) => { let n = 0; for (let l = Math.max(1, lv | 0); l < PET_MAX_LV; l++) n += petCost(l).shards; return n; };
+/* 팔 수 있는(남는) 조각: 가진 조각 − 최고 레벨까지 드는 조각 */
+export const petSpareShards = (own) => (own ? Math.max(0, (own.sh | 0) - petShardsToMax(own.lv)) : 0);
 /* 알 하나 열기(뽑기 난수는 시뮬레이션 밖 — rnd: 0~1 난수 함수). pets = { own: { id: { lv, sh } }, pity } 를 고친다.
    안 가진 펫이 있으면 pNew 확률(가진 펫이 없으면 반드시, 천장에 닿으면 반드시)로 새 펫, 아니면 가진 펫 하나의 조각 +EGG.shards — 꽝이 없다.
    돌려주는 것: { id, fresh(새 펫인가), shards } */

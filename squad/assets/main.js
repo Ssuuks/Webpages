@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { PATCH } from './patch.js';
-import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
+import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, SHARD_COIN, petSpareShards, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
   FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO, SUPPLY, SUPPLY_IDS } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
@@ -698,6 +698,18 @@ function petFaceEl(id, scale) {
   return sp;
 }
 let petView = '';
+/* 남는 펫 조각을 코인으로(최고 레벨까지 드는 조각은 남긴다) */
+function sellShards(ids) {
+  let n = 0;
+  for (const id of ids) { const own = data.pets.own[id]; const k = petSpareShards(own); if (k > 0) { own.sh -= k; n += k; } }
+  if (!n) { sfx.deny(); return; }
+  data.coins += n * SHARD_COIN;
+  save(data);
+  sfx.coin();
+  toast(`조각 ${n}개 → 코인 +${(n * SHARD_COIN).toLocaleString('ko')}`, 1800);
+  renderPet();
+  renderTitle();
+}
 function renderPet() {
   $('pCoins').textContent = compact(data.coins);
   const P = data.pets;
@@ -752,6 +764,16 @@ function renderPet() {
       p.textContent = `최고 레벨이에요 · 남은 조각 ${own.sh}개`;
       actions.appendChild(p);
     }
+    // 남는 조각(최고 레벨까지 드는 것보다 많은 몫) → 코인
+    const spare = petSpareShards(own);
+    if (spare > 0) {
+      const sell = document.createElement('button');
+      sell.className = 'btn';
+      sell.classList.add('pet-up');
+      sell.innerHTML = `<span>남는 조각 ${spare}개 → 코인</span><small><span class="coinchip">${(spare * SHARD_COIN).toLocaleString('ko')}</span> · 최고 레벨까지 쓸 조각은 남겨요</small>`;
+      sell.addEventListener('click', () => { sellShards([id]); });
+      actions.appendChild(sell);
+    }
     const sel = document.createElement('button');
     sel.className = 'btn primary';
     const isSel = P.team.includes(id);
@@ -799,6 +821,18 @@ function renderPet() {
   // 알: 값과 확률을 그대로 보여 준다(숨은 확률 없음)
   const egg = $('petEgg');
   egg.textContent = '';
+  // 모든 펫의 남는 조각을 한꺼번에 코인으로
+  const spareIds = PET_IDS.filter((x) => petSpareShards(P.own[x]) > 0);
+  if (spareIds.length > 1) {
+    const n = spareIds.reduce((a, x) => a + petSpareShards(P.own[x]), 0);
+    const all = document.createElement('button');
+    all.className = 'btn';
+    all.style.width = '100%';
+    all.style.marginBottom = '8px';
+    all.innerHTML = `모든 펫의 남는 조각 ${n}개 → <span class="coinchip">${(n * SHARD_COIN).toLocaleString('ko')}</span>`;
+    all.addEventListener('click', () => sellShards(spareIds));
+    egg.appendChild(all);
+  }
   const missing = PET_IDS.filter((x) => !P.own[x]).length;
   const row = document.createElement('div');
   row.className = 'row';

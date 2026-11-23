@@ -4965,3 +4965,14 @@ test('30절 — 보스 피해의 바닥: 개편 판 보스의 밟기는 그 구�
   C.step(c, { dir: 0 });
   assert.equal(c.ev.filter((e) => e.t === 'loss' && e.cause === 'boss').reduce((a, e) => a + e.n, 0), Math.ceil(0.12 * 10) + 1, '캠페인은 지금 병력의 몫');
 });
+
+test('31절 — 남는 펫 조각: 최고 레벨까지 드는 조각보다 많은 몫만 팔 수 있다(조각 하나에 SHARD_COIN코인)', () => {
+  assert.equal(R.petShardsToMax(R.PET_MAX_LV), 0);
+  assert.equal(R.petShardsToMax(R.PET_MAX_LV - 1), R.petCost(R.PET_MAX_LV - 1).shards);
+  assert.equal(R.petShardsToMax(1), Array.from({ length: R.PET_MAX_LV - 1 }, (_, i) => R.petCost(i + 1).shards).reduce((a, b) => a + b, 0));
+  assert.equal(R.petSpareShards({ lv: R.PET_MAX_LV, sh: 7 }), 7, '최고 레벨이면 전부');
+  assert.equal(R.petSpareShards({ lv: 8, sh: 20 }), 20 - R.petShardsToMax(8), '최고 레벨까지 쓸 몫은 남긴다');
+  assert.equal(R.petSpareShards({ lv: 1, sh: 2 }), 0);
+  assert.equal(R.petSpareShards(null), 0);
+  assert.ok(R.SHARD_COIN > 0 && R.SHARD_COIN < R.EGG.price / R.EGG.shards, '알로 사는 값보다 싸게');
+});
