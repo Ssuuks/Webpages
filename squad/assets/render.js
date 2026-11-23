@@ -26,7 +26,7 @@ const SPARK4 = '#F2E8FF';   // 4단계 총알 옆 전기 불꽃
 export const RELIC_COL = '#9B6BFF', RELIC_GOLD = '#FFD84A';
 const GOLD_BULLET = '#FFD84A';
 const FORM_N_MAX = 9999;     // 대형으로 그리는 병력의 끝(전차 9대 몫) — 그 위는 숫자만 커진다
-const AMMO_COL = { pierce: '#F4F7FF', burst: '#FFB347', rapid: '#FFF4B0', frost: '#8FD3FF' };   // 탄종 머리 색(roster.AMMO와 같은 id)
+const AMMO_COL = { pierce: '#F4F7FF', burst: '#FFB347', rapid: '#FFF4B0', frost: '#8FD3FF', shock: '#D6CCFF', acid: '#9BE36B', cure: '#FF8FB8' };   // 탄종 머리 색(roster.AMMO와 같은 id)
 const GUN_COL = { shotgun: '#FF8A5B', marksman: '#7FE3FF', rifle: '#FFE38A' };   // 총 종류(21절) 색 — roster.GUNS와 같은 id
 /* 총알 모양을 고를 탄종: 출격 탄종(s.ammo — 대신 쪽까지 진 탄), 없으면 무한모드 2단계 판의 탄 효과 중 가장 높은 레벨(같으면 위 순서).
    카드·상자로 얻은 효과도 모양으로 알린다(관통을 얻으면 바늘). 효과가 없는 판은 '' — 예전 그대로 */
@@ -103,6 +103,7 @@ export const GLYPH_PAIRS = [
   ['#FFFFFF', OUT], ['#FFFFFF', PANEL.good.out], ['#FFFFFF', PANEL.bad.out], ['#FFFFFF', PANEL.zero.out], ['#FFFFFF', PANEL.unit.out],
   ['#FFF09A', PANEL.unit.out], ['#FFF09A', OUT], ['#DDF3FF', PANEL.good.out], ['#FFD0C4', PANEL.bad.out], ['#FFC2B3', PANEL.bad.out],
   ['#C9F5B8', '#1E5A2E'], ['#FFE38A', OUT], ['#FFE08A', OUT], ['#FFFFFF', '', ['tight']], [PANEL.unit.out, '', ['tight']],
+  ['#FFE4EF', '#B03C70'],   // 치료탄(24절) 합류 숫자
 ];
 
 /* 버퍼 크기 규칙(순수 함수): 폰 비율 기둥 폭 / K 가 190px(160~220)에 가장 가까운 정수 K.
@@ -723,6 +724,7 @@ export function createRenderer(cvs) {
   const scorches = [];
   for (let i = 0; i < 4; i++) scorches.push({ on: false, x: 0, z: 0, r: 1, t: 0, T: SCORCH_T });   // T: 남는 초(드럼통 폭발은 더 오래)
   let splashT = -9;           // 작렬탄 고리를 마지막으로 그린 때
+  let zapT = -9, cureT = -9, cureSum = 0;   // 24절: 전격 사슬 불꽃·치료 숫자를 마지막으로 그린 때(너무 잦지 않게), 모아 둔 치료 수
   let waveFront = 0;          // 맨 앞줄의 z(분대 기준 m)
   let waveT = -9;             // 좋은 게이트를 지난 때(분대가 앞줄부터 물결처럼 통 튄다)
   let bossHpSeen = -1, bossDmgAcc = 0, bossDmgT = 0, bossMark = 4, bossMax = 0;   // 보스 피해 숫자(모아서)·체력 75·25% 파편
@@ -1253,10 +1255,10 @@ export function createRenderer(cvs) {
           burst(e.x, 1, e.z, 22, FX_COL.wood, 5, 5, 0.7);
           fx('puff', e.x, 0.8, e.z, 0.3);
           if (e.type === 'lucky') {   // 행운 상자(22절): 소·중·대 크기만큼 별이 튄다
-            const col = e.size >= 3 ? '#FFD84A' : e.size === 2 ? '#7CFF8A' : '#8FD3FF';
+            const col = e.size >= 3 ? '#FF9F43' : e.size === 2 ? '#6CC0FF' : '#9AA0AE';   // 등급 색(ENDGAME.md 23.6): 소 = 일반 회색 · 중 = 희귀 파랑 · 대 = 전설 주황
             float(e.x, 2.6, e.z, '+'.repeat(Math.max(1, Math.min(3, e.size | 0))), '#FFE38A', { life: 1.4 });   // 글꼴에 한글이 없다 — + ++ +++
             for (let k = 0; k < 6 * e.size; k++) part(e.x + (Math.random() - 0.5) * 1.6, 1 + Math.random(), e.z, (Math.random() - 0.5) * 3, 3 + Math.random() * 3, q.vz || 0, 0.9, col, 1, 3, 'star');
-            if (e.size >= 3) { screenFlash(0.2, '255,216,74'); powerSurge(WTIER[e.tier | 0] || col, true); }
+            if (e.size >= 3) { screenFlash(0.2, '255,159,67'); powerSurge(WTIER[e.tier | 0] || col, true); }
           }
           if (e.type === 'gun') {
             // 무기 강화: 새 단계 색 빛기둥이 분대에서 솟고(powerSurge), 상자 자리에서 별이 튄다
@@ -1584,6 +1586,22 @@ export function createRenderer(cvs) {
           break;
         }
         case 'pierce': if (Math.random() < 0.5) fx('spark', e.x, 0.7, e.z1, 0.07); break;
+        // 24절 새 탄: 전격 사슬(점 사이 보라 불꽃 — 초당 15번까지) · 뇌운 벼락 · 부식 웅덩이·녹아내림 · 치료(분홍 하트·숫자) · 야전 병원
+        case 'zap':
+          if (time - zapT > 0.066) {
+            zapT = time;
+            const P = e.pts || [];
+            for (let i = 2; i + 1 < P.length; i += 2) for (let k = 0; k < 3; k++) { const u = Math.random(); part(P[i - 2] + (P[i] - P[i - 2]) * u + (Math.random() - 0.5) * 0.3, 0.8 + Math.random() * 0.4, P[i - 1] + (P[i + 1] - P[i - 1]) * u, 0, 0.5, 0, 0.18, k ? '#D6CCFF' : '#FFFFFF', 1, 0); }
+          }
+          break;
+        case 'bolt': ring(e.x, e.z, 0.2, e.r, 0.35, '#D6CCFF', { thick: 2 }); burst(e.x, 1.2, e.z, 10, ['#FFFFFF', '#D6CCFF', '#7A5CFF'], 4, 6, 0.4); screenFlash(0.08, '214,204,255'); break;
+        case 'acidPool': ring(e.x, e.z, e.r * 0.6, e.r, e.T, '#9BE36B'); break;
+        case 'melt': burst(e.x, 0.8, e.z, 8, ['#9BE36B', '#3FA65A', '#E8FFB0'], 2.5, 3, 0.5); break;
+        case 'cure':
+          cureSum += e.n | 0;
+          if (time - cureT > 0.35 || e.boss) { cureT = time; float(e.x, 1.8, e.z, '+' + cureSum, '#FFE4EF', { out: '#B03C70', life: 0.8, vz: q.vz }); part(e.x, 1.2, e.z, 0, 2, q.vz || 0, 0.7, '#FF8FB8', 1, 0, 'heart'); cureSum = 0; }
+          break;
+        case 'field': ring(q.x, q.z, 0.4, R + 1.2, 0.5, '#FF8FB8', { follow: 'sq', thick: 2 }); break;
         case 'splash':
           // 작렬탄: 실제 둘레(e.r)만큼의 작은 고리(초당 12번까지만 그린다)
           if (time - splashT > 0.08) { splashT = time; ring(e.x, e.z, 0.15, e.r, 0.18, '#FFB347'); burst(e.x, 0.6, e.z, 3, FX_COL.boom, 2.5, 2.5, 0.3); }
@@ -3153,6 +3171,20 @@ export function createRenderer(cvs) {
           ctx.fillStyle = col;
           for (let k = 0; k < cnt; k++) ctx.fillRect(hx, hy + k * (seg + 2), sw, seg);
           ctx.fillStyle = ac; ctx.fillRect(hx, hy, sw, 1);
+        } else if (ammo === 'shock') {      // 전격(24절): 지그재그 번개
+          const seg = Math.max(1, Math.round(len / 3));
+          ctx.fillStyle = ac;
+          for (let k = 0; k < 3; k++) ctx.fillRect(hx + (k % 2 ? 1 : -1) * (big ? 1 : 0) + (k === 1 ? 1 : 0), hy + k * seg, bw, seg + 1);
+          ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx, hy, 1, 1);
+        } else if (ammo === 'acid') {       // 부식(24절): 방울 + 짧은 꼬리
+          ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 1, 3, big ? 4 : 3);
+          ctx.fillStyle = ac; ctx.fillRect(hx - 1, hy, 3, big ? 2 : 1); ctx.fillRect(hx, hy - 1, 1, big ? 4 : 3);
+          ctx.fillStyle = col; ctx.fillRect(hx, hy + 3, 1, Math.max(1, len - 3));
+        } else if (ammo === 'cure') {       // 치료(24절): 분홍 십자
+          ctx.fillStyle = ac; ctx.fillRect(hx - 1, hy, 3, 1); ctx.fillRect(hx, hy - 1, 1, 3);
+          if (big) { ctx.fillRect(hx - 2, hy, 5, 1); ctx.fillRect(hx, hy - 2, 1, 5); }
+          ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx, hy, 1, 1);
+          ctx.fillStyle = col; ctx.fillRect(hx, hy + 2, 1, Math.max(1, len - 2));
         } else {                            // 빙결: 마름모 + 옅은 꼬리
           if (big) {
             if (tank) { ctx.fillStyle = OUT; ctx.fillRect(hx - 3, hy - 1, 7, 3); ctx.fillRect(hx - 2, hy - 2, 5, 5); ctx.fillRect(hx - 1, hy - 3, 3, 7); }
@@ -3351,13 +3383,14 @@ export function createRenderer(cvs) {
       const k = clamp(1 - (sp.t + lag) / (sp.T || 1), 0, 1);
       ctx.fillStyle = '#B9F25B';
       ctx.globalAlpha = 0.22 + 0.3 * k;
-      // 그리는 고리 = 맞는 폭(±SPIT_R)
-      ellipse(P.x, P.y, SPIT_R * P.s, SPIT_R * P.s * 0.38);
+      // 그리는 고리 = 맞는 폭(±SPIT_R — 보스 독침 범위 강화면 sp.r)
+      const sr = sp.r || SPIT_R;
+      ellipse(P.x, P.y, sr * P.s, sr * P.s * 0.38);
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#E8FFB0';
-      ellRing(P.x, P.y, Math.max(2, SPIT_R * P.s * (1 - k)), Math.max(1, SPIT_R * P.s * 0.38 * (1 - k)), 1);
+      ellRing(P.x, P.y, Math.max(2, sr * P.s * (1 - k)), Math.max(1, sr * P.s * 0.38 * (1 - k)), 1);
       ctx.fillStyle = '#B9F25B';
-      ellRing(P.x, P.y, SPIT_R * P.s, SPIT_R * P.s * 0.38, 1);
+      ellRing(P.x, P.y, sr * P.s, sr * P.s * 0.38, 1);
     }
     if (s.pools) for (const pl of s.pools) {
       if (!project(view, pl.x, 0.02, pl.z)) continue;

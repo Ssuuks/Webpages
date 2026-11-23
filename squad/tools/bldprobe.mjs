@@ -2,6 +2,7 @@
    node squad/tools/bldprobe.mjs [squadRoot=squad] [seeds=16] [picker=think] [maxSeg=50] [bot=sloppy0.1]
    조건: 강화 30 · 뭉치 Lv5 · 다 연 판(3단계 + 화염병). 시드는 77 + 13i(tools/endless.mjs cardRun과 같다).
    SET='BUILD.thr.step=1.06,BUILD.wall.cut=0.5' 처럼 roster.js 표 값을 바꿔 본다. V=1이면 판마다 죽은 곳.
+   탄은 일곱이 다 열린 판(24절 — AMMO4=1이면 예전 넷), AMMO=shock 출격 탄, RELICS=loot+scope 처음부터 쥔 유물(유물 하나씩 재기 — 24.4).
    다른 판(예: git worktree로 꺼낸 예전 코드)을 재려면 첫 인자로 그 squad 폴더 */
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import os from 'node:os';
@@ -41,7 +42,7 @@ if (isMainThread) {
   const T = await import(pathToFileURL(path.join(root, 'tools/endless.mjs')).href);
   const { makeBot } = await import(pathToFileURL(path.join(root, 'tests/bots.mjs')).href);
   for (const kv of (process.env.SET || '').split(',').filter(Boolean)) { const [k, v] = kv.split('='); const ps = k.split('.'); let o = R; for (const x of ps.slice(0, -1)) o = o[x]; o[ps[ps.length - 1]] = Number(v); }
-  const opt = { seed: 77 + i * 13, start: C.START_N + 60, fire: 30, hero: { id: 'mungchi', lv: 5 }, unl: 3, ammoOpen: R.AMMO_IDS, relicsOpen: R.RELIC_IDS.slice(), flame: true, build: 2, ...(process.env.GUN ? { gun: process.env.GUN } : {}) };
+  const opt = { seed: 77 + i * 13, start: C.START_N + 60, fire: 30, hero: { id: 'mungchi', lv: 5 }, unl: 3, ammoOpen: process.env.AMMO4 ? R.AMMO_IDS : R.AMMO_IDS2, relicsOpen: R.RELIC_IDS.slice(), flame: true, build: 2, ...(process.env.AMMO ? { ammo: process.env.AMMO } : {}), ...(process.env.RELICS ? { relics: process.env.RELICS.split('+') } : {}), ...(process.env.GUN ? { gun: process.env.GUN } : {}) };
   const s = C.newEndless(opt);
   const pol = makeBot(bot, 1000 + i, { skill: true });
   const pick = T.makePicker(picker, 2000 + i);
