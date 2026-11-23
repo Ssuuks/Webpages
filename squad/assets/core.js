@@ -1935,7 +1935,7 @@ function hasPart(s, id) {
 export const comboOn = (s, id) => !!fxOf(s) && (bldOf(s) ? COMBO_IDS2.includes(id) : !COMBOS[id].g2) && (COMBOS[id].need.every((x) => hasPart(s, x)) || comboHalf(s, id));   // 개편 판은 짝 넷 + 영웅 짝, 앞 단계 판은 여섯
 export const combosOn = (s) => (fxOf(s) ? comboIds(s).filter((id) => comboOn(s, id)) : []);
 /* 공명기(24절): 수치가 있는 짝(COMBO_HALF)은 재료가 하나 모자라도 반의 힘으로 켜진다 */
-const COMBO_HALF = ['rapidRocket', 'burstFlame', 'rapidMungchi', 'cureMedic'];
+export const COMBO_HALF = ['rapidRocket', 'burstFlame', 'rapidMungchi', 'cureMedic'];
 function comboHalf(s, id) { return !!bldOf(s) && relicOn(s, 'resonator') && COMBO_HALF.includes(id) && COMBOS[id].need.filter((x) => !hasPart(s, x)).length === 1; }
 /* 짝 효과의 세기 배수: 보통 1, 공명기면 다 갖춘 짝 ×v · 하나 모자란 짝 ×half */
 export function comboK(s, id) { if (!bldOf(s) || !relicOn(s, 'resonator')) return 1; return COMBOS[id].need.every((x) => hasPart(s, x)) ? RELICS.resonator.v : RELICS.resonator.half; }

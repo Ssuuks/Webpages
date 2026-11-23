@@ -4,7 +4,7 @@ import {
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
-  nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, bossPatsAt,
+  nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -1825,7 +1825,33 @@ let pickAt = 0;           // 카드가 뜬 시각(performance.now)
 let pickArm = null;       // 카드 위에서 새로 누른 손가락 { id, i }
 let pickSel = -1;         // 키보드로 고른 카드(-1: 아직)
 /* 유물의 좋은 점·대신 쪽 글 — 개편 판에서 달라진 것(넓은 탄낭: 슬롯 BUILD.pouch, 증원 카드가 없어 대신 쪽도 없다) */
-const relicGood = (id) => (id === 'pouch' && bldOf(s) ? `탄 효과 슬롯 ${FX_SLOTS} → ${BUILD.pouch}` : RELICS[id].text());
+const relicGood = (id) => (id === 'pouch' && bldOf(s) ? `탄 효과를 ${FX_SLOTS}개 → ${BUILD.pouch}개까지 가질 수 있어요` : RELICS[id].text());
+/* 유물 카드의 '지금 이 판에서는' 한 줄 — 무엇이 실제로 바뀌는지(설명만으로는 감이 안 오는 유물) */
+function relicNow(id) {
+  if (!s || !s.endless) return '';
+  const q = s.squad, fx = s.endless.fx || {};
+  const fxN = Object.keys(fx).filter((a) => fx[a] > 0).length;
+  switch (id) {
+    case 'resonator': {
+      const on = [], half = [];
+      for (const c of comboList(s)) {
+        const p = comboParts(s, c);
+        if (!p.miss.length) on.push(COMBOS[c].name);
+        else if (p.miss.length === 1 && p.have.length && COMBO_HALF.includes(c)) { const m = p.miss[0]; half.push(`${COMBOS[c].name}(${AMMO[m] ? AMMO[m].name : UNITS[m] ? UNITS[m].name : HEROES[m] ? HEROES[m].name : m} 없이)`); }
+      }
+      if (!on.length && !half.length) return '지금은 켜질 시너지가 없어요 — 짝이 맞는 탄·특수병을 모으면 켜져요';
+      return `지금: ${[on.length ? `${on.join('·')} 1.5배` : '', half.length ? `${half.join('·')} 절반 힘으로 새로 켜짐` : ''].filter(Boolean).join(' · ')}`;
+    }
+    case 'coil': return `지금 총 ★${(q.tier | 0) + 1} · 올릴 수 있는 끝 ★${tierMax(s) + 1} → ★${tierMax(s) + 2}`;
+    case 'fourth': return `지금 특수병 ${q.sp.length}명`;
+    case 'pouch': return `지금 탄 효과 ${fxN}개`;
+    case 'dice': return `지금 다시 뽑기 ${rerollsOf(s)}번 → ${rerollsOf(s) + RELICS.dice.n}번`;
+    case 'lucky': return '? 상자: 소 = 코인 + 병사 10% · 중 = 병사 30% · 대 = 총 ★ +1 + 병사 40%';
+    case 'pledge': return q.sp.length ? `지금 특수병 ${q.sp.map((m) => `${UNITS[m.k] ? UNITS[m.k].name : m.k} Lv${m.lv || 1}`).join(' · ')}` : '';
+    case 'manual': return '';
+    default: return '';
+  }
+}
 const relicBad = (id) => (bldOf(s) ? '' : RELICS[id].cost());   // 개편 판 유물에는 '대신'이 없다(24절)
 const tierName = (t) => (s && bldOf(s) ? `★${t + 1}` : t > 0 ? `${t}단계` : '기본');   // 개편 판은 총 ★(무기 단계 + 1)
 const ammoName = (a) => (a && AMMO[a] ? AMMO[a].name : '보통탄');
@@ -1892,7 +1918,7 @@ function cardText(c) {
   if (c.k === 'relic') {
     // 유물(3·5단계 — 대왕 보스 뒤): 이름, 좋은 점, '대신' 줄(대신 쪽이 있는 유물만 — 나침반·주사위·서약·방패막은 없다). 글·수치는 roster.js RELICS
     const Rl = RELICS[c.r];
-    return { kind: '유물', lead: '', from: '', to: Rl.name, det: relicGood(c.r), cost: relicBad(c.r), col: RELIC_COL, icon: 'relic_' + c.r, relic: true, tribe: bldOf(s) && Rl.tribe ? RELIC_TRIBE[Rl.tribe] : '' };
+    return { kind: '유물', lead: '', from: '', to: Rl.name, det: relicGood(c.r), cost: relicBad(c.r), delta: relicNow(c.r), col: RELIC_COL, icon: 'relic_' + c.r, relic: true, tribe: bldOf(s) && Rl.tribe ? RELIC_TRIBE[Rl.tribe] : '' };
   }
   if (c.k === 'unit') {
     const U = UNITS[c.u];

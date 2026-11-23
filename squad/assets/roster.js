@@ -342,24 +342,25 @@ export const OBSTACLE_IDS = Object.keys(OBSTACLES);
    - drum 진격 북: 보스전에 들어가면 영웅 게이지 가득, 보스전 동안 특수병 쿨다운 ×cd · charge 폭약 배낭: 벽·장갑문이 무너지면 둘레 r m 좀비에게 그 벽 최대 체력 × v
    - ladder 사다리: 구간마다 한 번 칸막이·갈림길 분리대를 넘는다 · lucky 행운의 동전: 행운 길 p로 잦아지고 상자가 한 단계 위로(대는 병력 +big 더)
    - manual 훈련 교본: 같은 대상(탄·특수병·총 Lv)을 every번 고를 때마다 한 레벨 더 */
+const LANES_LUCK_P = 0.35;   // core LANES.luckP(행운 길 기본 확률 — 행운의 동전 글에만, tests/endgame.mjs가 같은지 본다)
 export const RELICS = {
-  compass: { name: '나침반', kings: 0, tribe: 'luck', ahead: 45, v: 1.5, text: () => `갈림길 보상 상자 속이 ${RELICS.compass.ahead}m 앞에서 보이고, 위험한 쪽 보상 병사 ×${RELICS.compass.v}`, cost: () => '' },
-  dice: { name: '재굴림 주사위', kings: 0, tribe: 'build', n: 3, king: 1, text: () => `다시 뽑기를 바로 ${RELICS.dice.n}번 더, 대왕을 잡을 때마다 ${1 + RELICS.dice.king}번씩`, cost: () => '' },
-  megaphone: { name: '빨간 확성기', kings: 0, tribe: 'grow', red: 1.5, blue: 0.8, text: () => `빨간 덧셈 칸이 ${RELICS.megaphone.red}배 빨리 올라요`, cost: () => `파란 칸은 ${RELICS.megaphone.blue}배` },
-  coil: { name: '과부하 코일', kings: 0, tribe: 'build', tier: 4, men: 0.7, text: () => `총 ★ 상한 +1 (보통 판은 무기 단계 3 → ${RELICS.coil.tier})`, cost: () => `지원병 상자 병력 −${apc(1 - RELICS.coil.men)}%` },
-  loot: { name: '전리품 자루', kings: 1, tribe: 'build', b2: true, n: 1, text: () => `보스 뒤 카드 3장 → ${3 + RELICS.loot.n}장`, cost: () => '' },
-  scope: { name: '황금 조준경', kings: 1, tribe: 'grow', b2: true, v: 1.5, text: () => `덧셈 칸을 쏘아 올리는 폭 ×${RELICS.scope.v}`, cost: () => '' },
-  fourth: { name: '넷째 자리', kings: 2, tribe: 'build', slots: 4, escort: 6, text: () => `특수병 자리 3 → ${RELICS.fourth.slots}`, cost: () => `특수병마다 호위 병사 4 → ${RELICS.fourth.escort}명` },
-  resonator: { name: '공명기', kings: 2, tribe: 'build', b2: true, v: 1.5, half: 0.5, text: () => `짝 효과 ×${RELICS.resonator.v} · 재료가 하나 모자란 짝도 반의 힘으로 켜져요(수치가 있는 짝)`, cost: () => '' },
-  pledge: { name: '부활 서약', kings: 3, tribe: 'live', text: () => `쓰러진 특수병이 보스 뒤에 레벨의 ${apc(BUILD.spBack)}%가 아니라 제 레벨로 돌아와요`, cost: () => '' },
-  drum: { name: '진격 북', kings: 3, tribe: 'boss', b2: true, cd: 0.7, text: () => `보스전에 들어가면 영웅 게이지가 가득 · 보스전 동안 특수병 쿨다운 ×${RELICS.drum.cd}`, cost: () => '' },
+  compass: { name: '나침반', kings: 0, tribe: 'luck', ahead: 45, v: 1.5, text: () => `갈림길 상자 속이 ${RELICS.compass.ahead}m 앞에서 보이고, 위험한 쪽 상자 병사 ×${RELICS.compass.v}`, cost: () => '' },
+  dice: { name: '재굴림 주사위', kings: 0, tribe: 'build', n: 3, king: 1, text: () => `카드 다시 뽑기를 지금 ${RELICS.dice.n}번 더, 대왕을 잡을 때마다 ${1 + RELICS.dice.king}번씩 더 받아요`, cost: () => '' },
+  megaphone: { name: '빨간 확성기', kings: 0, tribe: 'grow', red: 1.5, blue: 0.8, text: () => `빨간(−) 게이트를 쏘면 숫자가 ${RELICS.megaphone.red}배 빨리 올라요`, cost: () => `파란(+) 게이트는 ${RELICS.megaphone.blue}배로 느리게` },
+  coil: { name: '과부하 코일', kings: 0, tribe: 'build', tier: 4, men: 0.7, text: () => `총 ★을 한 칸 더 올릴 수 있어요(★ 상한 +1)`, cost: () => `지원병 상자의 병사 −${apc(1 - RELICS.coil.men)}%` },
+  loot: { name: '전리품 자루', kings: 1, tribe: 'build', b2: true, n: 1, text: () => `보스를 잡은 뒤 고르는 카드가 3장 → ${3 + RELICS.loot.n}장`, cost: () => '' },
+  scope: { name: '황금 조준경', kings: 1, tribe: 'grow', b2: true, v: 1.5, text: () => `게이트를 쏘면 숫자가 ${RELICS.scope.v}배 빨리 올라요`, cost: () => '' },
+  fourth: { name: '넷째 자리', kings: 2, tribe: 'build', slots: 4, escort: 6, text: () => `특수병을 3명 → ${RELICS.fourth.slots}명까지 데려가요`, cost: () => `특수병 한 명마다 필요한 병사 4 → ${RELICS.fourth.escort}명` },
+  resonator: { name: '공명기', kings: 2, tribe: 'build', b2: true, v: 1.5, half: 0.5, text: () => `시너지(🔗)가 ${RELICS.resonator.v}배 세지고, 짝 하나만 있어도 절반 힘으로 켜져요`, cost: () => '' },
+  pledge: { name: '부활 서약', kings: 3, tribe: 'live', text: () => `쓰러진 특수병이 보스 뒤에 레벨 그대로 돌아와요(원래는 ${apc(BUILD.spBack)}%로 깎여요)`, cost: () => '' },
+  drum: { name: '진격 북', kings: 3, tribe: 'boss', b2: true, cd: 0.7, text: () => `보스전이 시작되면 영웅 스킬이 바로 준비되고, 특수병 대기 시간 −${apc(1 - RELICS.drum.cd)}%`, cost: () => '' },
   bag: { name: '수집가의 가방', kings: 4, tribe: 'luck', egg: 0.35, cards: 2, text: () => `일반 보스의 알 확률 ${apc(EGG.pEndless)} → ${apc(RELICS.bag.egg)}%`, cost: () => `카드 3장 → ${RELICS.bag.cards}장` },
-  charge: { name: '폭약 배낭', kings: 4, tribe: 'land', b2: true, r: 3, v: 0.3, text: () => `벽·장갑문이 무너지면 둘레 ${RELICS.charge.r}m 좀비에게 그 벽 최대 체력의 ${apc(RELICS.charge.v)}%`, cost: () => '' },
-  ladder: { name: '사다리', kings: 4, tribe: 'land', b2: true, text: () => '구간마다 한 번 칸막이·갈림길 분리대를 넘어 옆으로 가요(밀면 넘어가요)', cost: () => '' },
-  pouch: { name: '넓은 탄낭', kings: 5, tribe: 'build', slots: 3, text: () => `탄 효과 슬롯 ${FX_SLOTS} → ${RELICS.pouch.slots}`, cost: () => '증원 카드가 나오지 않아요' },
-  ward: { name: '방패막', kings: 5, tribe: 'live', text: () => '구간마다 처음 닿은 톱날·처음 맞은 독침의 피해를 한 번 막아요', cost: () => '' },
-  lucky: { name: '행운의 동전', kings: 6, tribe: 'luck', b2: true, p: 0.6, big: 0.2, text: () => `행운 길이 ${apc(RELICS.lucky.p)}%로 잦아지고, 상자가 한 단계 위로 열려요(대는 병력 +${apc(RELICS.lucky.big)}% 더)`, cost: () => '' },
-  manual: { name: '훈련 교본', kings: 7, tribe: 'build', b2: true, every: 3, text: () => `같은 탄·특수병·총을 ${RELICS.manual.every}번 고를 때마다 한 레벨 더`, cost: () => '' },
+  charge: { name: '폭약 배낭', kings: 4, tribe: 'land', b2: true, r: 3, v: 0.3, text: () => `벽·장갑문이 무너질 때 터져서 둘레 ${RELICS.charge.r}m 좀비에게 벽 체력의 ${apc(RELICS.charge.v)}% 피해`, cost: () => '' },
+  ladder: { name: '사다리', kings: 4, tribe: 'land', b2: true, text: () => '구간마다 한 번, 칸막이·갈림길 벽을 넘어 옆 칸으로 가요(밀면 넘어가요)', cost: () => '' },
+  pouch: { name: '넓은 탄낭', kings: 5, tribe: 'build', slots: 3, text: () => `탄 효과를 ${FX_SLOTS}개 → ${RELICS.pouch.slots}개까지 가질 수 있어요`, cost: () => '병력을 늘리는 증원 카드가 안 나와요' },
+  ward: { name: '방패막', kings: 5, tribe: 'live', text: () => '구간마다 톱날에 처음 닿을 때·독침에 처음 맞을 때는 병사를 안 잃어요', cost: () => '' },
+  lucky: { name: '행운의 동전', kings: 6, tribe: 'luck', b2: true, p: 0.6, big: 0.2, text: () => `? 상자가 한 단계 좋게 열리고(대는 병사 +${apc(RELICS.lucky.big)}%), ? 상자 길이 ${apc(LANES_LUCK_P)} → ${apc(RELICS.lucky.p)}%로 잦아요`, cost: () => '' },
+  manual: { name: '훈련 교본', kings: 7, tribe: 'build', b2: true, every: 3, text: () => `같은 탄·특수병·총 카드를 ${RELICS.manual.every}번 고를 때마다 레벨이 하나 더 올라요`, cost: () => '' },
 };
 export const RELIC_TRIBE = { build: '빌드', grow: '성장', boss: '보스', land: '지형', luck: '운', live: '생존' };
 export const RELIC_IDS = Object.keys(RELICS);
