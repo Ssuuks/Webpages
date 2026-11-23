@@ -36,7 +36,7 @@ D = 지금 분대 화력(dps). 분대 최대 3명, 병과마다 1명. 같은 병
 수치는 `roster.js` `HEROES[id].num`([Lv1, Lv5] 선형). 2단계에서 판 중 위협이 세지자 나비·보리가 뭉치보다 8~13%p 강해져 다시 맞췄다 — 같은 레벨이면 sloppy0.1 승률이 영웅마다 5%p 안(테스트).
 
 - 게이지 `hero.charge` 0..1: 시작 0.35, 매 틱 DT/cd(cd = 기본·(1−0.06(lv−1))), 처치 1마리 +0.01, 경기장 입장 +0.5(스킬이 켜져 있어도 쌓아 둔다).
-- 발동: 입력 `{dir, tx, skill:true}` 이고 charge ≥ 1, 발동 중이 아니고, run/arena일 때. 화면 아래 가운데 영웅 버튼(게이지 고리) 또는 Space·↑·W. 설정 "스킬 자동 발동"(기본 끔)을 켜면 `heroWants(s)` 규칙으로 자동.
+- 발동: 입력 `{dir, tx, skill:true}` 이고 charge ≥ 1, 발동 중이 아니고, run/arena일 때. 화면 아래 가운데 영웅 버튼(게이지 고리) 또는 Space·↑·W. 설정 "스킬 자동 발동"(기본 끔)을 켜면 `heroWantsAuto(s)` 규칙으로 자동(뭉치만 봇 규칙 `heroWants`와 다르다 — 싸움 먼저, ENDGAME.md 26.1).
 - 레벨 1~5, 비용 150/300/500/800코인. 상한 = min(5, 2 + floor((maxL−1)/10)).
 - 코인 강화(store.js UPGRADES)의 새로 살 수 있는 단계 상한은 `core.upgCap(maxL)` = EXPECT(maxL) + 1(이미 산 단계는 줄이지 않는다).
 

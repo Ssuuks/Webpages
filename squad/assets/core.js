@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, GUNS, GUN_IDS, gunVal, GUN_SWAP } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, GUNS, GUN_IDS, gunVal, GUN_SWAP } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -2478,7 +2478,7 @@ export function restore(o) {
   if (o.stats && typeof o.stats === 'object') num0(o.stats, ['spUp', 'flips']);
   if (o.hero === undefined) o.hero = null;
   if (o.hero) num0(o.hero, ['charge', 'act', 'T', 'cd', 'shot']);
-  if (o.boss) num0(o.boss, ['bonus']);
+  if (o.boss) { num0(o.boss, ['bonus', 'stun']); if (o.boss.clash && !(o.boss.clashHp > 0)) o.boss.clashHp = o.boss.hp; }   // 넉백 셈(옛 스냅숏엔 없다)
   if (typeof o.refFire !== 'number') o.refFire = 0;
   if (o.pet) {
     if (typeof o.pet !== 'object' || !PETS[o.pet.id]) o.pet = undefined;
@@ -3048,7 +3048,7 @@ function foesUpdate(s, R) {
       lose(s, cost, s.phase === 'arena' ? 'summon' : f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
       if (f.slowT > s.t && s.endless && s.endless.bld && fx.frost) {   // 느려진 좀비가 닿으면 터진다: 희귀 강화 '얼음 폭탄' + 빙결 넘침(21.10 — 느려지는 시간이 4초를 넘친 몫)
         const sh = (enhN(s, 'frost', 'r') ? ENH.frost.rare.v * enhV(s, 'frost', 'r') : 0) + fx2Val('frost', fx.frost).shatter;
-        if (sh > 0) fxBoom(s, f.x, f.z, 1.6, f.max * sh, f);
+        if (sh > 0) { fxBoom(s, f.x, f.z, 1.6, f.max * sh, f); emit(s, { t: 'shatter', x: f.x, z: f.z, r: 1.6, k: enhN(s, 'frost', 'r') }); }   // 그림: 얼음 조각
       }
       if (medic && s.squad.n > 0) { s.stats.healed += cost; gain(s, cost, q.x, q.z, 'heal'); emit(s, { t: 'heal', n: cost, x: q.x, z: q.z }); }   // 응급 얼음(빙결 + 의무병): 느려진 좀비에게 잃은 병사는 바로 돌아온다
       continue;
@@ -3935,8 +3935,8 @@ function bossPatUpdate(s, R, b) {
     if (b.dash.t <= 0) {
       if (!b.dash.go) { b.dash.go = true; b.dash.t = BOSS_PAT.charge.dash; emit(s, { t: 'bossCharge', x: b.x, z: b.z }); }
       else b.dash = null;
-    } else if (b.dash.go) b.z = Math.max(reach + 0.5, b.z - (b.dash.d / BOSS_PAT.charge.dash) * DT);
-  } else if (patOn(b, 'charge') && b.pcd.charge <= 0 && b.z - reach > (upOf(b, 'charge') & 2 ? BOSS_PAT.charge.dist2 : BOSS_PAT.charge.dist) + 1 && patFree(b)) {
+    } else if (b.dash.go) b.z = Math.max(reach + BOSS_PAT.charge.stop, b.z - (b.dash.d / BOSS_PAT.charge.dash) * DT);   // 분대 앞 stop m에서 멈춘다(바로 붙지 않게)
+  } else if (patOn(b, 'charge') && b.pcd.charge <= 0 && b.z - reach > (upOf(b, 'charge') & 2 ? BOSS_PAT.charge.dist2 : BOSS_PAT.charge.dist) + BOSS_PAT.charge.stop && patFree(b)) {
     b.dash = { t: BOSS_PAT.charge.warn, go: false, d: upOf(b, 'charge') & 2 ? BOSS_PAT.charge.dist2 : BOSS_PAT.charge.dist };
     b.pcd.charge = patCd(s, b, 'charge');
     b.ps = b.t;
@@ -4022,15 +4022,28 @@ function bossUpdate(s, R) {
   const m = BOSS_TRACK * DT;
   b.x = clamp(b.x + (d > m ? m : d < -m ? -m : d), -2.5, 2.5);
   const reach = q.z + 0.55 * R + b.r * 0.6;
+  // 넉백 뒤 비틀거리는 동안(개편 판): 걷지도 찍지도 않는다
+  if (b.stun > 0) { b.stun -= DT; if (b.stun > 0) return; b.stun = 0; }
+  const hold = b.dash && !b.dash.go;   // 돌진 숨 고르기 중에는 멈춰 선다(예고를 보고 비킬 틈)
   if (b.z > reach) {
-    b.z = Math.max(reach, b.z - b.walk * (b.enraged ? 1.25 : 1) * DT);
+    if (!hold) b.z = Math.max(reach, b.z - b.walk * (b.enraged ? 1.25 : 1) * DT);
   } else if (!b.clash) {
     b.clash = true;
     b.slam = null;
     b.clashCd = 0.3;
+    b.clashHp = b.hp;
     emit(s, { t: 'clash' });
   }
   if (b.clash) {
+    // 넉백(개편 판 보스): 붙은 뒤 최대 체력의 BOSS_KNOCK.hp를 깎으면 뒤로 튕겨 나간다
+    if (b.pat && b.clashHp - b.hp >= BOSS_KNOCK.hp * b.max) {
+      b.clash = false;
+      b.dash = null;
+      b.z = reach + BOSS_KNOCK.dist;
+      b.stun = BOSS_KNOCK.stun;
+      emit(s, { t: 'bossKnock', x: b.x, z: b.z, stun: BOSS_KNOCK.stun });
+      return;
+    }
     b.clashCd -= DT;
     if (b.clashCd <= 0) {
       b.clashCd = 0.5;
@@ -4163,7 +4176,8 @@ function castHero(s) {
   }
 }
 
-/* 스킬을 지금 쓰면 좋은가 — 자동 발동 설정과 봇이 같은 규칙을 쓴다 */
+/* 스킬을 지금 쓰면 좋은가 — 봇·보정표(caltable·cyctable·지문)가 쓰는 규칙(바꾸면 SIM을 올리고 표를 다시 만든다).
+   사람의 '스킬 자동 발동' 설정은 heroWantsAuto(뭉치만 다르다 — ENDGAME.md 26.1) */
 export function heroWants(s) {
   const h = s.hero;
   if (!h || h.charge < 1 || h.act > 0 || (s.phase !== 'run' && s.phase !== 'arena')) return false;
@@ -4187,6 +4201,41 @@ export function heroWants(s) {
   }
   if (h.id === 'nabi') {
     for (const f of s.foes) if (f.alive && (f.kind === 'spit' || f.kind === 'brute') && f.z - q.z > 2 && f.z - q.z < 36) return true;
+  }
+  return false;
+}
+/* 사람의 '스킬 자동 발동': 뭉치는 싸움 먼저, 게이트는 앞이 비었을 때만(ENDGAME.md 26.1 — 예전 규칙은 '앞에 덜 찬 덧셈 칸'만 있어도 써서
+   거의 늘 게이트에 써 버렸다). 다른 영웅은 heroWants 그대로 */
+export function heroWantsAuto(s) {
+  const h = s.hero;
+  if (!h || h.id !== 'mungchi') return heroWants(s);
+  if (h.charge < 1 || h.act > 0 || (s.phase !== 'run' && s.phase !== 'arena')) return false;
+  if (s.boss && s.boss.hp > 0) return true;
+  const q = s.squad;
+  const D = dps(q.n, q.tier, s.fireLv);
+  const R = radius(q.n);
+  let threat = 0, near = 0, big = false;
+  for (const f of s.foes) {
+    if (!f.alive) continue;
+    const dz = f.z - q.z;
+    if (dz <= 0 || dz > 40 || Math.abs(f.x - q.x) > R + 2.5) continue;
+    if (dz < 25) { threat += f.hp; if (f.kind === 'brute' || f.elite) big = true; }
+    else if (f.kind === 'brute' || f.elite || f.hp >= 2 * D) return false;   // 센 적이 곧 온다 — 아껴 둔다
+    near += f.hp;
+  }
+  if (threat >= 1.2 * D || (big && threat >= 0.6 * D)) return true;
+  // 앞을 막은 벽·장갑문(무한모드)도 몰아 쏠 거리
+  for (const p of s.props || []) {
+    if (!p.alive || (p.kind !== 'wall' && p.kind !== 'door')) continue;
+    const dz = p.z - q.z;
+    if (dz > 0 && dz < 22 && q.x + R > p.x0 && q.x - R < p.x1 && p.hp >= 1.5 * D) return true;
+  }
+  if (near >= 0.3 * D) return false;   // 좀비가 오고 있으면 게이트에 쓰지 않는다
+  for (const row of s.rows) {
+    const dz = row.z - q.z;
+    if (row.done || dz < 12 || dz > 25) continue;
+    const c = row.cells[pickCell(row, q.x)];
+    if (c.op === 'add' && c.v > 0 && c.cap - c.v >= 0.3 * Math.abs(c.cap)) return true;   // 꽤 덜 찬 덧셈 칸만
   }
   return false;
 }
@@ -4238,7 +4287,7 @@ function snipe(s, dmg, src, big = 1, boom = false) {
   else { x1 = t.o.x; z1 = t.o.z - 1; hitBossBonus(s, dmg); }
   emit(s, { t: 'snipe', x0: q.x, z0: q.z, x1, z1, src, kill });
   if (boom && kill && t.kind === 'foe') fxBoom(s, x1, z1, 1.6, t.o.max * SP_EVO2.sniper.v, t.o);   // 저격수 Lv10 터지는 저격
-  if (kill && src === 'sniper' && s.hero && enhN(s, 'sniper', 'r')) chargeHero(s, ENH.sniper.rare.v * enhV(s, 'sniper', 'r'));   // 희귀 강화 '사기 충전'
+  if (kill && src === 'sniper' && s.hero && enhN(s, 'sniper', 'r')) { chargeHero(s, ENH.sniper.rare.v * enhV(s, 'sniper', 'r')); emit(s, { t: 'morale', x: x1, z: z1, k: enhN(s, 'sniper', 'r') }); }   // 희귀 강화 '사기 충전'(그림: 빛 알갱이가 영웅에게)
   if (t.kind === 'foe' && ((fx && comboOn(s, 'pierceSniper')) || (src === 'sniper' && enhN(s, 'sniper', 'l')))) {   // 관통 + 저격수 짝(하나), 전설 강화 '꿰뚫는 저격'(n마리)
     const nThru = src === 'sniper' && enhN(s, 'sniper', 'l') ? ENH.sniper.legend.n : 1;
     let from = t.o, fx1 = x1, fz1 = z1;
@@ -4403,7 +4452,7 @@ function specialsUpdate(s, R) {
       gain(s, k, q.x, q.z, 'heal');
       emit(s, { t: 'heal', n: k, x: q.x, z: q.z });
       const mr = enhV(s, 'medic', 'r');
-      if (mr) for (const m of q.sp) m.cd = Math.max(0, m.cd - ENH.medic.rare.v * mr);   // 희귀 강화 '숨 돌리기': 회복할 때마다 특수병이 숨을 돌린다
+      if (mr) { for (const m of q.sp) m.cd = Math.max(0, m.cd - ENH.medic.rare.v * mr); emit(s, { t: 'breath', k: enhN(s, 'medic', 'r') }); }   // 희귀 강화 '숨 돌리기': 회복할 때마다 특수병이 숨을 돌린다(그림: 특수병이 반짝)
     } else if (q.pool < 1) q.healAcc = 0;   // 1명이 안 되는 몫은 남겨 두고 다음 손실과 합친다
   }
   const h = s.hero;

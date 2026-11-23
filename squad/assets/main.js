@@ -1,6 +1,6 @@
 /* 숫자부대 돌격 — 게임 루프, 조작, 화면 흐름, 저장 */
 import {
-  DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWants, starsFor, starGoals, parFor, coinsFor,
+  DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWantsAuto, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
@@ -15,7 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -170,7 +170,7 @@ function currentInput() {
   if (keys.left !== keys.right) { dir = keys.left ? -1 : 1; tx = null; }
   $('touchL').classList.toggle('on', (!!p && !p.drag && p.side < 0) || keys.left);
   $('touchR').classList.toggle('on', (!!p && !p.drag && p.side > 0) || keys.right);
-  return { dir, tx, skill: skillPressed || (data.set.autoSkill && heroWants(s)) };
+  return { dir, tx, skill: skillPressed || (data.set.autoSkill && heroWantsAuto(s)) };   // 사람의 자동 발동(뭉치는 싸움 먼저 — 26.1)
 }
 
 cvs.addEventListener('pointerdown', onDown, { passive: false });
@@ -295,7 +295,7 @@ function notice(title, text, buttons) {
 }
 
 /* ---------- 화면 전환 ---------- */
-const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPick', 'scrPause', 'scrResult', 'scrEnding', 'scrPet'];
+const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPick', 'scrPause', 'scrResult', 'scrEnding', 'scrPet', 'scrEndPrep'];
 function show(id) {
   for (const k of SCREENS) $(k).hidden = k !== id;
   $('hud').hidden = !(mode === 'play' || mode === 'pause' || mode === 'card' || mode === 'pick' || mode === 'result');
@@ -644,19 +644,20 @@ function togglePet(id) {
   return true;
 }
 /* 탄종(ARSENAL.md 3절): 고른 탄종이 지금 모은 별로 열려 있으면 그 id, 아니면 ''(보통탄) */
+/* 캠페인(data.ammo.sel)과 무한모드(data.ammo.selE)는 따로 고른다 — 무한모드 전용 탄(24절)은 무한모드 준비 화면에만 나온다 */
 function ammoForRun(endless = false) {
-  const id = data.ammo && data.ammo.sel;
-  return id && ammoOpen(id, totalStars(data)) && (endless || !AMMO[id].b2) ? id : '';   // 24절 새 탄(무한모드 전용)은 캠페인에서 보통탄
+  const id = data.ammo && (endless ? data.ammo.selE : data.ammo.sel);
+  return id && ammoOpen(id, totalStars(data)) && (endless || !AMMO[id].b2) ? id : '';
 }
-function renderAmmo() {
+function renderAmmo(endless = false) {
   const stars = totalStars(data);
-  $('ammoStars').textContent = `★ ${stars}`;
-  const list = $('ammoList');
+  $(endless ? 'endAmmoStars' : 'ammoStars').textContent = `★ ${stars}`;
+  const list = $(endless ? 'endAmmoList' : 'ammoList');
   list.textContent = '';
-  const cur = ammoForRun();
-  for (const id of ['', ...AMMO_IDS2]) {
+  const cur = ammoForRun(endless);
+  for (const id of ['', ...(endless ? AMMO_IDS2 : AMMO_IDS)]) {
     const A = { name: '보통탄', stars: 0, ...(id ? AMMO[id] : {}), ...ammoText(id) };
-    if (id && AMMO[id].b2) A.name += ' · 무한모드 전용';   // 24절: 캠페인에서는 보통탄으로 나간다
+    if (A.good) A.good = A.good.replace('(무한모드 전용)', '');
     const open = !id || ammoOpen(id, stars);
     const card = document.createElement('div');
     card.className = 'upg' + (open ? '' : ' locked');
@@ -675,7 +676,7 @@ function renderAmmo() {
     btn.textContent = !open ? `★ ${A.stars}개` : id === cur ? '사용 중' : '고르기';
     btn.disabled = !open || id === cur;
     if (!open) btn.setAttribute('aria-label', `${A.name} — 별 ${A.stars}개를 모으면 열려요(지금 ${stars}개)`);
-    btn.addEventListener('click', () => { data.ammo.sel = id; save(data); sfx.click(); renderAmmo(); });
+    btn.addEventListener('click', () => { if (endless) data.ammo.selE = id; else data.ammo.sel = id; save(data); sfx.click(); renderAmmo(endless); });
     card.appendChild(btn);
     list.appendChild(card);
   }
@@ -1025,7 +1026,6 @@ function renderLevels() {
 /* ---------- 강화 ---------- */
 function renderUpg() {
   renderAmmo();
-  renderGun();
   $('uCoins').textContent = compact(data.coins);
   const list = $('upgList');
   list.textContent = '';
@@ -1529,20 +1529,30 @@ function setHudLevel() {
 function tryEndless() {
   if (modalOpen() || !endlessOpen()) return;
   const r = pendingRun();
-  if (!r) { startEndless(); return; }
+  if (!r) { openEndPrep(); return; }
   if (r.mode === 'endless') {
     notice('하던 무한모드 판이 있어요', `${runName(r)}부터 이어서 할까요? 새로 시작하면 하던 판은 끝나고 모은 코인을 받아요.`, [
       { label: '이어서 하기', primary: true, fn: resumeRun },
-      { label: '새로 시작', fn: () => { abandonRun(r); startEndless(); } },
+      { label: '새로 시작', fn: () => { abandonRun(r); openEndPrep(); } },
       { label: '취소' },
     ]);
     return;
   }
   const counts = restartCounts(r.state);
   notice('진행 중인 판이 있어요', `레벨 ${r.L}${eul(r.L)} 포기하고 무한모드를 시작할까요?${counts ? ' 포기한 판은 진 판으로 기록돼요.' : ''}`, [
-    { label: '포기하고 시작', primary: true, fn: () => { abandonRun(r); startEndless(); } },
+    { label: '포기하고 시작', primary: true, fn: () => { abandonRun(r); openEndPrep(); } },
     { label: '취소' },
   ]);
+}
+/* 무한모드 준비 화면: 무한모드에 들고 갈 탄종(전용 탄 포함)·총을 고르고 출격 — 캠페인 강화 화면과 나눴다 */
+function openEndPrep() {
+  mode = 'endprep';
+  renderAmmo(true);
+  renderGun();
+  const h = data.heroes && data.heroes.sel;
+  $('endPrepWho').textContent = [h && HEROES[h] ? `영웅 ${HEROES[h].name}` : '', data.pets.sel && PETS[data.pets.sel] ? `펫 ${PETS[data.pets.sel].name}` : ''].filter(Boolean).join(' · ');
+  show('scrEndPrep');
+  armHistory();
 }
 /* 무한모드 카드 → 출발. opts.quick: 카드 없이 바로(다시 하기) */
 function startEndless(opts = {}) {
@@ -1835,12 +1845,16 @@ function cardText(c) {
   const A = ammoText(c.to);
   return { kind: '탄종 바꾸기', lead: '', from: ammoName(c.from), to: ammoName(c.to), det: A.bad ? `${A.good} · 대신 ${A.bad}` : A.good, col: AMMO[c.to] ? AMMO[c.to].color : '#fff', icon: '' };
 }
+/* 강화 단계 표시: 두 장째부터 Ⅱ·Ⅲ… */
+const ROMAN = ['', '', ' Ⅱ', ' Ⅲ', ' Ⅳ', ' Ⅴ', ' Ⅵ', ' Ⅶ', ' Ⅷ', ' Ⅸ', ' Ⅹ'];
+const enhRoman = (n) => (n >= 2 ? ROMAN[n] || ` ×${n}` : '');
 /* 카드 등급 = 강화: 희귀·전설 카드가 더하는 부가 능력·규칙(이미 가진 강화면 한 단계 세진다) */
 function enhText(c) {
   const E = c.enh && ENH[c.enhId] ? ENH[c.enhId][c.enh] : null;
   if (!E) return '';
-  const have = enhN(s, c.enhId, c.enh === 'rare' ? 'r' : 'l') > 0;
-  return ` · ${c.enh === 'rare' ? '희귀' : '전설'} 강화 ‘${E.name}’: ${E.text()}${have ? ' (이미 있어서 한 단계 세져요)' : ''}`;
+  const n = enhN(s, c.enhId, c.enh === 'rare' ? 'r' : 'l');   // 이미 가진 수 — 있으면 '전 → 후'로(무엇이 얼마나 세지는지)
+  const body = c.enh === 'rare' ? E.text(enhStr(n + 1), n ? enhStr(n) : undefined) : E.text() + (n ? ` · 핵심 수치 ×${legK(n)} → ×${legK(n + 1)}` : '');
+  return ` · ${c.enh === 'rare' ? '희귀' : '전설'} 강화 ‘${E.name}${enhRoman(n + 1)}’: ${body}`;
 }
 /* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
 function cardDone(c) {
@@ -2165,7 +2179,7 @@ const partName = (x) => (AMMO[x] ? fxName(x) : UNITS[x] ? UNITS[x].name : HEROES
 function enhLines(id) {
   const out = [];
   if (!ENH[id]) return out;
-  for (const [kind, key, nm] of [['legend', 'l', '전설'], ['rare', 'r', '희귀']]) { const n = enhN(s, id, key); if (n) out.push(`${nm} 강화 ‘${ENH[id][kind].name}’${n > 1 ? ` ×${n}` : ''}: ${ENH[id][kind].text()}`); }
+  for (const [kind, key, nm] of [['legend', 'l', '전설'], ['rare', 'r', '희귀']]) { const n = enhN(s, id, key); if (n) out.push(`${nm} 강화 ‘${ENH[id][kind].name}${enhRoman(n)}’: ${ENH[id][kind].text(enhStr(n))}`); }
   return out;
 }
 /* 개편 판 일시정지: 수치 표 → 적 변이 칩 줄 → 칸 셋(① 탄종 · ② 시너지 · ③ 유물) → 누른 칸의 설명(23.7) */
@@ -2324,7 +2338,7 @@ function renderPauseUnits() {
   if (Bd) {
     for (const id of Object.keys(ENH)) for (const [kind, key] of [['rare', 'r'], ['legend', 'l']]) {   // 카드 강화(희귀·전설)
       const n = enhN(s, id, key);
-      if (n) addRow(UNITS[id] ? id : GUNS[id] ? 'gun' : 'fx_' + id, `${kind === 'rare' ? '희귀' : '전설'} 강화 ‘${ENH[id][kind].name}’${n > 1 ? ` ×${n}` : ''}`, ENH[id][kind].text(), kind === 'rare' ? '희귀' : '전설');
+      if (n) addRow(UNITS[id] ? id : GUNS[id] ? 'gun' : 'fx_' + id, `${kind === 'rare' ? '희귀' : '전설'} 강화 ‘${ENH[id][kind].name}${enhRoman(n)}’`, ENH[id][kind].text(enhStr(n)), kind === 'rare' ? '희귀' : '전설');
     }
     if (Bd.gun) addRow('gun', `무기 개조 Lv${Bd.gun}`, `총알 화력 +${pct(BUILD.gun * Bd.gun)}%`);
     for (const m of sp) if (SP_EVO[m.k] && (m.lv || 1) >= BUILD.evo) addRow(m.k, `${UNITS[m.k].name} ‘${SP_EVO[m.k].name}’${(m.lv || 1) >= 10 ? ` · ‘${SP_EVO2[m.k].name}’` : ''}${(m.lv || 1) > BUILD.evo ? ` · 각성 +${Math.round((awk(m.lv || 1) - 1) * 100)}%` : ''}`, SP_EVO[m.k].text() + ((m.lv || 1) >= 10 ? ' · ' + SP_EVO2[m.k].text() : ''), '진화');   // Lv5 고유 능력·Lv10 2차 진화·각성
@@ -2722,6 +2736,7 @@ function handleEvents(ev) {
         break;
       case 'bossChargeWarn': sfx.roar(); vibe([20, 30, 20]); break;
       case 'bossCharge': vibe(40); break;
+      case 'bossKnock': sfx.boom(); vibe([30, 40, 30]); break;   // 붙은 보스를 쏴서 밀어냈다
       case 'stomp': sfx.stomp(); vibe(30); break;
       case 'field': sfx.power(1); vibe(25); toast('야전 병원 · 치료된 병사가 손실을 막았어요 (구간마다 한 번)', 1800); break;   // 24절 치료 + 의무병
       case 'bossPhase': setBossPats(); toast(`대왕이 ${e.fresh.map((k) => BOSS_PAT[k] ? BOSS_PAT[k].name : k).join(' · ')}을(를) 꺼내요`, 1400); break;   // 대왕 문턱(23.4): 새 패턴 아이콘이 밝아진다
@@ -3340,6 +3355,7 @@ on('endEndless', () => { sfx.click(); mode = 'title'; goTitle(); tryEndless(); }
 on('endMenu', () => { sfx.click(); goTitle(); });
 on('btnLevels', () => { sfx.click(); mode = 'levels'; levelsCycle = data.cycle; renderLevels(); show('scrLevels'); armHistory(); });
 on('btnHero', () => { sfx.click(); mode = 'hero'; heroPickFromCard = false; heroView = data.heroes.sel; renderHero(); show('scrHero'); armHistory(); });
+on('endPrepGo', () => { if (mode === 'endprep') startEndless(); });
 on('btnUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); armHistory(); });
 on('btnSet', () => { sfx.click(); mode = 'set'; renderSet(); show('scrSet'); armHistory(); });
 for (const b of document.querySelectorAll('[data-back]')) {

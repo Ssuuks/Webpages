@@ -441,10 +441,12 @@ export const BOSS_PAT = {
   slam: { name: '내려찍기', then: 0.3, ext: 0.5, text: () => '빨간 띠가 생긴 칸을 내려찍어요 — 옆 칸으로 비키세요' },
   volley: { name: '독침 세례', n: 3, gap: 0.7, cd: 6, first: 2.5, hit: 0.12, gap2: 0.5, cd2: 4.5, n2: 5, r2: 1.3, text: () => '독침을 잇달아 던져요 — 계속 움직이세요' },
   line: { name: '좀비 장벽', n: 7, hp: 1.2, gap: 2.8, cd: 7, first: 4, cd2: 5, row2: 4, text: () => '길을 가로지르는 졸개 줄 — 빈틈으로 빠지거나 쏴서 뚫으세요' },
-  charge: { name: '돌진', warn: 0.9, dash: 0.4, dist: 2.5, cd: 6.5, first: 3.5, cd2: 4.5, dist2: 3.5, text: () => '숨을 고른 뒤 앞으로 뛰어들어요 — 빨리 잡으세요' },
+  charge: { name: '돌진', warn: 0.9, dash: 0.4, dist: 2, cd: 6.5, first: 3.5, cd2: 4.5, dist2: 3, stop: 1.5, text: () => '숨을 고른 뒤 앞으로 뛰어들어요 — 붙으면 몰아 쏴서 밀어내세요' },   // stop: 돌진이 분대 앞 이만큼(m)에서 멈춘다(바로 붙지 않게)
   wide: { name: '넓은 내려찍기', pad: 0.25, then2: 0.6, text: () => '세 칸 중 두 칸을 한꺼번에 내려찍어요 — 남은 가장자리 칸으로' },
   double: { name: '연속 내려찍기', then: 0.3, text: () => '내려찍은 뒤 지금 선 칸을 곧바로 한 번 더' },   // 옛 저장(23절 전)의 보스만 — 지금은 내려찍기의 간격 강화판
 };
+/* 넉백(개편 판 보스): 붙은(clash) 동안 보스 최대 체력의 hp 몫을 깎으면 dist m 뒤로 튕겨 stun초 비틀거린다(걷기·내려찍기·패턴 멈춤) — 붙어도 쏘아서 떼어낼 수 있게 */
+export const BOSS_KNOCK = { hp: 0.035, dist: 3, stun: 1 };
 export const BOSS_PAT_IDS = ['slam', 'volley', 'line', 'charge', 'wide'];
 export const BOSS_PAT_UP = { 1: '간격 단축', 2: '범위 확대', 3: '간격 단축 · 범위 확대' };
 export const BOSS_PAT_UPTEXT = {
@@ -599,61 +601,64 @@ export const enhStr = (n) => 1 + 0.5 * Math.max(0, n - 1);
 export const LEG = 1;
 export const legK = (n) => (n > 0 ? 1 + LEG * enhStr(n) : 1);
 const legX = () => `×${legK(1)}`;
+/* 희귀 강화 글: k = 지금 세기(enhStr), k0가 있으면 '전 → 후'로(이미 가진 강화를 또 뽑는 카드) */
+const r2 = (x) => Math.round(x * 100) / 100;
+const ka = (f, k = 1, k0) => (k0 ? `${f(k0)} → ${f(k)}` : f(k));
 export const ENH = {
   pierce: {
-    rare: { name: '터지는 총알', v: 0.3, text: () => `벽·장갑문에 박힌 총알이 터져 벽 피해 +${apc(ENH.pierce.rare.v)}%` },
+    rare: { name: '터지는 총알', v: 0.3, text: (k, k0) => `벽·장갑문에 박힌 총알이 터져 벽 피해 ${ka((x) => `+${apc(ENH.pierce.rare.v * x)}%`, k, k0)}` },
     legend: { name: '벽 뚫기', text: () => `2차 진화 ‘벽 너머 관통’을 바로 · 벽·장갑문 피해 ${legX()} · 뚫린 좀비도 제 피해 100%` },
   },
   burst: {
-    rare: { name: '불씨 폭발', t: 1.2, text: () => `폭발한 자리에 ${ENH.burst.rare.t}초 동안 불이 남아요` },
+    rare: { name: '불씨 폭발', t: 1.2, text: (k = 1, k0) => `폭발한 자리에 ${ENH.burst.rare.t}초 동안 불이 남아요${k0 || k > 1 ? ` · 불 세기 ${ka((x) => `×${r2(x)}`, k, k0)}` : ''}` },
     legend: { name: '대폭발', text: () => `2차 진화 ‘벽·보스 유폭’을 바로(레벨과 상관없이 처치된 좀비가 터져요) · 둘레 피해·연쇄 폭발 ${legX()}` },
   },
   rapid: {
-    rare: { name: '신바람', v: 1.25, T: 1.5, text: () => `좀비를 잡으면 ${ENH.rapid.rare.T}초 동안 쏘는 속도 +${apc(ENH.rapid.rare.v - 1)}%` },
+    rare: { name: '신바람', v: 1.25, T: 1.5, text: (k, k0) => `좀비를 잡으면 ${ENH.rapid.rare.T}초 동안 쏘는 속도 ${ka((x) => `+${apc((ENH.rapid.rare.v - 1) * x)}%`, k, k0)}` },
     legend: { name: '탄막 폭풍', text: () => `총알이 늘 둘로 갈라져요(둘째도 제 피해 — 총알 피해 ${legX()} 꼴) · 과열은 맞서자마자` },
   },
   frost: {
-    rare: { name: '얼음 폭탄', v: 0.5, text: () => `느려진 좀비가 닿으면 터져 둘레에 제 체력의 ${apc(ENH.frost.rare.v)}%` },
+    rare: { name: '얼음 폭탄', v: 0.5, text: (k, k0) => `느려진 좀비가 닿으면 터져 둘레에 제 체력의 ${ka((x) => `${apc(ENH.frost.rare.v * x)}%`, k, k0)}` },
     legend: { name: '절대 영도', after: 1, T: 1.5, text: () => `2차 진화를 앞당겨 느려진 채 ${ENH.frost.legend.after}초면 ${ENH.frost.legend.T}초 얼어붙어요(보스 제외) · 느려지는 시간 ${legX()} · 앞의 느려진 좀비에 막혀 멈춰요` },
   },
   sniper: {
-    rare: { name: '사기 충전', v: 0.05, text: () => `저격으로 잡으면 영웅 게이지 +${apc(ENH.sniper.rare.v)}%` },
+    rare: { name: '사기 충전', v: 0.05, text: (k, k0) => `저격으로 잡으면 영웅 게이지 ${ka((x) => `+${apc(ENH.sniper.rare.v * x)}%`, k, k0)}` },
     legend: { name: '꿰뚫는 저격', n: 3, text: () => `2차 진화 ‘터지는 저격’을 바로 · 저격 피해 ${legX()} · 일직선 뒤 ${ENH.sniper.legend.n}마리까지 뚫어요` },
   },
   rocket: {
-    rare: { name: '이어 터짐', v: 0.5, text: () => `로켓이 한 번 더 터져요(피해 ${apc(ENH.rocket.rare.v)}%)` },
+    rare: { name: '이어 터짐', v: 0.5, text: (k, k0) => `로켓이 한 번 더 터져요(피해 ${ka((x) => `${apc(ENH.rocket.rare.v * x)}%`, k, k0)})` },
     legend: { name: '융단 폭격', v: 1.5, text: () => `2차 진화 ‘불씨 로켓’을 바로 · 로켓 피해 ${legX()} · 폭발 반경 ×${ENH.rocket.legend.v}` },
   },
   flame: {
-    rare: { name: '뜨거운 기운', v: 1.2, text: () => `불 지대 위에 서 있으면 쏘는 속도 +${apc(ENH.flame.rare.v - 1)}%` },
+    rare: { name: '뜨거운 기운', v: 1.2, text: (k, k0) => `불 지대 위에 서 있으면 쏘는 속도 ${ka((x) => `+${apc((ENH.flame.rare.v - 1) * x)}%`, k, k0)}` },
     legend: { name: '불의 행진', text: () => `2차 진화 ‘따라오는 불’을 바로(불 지대가 분대를 따라와요) · 불 피해 ${legX()}` },
   },
   shock: {   // 24절 새 탄
-    rare: { name: '정전기', n: 1, text: () => `사슬이 튀는 좀비 수 +${ENH.shock.rare.n}` },
+    rare: { name: '정전기', n: 1, text: (k, k0) => `사슬이 튀는 좀비 수 ${ka((x) => `+${Math.round(ENH.shock.rare.n * x)}`, k, k0)}` },
     legend: { name: '천둥 신', text: () => `2차 진화 ‘뇌운’을 바로 · 튀는 피해 ${legX()}` },
   },
   acid: {
-    rare: { name: '진한 산', T: 6, text: () => `부식이 ${FX_NEW.acid.T}초가 아니라 ${ENH.acid.rare.T}초 가요` },
+    rare: { name: '진한 산', T: 6, text: (k, k0) => `부식이 ${FX_NEW.acid.T}초가 아니라 ${ka((x) => `${r2(ENH.acid.rare.T * x)}초`, k, k0)}가요` },
     legend: { name: '용해', text: () => `2차 진화 ‘산성 웅덩이’를 바로 · 부식 피해 ${legX()}` },
   },
   cure: {
-    rare: { name: '백신', n: 2, text: () => `거구·정예를 잡으면 치료 몫 ×${ENH.cure.rare.n} 더` },
+    rare: { name: '백신', n: 2, text: (k, k0) => `거구·정예를 잡으면 치료 몫 ${ka((x) => `×${r2(ENH.cure.rare.n * x)}`, k, k0)} 더` },
     legend: { name: '기적의 백신', text: () => `2차 진화 ‘구조대’를 바로 · 치료 확률 ${legX()}` },
   },
   rifle: {   // 총 강화(21.9) — 총 Lv 카드가 희귀·전설이면
-    rare: { name: '확장 탄창', v: 1.15, text: () => `쏘는 속도 ×${ENH.rifle.rare.v}` },
+    rare: { name: '확장 탄창', v: 1.15, text: (k, k0) => `쏘는 속도 ${ka((x) => `×${r2(1 + (ENH.rifle.rare.v - 1) * x)}`, k, k0)}` },
     legend: { name: '전술 소총', text: () => `2차 진화 ‘관통 점사’를 바로(점사도 바로) · 점사 배수 ${legX()}` },
   },
   shotgun: {
-    rare: { name: '넓은 총구', v: 0.6, pel: 1.2, text: () => `퍼짐 +${ENH.shotgun.rare.v}m · 펠릿 ×${ENH.shotgun.rare.pel}` },
+    rare: { name: '넓은 총구', v: 0.6, pel: 1.2, text: (k, k0) => `퍼짐 ${ka((x) => `+${r2(ENH.shotgun.rare.v * x)}m`, k, k0)} · 펠릿 ${ka((x) => `×${r2(1 + (ENH.shotgun.rare.pel - 1) * x)}`, k, k0)}` },
     legend: { name: '파쇄 산탄', text: () => `2차 진화 ‘파편’을 바로(슬러그도 바로) · 벽·장갑문 피해 ${legX()}` },
   },
   marksman: {
-    rare: { name: '안정 조준', v: 1.5, text: () => `조준 폭 +${ENH.marksman.rare.v}m` },
+    rare: { name: '안정 조준', v: 1.5, text: (k, k0) => `조준 폭 ${ka((x) => `+${r2(ENH.marksman.rare.v * x)}m`, k, k0)}` },
     legend: { name: '대물 저격', head: 0.2, text: () => `2차 진화 ‘터지는 한 발’을 바로(헤드샷 ${apc(ENH.marksman.legend.head)}%도 바로) · 보스 ${legX()}` },
   },
   medic: {
-    rare: { name: '숨 돌리기', v: 0.3, text: () => `회복할 때마다 특수병의 다음 차례가 ${ENH.medic.rare.v}초 앞당겨져요` },
+    rare: { name: '숨 돌리기', v: 0.3, text: (k, k0) => `회복할 때마다 특수병의 다음 차례가 ${ka((x) => `${r2(ENH.medic.rare.v * x)}초`, k, k0)} 앞당겨져요` },
     legend: { name: '기적의 손', v: 0.3, text: () => `2차 진화 ‘마지막 응급’을 바로 · 잃은 병사가 ${apc(ENH.medic.legend.v)}%p 더 돌아오고 회복 ${legX()} 빠르게` },
   },
 };
