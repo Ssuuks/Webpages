@@ -2292,7 +2292,7 @@ export function createRenderer(cvs) {
     const mx = (face.ax + face.bx) / 2, my = face.ay - h / 2;
     const fxOk = !!(p.reward && p.reward.type === 'fx' && fxCan(s, p.reward.a));
     // 파워업 상자(무기 · 탄 효과)는 위로 빛기둥이 선다 — 멀리서도 '저 상자가 강화'가 보인다. 가까우면 별이 피어오른다
-    const rt = p.reward && p.reward.type, pw = fxOk ? AMMO_COL[p.reward.a] : rt === 'gunx' && GUN_COL[p.reward.g] ? GUN_COL[p.reward.g] : (!rt || rt === 'gun') && (sq.tier | 0) < tierMax(s) ? WTIER[Math.min(WTIER.length - 1, (sq.tier | 0) + 1)] : null;   // 다른 총 상자(21.8): 그 총 색 빛기둥
+    const rt = p.reward && p.reward.type, pw = fxOk ? AMMO_COL[p.reward.a] : rt === 'gunx' && GUN_COL[p.reward.g] ? GUN_COL[p.reward.g] : (!rt || rt === 'gun') && (sq.tier | 0) < tierMax(s) ? WTIER[Math.min(WTIER.length - 1, (sq.tier | 0) + 1)] : p.treasure ? '#FFD84A' : null;   // 미로 끝 보물(28절): 금빛 빛기둥   // 다른 총 상자(21.8): 그 총 색 빛기둥
     if (pw) {
       const bw = Math.max(2, (face.bx - face.ax) * 0.55), bh = Math.max(6, (face.ay - top.ty) * 3.2), flick = 0.75 + 0.25 * Math.sin(time * 5 + p.id);
       beam(mx, top.ty - bh, top.ty, bw, pw, flick);

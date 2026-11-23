@@ -4910,3 +4910,32 @@ test('27절 — 출격 보급품: 안 산 판은 필드가 없다(지문 그대�
   assert.deepEqual(S.normalize({ v: 2, supply: { men: true, relic: 'compass', legend: 'yes' } }).supply, { men: true, legend: false, revive: false, relic: 'compass' });
   for (const k of R.SUPPLY_IDS) assert.ok(R.SUPPLY[k].cost > 0 && R.SUPPLY[k].text(), k);
 });
+
+test('28절 — 칸막이 미로 보상: 끝에는 길을 따라온 빈 칸에 보물(행운 상자 중·대) 하나, 빈 칸이 아닌 좀비 칸은 무리 뒤에 작은 행운 상자', () => {
+  const L = C.LANES;
+  let mazes = 0, small = 0, big = { 2: 0, 3: 0 };
+  for (let seed = 1; seed <= 12; seed++) for (let seg = L.mazeFrom; seg <= 30; seg++) {
+    const lv = C.buildSegment(seed, seg, 30000, 4, 0, { obs: true, flame: true, mul: C.bldThreat(seg), fe: 10, bk: true, terrain: true });
+    for (const l of lv.lanes || []) {
+      if (l.k !== 'maze') continue;
+      mazes++;
+      const box = lv.props.filter((p) => p.mazeBox && p.z > l.z0 && p.z <= l.z1);
+      const tr = box.filter((p) => p.treasure);
+      assert.equal(tr.length, 1, '보물 하나');
+      assert.ok(tr[0].reward.type === 'lucky' && (tr[0].reward.size === 2 || tr[0].reward.size === 3), '중·대');
+      big[tr[0].reward.size]++;
+      // 보물 칸은 마지막 토막의 빈 칸 — 그 토막 그 칸에 벽이 없다
+      const n = L.stretch, sl = (l.z1 - l.z0 - C.FORK_TAPER) / n, za = l.z0 + C.FORK_TAPER + (n - 1) * sl;
+      const cell = C.laneCell((tr[0].x0 + tr[0].x1) / 2);
+      assert.ok(!lv.props.some((w) => w.maze && w.kind === 'wall' && w.z >= za && w.z < za + sl && C.laneCell((w.x0 + w.x1) / 2) === cell), '보물 칸은 벽 없는 칸');
+      for (const b of box.filter((p) => !p.treasure)) {
+        small++;
+        assert.equal(b.reward.size, 1, '작은 상자');
+        const c = C.laneCell((b.x0 + b.x1) / 2);
+        assert.ok(lv.foes.some((f) => f.maze && C.laneCell(f.x) === c && f.z < b.z && f.z > b.z - sl), '좀비 무리 뒤');
+      }
+    }
+  }
+  assert.ok(mazes > 20 && small > mazes, `미로 ${mazes} · 작은 상자 ${small}`);
+  assert.ok(big[2] > 0 && big[3] > 0, `보물 중 ${big[2]} · 대 ${big[3]}`);
+});

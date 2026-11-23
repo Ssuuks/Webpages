@@ -1314,9 +1314,15 @@ const CHUNK = {
         else if (c !== free || chance(g, 0.5)) {
           const m = 3 + Math.floor(rand(g) * 3);
           for (let k = 0; k < m; k++) addFoe(lv, g, 'grunt', U(g, x0 + 0.6, x1 - 0.6), za + 3 + U(g, 0, sl - 6), hp, { maze: true });
+          // 미로 보상(28절): 빈 칸이 아닌 좀비 칸은 무리 뒤에 작은 행운 상자 — 뚫고 가면 얻는다(굴림 없이 — 뒤 배치가 밀리지 않게)
+          if (c !== free && i > 0) lv.props.push({ id: lv.nextId++, kind: 'crate', x0: (x0 + x1) / 2 - 0.9, x1: (x0 + x1) / 2 + 0.9, z: za + sl - 1.5, hp: Math.max(1, Math.round(D * 0.06)), max: Math.max(1, Math.round(D * 0.06)), alive: true, hitT: -9, reward: { type: 'lucky', size: 1 }, luck: true, mazeBox: true });
         }
       }
     }
+    // 미로 끝 보물(28절): 열린 곳을 따라온 마지막 빈 칸 끝에 행운 상자 중·대(길을 읽은 보상). 크기는 따로 굴린다(뒤 배치가 밀리지 않게)
+    { const x0 = free === 0 ? -ROAD : LANE_X[free - 1], x1 = free === 2 ? ROAD : LANE_X[free], cx = (x0 + x1) / 2, hp = Math.max(1, Math.round(D * 0.06));
+      const big = hash(VERSION, 'mazeTreasure', Math.round(z0 * 10), ng) % 3 === 0 ? 3 : 2;
+      lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.0, x1: cx + 1.0, z: z1 - 4, hp, max: hp, alive: true, hitT: -9, reward: { type: 'lucky', size: big }, luck: true, mazeBox: true, treasure: true }); }
     lane.id = lv.nextId++;
     (lv.lanes || (lv.lanes = [])).push(lane);
     return { len: z1 - z + 12, ng };
