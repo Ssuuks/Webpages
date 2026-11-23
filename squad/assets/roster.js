@@ -408,10 +408,10 @@ export const BUILD = {
   awakeFrom: 7,         // 각성(Lv6~10)·숙련이 열리는 구간(첫 대왕 뒤 — 예전 13: Lv5에 너무 일찍 닿아 성장이 멈춘 느낌이었다, ENDGAME.md 20절). 그 전에는 Lv5가 상한
   awk: 0.15,            // 각성 Lv6~9: 그 역할의 값 레벨마다 +15%, Lv10은 2차 진화
   mastery: 0.1,         // 숙련(Lv10 위, 끝없음): 같은 카드를 또 고를 때마다 그 대상 효과 +10%(더한다 — 예전 +4%는 거의 안 느껴졌다, ENDGAME.md 21.10)
-  legendUp: 0.0015,     // 6구간 뒤로 구간마다 전설 확률 +0.15%p(일반에서 가져온다 — 후반일수록 전설이 오른다), legendMax: 최대 +이만큼(예전 +1%p·최대 15%p — ENDGAME.md 20절)
-  legendMax: 0.02,
-  rare: [0.9, 0.09, 0.01],    // 카드 등급(일반·희귀·전설) 확률 — 예전 0.72·0.23·0.05에 정예·대왕 뒤 카드가 모두 희귀 이상이라 너무 흔했다(20절)
-  tagRare: { hard: [0, 0.85, 0.15], super: [0, 0.6, 0.4] },   // 정예·대왕 보스 뒤 첫 카드의 첫 (총이 아닌) 장만 이 확률(희귀 이상), 나머지 자리는 rare. 등급은 다시 뽑기로 안 바뀐다
+  legendUp: 0.0003,   // 34절: 0.0015 → 0.0003(전설은 판에 하나 볼까 말까)     // 6구간 뒤로 구간마다 전설 확률 +0.15%p(일반에서 가져온다 — 후반일수록 전설이 오른다), legendMax: 최대 +이만큼(예전 +1%p·최대 15%p — ENDGAME.md 20절)
+  legendMax: 0.004,
+  rare: [0.9, 0.097, 0.003],   // 34절: 전설 0.01 → 0.003 — 전설이 새 규칙(진화 미리보기가 아니라)으로 세져서 판에 하나 볼까 말까로    // 카드 등급(일반·희귀·전설) 확률 — 예전 0.72·0.23·0.05에 정예·대왕 뒤 카드가 모두 희귀 이상이라 너무 흔했다(20절)
+  tagRare: { hard: [0, 0.97, 0.03], super: [0, 0.88, 0.12] },   // 34절: 15·40% → 3·12%   // 정예·대왕 보스 뒤 첫 카드의 첫 (총이 아닌) 장만 이 확률(희귀 이상), 나머지 자리는 rare. 등급은 다시 뽑기로 안 바뀐다
   own: 3,               // 이미 가진 것(탄 효과·특수병)의 카드가 나올 가중치
   reroll: 1,            // 판마다 다시 뽑기 횟수(대왕을 잡을 때마다 +1)
   curse: { p: 0.18, mul: 1.25, more: 2, from: 2 },   // 위험한 계약: from번째 보스 뒤부터 p 확률로 한 장 — 다음 구간 위협 ×mul, 대신 카드 more장 더
@@ -422,7 +422,7 @@ export const BUILD = {
   sp: { sniper: { dmg: 3, lv: 0.72 }, rocket: { dmg: 0.8, lv: 0.062 }, flame: { dmg: 2, lv: 0.31 } },   // 33절: 로켓 1 → 0.8(높은 레벨에서 피해 몫 46% — 화면을 덮었다)   // lv: 레벨(−1)마다 위력 +이만큼(깊이 보상 deep()을 없애며 Lv5 값이 그대로이도록 deep(4)/4 ≈ 2.05배)
   med: 0.048,           // 의무병 레벨마다 좀비·보스에게 잃는 병사 ÷(1 + med × 레벨)(깊이 보상을 없애며 Lv5 값이 그대로이도록 올렸다)
   spBoss: 0.06,         // 특수병 레벨 1당 보스전 추가 피해 한도(예전 0.02)
-  rocket: { cd: 0.6, speed: 55, wallZ: 26, wall: 3, twin: 0.6 },   // twin: Lv5 쌍발의 둘째 로켓 피해 몫(33절 — 예전 1)
+  rocket: { cd: 0.6, speed: 55, wallZ: 26, wall: 3, twin: 0.6, fire: { w: 1, T: 1.2, d: 0.25 } },   // fire: 불씨 로켓(Lv10)의 불 지대 — 폭 반경×w, T초, 초당 로켓 피해×d(34절: 예전 1.6·2·0.4)   // twin: Lv5 쌍발의 둘째 로켓 피해 몫(33절 — 예전 1)
   wall: { from: 6, cut: 0.6, lo: 0.05 },   // cut 0.5 → 0.6(20.1 뒤 — 25구간~ 벽 파괴율이 40%로 내려갔다)
   bossHp: { from: 7, k: 0, max: 2.5, king: 1.5 },   // king: 대왕 체력 ×(23.4 — 문턱 셋을 지나며 특수 패턴 넷을 다 보여 주려면 대왕전 12~18초가 필요하다)   // 개편 판 보스 체력 덧배수 = min(max, 1 + k × (구간 − from + 1)). 보스전이 3초 안팎(후반 0.5초)으로 끝났던 진짜 까닭은 18구간쯤부터 골든 패스가 무너진 것(20.1) — 고친 뒤 보스전이 6~12초라 k = 0(손잡이만 남김)
   narrow: 1.4,          // 개편 판 분대 몸 반지름 상한(보통 2.4 — 몸 폭 4.8m가 세 칸 길(3.3m)에 안 들어갔다. 1.4면 맞는 폭 ±1.28m — ENDGAME.md 20.2)
@@ -627,11 +627,11 @@ const ka = (f, k = 1, k0) => (k0 ? `${f(k0)} → ${f(k)}` : f(k));
 export const ENH = {
   pierce: {
     rare: { name: '터지는 총알', v: 0.3, text: (k, k0) => `벽·장갑문에 박힌 총알이 터져 벽 피해 ${ka((x) => `+${apc(ENH.pierce.rare.v * x)}%`, k, k0)}` },
-    legend: { name: '벽 뚫기', text: () => `2차 진화 ‘벽 너머 관통’을 바로 · 벽·장갑문 피해 ${legX()} · 뚫린 좀비도 제 피해 100%` },
+    legend: { name: '도탄', n: 3, reach: 12, side: 3, text: () => `벽·장갑문에 맞은 총알이 튕겨 나와 그 앞 좀비 ${ENH.pierce.legend.n}마리를 제 피해로 맞혀요` },
   },
   burst: {
     rare: { name: '불씨 폭발', t: 1.2, text: (k = 1, k0) => `폭발한 자리에 ${ENH.burst.rare.t}초 동안 불이 남아요${k0 || k > 1 ? ` · 불 세기 ${ka((x) => `×${r2(x)}`, k, k0)}` : ''}` },
-    legend: { name: '대폭발', text: () => `2차 진화 ‘벽·보스 유폭’을 바로(레벨과 상관없이 처치된 좀비가 터져요) · 둘레 피해·연쇄 폭발 ${legX()}` },
+    legend: { name: '블랙홀', pull: 1.4, mul: 1.6, text: () => `폭발이 두 배 넓이의 좀비를 가운데로 끌어모으고, 둘레 피해 ×${ENH.burst.legend.mul}` },
   },
   rapid: {
     rare: { name: '신바람', v: 1.25, T: 1.5, text: (k, k0) => `좀비를 잡으면 ${ENH.rapid.rare.T}초 동안 쏘는 속도 ${ka((x) => `+${apc((ENH.rapid.rare.v - 1) * x)}%`, k, k0)}` },
@@ -639,47 +639,47 @@ export const ENH = {
   },
   frost: {
     rare: { name: '얼음 폭탄', v: 0.5, text: (k, k0) => `느려진 좀비가 닿으면 터져 둘레에 제 체력의 ${ka((x) => `${apc(ENH.frost.rare.v * x)}%`, k, k0)}` },
-    legend: { name: '절대 영도', after: 1, T: 1.5, text: () => `2차 진화를 앞당겨 느려진 채 ${ENH.frost.legend.after}초면 ${ENH.frost.legend.T}초 얼어붙어요(보스 제외) · 느려지는 시간 ${legX()} · 앞의 느려진 좀비에 막혀 멈춰요` },
+    legend: { name: '얼음 갑옷', text: () => '느려진 좀비는 닿으면 얼어 부서져요 — 병사를 안 잃어요' },
   },
   sniper: {
     rare: { name: '사기 충전', v: 0.05, text: (k, k0) => `저격으로 잡으면 영웅 게이지 ${ka((x) => `+${apc(ENH.sniper.rare.v * x)}%`, k, k0)}` },
-    legend: { name: '꿰뚫는 저격', n: 3, text: () => `2차 진화 ‘터지는 저격’을 바로 · 저격 피해 ${legX()} · 일직선 뒤 ${ENH.sniper.legend.n}마리까지 뚫어요` },
+    legend: { name: '약점 표시', v: 0.5, T: 4, text: () => `저격당한 적은 ${ENH.sniper.legend.T}초 동안 모든 피해를 +${apc(ENH.sniper.legend.v)}% 받아요(보스도)` },
   },
   rocket: {
     rare: { name: '이어 터짐', v: 0.5, text: (k, k0) => `로켓이 한 번 더 터져요(피해 ${ka((x) => `${apc(ENH.rocket.rare.v * x)}%`, k, k0)})` },
-    legend: { name: '융단 폭격', v: 1.5, text: () => `2차 진화 ‘불씨 로켓’을 바로 · 로켓 피해 ${legX()} · 폭발 반경 ×${ENH.rocket.legend.v}` },
+    legend: { name: '집속탄', n: 5, v: 0.45, text: () => `로켓이 터지면 작은 폭탄 ${ENH.rocket.legend.n}개가 흩어져 터져요(하나에 ${apc(ENH.rocket.legend.v)}%)` },
   },
   flame: {
     rare: { name: '뜨거운 기운', v: 1.2, text: (k, k0) => `불 지대 위에 서 있으면 쏘는 속도 ${ka((x) => `+${apc((ENH.flame.rare.v - 1) * x)}%`, k, k0)}` },
-    legend: { name: '불의 행진', text: () => `2차 진화 ‘따라오는 불’을 바로(불 지대가 분대를 따라와요) · 불 피해 ${legX()}` },
+    legend: { name: '불꽃 방패', v: 0.75, text: () => `불 지대 위에 서 있으면 좀비에게 닿아 잃는 병사 −${apc(ENH.flame.legend.v)}%` },
   },
   shock: {   // 24절 새 탄
     rare: { name: '정전기', n: 1, text: (k, k0) => `사슬이 튀는 좀비 수 ${ka((x) => `+${Math.round(ENH.shock.rare.n * x)}`, k, k0)}` },
-    legend: { name: '천둥 신', text: () => `2차 진화 ‘뇌운’을 바로 · 튀는 피해 ${legX()}` },
+    legend: { name: '감전', T: 1, text: () => `사슬에 맞은 좀비가 ${ENH.shock.legend.T}초 동안 멈춰요(보스 제외)` },
   },
   acid: {
     rare: { name: '진한 산', T: 6, text: (k, k0) => `부식이 ${FX_NEW.acid.T}초가 아니라 ${ka((x) => `${r2(ENH.acid.rare.T * x)}초`, k, k0)}가요` },
-    legend: { name: '용해', text: () => `2차 진화 ‘산성 웅덩이’를 바로 · 부식 피해 ${legX()}` },
+    legend: { name: '전염', r: 3, text: () => `부식된 좀비가 죽으면 둘레 ${ENH.acid.legend.r}m 좀비에게 부식이 그대로 옮아요` },
   },
   cure: {
     rare: { name: '백신', n: 2, text: (k, k0) => `거구·정예를 잡으면 치료 몫 ${ka((x) => `×${r2(ENH.cure.rare.n * x)}`, k, k0)} 더` },
-    legend: { name: '기적의 백신', text: () => `2차 진화 ‘구조대’를 바로 · 치료 확률 ${legX()}` },
+    legend: { name: '영웅의 귀환', v: 0.05, text: () => `치료로 병사가 돌아올 때마다 영웅 게이지 +${apc(ENH.cure.legend.v)}%` },
   },
   rifle: {   // 총 강화(21.9) — 총 Lv 카드가 희귀·전설이면
     rare: { name: '확장 탄창', v: 1.15, text: (k, k0) => `쏘는 속도 ${ka((x) => `×${r2(1 + (ENH.rifle.rare.v - 1) * x)}`, k, k0)}` },
-    legend: { name: '전술 소총', text: () => `2차 진화 ‘관통 점사’를 바로(점사도 바로) · 점사 배수 ${legX()}` },
+    legend: { name: '집중 사격', step: 0.12, max: 0.8, text: () => `같은 좀비를 맞힐 때마다 그 좀비가 받는 총알 피해 +${apc(ENH.rifle.legend.step)}%(최대 +${apc(ENH.rifle.legend.max)}%)` },
   },
   shotgun: {
     rare: { name: '넓은 총구', v: 0.6, pel: 1.2, text: (k, k0) => `퍼짐 ${ka((x) => `+${r2(ENH.shotgun.rare.v * x)}m`, k, k0)} · 펠릿 ${ka((x) => `×${r2(1 + (ENH.shotgun.rare.pel - 1) * x)}`, k, k0)}` },
-    legend: { name: '파쇄 산탄', text: () => `2차 진화 ‘파편’을 바로(슬러그도 바로) · 벽·장갑문 피해 ${legX()}` },
+    legend: { name: '밀쳐내기', push: 0.5, near: 10, text: () => `${ENH.shotgun.legend.near}m 안 좀비를 맞히면 뒤로 밀어내요(거구는 반만)` },
   },
   marksman: {
     rare: { name: '안정 조준', v: 1.5, text: (k, k0) => `조준 폭 ${ka((x) => `+${r2(ENH.marksman.rare.v * x)}m`, k, k0)}` },
-    legend: { name: '대물 저격', head: 0.2, text: () => `2차 진화 ‘터지는 한 발’을 바로(헤드샷 ${apc(ENH.marksman.legend.head)}%도 바로) · 보스 ${legX()}` },
+    legend: { name: '처형', v: 0.3, text: () => `체력이 ${apc(ENH.marksman.legend.v)}% 아래인 좀비는 총알 한 발에 쓰러져요(보스 제외)` },
   },
   medic: {
     rare: { name: '숨 돌리기', v: 0.3, text: (k, k0) => `회복할 때마다 특수병의 다음 차례가 ${ka((x) => `${r2(ENH.medic.rare.v * x)}초`, k, k0)} 앞당겨져요` },
-    legend: { name: '기적의 손', v: 0.3, text: () => `2차 진화 ‘마지막 응급’을 바로 · 잃은 병사가 ${apc(ENH.medic.legend.v)}%p 더 돌아오고 회복 ${legX()} 빠르게` },
+    legend: { name: '응급 수혈', v: 0.5, text: () => `구간마다 한 번, 병력이 구간 시작의 절반 아래가 되면 잃은 병사의 ${apc(ENH.medic.legend.v)}%가 바로 돌아와요` },
   },
 };
 /* 특수병 Lv5 고유 능력(개편 판 — ENDGAME.md 18.3: 전문화 카드(둘 중 고르기)는 없어졌다). Lv1 합류, Lv2~4는 간격·피해, Lv5에 아래 능력 — Lv5가 상한(각성은 4단계) [수치는 초안]

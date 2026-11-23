@@ -2029,7 +2029,7 @@ function enhText(c) {
   const E = c.enh && ENH[c.enhId] ? ENH[c.enhId][c.enh] : null;
   if (!E) return '';
   const n = enhN(s, c.enhId, c.enh === 'rare' ? 'r' : 'l');   // 이미 가진 수 — 있으면 '전 → 후'로(무엇이 얼마나 세지는지)
-  const body = c.enh === 'rare' ? E.text(enhStr(n + 1), n ? enhStr(n) : undefined) : E.text() + (n ? ` · 핵심 수치 ×${legK(n)} → ×${legK(n + 1)}` : '');
+  const body = c.enh === 'rare' ? E.text(enhStr(n + 1), n ? enhStr(n) : undefined) : E.text() + (n ? ` · 세기 ×${enhStr(n)} → ×${enhStr(n + 1)}` : '');
   return ` · ${c.enh === 'rare' ? '희귀' : '전설'} 강화 ‘${E.name}${enhRoman(n + 1)}’: ${body}`;
 }
 /* 고른 뒤 알림의 앞부분: '병력 +43' · '무기 2단계' · '저격수 합류' · '관통탄 장전' */
