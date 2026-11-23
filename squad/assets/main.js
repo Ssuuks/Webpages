@@ -1716,6 +1716,7 @@ function startEndless(opts = {}) {
   heroPickFromCard = false;
   $('tut').hidden = true;
   $('cardEyebrow').textContent = '무한모드';
+  fogTold = false; mutNote = '';
   $('cardL').textContent = '∞';
   $('cardRegion').textContent = `${BIOMES[0].name}부터 차례로`;
   $('cardTag').hidden = true;
@@ -1890,6 +1891,7 @@ function finishEndless() {
    보스가 쓰러지고 연출이 끝나면 판이 멈추고(core: offer) 카드가 뜬다. 고르면 다음 구간이 이어진다(pickCard).
    카드는 엄지가 닿는 화면 아래쪽에 세로로. 보스가 쓰러질 때 대개 손가락으로 길을 잡고 있으므로 그 손가락이 카드를 고르지 않게:
    뜬 지 PICK_GRACE 안의 누름은 버리고, 카드 위에서 새로 눌러 같은 카드에서 뗐을 때만 고른다(누르고 있던 손가락은 캔버스에 붙잡혀 있다) */
+let fogTold = false, fogToastAt = 0;   // 독안개 첫 안내(판마다 한 번)
 let mutNote = '';         // 방금 정해진 적 변이 알림(보급 알림이 덮지 않게 이어 붙인다)
 let lastCard = '';        // 방금 고른 카드의 알림 글(개편 판 — 보급 알림이 이어 붙인다)
 const PICK_GRACE = 500;   // ms
@@ -2755,6 +2757,10 @@ function handleEvents(ev) {
       case 'loss':
         if (e.cause === 'saw') sfx.blade();
         if (e.n >= 10) vibe(25);
+        if (e.cause === 'fog' && s.endless) {   // 독안개(적 변이 — 35절): 처음 닿으면 멈추고 알려 주고, 그 뒤로는 가끔 짧게
+          if (!fogTold) { fogTold = true; showGuide(`초록 가장자리는 독안개예요 — 그 위에 서 있으면 병사가 계속 줄어요.\n길 가운데로 오세요.`, '적 변이 · 독안개'); }
+          else if (performance.now() - fogToastAt > 6000) { fogToastAt = performance.now(); toast('독안개! 가운데로', 1200); }
+        }
         break;
       case 'wallBreak': sfx.crate(); break;
       case 'wallCrash': sfx.stomp(); vibe(40); break;
@@ -2965,6 +2971,8 @@ function handleEvents(ev) {
         break;
       }
       case 'offer': openPick(); break;
+      // 적 변이(대왕 뒤 — 판 끝까지 쌓인다): 다음 구간이 시작될 때 안내창으로(35절 — 예전엔 이 줄이 없어 안내가 한 번도 안 떴다)
+      case 'mutation': if (MUTATIONS[e.id]) mutNote = `${mutNote ? mutNote + '\n' : ''}적 변이 ‘${MUTATIONS[e.id].name}${e.lv > 1 ? ' Ⅱ' : ''}’: ${MUTATIONS[e.id].text(e.lv)}`; break;
       case 'supply': {
         // 개편 판: 보스를 잡으면 자동 보급(증원 카드 대신) — 고른 카드와 다음 구간을 한 줄로(대왕 뒤에는 변이도)
         const mn = mutNote;
@@ -3268,6 +3276,8 @@ function updateSpChips() {
   if (rl) for (const id of rl) mix((RELIC_IDS.indexOf(id) + 1) * 3 + (spent.includes(id) ? 1 : 0));
   const Bg = s && bldOf(s);   // 총 종류(21절): 총·총 Lv·바꿀 총
   if (Bg && Bg.gt) { mix(GUN_IDS.indexOf(Bg.gt) + 1); mix((Bg.gl && Bg.gl[Bg.gt]) || 1); mix(GUN_IDS.indexOf(Bg.gp) + 2); }
+  const muts = s && s.endless && s.endless.mut ? MUT_IDS.filter((id) => mutLv(s, id)) : [];
+  for (const id of muts) mix((MUT_IDS.indexOf(id) + 1) * 5 + mutLv(s, id));
   if (key === spKey) return;
   spKey = key;
   const box = $('spChips');
@@ -3349,7 +3359,16 @@ function updateSpChips() {
     chip.setAttribute('role', 'img');
     box.appendChild(chip);
   }
-  document.body.classList.toggle('has-sp', sp.length + nfx + (rl ? rl.length : 0) + (tier > 0 ? 1 : 0) + (ammoChip ? 1 : 0) > 0);
+  // 적 변이(35절): 해골 칩 하나에 이름들 — 판 안에서도 무엇이 걸렸는지 보인다(풀이는 일시정지)
+  if (muts.length) {
+    const chip = document.createElement('span');
+    chip.className = 'sp-chip mut-chip';
+    chip.appendChild(iconEl('skull', 2));
+    chip.append(muts.map((id) => MUTATIONS[id].name + (mutLv(s, id) > 1 ? ' Ⅱ' : '')).join(' · '));
+    chip.setAttribute('aria-label', `적 변이: ${muts.map((id) => MUTATIONS[id].name).join(', ')}`);
+    box.appendChild(chip);
+  }
+  document.body.classList.toggle('has-sp', sp.length + nfx + (rl ? rl.length : 0) + (tier > 0 ? 1 : 0) + (ammoChip ? 1 : 0) + muts.length > 0);
   // 칩이 두 줄로 넘치면(특수병 셋 + 효과 둘) 위에 뜨는 알림을 한 줄만큼 더 내린다 — 세 줄(넷째 자리·넓은 탄낭·유물 칩)이면 한 줄 더
   const hh = box.offsetHeight;
   document.body.classList.toggle('sp-wrap', hh > 40);
