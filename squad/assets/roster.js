@@ -445,6 +445,16 @@ export const BOSS_PAT = {
   wide: { name: '넓은 내려찍기', pad: 0.25, then2: 0.6, text: () => '세 칸 중 두 칸을 한꺼번에 내려찍어요 — 남은 가장자리 칸으로' },
   double: { name: '연속 내려찍기', then: 0.3, text: () => '내려찍은 뒤 지금 선 칸을 곧바로 한 번 더' },   // 옛 저장(23절 전)의 보스만 — 지금은 내려찍기의 간격 강화판
 };
+/* 출격 보급품(무한모드 개편 판 — ENDGAME.md 27절): 출격 카드의 '함께 출격'에서 코인으로 사서 그 판에만 쓴다(출격하는 순간 코인이 빠지고 고른 것은 비워진다).
+   men: 시작 병력 ×v · legend: 보스 뒤 첫 카드에서 강화가 있는 장 하나가 전설 · revive: 병력이 0이 되는 순간 한 번, 그 구간 바닥선의 v배로 되살아난다
+   relic: 열린 유물 하나를 처음부터 쥐고 출발 [값은 초안 — 보스 30마리 판의 벌이가 4,800코인쯤] */
+export const SUPPLY = {
+  men: { name: '증원 부대', cost: 300, v: 1.5, text: () => `시작 병력 ×${SUPPLY.men.v}` },
+  legend: { name: '전설 보급', cost: 800, text: () => '첫 보스 뒤 카드 하나가 전설' },
+  revive: { name: '불굴 보급', cost: 1000, v: 1, text: () => '전멸하는 순간 한 번 되살아나요(그 구간 바닥선만큼)' },
+  relic: { name: '시작 유물', cost: 1500, text: () => '열린 유물 하나를 쥐고 출발' },
+};
+export const SUPPLY_IDS = ['men', 'legend', 'revive'];
 /* 넉백(개편 판 보스): 붙은(clash) 동안 보스 최대 체력의 hp 몫을 깎으면 dist m 뒤로 튕겨 stun초 비틀거린다(걷기·내려찍기·패턴 멈춤) — 붙어도 쏘아서 떼어낼 수 있게 */
 export const BOSS_KNOCK = { hp: 0.035, dist: 3, stun: 1 };
 export const BOSS_PAT_IDS = ['slam', 'volley', 'line', 'charge', 'wide'];

@@ -4877,3 +4877,36 @@ test('26.3·26.4 — 희귀 강화 글은 지금 세기(또 뽑으면 전 → �
   assert.deepEqual([b.ammo.sel, b.ammo.selE], ['frost', 'acid']);
   assert.equal(S.defaults().ammo.selE, '');
 });
+
+test('27절 — 출격 보급품: 안 산 판은 필드가 없다(지문 그대로) · 전설 보급은 보스 뒤 첫 카드의 강화 있는 장 하나를 전설로, 고르면 줄어든다 · 불굴 보급은 전멸하는 순간 한 번 바닥선으로 되살린다 · 이어하기에도 남는다', () => {
+  assert.equal(C.newEndless({ seed: 31, ...BLD }).endless.sup, undefined, '안 산 판');
+  const s = C.newEndless({ seed: 31, ...BLD, supply: { legend: true, revive: true } });
+  assert.deepEqual(s.endless.sup, { legend: 1, revive: 1 });
+  const pol = makeBot('strong', 1031, { skill: true });
+  let of = null;
+  for (let g = 0; g < 400000 && !of; g++) { of = C.offerOf(s); if (!of) C.step(s, pol(s)); }
+  assert.ok(of, '보스 뒤 카드');
+  const sup = of.filter((c) => c.sup);
+  assert.equal(sup.length, 1, '한 장만');
+  assert.equal(sup[0].n, 3, '전설');
+  assert.ok(['unit', 'fx', 'gunlv'].includes(sup[0].k), '강화가 있는 장');
+  // 이어하기: 스냅숏에서 되살려도 보장·카드가 남는다
+  const t2 = C.restore(C.snapshot(s));
+  assert.deepEqual(t2.endless.sup, { legend: 1, revive: 1 });
+  C.pickCard(s, 0);
+  assert.equal(s.endless.sup.legend, 0, '고르면 쓴 것');
+  // 불굴 보급
+  s.squad.n = 3;
+  const seg = s.endless.seg;
+  for (let g = 0; g < 2000 && s.endless.sup.revive; g++) { s.squad.n = 1; s.foes.push({ id: s.nextId++, kind: 'grunt', x: s.squad.x, z: s.squad.z + 0.3, hp: 9e9, max: 9e9, alive: true, awake: true, hitT: -9, cd: 0, seed: 1, r: 0.4, spd: 3, home: 0, homeDist: 0 }); C.step(s, { dir: 0 }); if (C.offerOf(s)) C.pickCard(s, 0); }
+  assert.equal(s.endless.sup.revive, 0, '한 번 썼다');
+  assert.ok(s.phase !== 'lost' || s.endless.seg > seg, '그 자리에서 끝나지 않았다');
+  assert.ok(s.ev.some((e) => e.t === 'revive' && e.id === 'supply') || s.squad.n > 1, '되살아났다');
+  // 옛·깨진 저장: 이상한 값은 0~1로, 개편 판이 아니면 없앤다
+  const o = C.snapshot(C.newEndless({ seed: 31, ...BLD })); o.endless.sup = { legend: 9, revive: -3 };
+  assert.deepEqual(C.restore(o).endless.sup, { legend: 1, revive: 0 });
+  // 저장: 다음 출격에 살 것
+  assert.deepEqual(S.defaults().supply, { men: false, legend: false, revive: false, relic: '' });
+  assert.deepEqual(S.normalize({ v: 2, supply: { men: true, relic: 'compass', legend: 'yes' } }).supply, { men: true, legend: false, revive: false, relic: 'compass' });
+  for (const k of R.SUPPLY_IDS) assert.ok(R.SUPPLY[k].cost > 0 && R.SUPPLY[k].text(), k);
+});

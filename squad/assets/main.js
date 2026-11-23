@@ -4,7 +4,7 @@ import {
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
-  nMax, fmtN, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, bossPatsAt,
+  nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, bossPatsAt,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -16,7 +16,7 @@ import {
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { PATCH } from './patch.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
-  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO } from './roster.js';
+  FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO, SUPPLY, SUPPLY_IDS } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
 } from './insight.js';
@@ -1410,6 +1410,13 @@ function renderNotes() {
     body.append(h, ul);
   }
 }
+/* 출격 보급품(27절): 고른 것 중 지금 살 수 있는 것 { men, legend, revive, relic, cost }. 유물은 열린 것만, 합계가 가진 코인보다 많으면 아무것도 안 산다 */
+function supplyNow(U = endlessUnlocksNow()) {
+  const P = data.supply || {};
+  const o = { men: !!P.men, legend: !!P.legend, revive: !!P.revive, relic: P.relic && RELICS[P.relic] && U.unl >= 3 && (U.relics || []).includes(P.relic) ? P.relic : '' };
+  o.cost = SUPPLY_IDS.reduce((a, k) => a + (o[k] ? SUPPLY[k].cost : 0), 0) + (o.relic ? SUPPLY.relic.cost : 0);
+  return o.cost > data.coins ? { men: false, legend: false, revive: false, relic: '', cost: 0 } : o;
+}
 /* 함께 출격 시트: 출격 카드의 칩에서 영웅·펫·탄종(무한모드는 전용 탄까지)·총(무한모드)을 한 장에서 고른다.
    확인(또는 뒤로)이면 카드로 돌아가 고른 것으로 판을 다시 짠다(backToCard) */
 function openLoad() {
@@ -1471,13 +1478,43 @@ function renderLoad() {
     const G = GUNS[curG];
     $('ldGunInfo').textContent = G ? `${G.line} · ${G.text()} · Lv5 ‘${GUN_EVO[curG]}’` : '';
   }
+  // 보급품·시작 유물(무한모드 개편 판 — 27절): 고르면 출격할 때 코인을 낸다. 합계가 가진 코인을 넘는 것은 못 고른다
+  const U = endless ? endlessUnlocksNow() : null;
+  $('ldSupWrap').hidden = !endless || !U || U.unl < 1;
+  if (endless && U && U.unl >= 1) {
+    const P = data.supply;
+    const total = () => SUPPLY_IDS.reduce((a, k) => a + (P[k] ? SUPPLY[k].cost : 0), 0) + (P.relic ? SUPPLY.relic.cost : 0);
+    const left = data.coins - total();
+    const sl = $('ldSup'); sl.textContent = '';
+    for (const k of SUPPLY_IDS) {
+      const S = SUPPLY[k], on = !!P[k];
+      const lab = document.createElement('span'); lab.append(`${S.name} `); const sm = document.createElement('small'); sm.textContent = `${S.cost.toLocaleString()}코인`; lab.append(sm);
+      const b = ldOpt(on, '', null, () => { P[k] = !P[k]; }, !on && S.cost > left, `${S.name} ${S.cost}코인 — ${S.text()}`);
+      b.appendChild(lab); b.title = S.text();
+      sl.appendChild(b);
+    }
+    const rel = U.unl >= 3 ? (U.relics || []).filter((id) => RELICS[id] && (!s || !s.endless || relicFits(s, id))) : [];   // 이 판에서 드는 유물만(가방·넷째 자리 등은 판에 따라)
+    $('ldRelicWrap').hidden = !rel.length;
+    $('ldRelicCost').textContent = `${SUPPLY.relic.cost.toLocaleString()}코인`;
+    const rl = $('ldRelic'); rl.textContent = '';
+    if (rel.length) {
+      rl.appendChild(ldOpt(!P.relic, '없음', null, () => { P.relic = ''; }));
+      for (const id of rel) rl.appendChild(ldOpt(P.relic === id, RELICS[id].name, null, () => { P.relic = P.relic === id ? '' : id; }, P.relic !== id && !P.relic && SUPPLY.relic.cost > left));
+    }
+    const R0 = P.relic && RELICS[P.relic];
+    const tip = SUPPLY_IDS.filter((k) => P[k]).map((k) => `${SUPPLY[k].name}: ${SUPPLY[k].text()}`);
+    $('ldRelicInfo').textContent = R0 ? `${R0.name}: ${R0.text()}${R0.cost && R0.cost() ? ` · 대신 ${R0.cost()}` : ''}` : '';
+    $('ldTotal').textContent = `${total() ? `보급 합계 ${total().toLocaleString()}코인 · ` : ''}가진 코인 ${data.coins.toLocaleString()}${tip.length ? `\n${tip.join(' · ')}` : ''}`;
+    $('ldTotal').style.whiteSpace = 'pre-line';
+  }
 }
 /* 출격 카드의 '함께 출격' 칩: 고른 영웅·펫·탄종·총. 고를 것이 하나라도 있으면 칩을 띄운다(누르면 함께 출격 시트) */
 function cardChip(hero, pet, heroOk) {
   const chip = $('cardHero');
   chip.textContent = '';
   const endless = run.mode === 'endless';
-  const parts = [hero ? `${HEROES[hero.id].name} Lv${hero.lv}` : '', pet ? PETS[pet.id].name : '', run.ammo ? AMMO[run.ammo].name : '', endless && run.gun && GUNS[run.gun] ? GUNS[run.gun].name : ''].filter(Boolean);
+  const supN = endless && run.sup ? SUPPLY_IDS.filter((k) => run.sup[k]).length + (run.sup.relic ? 1 : 0) : 0;
+  const parts = [hero ? `${HEROES[hero.id].name} Lv${hero.lv}` : '', pet ? PETS[pet.id].name : '', run.ammo ? AMMO[run.ammo].name : '', endless && run.gun && GUNS[run.gun] ? GUNS[run.gun].name : '', supN ? `보급 ${supN}` : ''].filter(Boolean);
   const stars = totalStars(data);
   const any = (heroOk && HERO_IDS.some((id) => ownedHero(id))) || (petOpen() && PET_IDS.some((id) => data.pets.own[id])) || (endless ? AMMO_IDS2 : AMMO_IDS).some((id) => ammoOpen(id, stars)) || endless;
   chip.hidden = !any;
@@ -1668,7 +1705,13 @@ function prepareEndless() {
   const U = endlessUnlocksNow();
   const ammoList = AMMO_IDS2.filter((id) => ammoOpen(id, totalStars(data)));   // 개편 판: 탄 일곱(24절)
   run.gun = gunForRun();
-  s = newEndless({ seed, start, fire: run.fire, hero, pets: petsForRun(), build: 2, ammo: run.ammo, gun: run.gun, unl: U.unl, ammoOpen: ammoList, flame: U.flame, relicsOpen: U.relics, ...(testUnl.hold ? { relics: testUnl.hold } : {}) });
+  // 출격 보급품(27절): 살 수 있는 것만(코인이 모자라면 안 든다) — 코인은 출격하는 순간(begin) 낸다
+  const sup = supplyNow(U);
+  run.sup = sup.cost ? sup : null;
+  const start2 = sup.men ? Math.round(start * SUPPLY.men.v) : start;
+  run.start = start2;
+  const hold = [...(sup.relic ? [sup.relic] : []), ...(testUnl.hold || [])];
+  s = newEndless({ seed, start: start2, fire: run.fire, hero, pets: petsForRun(), build: 2, ammo: run.ammo, gun: run.gun, unl: U.unl, ammoOpen: ammoList, flame: U.flame, relicsOpen: U.relics, ...(hold.length ? { relics: hold } : {}), ...(sup.legend || sup.revive ? { supply: { legend: sup.legend, revive: sup.revive } } : {}) });
   lv = levelOfSeg();
   run.L = s.L;
   par = 0;
@@ -2131,6 +2174,14 @@ function begin(L) {
   }
   requestWake();
   armHistory();
+  // 출격 보급품(27절): 출격하는 순간 한 번 코인을 내고, 고른 것은 비운다(다음 판에는 다시 고른다)
+  if (run && run.mode === 'endless' && run.sup && !run.supPaid) {
+    const c = Math.min(data.coins, run.sup.cost);
+    data.coins -= c;
+    data.supply = { men: false, legend: false, revive: false, relic: '' };
+    run.supPaid = true;
+    toast(`보급품 −${c.toLocaleString()}코인`, 1800);
+  }
   data.plays++;
   save(data);
   // 카드가 떠 있는 동안 다른 앱으로 갔으면 멈춘 채로 시작
@@ -2771,6 +2822,7 @@ function handleEvents(ev) {
       case 'bossChargeWarn': sfx.roar(); vibe([20, 30, 20]); break;
       case 'bossCharge': vibe(40); break;
       case 'bossKnock': sfx.boom(); vibe([30, 40, 30]); break;   // 붙은 보스를 쏴서 밀어냈다
+      case 'revive': if (e.id === 'supply') { sfx.heal(); vibe([40, 60, 40]); toast(`불굴 보급! ${fmtN(e.n)}명으로 되살아났어요`, 2200); } break;
       case 'stomp': sfx.stomp(); vibe(30); break;
       case 'field': sfx.power(1); vibe(25); toast('야전 병원 · 치료된 병사가 손실을 막았어요 (구간마다 한 번)', 1800); break;   // 24절 치료 + 의무병
       case 'bossPhase': setBossPats(); toast(`대왕이 ${e.fresh.map((k) => BOSS_PAT[k] ? BOSS_PAT[k].name : k).join(' · ')}을(를) 꺼내요`, 1400); break;   // 대왕 문턱(23.4): 새 패턴 아이콘이 밝아진다

@@ -110,6 +110,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .ld-opt canvas, .ld-opt .fallback { width: 28px; height: 28px; }
 .ld-opt .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--edge); }
 .ld-info { font-size: 13px; margin: 6px 0 0; min-height: 1.2em; }
+.ld-total { margin: 10px 0 0; font-size: 14px; font-weight: 700; color: var(--amber); }
+.ld-opt small { color: var(--muted); font-size: 12px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; gap: 10px; }
 .row > * { flex: 1; min-width: 0; }
@@ -746,6 +748,9 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <div id="ldPetWrap"><h3>펫 <small id="ldPetN" class="muted"></small></h3><div id="ldPet" class="ld-grid"></div></div>
     <div id="ldAmmoWrap"><h3>탄종 <small id="ldStars" class="muted"></small></h3><div id="ldAmmo" class="ld-grid"></div><p id="ldAmmoInfo" class="muted ld-info"></p></div>
     <div id="ldGunWrap"><h3>총</h3><div id="ldGun" class="ld-grid"></div><p id="ldGunInfo" class="muted ld-info"></p></div>
+    <div id="ldSupWrap"><h3>보급품 <small class="muted">이번 판만 · 출격할 때 코인을 내요</small></h3><div id="ldSup" class="ld-grid"></div>
+      <div id="ldRelicWrap"><h3>시작 유물 <small class="muted" id="ldRelicCost"></small></h3><div id="ldRelic" class="ld-grid"></div><p id="ldRelicInfo" class="muted ld-info"></p></div>
+      <p class="ld-total" id="ldTotal"></p></div>
     <button id="ldOk" class="btn primary" data-back="card" style="width:100%;margin-top:14px" data-focus>확인</button>
   </div>
 </section>

@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, GUNS, GUN_IDS, gunVal, GUN_SWAP } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, SUPPLY, GUNS, GUN_IDS, gunVal, GUN_SWAP } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -1784,6 +1784,9 @@ export function newEndless(opt = {}) {
       s.endless.bld = newBld();
       const g = GUNS[opt.gun] ? opt.gun : 'rifle';   // 총 종류(21절): 출격 때 고른 총, Lv1. gl = 총마다 Lv(바꿔도 기억한다), gp = 바꿀지 고를 총(무기 상자에서 — 다음 보스 뒤)
       Object.assign(s.endless.bld, { gt: g, gl: { [g]: 1 }, gp: '' });
+      // 출격 보급품(27절 — 산 판에만 필드가 생긴다): legend = 남은 전설 보장 수, revive = 남은 부활 수
+      const so = opt.supply || {};
+      if (so.legend || so.revive) s.endless.sup = { legend: so.legend ? 1 : 0, revive: so.revive ? 1 : 0 };
     }
     if (s.endless.relics && s.endless.relics.length) relicSeg(s);   // 처음부터 가진 유물(시험·측정): 첫 구간에도 구간 규칙(확성기·코일·나침반·조준경)을 건다 — 개편 판인지 안 뒤에(24절: 개편 판은 대신이 없다)
   }
@@ -2240,6 +2243,8 @@ function makeOffer3(s) {
     if (id && combosBy(s, id).length) c.syn = true;
     out.push(c);
   }
+  // 전설 보급(27절): 강화가 있는 장(특수병·탄 효과·총 Lv) 하나를 전설로 — 굴림은 그대로(지문이 밀리지 않게), 고르면 보장이 줄어든다(pickCardB)
+  if (e.sup && e.sup.legend > 0) { const c = out.find((o) => (o.k === 'unit' || o.k === 'fx' || o.k === 'gunlv') && (o.n | 0) < 3); if (c) { c.n = 3; c.sup = 1; } }
   // 총 바꾸기(21.8): 대왕 뒤 첫 카드에 GUN_SWAP.king 확률로 한 장(가운데 자리 — 다른 총 하나). 등급·계약 굴림과 따로 굴린다
   if (tag === 'super' && firstOffer && out.length >= 2) {
     const gs = { rs: hash(VERSION, 'gunking', e.seed >>> 0, e.seg, B.rrn) };
@@ -2288,6 +2293,7 @@ function manualPick(s, B, id, more) {
 function pickCardB(s, i) {
   const e = s.endless, B = e.bld, q = s.squad;
   const c = e.offer[clamp(Math.floor(Number(i) || 0), 0, e.offer.length - 1)];
+  if (e.sup && e.sup.legend > 0 && e.offer.some((o) => o.sup)) e.sup.legend--;   // 전설 보급은 그 카드를 띄운 묶음에서 쓴 것으로
   s.ev.length = 0;
   e.offer = null;
   const info = cardInfo(s, c);
@@ -2554,6 +2560,7 @@ export function restore(o) {
         // 알린 장애물 종류: 아는 것만 한 번씩(없으면 빈 목록 — 다시 알린다)
         e.obsSeen = Array.isArray(e.obsSeen) ? e.obsSeen.filter((k, i, l) => OBSTACLE_IDS.includes(k) && l.indexOf(k) === i) : [];
       } else { delete e.fx; delete e.obsSeen; }
+      if (e.sup) { if (e.bld && typeof e.sup === 'object') e.sup = { legend: clamp(e.sup.legend | 0, 0, 1), revive: clamp(e.sup.revive | 0, 0, 1) }; else delete e.sup; }   // 출격 보급품(27절)
       const kinds = e.fx ? CARD.kinds2 : CARD.kinds;
       const okRelic = (c) => relicCan(e, c.r);   // 유물 카드: 열린 것 중 아직 없는 것(RELIC.max개 아래)
       const okN = (c) => c.n === 1 || c.n === 2 || c.n === 3;
@@ -2641,6 +2648,15 @@ function lose(s, k, cause, x, z, sub) {
       q.n = n;
       q.peak = Math.max(q.peak, n);
       emit(s, { t: 'revive', id: 'medic', n, cause, x: q.x, z: q.z });
+      escort(s);
+      return;
+    }
+    if (e2 && e2.sup && e2.sup.revive > 0) {   // 불굴 보급(27절): 한 번, 그 구간 바닥선(1구간은 floor0)의 v배로
+      const n = clamp(Math.round(SUPPLY.revive.v * (segFloor(e2.seg) || ENDLESS.floor0)), 1, nMax(s));
+      e2.sup.revive--;
+      q.n = n;
+      q.peak = Math.max(q.peak, n);
+      emit(s, { t: 'revive', id: 'supply', n, cause, x: q.x, z: q.z });
       escort(s);
       return;
     }

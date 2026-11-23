@@ -1625,6 +1625,14 @@ export function createRenderer(cvs) {
           for (let i = 0; i < n; i++) part(e.x + (Math.random() - 0.5) * 0.4, 1.2, e.z, (q.x - e.x) / T, 9 * T * 0.5 + 0.8, (hz - e.z) / T + (q.vz || 0), T, i & 1 ? '#7FF0E2' : GOLD_BULLET, 1, 9, 'star');
           break;
         }
+        // 불굴 보급(27절)·마지막 응급: 전멸 직전에 되살아났다 — 금빛 기둥 고리와 별
+        case 'revive': {
+          ring(q.x, q.z, 0.3, R + 3, 0.6, '#FFD84A', { follow: 'sq', thick: 2 });
+          ring(q.x, q.z, 0.2, R + 1.5, 0.45, '#FFFFFF', { follow: 'sq' });
+          for (let i = 0; i < 14; i++) part(q.x + (Math.random() - 0.5) * 2 * R, 0.3, q.z + (Math.random() - 0.5) * R, (Math.random() - 0.5) * 1.5, 3 + Math.random() * 2, q.vz || 0, 0.9, i & 1 ? '#FFD84A' : '#FFFFFF', 1, 2, 'star');
+          screenFlash(0.25, '255,232,150');
+          break;
+        }
         // 숨 돌리기(의무병 희귀 강화): 특수병이 잠깐 하얗게 반짝
         case 'breath': breathT = time; break;
         // 넉백(개편 판 보스): 붙은 보스를 쏴서 밀어냈다 — 충격파 고리·먼지·짧은 흔들림
