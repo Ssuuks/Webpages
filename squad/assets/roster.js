@@ -584,7 +584,7 @@ export const GUN_EVO = { rifle: '점사', shotgun: '슬러그', marksman: '헤�
 /* 36절: 화면 글에는 이름 대신 무엇을 하는지(이름은 일시정지 칸 이름에만) */
 export const GUN_EVO_TEXT = { rifle: '4번째 일제 사격마다 피해 ×2', shotgun: '맨 앞 적을 밀어내요', marksman: '체력 20% 아래 좀비는 한 발에 쓰러져요' };
 export const GUN_EVO2 = { rifle: '관통 점사', shotgun: '파편', marksman: '터지는 한 발' };
-const GUN_EVO2_TEXT = { rifle: '점사가 남는 피해를 뒤로 이어 간다(관통 — 탄 효과는 처음 맞힌 적에게만)', shotgun: '부순 벽의 파편이 벽 뒤 좀비에게', marksman: '처음 맞힌 적을 쓰러뜨리면 터진다' };
+const GUN_EVO2_TEXT = { rifle: '점사가 남는 피해를 뒤로 이어 간다(관통 — 탄 효과는 처음 맞힌 적에게만)', shotgun: '부순 벽의 파편이 벽 뒤 좀비에게', marksman: '쓰러뜨린 적이 터진다(뚫고 간 적도)' };
 /* 총의 바탕 수치(Lv1) — 봇으로 맞춘다(21.12). 산탄: 피해·퍼짐·사거리·감쇠(near m부터 range에서 fall까지)·벽 / 저격: 초당 발·조준 폭·피해·보스 */
 export const GUNK = {
   shotgun: { dmg: 1.5, spread: 1.4, range: 24, near: 8, fall: 0.6, wall: 2 },   // 21.12: 1.4·22m·40%·×1.6이면 20.9구간(소총 29.4) — 1.6·24m·60%·×2로 28.4, 총 Lv 카드가 들어간 뒤 32.3(소총 27.5)이라 1.5·Lv4 감쇠 +2m로 28.3

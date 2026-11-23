@@ -1749,7 +1749,7 @@ function nextUnlockText(nx) {
 function segName(k) { const i = segInfo(k); return `${i.k}구간 · ${BIOMES[i.biome].name}`; }
 /* 구간이 시작될 때 알림: '정예 보스 · 3구간 · 무너진 도시' */
 /* 39.6 구간 성격: 개편 판만(시드·구간으로 정해져 미리 안다) */
-const MOOD_TEXT = { rich: '풍요 — 좋은 칸이 커요', lean: '기근 — 나쁜 칸이 커요' };
+const MOOD_TEXT = { rich: '풍요 — 좋은 칸이 크고 보스 뒤 희귀 카드', lean: '기근 — 나쁜 칸이 커요' };
 function moodOf(k) { return s && s.endless && bldOf(s) ? segMood(s.endless.seed, k) : ''; }
 function segToast(k) { const t = segInfo(k).tag, m = moodOf(k); return `${t === 'super' ? '대왕이 기다려요 · ' : t === 'hard' ? '정예 보스 · ' : ''}${segName(k)}${m ? ` · ${MOOD_TEXT[m]}` : ''}`; }
 function levelOfSeg() { return { L: s.L, attempt: 0, endless: true, params: s.params, tag: s.params.tag }; }

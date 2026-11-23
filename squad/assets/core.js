@@ -953,7 +953,7 @@ export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckL
    미로 게이트(39.5): 미로 토막 끝마다 칸마다 게이트 — 빈 칸 = 작은 +, 좀비 칸 뒤·벽 뒤 = 큰 +(마지막 토막은 ×2), 벽 칸 몇은 벽 대신 ÷2 */
 export const RUSH = { from: 6, p: 0.3, n: [8, 11], gap: 11, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.4 };
 /* 구간 성격(39.6 — 개편 판만, 2구간부터): 풍요(rich — 좋은 칸 ×good·나쁜 칸 ×bad) · 보통 · 기근(lean). 시드·구간으로 정해 카드 화면에서 다음 구간 것을 미리 보인다 */
-export const MOOD = { from: 2, rich: { p: 0.2, good: 1.6, bad: 0.7 }, lean: { p: 0.25, good: 0.5, bad: 1.6 } };
+export const MOOD = { from: 2, rich: { p: 0.2, good: 1.6, bad: 0.7, rare: true }, lean: { p: 0.25, good: 0.5, bad: 1.6 } };
 export function segMood(seed, k) {
   if (k < MOOD.from) return '';
   const r = rand({ rs: hash(VERSION, 'mood', seed >>> 0, k) });
@@ -2313,6 +2313,8 @@ function makeOffer3(s) {
     if (id && combosBy(s, id).length) c.syn = true;
     out.push(c);
   }
+  // 풍요 구간(39.6 ⑤ — 41절): 그 구간 보스 뒤 첫 카드에서 강화가 있는 장 하나는 희귀 이상(굴림은 그대로)
+  if (firstOffer && e.mood === 'rich' && MOOD.rich.rare) { const c = out.find((o) => (o.k === 'unit' || o.k === 'fx' || o.k === 'gunlv') && (o.n | 0) < 2); if (c) { c.n = 2; c.rich = 1; } }
   // 전설 보급(27절): 강화가 있는 장(특수병·탄 효과·총 Lv) 하나를 전설로 — 굴림은 그대로(지문이 밀리지 않게), 고르면 보장이 줄어든다(pickCardB)
   if (e.sup && e.sup.legend > 0) { const c = out.find((o) => (o.k === 'unit' || o.k === 'fx' || o.k === 'gunlv') && (o.n | 0) < 3); if (c) { c.n = 3; c.sup = 1; } }
   // 총 바꾸기(21.8): 대왕 뒤 첫 카드에 GUN_SWAP.king 확률로 한 장(가운데 자리 — 다른 총 하나). 등급·계약 굴림과 따로 굴린다
@@ -3487,7 +3489,7 @@ function bulletsUpdate(s) {
       noFx = 0;
       if (!b.th) { if (FX) fxHit2(s, b, f, near, FX); else if (s.ammo) ammoHit(s, b, f, near); }   // 탄 효과가 없는 개편 판(1단계)은 출격 탄종 그대로
       if (!kill && b.g === 'm' && gw.head && f.alive && f.kind !== 'brute' && !f.elite && f.hp <= gw.head * f.max) { if (b.th) noFx = 1; kill = hitFoe(s, f, f.hp, 'gun'); noFx = 0; }   // 헤드샷(둘째부터는 쓰러질 때 탄 효과 없이)
-      if (kill && b.g === 'm' && gw.pop && !b.th) fxBoom(s, f.x, f.z, 1.6, f.max * gw.pop, f);   // 터지는 한 발
+      if (kill && b.g === 'm' && gw.pop) fxBoom(s, f.x, f.z, 1.6, f.max * gw.pop, f);   // 터지는 한 발(41절: 저격총 자체의 능력이라 넘침으로 쓰러뜨린 적도 터진다 — 탄 효과만 첫 상대에게)
       if (b.slug && f.alive) f.z += b.slug;   // 슬러그: 맨 앞(맞은) 적을 밀어낸다
       const left = kill && b.thru ? b.dmg - hp0 / mul : 0;
       if (left > b.dmg * 0.02) { b.th = 1; b.dmg = left; if (b.g === 's') b.base = left; b.tg = 0; b.z = f.z + 0.01; list[w++] = b; }   // 남은 피해로 계속 날아간다

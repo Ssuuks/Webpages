@@ -5223,3 +5223,39 @@ test('39.10 — 플레이 기록 v2: 떠난 특수병도 sp에, 탄 효과 출�
   assert.ok(S.byBuild.some((r) => r.k === 'marksman+burst') && S.byBuild.some((r) => r.k === 'rifle+shock'));
   assert.deepEqual(S.byMut.map((r) => r.k), ['fog']);
 });
+
+test('41절 — 저격총 자체의 능력(Lv10 터지는 한 발 · 전설 연발)은 넘침 관통으로 쓰러뜨린 적에게도 — 탄 효과만 첫 상대에게', () => {
+  const run = (gl, enh) => {
+    const u = gunState('marksman', 20, (w) => { w.endless.bld.gl = { marksman: gl }; if (enh) w.endless.bld.enh = enh; });
+    u.endless.fx = {}; u.squad.sp = []; u.squad.fireAcc = -99;
+    const a = gfoe(u, 99601, 6, 100), b = gfoe(u, 99602, 12, 100), c = gfoe(u, 99603, 12, 1e6, { x: u.squad.x + 1 });
+    u.foes = [a, b, c];
+    u.bullets = [{ x: u.squad.x, z: a.z - 0.3, d: 5, dmg: 1000, hm: 1, g: 'm', thru: 1, r: 50 }];
+    const f0 = u.squad.fireAcc;
+    C.step(u, { dir: 0 });
+    for (let i = 0; i < 10; i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); }
+    return { b: b.alive, c: Math.round(1e6 - c.hp), acc: f0 };
+  };
+  assert.equal(run(5).c, 0, 'Lv5(터짐 없음): 뚫고 간 적 옆은 안 맞는다');
+  const t = run(10);
+  assert.equal(t.b, false);
+  assert.ok(t.c >= Math.round(100 * R.gunVal('marksman', 10).pop * 0.99), `Lv10: 넘침으로 쓰러진 적도 터진다 ${t.c}`);
+  // 연발: 한 발로 둘을 쓰러뜨리면 두 번 찬다(상한 2 × v)
+  const leg = (enh) => { const u = gunState('marksman', 20, (w) => { w.endless.bld.enh = enh; }); u.endless.fx = {}; u.squad.sp = []; u.squad.fireAcc = -99;
+    const a = gfoe(u, 99611, 6, 100), b = gfoe(u, 99612, 12, 100); u.foes = [a, b];
+    u.bullets = [{ x: u.squad.x, z: a.z - 0.3, d: 5, dmg: 1000, hm: 1, g: 'm', thru: 1, r: 50 }]; const f0 = u.squad.fireAcc; for (let i = 0; i < 10; i++) C.step(u, { dir: 0 }); assert.equal(b.alive, false); return u.squad.fireAcc - f0; };
+  assert.ok(leg({ marksman: { r: 0, l: 1 } }) - leg(undefined) > 1.9 * R.ENH.marksman.legend.v, '연발이 넘침 처치에도 찬다');
+});
+
+test('41절 — 풍요 구간 보스 뒤 첫 카드: 강화가 있는 장 하나는 희귀 이상(굴림은 그대로 — 다른 장의 내용은 같다)', () => {
+  const at = () => { const s = C.newEndless({ seed: 31, ...BLD }); const pol = makeBot('strong', 1031, { skill: true }); for (let g = 0; g < 200000 && !C.offerOf(s); g++) C.step(s, pol(s)); return s; };
+  const a = at(), b = at();
+  a.endless.bld.rr = b.endless.bld.rr = 3;
+  delete a.endless.mood; b.endless.mood = 'rich';
+  C.rerollCards(a); C.rerollCards(b);
+  const ka = a.endless.offer.map((c) => c.k + (c.u || c.a || c.g || '')), kb = b.endless.offer.map((c) => c.k + (c.u || c.a || c.g || ''));
+  assert.deepEqual(kb, ka, '같은 카드');
+  const up = b.endless.offer.filter((c) => c.rich);
+  if (a.endless.offer.some((c) => ['unit', 'fx', 'gunlv'].includes(c.k) && (c.n | 0) < 2)) assert.equal(up.length, 1);
+  for (const c of up) assert.ok(c.n >= 2);
+});
