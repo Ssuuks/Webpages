@@ -2441,7 +2441,7 @@ export function newGame(lv, opt = {}) {
     refFire: lv.fireE || 0,
     nextId: lv.nextId + 1,
     ev: [],
-    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0, spUp: 0, flips: 0 },
+    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0, spUp: 0, flips: 0, dmg: {}, kb: {}, lostBy: {}, death: null },   // dmg·kb·lostBy·death: 플레이 기록(32절 — 출처별 피해·처치, 무엇에 잃었나, 전멸한 곳). 해시에 안 든다
   };
   // 펫(ENDGAME.md 6절): 데려간 판에만 s.pet이 있다 — 펫 전용 난수 흐름(rs)을 따로 써서 판의 난수(s.rs)를 건드리지 않는다.
   // avg(별 기준을 재는 기준 봇용): 확률 대신 기대값으로 고르게 — par가 한 판의 운에 흔들리지 않게
@@ -2487,7 +2487,7 @@ export function restore(o) {
   // SIM 8까지의 스냅숏에는 특수병 레벨이 없다(Lv1로 본다)
   for (const m of q.sp) m.lv = Math.max(1, Math.min(spLvMax(o), Number.isFinite(m.lv) ? Math.floor(m.lv) : 1));
   num0(q, ['pool', 'healAcc', 'recent', 'lossFrac']);
-  if (o.stats && typeof o.stats === 'object') num0(o.stats, ['spUp', 'flips']);
+  if (o.stats && typeof o.stats === 'object') { num0(o.stats, ['spUp', 'flips']); for (const k of ['dmg', 'kb', 'lostBy']) if (!o.stats[k] || typeof o.stats[k] !== 'object') o.stats[k] = {}; if (o.stats.death && typeof o.stats.death !== 'object') o.stats.death = null; }   // 플레이 기록(32절)
   if (o.hero === undefined) o.hero = null;
   if (o.hero) num0(o.hero, ['charge', 'act', 'T', 'cd', 'shot']);
   if (o.boss) { num0(o.boss, ['bonus', 'stun']); if (o.boss.clash && !(o.boss.clashHp > 0)) o.boss.clashHp = o.boss.hp; }   // 넉백 셈(옛 스냅숏엔 없다)
@@ -2645,6 +2645,7 @@ function lose(s, k, cause, x, z, sub) {
   q.n -= real;
   q.hurtT = s.t;
   s.stats.lost += real;
+  if (s.stats.lostBy) { const lk = sub ? cause + ':' + sub : cause; s.stats.lostBy[lk] = (s.stats.lostBy[lk] || 0) + real; }   // 플레이 기록(32절)
   emit(s, { t: 'loss', n: real, cause, x: x ?? q.x, z: z ?? q.z });
   if (q.n <= 0) {
     const e2 = s.endless;
@@ -2667,6 +2668,9 @@ function lose(s, k, cause, x, z, sub) {
       return;
     }
     s.cause = cause;
+    // 플레이 기록(32절): 전멸한 곳 — 무엇에(cause·sub), 어느 구간·레벨, 보스전이었나(보스 등급·켜진 패턴)
+    const bb = s.boss && s.boss.hp > 0 ? s.boss : null;
+    s.stats.death = { cause, sub: sub || '', seg: e2 ? e2.seg : s.L, arena: s.phase === 'arena', tag: s.params && s.params.tag ? s.params.tag : '', pat: bb && bb.pat ? bb.pat.slice() : [], bossHp: bb ? Math.round((100 * bb.hp) / bb.max) : null };
     return;
   }
   if (cause !== 'gate') {
@@ -3409,8 +3413,9 @@ function bulletsUpdate(s) {
       const ak = acidBoss ? 1 + FX_NEW.acid.boss * Math.min(15, bo.acid | 0) : 1;   // 부식 Lv5 녹아내림: 보스는 겹마다 +1%(15겹까지)
       if (B2 && B2.acid) acidAdd(s, bo, B2);
       const base = (b.hm > 1 ? b.dmg / b.hm : b.dmg) * bossK * ak;
+      dmgLog(s, 'gun', Math.min(base, Math.max(0, bo.hp)));
       bo.hp -= base;
-      if (base < b.dmg * bossK * ak) hitBossBonus(s, b.dmg * bossK * ak - base);
+      if (base < b.dmg * bossK * ak) hitBossBonus(s, b.dmg * bossK * ak - base, 'hero');
       bo.hitT = s.t;
       continue;
     }
@@ -3526,7 +3531,7 @@ function fxNewUpdate(s) {
         if (p.alive && v.melt && p.acid >= 15 && p.hp < p.max * FX_NEW.acid.melt) { emit(s, { t: 'melt', x: (p.x0 + p.x1) / 2, z: p.z }); hitProp(s, p, p.hp + 1); }   // 녹아내림
       }
       const b = s.boss;
-      if (b && b.acid && b.hp > 0) { if (b.acT <= s.t) b.acid = 0; else { b.hp -= b.acid * per * DT; b.hitT = s.t; } }
+      if (b && b.acid && b.hp > 0) { if (b.acT <= s.t) b.acid = 0; else { dmgLog(s, 'acid', Math.min(b.acid * per * DT, b.hp)); b.hp -= b.acid * per * DT; b.hitT = s.t; } }
     }
     if (s.acids) {
       for (const pl of s.acids) {
@@ -3770,7 +3775,7 @@ function fxDeath(s, f, by) {
     if (v.evo2 || bLeg) {   // 작렬 Lv10 · 전설 강화: 연쇄 폭발이 벽·보스에도 든다
       for (const p of s.props) if (p.alive && !p.passed && (p.kind === 'wall' || p.kind === 'door') && Math.abs(p.z - f.z) < v.r && overlap(f.x - v.r, f.x + v.r, p.x0, p.x1) > 0) hitProp(s, p, d);
       const bo = s.boss;
-      if (bo && bo.hp > 0 && Math.abs(bo.z - 1 - f.z) < v.r + 1 && Math.abs(bo.x - f.x) < v.r + bo.r) hitBossBonus(s, d);
+      if (bo && bo.hp > 0 && Math.abs(bo.z - 1 - f.z) < v.r + 1 && Math.abs(bo.x - f.x) < v.r + bo.r) hitBossBonus(s, d, 'boom');
     }
     if (n) emit(s, { t: 'splash', x: f.x, z: f.z, r: v.r, n });
   }
@@ -3779,11 +3784,15 @@ function fxDeath(s, f, by) {
     for (const o of s.foes) if (o.alive && o !== f && (o.x - f.x) ** 2 + (o.z - f.z) ** 2 <= 2.25) o.slowT = s.t + v.T;
   }
 }
+/* 플레이 기록(32절): 출처별로 실제로 깎은 체력(넘친 몫은 빼고) */
+function dmgLog(s, by, d) { const m = s.stats.dmg; if (m && d > 0) m[by || '?'] = (m[by || '?'] || 0) + d; }
 function hitFoe(s, f, dmg, by) {
+  dmgLog(s, by, Math.min(dmg, Math.max(0, f.hp)));
   f.hp -= dmg;
   f.hitT = s.t;
   if (f.hp > 0) return false;
   f.alive = false;
+  if (s.stats.kb) s.stats.kb[by || '?'] = (s.stats.kb[by || '?'] | 0) + 1;
   s.stats.kills++;
   s.stats.killHp += f.max;
   emit(s, { t: 'kill', kind: f.kind, x: f.x, z: f.z, by, elite: f.elite });
@@ -3807,11 +3816,12 @@ function hitFoe(s, f, dmg, by) {
   return true;
 }
 /* 특수병·영웅이 보스에게 주는 피해는 병사 화력의 +BONUS_CAP(10%)까지(쌓인 몫 b.bonus 안에서) */
-function hitBossBonus(s, dmg) {
+function hitBossBonus(s, dmg, by = '?') {
   const b = s.boss;
   if (!b || b.hp <= 0) return 0;
   const d = Math.min(dmg, b.bonus);
   if (d <= 0) return 0;
+  dmgLog(s, by, Math.min(d, b.hp));
   b.bonus -= d;
   b.hp -= d;
   b.hitT = s.t;
@@ -4311,7 +4321,7 @@ function snipe(s, dmg, src, big = 1, boom = false) {
     }
   }
   else if (t.kind === 'prop') { x1 = (t.o.x0 + t.o.x1) / 2; z1 = t.o.z; hitProp(s, t.o, dmg); kill = !t.o.alive; }
-  else { x1 = t.o.x; z1 = t.o.z - 1; hitBossBonus(s, dmg); }
+  else { x1 = t.o.x; z1 = t.o.z - 1; hitBossBonus(s, dmg, src); }
   emit(s, { t: 'snipe', x0: q.x, z0: q.z, x1, z1, src, kill });
   if (boom && kill && t.kind === 'foe') fxBoom(s, x1, z1, 1.6, t.o.max * SP_EVO2.sniper.v, t.o);   // 저격수 Lv10 터지는 저격
   if (kill && src === 'sniper' && s.hero && enhN(s, 'sniper', 'r')) { chargeHero(s, ENH.sniper.rare.v * enhV(s, 'sniper', 'r')); emit(s, { t: 'morale', x: x1, z: z1, k: enhN(s, 'sniper', 'r') }); }   // 희귀 강화 '사기 충전'(그림: 빛 알갱이가 영웅에게)
@@ -4407,7 +4417,7 @@ function flamesUpdate(s) {
     if (zn.follow !== undefined) { zn.x = s.squad.x; zn.z = s.squad.z + zn.follow; }   // 화염병 Lv10 따라오는 불: 지대가 분대를 따라온다
     const d = zn.d * DT;
     for (const f of s.foes) if (f.alive && inFire(zn, f.x, f.z)) hitFoe(s, f, ice > 1 && f.slowT > s.t ? d * ice : d, 'flame');
-    if (b && b.hp > 0 && bossInFire(zn, b)) hitBossBonus(s, d);
+    if (b && b.hp > 0 && bossInFire(zn, b)) hitBossBonus(s, d, 'flame');
     zn.t -= DT;
   }
   s.flames = s.flames.filter((zn) => zn.t > 1e-9);
@@ -4553,7 +4563,7 @@ function specialsUpdate(s, R) {
         hitProp(s, p, (p.kind === 'door' ? rk.dmg * OBSTACLES.door.rocket : rk.dmg) * (rk.wk || 1));   // 장갑문에는 로켓이 잘 든다(개편 판은 벽·문 모두 ×wk)
       }
       const b = s.boss;
-      if (b && b.hp > 0 && Math.abs(b.z - 1 - rk.z) < rk.r + 1 && Math.abs(b.x - rk.x) < rk.r + b.r) hitBossBonus(s, rk.dmg);
+      if (b && b.hp > 0 && Math.abs(b.z - 1 - rk.z) < rk.r + 1 && Math.abs(b.x - rk.x) < rk.r + b.r) hitBossBonus(s, rk.dmg, 'rocket');
       emit(s, { t: 'boom', x: rk.x, z: rk.z, r: rk.r });
       if (rk.again) s.rockets.push({ ...rk, id: s.nextId++, t: 0.4, T: 0.4, dmg: rk.dmg * rk.again, again: 0, fire: false, fid: -1 });
       if (rk.fire) {   // 불씨 로켓(Lv10): 떨어진 자리에 불 지대(2초)

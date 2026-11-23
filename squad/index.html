@@ -146,6 +146,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .notes-meta { margin: -4px 0 10px; font-size: 13px; color: var(--muted); }
 .notes-list { margin: 0 0 6px; padding-left: 18px; font-size: 14px; line-height: 1.5; }
 .notes-list li { margin: 4px 0; }
+.log-bars { display: grid; gap: 4px; }
+.log-row { display: grid; grid-template-columns: 9em 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
+.log-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-row i { display: block; height: 10px; border-radius: 5px; background: var(--amber); min-width: 2px; }
+.log-row b { font-size: 12px; color: var(--muted); white-space: nowrap; }
 #storeChip { align-self: center; font-size: 12px; font-weight: 700; color: #3A2306; background: #FFD84A; border: 2px solid var(--edge); border-radius: 999px; padding: 4px 10px; }
 #resumeCard { width: min(380px, 100%); background: var(--panel); border: 3px solid var(--edge); border-radius: 16px; padding: 12px; box-shadow: 0 4px 0 var(--edge); display: grid; gap: 8px; }
 #resumeCard b { font-family: var(--display); font-weight: 400; font-size: 20px; color: var(--amber); }
@@ -634,6 +639,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <h2>설정</h2>
     <div id="setList"></div>
     <h3>데이터</h3>
+    <button id="setLog" class="btn small" style="width:100%;margin-bottom:8px">플레이 기록 — 어떤 무기가 셌나 · 어디서 졌나</button>
     <p class="muted" id="dataInfo"></p>
     <div class="data-box">
       <div class="row"><button id="bkMake" class="btn small">백업 코드 만들기</button><button id="bkEnter" class="btn small">백업 코드 넣기</button></div>
@@ -761,6 +767,24 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
     <p class="notes-meta" id="notesMeta"></p>
     <div id="notesBody"></div>
     <button class="btn" data-back="title" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
+  </div>
+</section>
+
+<section id="scrLog" class="screen dim" hidden>
+  <div class="sheet">
+    <h2>플레이 기록</h2>
+    <p class="notes-meta" id="logMeta"></p>
+    <div class="row"><button id="logAll" class="btn small"></button><button id="logCopy" class="btn small">JSON 복사</button><button id="logClear" class="btn small">지우기</button></div>
+    <textarea id="logRaw" hidden readonly style="width:100%;height:120px;margin-top:8px"></textarea>
+    <h3>피해 몫 <small class="muted">무한모드 · 판마다 몫의 평균</small></h3><div id="logDmg" class="log-bars"></div>
+    <h3>총별 평균 보스</h3><div id="logGun" class="log-bars"></div>
+    <h3>주력(피해 1위)별 평균 보스</h3><div id="logMain" class="log-bars"></div>
+    <h3>전멸한 까닭</h3><div id="logDeath" class="log-bars"></div>
+    <h3>전멸한 구간</h3><div id="logBand" class="log-bars"></div>
+    <h3>병사를 잃은 까닭 <small class="muted">판마다 몫의 평균</small></h3><div id="logLost" class="log-bars"></div>
+    <h3>최근 판</h3><ul id="logList" class="notes-list"></ul>
+    <p class="muted" style="font-size:12px">기록은 이 기기에만 쌓여요(최근 300판). 판이 끝나거나 무한모드를 새로 시작할 때 한 줄씩.</p>
+    <button class="btn" data-back="set" style="width:100%;margin-top:14px" data-focus>돌아가기</button>
   </div>
 </section>
 

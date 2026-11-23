@@ -14,6 +14,7 @@ import { cycBench, rate, cycCampaign } from '../tools/cycbench.mjs';
 import { petBench } from '../tools/petbench.mjs';
 import { ammoBench } from '../tools/ammobench.mjs';
 import { createRequire } from 'node:module';
+import * as PL from '../assets/playlog.js';
 const require_ = createRequire(import.meta.url);
 
 const POOL = makePool(Math.max(1, Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length)));
@@ -4975,4 +4976,37 @@ test('31절 — 남는 펫 조각: 최고 레벨까지 드는 조각보다 많�
   assert.equal(R.petSpareShards({ lv: 1, sh: 2 }), 0);
   assert.equal(R.petSpareShards(null), 0);
   assert.ok(R.SHARD_COIN > 0 && R.SHARD_COIN < R.EGG.price / R.EGG.shards, '알로 사는 값보다 싸게');
+});
+
+test('32절 — 플레이 기록: 끝난 판에서 버전·빌드·출처별 피해 몫(합 100)·처치·잃은 까닭·전멸한 곳을 한 줄로, 요약은 피해 몫·총별/주력별 평균 보스·전멸 까닭, 저장은 최근 LOG_MAX판', () => {
+  const s = C.newEndless({ seed: 31, ...BLD });
+  const pol = makeBot('strong', 1031, { skill: true });
+  for (let g = 0; g < 400000 && s.endless.bosses < 2 && s.phase !== 'lost'; g++) { const of = C.offerOf(s); if (of) { C.pickCard(s, 0); continue; } C.step(s, pol(s)); }
+  s.squad.n = 1; s.foes.push({ id: s.nextId++, kind: 'grunt', x: s.squad.x, z: s.squad.z + 0.3, hp: 9e9, max: 9e9, alive: true, awake: true, hitT: -9, cd: 0, seed: 1, r: 0.4, spd: 3, home: 0, homeDist: 0 });
+  for (let g = 0; g < 600 && s.phase !== 'lost'; g++) { const of = C.offerOf(s); if (of) { C.pickCard(s, 0); continue; } C.step(s, { dir: 0 }); }
+  assert.equal(s.phase, 'lost');
+  const e = PL.entryOf(s, { ver: '9.9.9', sim: C.SIM, at: 1 });
+  assert.equal(e.v, '9.9.9'); assert.equal(e.mode, 'endless'); assert.ok(e.bosses >= 2);
+  const sum = Object.values(e.dmg).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum - 100) < 1, `피해 몫 합 ${sum}`);
+  assert.ok(e.dmg.gun > 0 && e.kills.gun > 0, '총 피해·처치');
+  assert.ok(e.death && e.death.cause === s.cause && e.death.seg === s.endless.seg, `전멸한 곳 ${JSON.stringify(e.death)}`);
+  assert.ok(Object.keys(e.lost).length > 0, '잃은 까닭');
+  assert.ok(e.gun.startsWith('rifle:'));
+  // 이어하기에도 기록 필드가 남는다(옛 스냅숏엔 없다 → 빈 것)
+  const o = C.snapshot(s); delete o.stats.dmg; const t2 = C.restore(o); assert.deepEqual(t2.stats.dmg, {});
+  // 요약
+  const log = [e, { ...e, bosses: 10, gun: 'shotgun:2', dmg: { rocket: 70, gun: 30 } }, { ...e, mode: 'campaign', v: '1.0' }];
+  const S = PL.summarize(log, '9.9.9');
+  assert.equal(S.endless, 2); assert.equal(S.campaign, 0);
+  assert.equal(S.byGun.length, 2);
+  assert.ok(S.byMain.some((r) => r.k === 'rocket' && r.bosses === 10));
+  assert.ok(S.death.length && S.death[0].n === 2);
+  assert.equal(PL.summarize(log).runs, 3, '버전 없이 — 전부');
+  // 저장: 최근 LOG_MAX판
+  const mem = { d: {}, getItem(k) { return this.d[k] ?? null; }, setItem(k, v) { this.d[k] = v; }, removeItem(k) { delete this.d[k]; } };
+  for (let i = 0; i < PL.LOG_MAX + 5; i++) PL.addLog({ i }, mem);
+  const L = PL.loadLog(mem);
+  assert.equal(L.length, PL.LOG_MAX); assert.equal(L[0].i, 5);
+  PL.clearLog(mem); assert.deepEqual(PL.loadLog(mem), []);
 });

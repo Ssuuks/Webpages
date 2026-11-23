@@ -15,6 +15,7 @@ import {
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { PATCH } from './patch.js';
+import { entryOf, addLog, loadLog, clearLog, summarize, SRC_NAME, LOSS_NAME } from './playlog.js';
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, SHARD_COIN, petSpareShards, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
   FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO, SUPPLY, SUPPLY_IDS } from './roster.js';
 import {
@@ -296,7 +297,7 @@ function notice(title, text, buttons) {
 }
 
 /* ---------- 화면 전환 ---------- */
-const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPick', 'scrPause', 'scrResult', 'scrEnding', 'scrPet', 'scrLoad', 'scrNotes'];
+const SCREENS = ['scrTitle', 'scrLevels', 'scrHero', 'scrUpg', 'scrSet', 'scrBackup', 'scrCard', 'scrPick', 'scrPause', 'scrResult', 'scrEnding', 'scrPet', 'scrLoad', 'scrNotes', 'scrLog'];
 function show(id) {
   for (const k of SCREENS) $(k).hidden = k !== id;
   $('hud').hidden = !(mode === 'play' || mode === 'pause' || mode === 'card' || mode === 'pick' || mode === 'result');
@@ -1430,6 +1431,44 @@ function prepareRun(L) {
   seen(data, 'biome', biomeOf(L).id);
 }
 
+/* 플레이 기록 화면(32절): 이번 버전(또는 전부)의 무한모드 판 요약 + 최근 판 */
+let logVer = '';
+function logBars(el, rows, name, unit = '%') {
+  el.textContent = '';
+  if (!rows.length) { const p = document.createElement('p'); p.className = 'muted'; p.textContent = '아직 기록이 없어요'; el.appendChild(p); return; }
+  const max = Math.max(...rows.map((r) => r.pct ?? r.bosses ?? r.n));
+  for (const r of rows.slice(0, 10)) {
+    const v = r.pct ?? r.bosses ?? r.n;
+    const row = document.createElement('div'); row.className = 'log-row';
+    const lab = document.createElement('span'); lab.textContent = name(r.k);
+    const bar = document.createElement('i'); bar.style.width = `${Math.max(2, (100 * v) / (max || 1))}%`;
+    const num = document.createElement('b'); num.textContent = `${v}${unit}${r.n != null && r.pct == null && r.bosses != null ? ` · ${r.n}판` : ''}`;
+    row.append(lab, bar, num); el.appendChild(row);
+  }
+}
+const lossName = (k) => { const arena = k.endsWith('@boss'); const b = arena ? k.slice(0, -5) : k; return (LOSS_NAME[b] || LOSS_NAME[b.split(':')[0]] || b) + (arena && !b.startsWith('boss') ? ' (보스전)' : ''); };
+const srcName = (k) => SRC_NAME[k] || (AMMO[k] ? AMMO[k].name : UNITS[k] ? UNITS[k].name : k);
+function renderLog() {
+  const log = loadLog();
+  const S = summarize(log, logVer);
+  $('logMeta').textContent = `${logVer ? `v${logVer}` : '모든 버전'} · 무한모드 ${S.endless}판 · 캠페인 ${S.campaign}판${S.endless ? ` · 평균 보스 ${S.mean} · 최고 ${S.best}` : ''} — 전체 기록 ${log.length}판(${Object.entries(S.versions).map(([v, n]) => `v${v} ${n}`).join(', ') || '없음'})`;
+  $('logAll').textContent = logVer ? '모든 버전 보기' : `v${PATCH.ver}만 보기`;
+  logBars($('logDmg'), S.dmg, srcName);
+  logBars($('logGun'), S.byGun, (k) => (GUNS[k] ? GUNS[k].name : k), '');
+  logBars($('logMain'), S.byMain, srcName, '');
+  logBars($('logDeath'), S.death.map((r) => ({ k: r.k, n: r.n })), lossName, '판');
+  logBars($('logBand'), S.deathBand.map((r) => ({ k: r.k, n: r.n })), (k) => `${k}구간`, '판');
+  logBars($('logLost'), S.lost, lossName);
+  const list = $('logList'); list.textContent = '';
+  for (const x of log.slice(-15).reverse()) {
+    const li = document.createElement('li');
+    const d = x.death ? `${lossName((x.death.sub ? `${x.death.cause}:${x.death.sub}` : x.death.cause) + (x.death.arena ? '@boss' : ''))} — ${x.mode === 'endless' ? `${x.death.seg}구간` : `레벨 ${x.L}`}` : x.won ? '승리' : x.quit ? '그만둠' : '-';
+    const g = x.gun ? `${GUNS[x.gun.split(':')[0]] ? GUNS[x.gun.split(':')[0]].name : x.gun} ★${x.star}` : '';
+    const top = Object.entries(x.dmg || {}).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${srcName(k)} ${Math.round(v)}%`).join(' · ');
+    li.textContent = `v${x.v} · ${x.mode === 'endless' ? `무한 보스 ${x.bosses}` : `레벨 ${x.L}${x.won ? ' 승' : ' 패'}`}${g ? ` · ${g}` : ''}${top ? ` · ${top}` : ''} · ${d}`;
+    list.appendChild(li);
+  }
+}
 /* 패치 노트(assets/patch.js): 이번 판에 바뀐 것 — 타이틀의 버전 글씨로 새 코드가 불러와졌는지 본다 */
 function renderNotes() {
   $('notesMeta').textContent = `v${PATCH.ver} · ${PATCH.date}`;
@@ -3002,9 +3041,15 @@ const CAUSE = {
   crate: ['부수지 못한 상자·철창에 부딪혔어요', '상자 숫자는 체력이에요. 다 부수거나 비켜 가세요'],
 };
 
+/* 플레이 기록(32절): 끝난 판 한 줄 — 버전·빌드·출처별 피해·전멸한 곳. 이 기기에만 쌓인다(설정 → 플레이 기록) */
+function logRun(st, quit = false) {
+  if (!st || attract || testRun()) return;
+  try { addLog(entryOf(st, { ver: PATCH.ver, sim: SIM, cycle: run && run.cycle, sup: run && run.sup ? { ...run.sup } : null, quit })); } catch { /* 기록은 놀이를 막지 않는다 */ }
+}
 function finish() {
   if (resultShown) return;
   resultShown = true;
+  logRun(s);
   mode = 'result';
   releaseWake();
   hideEta();
@@ -3501,6 +3546,19 @@ on('endEndless', () => { sfx.click(); mode = 'title'; goTitle(); tryEndless(); }
 on('endMenu', () => { sfx.click(); goTitle(); });
 on('btnLevels', () => { sfx.click(); mode = 'levels'; levelsCycle = data.cycle; renderLevels(); show('scrLevels'); armHistory(); });
 on('btnHero', () => { sfx.click(); mode = 'hero'; heroPickFromCard = false; heroView = data.heroes.sel; renderHero(); show('scrHero'); armHistory(); });
+on('setLog', () => { sfx.click(); mode = 'log'; logVer = PATCH.ver; renderLog(); show('scrLog'); armHistory(); });
+on('logAll', () => { sfx.click(); logVer = logVer ? '' : PATCH.ver; renderLog(); });
+on('logCopy', () => {
+  const txt = JSON.stringify(loadLog(), null, 1);
+  const done = () => toast(`기록 ${loadLog().length}판을 복사했어요`, 1600);
+  try { navigator.clipboard.writeText(txt).then(done, () => { $('logRaw').hidden = false; $('logRaw').value = txt; $('logRaw').select(); }); } catch { $('logRaw').hidden = false; $('logRaw').value = txt; }
+});
+on('logClear', () => {
+  notice('플레이 기록을 지울까요?', '이 기기에 쌓인 기록이 모두 지워져요. 진행(레벨·코인)은 그대로예요.', [
+    { label: '지우기', primary: true, fn: () => { clearLog(); renderLog(); } },
+    { label: '취소' },
+  ]);
+});
 on('btnNotes', () => { sfx.click(); mode = 'notes'; renderNotes(); show('scrNotes'); armHistory(); });
 on('btnUpg', () => { sfx.click(); mode = 'upg'; renderUpg(); show('scrUpg'); armHistory(); });
 on('btnSet', () => { sfx.click(); mode = 'set'; renderSet(); show('scrSet'); armHistory(); });
@@ -3537,7 +3595,7 @@ function restartRun(opts = {}) {
   if (!lv) return;
   if (isEndless()) {
     // 무한모드: 지금 판을 정산(모은 코인을 받는다)하고 새 판
-    if (s && s.endless && run) { const got = settleEndless(s, run.id); if (got.coins > 0) toast(`코인 +${got.coins}`, 1400); }
+    if (s && s.endless && run) { logRun(s, true); const got = settleEndless(s, run.id); if (got.coins > 0) toast(`코인 +${got.coins}`, 1400); }
     clearRun();
     startEndless({ quick: true });
     return;
