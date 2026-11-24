@@ -963,10 +963,11 @@ export const TERRAIN = { hideFrom: 13, hideDist: 16, hideBonus: 1.3, tightFrom: 
    - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막마다 칸막이 하나에 열린 곳(open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
 export const LANE_X = [-ROAD / 3, ROAD / 3];
 export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, open: 7, wallP: 0.75, trap: 0.3, big: 0.6, foeN: [4, 7] };   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60% · 49절: 꽝 −15 → −30%, 미로 좀비 칸 foeN마리(3~5 → 4~6)
-/* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로(45절: 11 → 7 → 3.5m, 줄은 모두 세 칸 — 끝 칸에서 반대쪽 끝 칸까지(5m)는 손가락 끌기(초당 16m)로도 0.31초라 달리는 동안(6구간 초당 12m) 3.75m — 한 줄 사이에 끝에서 끝으로는 못 간다, 옆 칸까지만) — 쏴서 올리는 덧셈 칸이 많고, ×2 줄 하나·÷2 줄 하나.
+/* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로(45절: 11 → 7 → 3.5m, 줄은 모두 세 칸 — 끝 칸에서 반대쪽 끝 칸까지(5m)는 손가락 끌기(초당 16m)로도 0.31초라 달리는 동안(6구간 초당 12m) 3.75m — 한 줄 사이에 끝에서 끝으로는 못 간다, 옆 칸까지만) — 쏴서 올리는 덧셈 칸이 많고, 큰 + 줄 하나(51절 전 ×2)·÷2 줄 하나.
    숫자는 그 구간 기준 병력(bkScale)으로, 굴림은 따로(hash — 다른 청크의 배치가 밀리지 않게). 골든 값은 늘리지 않는다(잘 고르면 앞서 나가고, 못 고르면 뒤처진다)
-   미로 게이트(39.5): 미로 토막 끝마다 칸마다 게이트 — 빈 칸 = 작은 +, 좀비 칸 뒤·벽 뒤 = 큰 +(마지막 토막은 ×2), 벽 칸 몇은 벽 대신 ÷2 */
-export const RUSH = { from: 6, p: 0.3, n: [10, 14], gap: 7, boost: 2, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.6 };   // 49절: 미로 벽 자리의 ÷2 몫 0.4 → 0.6(빌드와 상관없는 페널티 — 벽·좀비 체력을 올리면 총을 덜 키운 빌드만 크게 졌다) · 46.2: 간격 3.5 → 7m + 들머리 길 전체 가속 발판 ×boost — 줄 사이 시간(0.29초)은 같고, 앞 줄 판이 뒷줄 숫자를 안 가린다
+   51절: 몰이의 ×2 줄은 큰 + 줄(jack — 기준 병력의 몫)로 — ×는 앞선 병력일수록 크게 불어나(덧셈 칸은 기준 병력이라 그대로) 한 번만 지나도 판이 뻥튀기됐다
+   미로 게이트(39.5): 미로 토막 끝마다 칸마다 게이트 — 빈 칸 = 작은 +, 좀비 칸 뒤·벽 뒤 = 큰 +(마지막 토막은 더 큰 + — 51절 전 ×2), 벽 칸 몇은 벽 대신 ÷2 */
+export const RUSH = { from: 6, p: 0.3, n: [10, 14], gap: 7, boost: 2, add: [0.2, 0.45], sub: [0.2, 0.4], jack: [0.8, 1.1], mazeAdd: 0.15, mazeBig: 0.4, mazeEnd: 0.8, mazeDiv: 0.6 };   // 49절: 미로 벽 자리의 ÷2 몫 0.4 → 0.6(빌드와 상관없는 페널티 — 벽·좀비 체력을 올리면 총을 덜 키운 빌드만 크게 졌다) · 46.2: 간격 3.5 → 7m + 들머리 길 전체 가속 발판 ×boost — 줄 사이 시간(0.29초)은 같고, 앞 줄 판이 뒷줄 숫자를 안 가린다
 /* 가속 발판(46.1 — 개편 판만): 분대 몸 가운데가 판의 x 범위 안에서 판 줄을 지나면 앞으로 달리는 속도 ×mul, len m 동안. 옆 빠르기는 그대로.
    gaunt·fork·spit·wave: 함정 길(가속 톱날)·갈림길 위험한 쪽·독침 앞·무리 앞에 놓는 판의 배수 · 열리는 구간 · 몫 · 길이 */
 export const PAD = {
@@ -1331,7 +1332,7 @@ const CHUNK = {
     return { len: z1 - z + FORK.tail, ng };
   },
 
-  /* 게이트 몰이(39.5 — RUSH): 게이트 줄이 연달아. 두 칸 줄(+a 대 −b) 사이에 ×2 줄 하나, ÷2 줄 하나, 세 칸 줄 몇. 굴림은 따로(g2) */
+  /* 게이트 몰이(39.5 — RUSH): 게이트 줄이 연달아(모두 세 칸). +a 대 −b 줄 사이에 큰 + 줄 하나(51절 전 ×2), ÷2 줄 하나. 굴림은 따로(g2) */
   rush(lv, g, p, z, ng) {
     const g2 = { rs: hash(VERSION, 'rush', Math.round(z * 10), ng | 0, p.seg | 0) };
     const n = RUSH.n[0] + Math.floor(rand(g2) * (RUSH.n[1] - RUSH.n[0] + 1));
@@ -1340,7 +1341,7 @@ const CHUNK = {
     for (let i = 0; i < n; i++) {
       const rowZ = z + 20 + i * RUSH.gap;
       const edges = [-ROAD, LANE_X[0], LANE_X[1], ROAD];   // 45절: 늘 세 칸(두 칸이면 가운데 선 하나만 넘으면 돼 끝에서 끝이 짧다)
-      const ops = i === iMul ? [['mul', 2], ['add', Bv()], ['add', Bv()]] : i === iDiv ? [['div', 2], ['add', A()], ['add', Bv()]] : [['add', A()], ['add', Bv()], rand(g2) < 0.5 ? ['add', A()] : ['add', Bv()]];
+      const ops = i === iMul ? [['add', Math.max(4, nice(ng * U(g2, RUSH.jack[0], RUSH.jack[1])))], ['add', Bv()], ['add', Bv()]] : i === iDiv ? [['div', 2], ['add', A()], ['add', Bv()]] : [['add', A()], ['add', Bv()], rand(g2) < 0.5 ? ['add', A()] : ['add', Bv()]];
       shuffle(g2, ops);
       const cells = ops.map(([op, v], c) => makeCell(op, v, ng, edges[c], edges[c + 1], lv.fireE));
       makeRow(lv, rowZ, cells, ng, 'gate', 'rush');
@@ -1372,11 +1373,11 @@ const CHUNK = {
     if (pat === 'pair') pair(last, rand(g2));
     else if (pat === 'zig') { const sd = rand(g2) < 0.5 ? -1 : 1; for (let i = 0; i < 3; i++) half(z + 18 + 5 * i, i & 1 ? -sd : sd, rand(g2)); last = z + 28; }
     else if (pat === 'boost') { addPad(lv, -ROAD - 1, ROAD + 1, z + 8, PAD.gauntLen, PAD.gaunt); pair(z + 20, rand(g2)); full(z + 28); last = z + 28; }
-    else if (pat === 'double') { const u = rand(g2); pair(z + 20, u); pair(z + 26, (u + 0.5) % 1); last = z + 26; ops = [['mul', 2], ['div', 2], ['add', A()]]; }
+    else if (pat === 'double') { const u = rand(g2); pair(z + 20, u); pair(z + 26, (u + 0.5) % 1); last = z + 26; ops = [['add', 2 * A()], ['div', 2], ['add', A()]]; }   // 51절: ×2 → 큰 +
     if (pat === 'guard') {   // 톱날 문지기: 좋은 칸 4m 앞을 그 칸 폭만 오가는 톱날, 좋은 칸 쪽 반에 반쪽 가속 발판
       guard = Math.floor(rand(g2) * 3);
       ops = [['add', Bv()], ['add', Bv()], ['add', Bv()]];
-      ops[guard] = rand(g2) < 0.5 ? ['mul', 2] : ['add', 2 * A()];
+      ops[guard] = ['add', 2 * A()];   // 51절: 좋은 칸은 늘 큰 +(예전 반은 ×2)
       pair(z + 16, rand(g2));   // 가속된 채 쌍 톱날부터
       last = z + 24;
     } else if (!ops) ops = shuffle(g2, [['add', A()], ['add', Bv()], rand(g2) < 0.5 ? ['add', A()] : ['add', Bv()]]);
@@ -1442,12 +1443,12 @@ const CHUNK = {
           if (c !== free && i > 0) lv.props.push({ id: lv.nextId++, kind: 'crate', x0: (x0 + x1) / 2 - 0.9, x1: (x0 + x1) / 2 + 0.9, z: za + sl - 1.5, hp: Math.max(1, Math.round(D * 0.06)), max: Math.max(1, Math.round(D * 0.06)), alive: true, hitT: -9, reward: { type: 'lucky', size: 1 }, luck: true, mazeBox: true });
         }
       }
-      if (g2) {   // 토막 끝 게이트 줄: 칸마다 한 칸 — 빈 칸 작은 +, 좀비·벽 뒤 큰 +(마지막 토막은 ×2), 벽 대신 ÷2
+      if (g2) {   // 토막 끝 게이트 줄: 칸마다 한 칸 — 빈 칸 작은 +, 좀비·벽 뒤 큰 +(마지막 토막은 더 큰 + — 51절 전 ×2), 벽 대신 ÷2
         const last = i === n - 1;
         const cells = [0, 1, 2].map((c) => {
           const x0 = c === 0 ? -ROAD : LANE_X[c - 1], x1 = c === 2 ? ROAD : LANE_X[c];
           if (kinds[c] === 'div') return makeCell('div', 2, ng, x0, x1, lv.fireE);
-          if (kinds[c] === 'foe' || kinds[c] === 'wall') return last ? makeCell('mul', 2, ng, x0, x1, lv.fireE) : makeCell('add', Math.max(2, nice(ng * RUSH.mazeBig * U(g2, 0.8, 1.2))), ng, x0, x1, lv.fireE);
+          if (kinds[c] === 'foe' || kinds[c] === 'wall') return makeCell('add', Math.max(2, nice(ng * (last ? RUSH.mazeEnd : RUSH.mazeBig) * U(g2, 0.8, 1.2))), ng, x0, x1, lv.fireE);
           return makeCell('add', Math.max(1, nice(ng * RUSH.mazeAdd * U(g2, 0.8, 1.2))), ng, x0, x1, lv.fireE);
         });
         makeRow(lv, za + sl - 3, cells, ng, 'gate', 'maze');
@@ -1698,6 +1699,10 @@ export const segSpeed = (k) => Math.min(ENDLESS.speedMax, 1 + ENDLESS.speedStep 
 export const segMul = (k) => ENDLESS.mul0 * Math.pow(ENDLESS.mulStep, Math.max(1, k) - 1);
 /* 바닥선: 1구간에는 없다(누구나 제 병력 기준으로 출발한다), 2구간부터 floor0 × floorGrow^(k−1) */
 export const segFloor = (k) => (k <= 1 ? 0 : Math.min(ENDLESS.maxN, Math.round(ENDLESS.floor0 * Math.pow(ENDLESS.floorGrow, k - 1))));
+/* 구간 기준 병력 B(k)(개편 판 — 덧셈 칸의 크기, 18.8): 바닥선(1구간은 floor0) × BUILD.bk.mul */
+export const segBk = (k) => (segFloor(k) || ENDLESS.floor0) * BUILD.bk.mul;
+/* 개편 판 자동 보급(51절 — 절대치): 방금 잡은 구간 k의 B(k) × BUILD.supply[등급]. 지금 병력과 상관없다(예전 병력 +20% · 대왕 +50%는 앞선 판일수록 크게 불었다) */
+export const segSupply = (k) => Math.max(1, Math.round(segBk(k) * BUILD.supply[segInfo(k).tag]));
 /* 구간 k의 보스를 잡으면 적립되는 코인: 그 지역의 기본 몫 × 등급 × (1 + 0.25·바퀴 수). 죽어도·포기해도 받는다 */
 export function segCoins(k) {
   const i = segInfo(k);
@@ -2549,10 +2554,9 @@ function pickCardB(s, i, opt) {
 /* 개편 판의 다음 구간: 계약의 위협 배수로 만들고, 자동 보급을 주고, 게이트 방패를 채운다 */
 function startSegmentB(s) {
   const e = s.endless, B = e.bld, q = s.squad;
-  const tag = segInfo(e.seg).tag;   // 방금 잡은 보스의 등급
+  const add = segSupply(e.seg);   // 방금 잡은 보스의 구간 기준(51절 — 지금 병력과 상관없는 절대치)
   nextSegment(s);
   B.curse = 0; B.more = 0; B.pi = 0; B.rrn = 0; B.rel = 0; B.pre = 0;
-  const add = Math.max(1, Math.round(q.n * BUILD.supply[tag]));
   gain(s, add, q.x, q.z, 'supply');
   emit(s, { t: 'supply', n: add, x: q.x, z: q.z });
   e.n0 = q.n;   // 34절 의무병 전설 '응급 수혈'의 기준(이 구간을 시작한 병력)
@@ -3842,7 +3846,7 @@ function acidPool(s, x, z) {
   emit(s, { t: 'acidPool', x, z, r: A.poolR, T: A.poolT });
 }
 /* 치료: 잡은 좀비(보스 졸개는 Lv5 집단 치료부터)가 확률로 사람으로 — 구간 기준 병력 B(k)의 unit씩, 구간마다 cap까지 */
-const cureBk = (e) => Math.max(60, (segFloor(e.seg) || ENDLESS.floor0) * BUILD.bk.mul);
+const cureBk = (e) => Math.max(60, segBk(e.seg));
 function cureKill(s, f) {
   const e = s.endless, fx = e.fx;
   const v = fx2Val('cure', fx.cure);

@@ -400,10 +400,10 @@ export const MUT_MAX_LV = 2;
 for (const id of RELIC_IDS) Object.defineProperties(RELICS[id], { good: { get() { return this.text(); } }, bad: { get() { return this.cost(); } } });
 
 /* ---------- 무한모드 빌드 개편(ENDGAME.md 16절 — s.endless.bld가 있는 판에만) ----------
-   카드가 곱으로 쌓인다: 화력 = 병력 × 무기 개조 × 탄 효과 × 특수병. 증원은 카드가 아니라 보스마다 자동 보급(BUILD.supply).
+   카드가 곱으로 쌓인다: 화력 = 병력 × 무기 개조 × 탄 효과 × 특수병. 증원은 카드가 아니라 보스마다 자동 보급(BUILD.supply — 구간 기준 병력의 몫).
    수치는 모두 초안 — 봇으로 잰 값은 ENDGAME.md 16절 */
 export const BUILD = {
-  supply: { '': 0.2, hard: 0.2, super: 0.5 },   // 보스를 잡으면 자동 보급: 병력 +이만큼(대왕은 더)
+  supply: { '': 1, hard: 1, super: 2.5 },   // 51절: 보스를 잡으면 자동 보급 = 그 구간 기준 병력 B(k) × 이만큼(대왕은 더 — core.segSupply). 예전 지금 병력 +20% · 대왕 +50%(상대치)는 앞선 판일수록 크게 불었다
   gun: 0.03,            // 무기 개조: 총알 화력 +3% × 유효 레벨(위협 식에 안 들어간다)
   w: { gun: 1, unit: 1, fx: 1 },   // 카드 종류가 나올 가중치
   bk: { on: true, mul: 1.5, gain: 0.2 },   // 덧셈 칸 = 구간 기준 병력 B(k) = segFloor(k) × mul에 비례(18.8 — 순간 병력이 아니다). gain: 만들 때 + 칸의 이득 축소(예전 ENDLESS.gk — 개편 판은 이 값을 쓴다; 없애면 골든 패스가 커져 보스가 세지고 도달 구간이 28 → 13으로 떨어졌다)
