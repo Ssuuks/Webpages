@@ -2103,6 +2103,11 @@ function cardText(c) {
     const nm = fxName(c.a), col = AMMO[c.a] ? AMMO[c.a].color : '#fff';
     const evo = c.n && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 진화` : '';
     const delta = deltaOf('fx', c.a, c.from || 0, c.to);
+    if (bldOf(s) && c.full) {   // 44절: 칸이 찼다 — 고르면 가진 효과 하나와 바꾼다
+      const E = s.endless, locked = E && E.ammoStar && !E.ammoStar.includes(c.a) && AMMO[c.a] ? `출격 탄으로는 ★${AMMO[c.a].stars}에 열려요` : '';
+      const L2 = bldCardLines('', fxT(c.a, c.to), c, [`칸이 차 있어요 — 고르면 가진 효과 하나와 바꿔요(버린 효과 Lv의 절반 + 1)`, locked]);
+      return { kind: '탄 효과 바꾸기', lead: '새 효과:', from: '', to: `${nm} Lv${c.to}`, det: L2.det, delta: L2.delta, col, icon: 'fx_' + c.a, n: c.n };
+    }
     if (bldOf(s)) {   // 39.2
       const fx0 = fxOf(s) || {}, used0 = AMMO_IDS2.filter((a) => fx0[a]).length;
       const E = s.endless, locked = E && E.ammoStar && !E.ammoStar.includes(c.a) && AMMO[c.a] ? `출격 탄으로는 ★${AMMO[c.a].stars}에 열려요` : '';
@@ -2169,6 +2174,7 @@ function pickSummary(picks) {
   return [...n.keys()].sort((a, b) => rank(a) - rank(b)).map((p) => nb(n.get(p) > 1 ? `${name(p)} ${n.get(p)}번` : name(p))).join(' · ');
 }
 function renderPick() {
+  pickDrop = null;
   const list = $('pickList');
   list.textContent = '';
   const offer = offerOf(s) || [];
@@ -2287,11 +2293,11 @@ function pickKey(e) {
   if (k || prev || next || go) e.preventDefault();
   if (e.repeat || performance.now() - pickAt < PICK_GRACE || !n) return;
   if (f >= 0 && f !== pickSel) { pickSel = f; markPickSel(); }   // Tab으로 옮긴 카드를 따른다(불 켜진 카드와 포커스가 어긋나 다른 카드를 고르지 않게)
-  if (k) { if (k <= n) choosePick(k - 1); return; }
+  if (k) { if (k <= n) pickActivate(cards[k - 1]); return; }
   if (prev || next) { pickSel = pickSel < 0 ? (prev ? n - 1 : 0) : (pickSel + (prev ? n - 1 : 1)) % n; markPickSel(); sfx.click(); return; }
   if (go) {
     const i = pickSel >= 0 ? pickSel : [...cards].indexOf(document.activeElement);
-    if (i >= 0) choosePick(i);
+    if (i >= 0) pickActivate(cards[i]);
     else { pickSel = 0; markPickSel(); }   // 아무것도 안 골랐으면 첫 카드에 불만 켠다(Space 연타로 바로 고르지 않게)
   }
 }
@@ -2307,9 +2313,43 @@ function rerollPick() {
   saveRunNow();
 }
 /* 카드 i를 고른다: 다음 구간을 잇고 효과를 준다 → 이벤트(구간 시작·증원·특수병·카드)는 평소대로 알림·소리 */
-function choosePick(i) {
+/* 44절: 칸이 찬 탄 효과 카드를 고르면 버릴 효과를 먼저 고른다(pickDrop = 그 카드 자리) */
+let pickDrop = null;
+function showDrop(i, info) {
+  pickDrop = i;
+  pickSel = -1;
+  const list = $('pickList');
+  list.textContent = '';
+  $('pickTitle').textContent = '바꿀 탄 효과를 골라요';
+  const col = AMMO[info.a] ? AMMO[info.a].color : '#fff';
+  const card = (cls, ic, kindTxt, chgTxt, detTxt, data) => {
+    const b = document.createElement('button');
+    b.className = 'pick-card ' + cls;
+    Object.assign(b.dataset, data);
+    b.style.setProperty('--acc', col);
+    const icn = document.createElement('span'); icn.className = 'pick-ic'; if (ic) icn.appendChild(iconEl(ic, 3));
+    const body = document.createElement('span'); body.className = 'pick-body';
+    const k = document.createElement('span'); k.className = 'pick-kind'; k.textContent = kindTxt;
+    const ch = document.createElement('span'); ch.className = 'pick-chg'; ch.textContent = chgTxt;
+    body.append(k, ch);
+    if (detTxt) { const d = document.createElement('span'); d.className = 'pick-det'; d.textContent = detTxt; body.appendChild(d); }
+    b.append(icn, body);
+    b.setAttribute('aria-label', `${kindTxt}: ${chgTxt}. ${detTxt || ''}`);
+    list.appendChild(b);
+  };
+  for (const d of info.drops) card('', 'fx_' + d.a, '버리기', `${fxName(d.a)} Lv${d.lv} → ${fxName(info.a)} Lv${d.to}`, fxT(info.a, d.to), { i: String(i), drop: d.a });
+  card('drop-back', '', '돌아가기', '다른 카드 고르기', '', { i: '99', back: '1' });
+}
+function pickActivate(b) {
+  if (!b) return;
+  if (b.dataset.back) { pickDrop = null; renderPick(); sfx.click(); return; }
+  choosePick(Number(b.dataset.i), b.dataset.drop);
+}
+function choosePick(i, drop) {
   if (mode !== 'pick' || !s || !offerOf(s)) return;
-  if (!pickCard(s, i)) return;   // 소리는 카드 이벤트가 낸다(무기·증원·탄종 power, 특수병 join·levelUp) — 딸깍과 겹치지 않게
+  if (!drop && !window.__squad.auto) { const c = offerOf(s)[i], info = c && cardInfo(s, c); if (info && info.full && info.drops && info.drops.length > 1) { showDrop(i, info); return; } }
+  if (!pickCard(s, i, drop ? { drop } : undefined)) return;
+  pickDrop = null;   // 소리는 카드 이벤트가 낸다(무기·증원·탄종 power, 특수병 join·levelUp) — 딸깍과 겹치지 않게
   mode = 'play';
   pickArm = null;
   pickSel = -1;
@@ -2339,7 +2379,7 @@ function choosePick(i) {
     // 터치는 누른 카드에 붙잡혀(암묵적 캡처) 뗀 자리의 카드를 따로 찾는다 — 다른 카드로 미끄러져 뗐으면 고르지 않는다
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const b = el && el.closest && el.closest('.pick-card');
-    if (b && Number(b.dataset.i) === arm.i) choosePick(arm.i);
+    if (b && Number(b.dataset.i) === arm.i) pickActivate(b);
   };
   window.addEventListener('pointerup', (e) => release(e, true));
   window.addEventListener('pointercancel', (e) => release(e, false));
@@ -2890,6 +2930,7 @@ function handleEvents(ev) {
         else toast('칸막이 미로 — 초록 열린 곳에서 옆 칸으로', 1400);
         break;
       case 'gunSwap': if (GUNS[e.g]) toast(`${GUNS[e.g].name} Lv${e.lv}로 바꿨어요 — ${GUNS[e.g].line}`, 2200); break;
+      case 'fxSwap': toast(`${fxName(e.from)} Lv${e.fromLv}을 버리고 ${fxName(e.a)}(으)로 바꿨어요`, 2200); break;   // 44절
       case 'fxUp':
         // 탄 효과를 얻었다(카드·탄종 상자 — 소리·알림은 그쪽 이벤트가 낸다)
         tip('fx', `탄 효과는 좋은 점만 있어요. 같은 효과를 또 얻으면 레벨이 끝없이 오르고, 칸이 차면 가진 효과만 나와요`);

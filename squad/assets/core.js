@@ -1934,6 +1934,10 @@ function cardInfoB(s, c, B) {
       if (cb.length) o.combos = cb;
       return o;
     }
+    if (c.k === 'fx' && fxFull(s, c.a)) {   // 44절: 칸이 찼다 — 바꾼다(버릴 효과는 고를 때 정한다, 기본은 가장 낮은 레벨)
+      const fx = fxOf(s), drops = AMMO_IDS2.filter((a) => fx[a]).map((a) => ({ a, lv: fx[a], to: Math.min(bldOf(s) && !awakeOn(s) ? BUILD.evo : Infinity, Math.floor(fx[a] * BUILD.fxSwap.keep) + 1) }));
+      const o = { k: 'fx', a: c.a, from: 0, to: drops.length ? Math.min(...drops.map((d) => d.to)) : 1, n, full: true, drops }; const cb = combosBy(s, c.a); if (cb.length) o.combos = cb; return o;
+    }
     if (c.k === 'fx') { const lv = fxLv(s, c.a); const o = { k: 'fx', a: c.a, from: lv, to: bldOf(s) && !awakeOn(s) ? Math.min(BUILD.evo, lv + 1) : lv + 1, n }; const cb = combosBy(s, c.a); if (cb.length) o.combos = cb; return o; }
   }
   if (c.k === 'relic') return RELICS[c.r] ? { k: 'relic', r: c.r } : null;
@@ -1984,6 +1988,24 @@ const fxCount = (fx) => AMMO_IDS2.reduce((n, a) => n + (fx[a] ? 1 : 0), 0);
 /* 이 판의 탄 목록: 개편 판은 일곱(24절 — 전격·부식·치료 더), 캠페인·앞 단계 판은 넷 */
 export const ammoIds = (s) => (bldOf(s) ? AMMO_IDS2 : AMMO_IDS);
 /* 효과 a를 지금 얻을 수 있나: 가진 효과면 늘(레벨 상한 없음), 새 효과면 빈 칸이 있을 때 */
+/* 44절(개편 판): 칸이 다 찼어도 새 탄 효과 카드는 나온다 — 고르면 가진 효과 하나와 바꾼다(fxReplace) */
+export function fxFull(s, a) { const fx = fxOf(s); return !!(fx && bldOf(s) && AMMO[a] && !fx[a] && fxCount(fx) >= fxSlots(s)); }
+/* 바꿀 때 버릴 효과: 고른 것(drop)이 가진 효과면 그것, 아니면 가장 낮은 레벨(같으면 탄 순서) */
+function fxDropOf(s, drop) {
+  const fx = fxOf(s);
+  if (drop && fx[drop]) return drop;
+  let best = '';
+  for (const a of AMMO_IDS2) if (fx[a] && (!best || fx[a] < fx[best])) best = a;
+  return best;
+}
+/* 탄 효과 바꾸기: drop을 버리고 a를 Lv(drop) × keep(내림)으로 — 이어서 카드 몫 +1(fxAdd) */
+function fxReplace(s, drop, a) {
+  const fx = s.endless.fx, lv0 = fx[drop] | 0;
+  const lv = Math.floor(lv0 * BUILD.fxSwap.keep);
+  delete fx[drop];
+  fx[a] = Math.min(bldOf(s) && !awakeOn(s) ? BUILD.evo - 1 : Infinity, lv);
+  emit(s, { t: 'fxSwap', from: drop, fromLv: lv0, a, x: s.squad.x, z: s.squad.z });
+}
 export function fxCan(s, a) {
   const fx = fxOf(s);
   if (!fx || !AMMO[a]) return false;
@@ -2228,10 +2250,10 @@ function relicSeg(s) {
 /* 지금 떠 있는 카드(없으면 null) */
 export const offerOf = (s) => (s && s.endless && s.endless.offer) || null;
 /* 카드 i를 고른다: 다음 구간을 만들어 이어 붙이고(고르기 전의 병력·무기 단계로) 카드를 적용한다. 고른 것이 없으면 false */
-export function pickCard(s, i) {
+export function pickCard(s, i, opt) {
   const e = s.endless;
   if (!e || !e.offer || !e.offer.length) return false;
-  if (e.bld) return pickCardB(s, i);
+  if (e.bld) return pickCardB(s, i, opt);
   const c = e.offer[clamp(Math.floor(Number(i) || 0), 0, e.offer.length - 1)];
   s.ev.length = 0;
   e.offer = null;
@@ -2293,6 +2315,7 @@ function makeOffer3(s) {
     else if (q.sp.length < spMax(s) && q.n >= spEscort(s) * (q.sp.length + 1)) cands.push({ c: { k: 'unit', u: k }, w: W.unit });
   }
   if (e.fx) for (const a of ammoIds(s)) if (((e.ammo || []).includes(a) || s.ammo === a) && fxCan(s, a)) cands.push({ c: { k: 'fx', a }, w: W.fx * (e.fx[a] ? BUILD.own : 1) * (e.ammoStar && !e.ammoStar.includes(a) && !e.fx[a] ? BUILD.fxLocked : 1) });
+    else if (((e.ammo || []).includes(a) || s.ammo === a) && fxFull(s, a)) cands.push({ c: { k: 'fx', a }, w: W.fx * BUILD.fxSwap.w * (e.ammoStar && !e.ammoStar.includes(a) ? BUILD.fxLocked : 1) });   // 44절: 칸이 차도 새 탄 효과(고르면 바꾼다)
   for (let j = cands.length - 1; j >= 0; j--) if (!(cands[j].w > 0)) cands.splice(j, 1);
   let first = true;
   const lastPick = e.picks && e.picks.length ? e.picks[e.picks.length - 1] : '';
@@ -2362,7 +2385,7 @@ function manualPick(s, B, id, more) {
   more();
   emit(s, { t: 'relicUse', id: 'manual', what: id, x: s.squad.x, z: s.squad.z });
 }
-function pickCardB(s, i) {
+function pickCardB(s, i, opt) {
   const e = s.endless, B = e.bld, q = s.squad;
   const c = e.offer[clamp(Math.floor(Number(i) || 0), 0, e.offer.length - 1)];
   if (e.sup && e.sup.legend > 0 && e.offer.some((o) => o.sup)) e.sup.legend--;   // 전설 보급은 그 카드를 띄운 묶음에서 쓴 것으로
@@ -2373,7 +2396,8 @@ function pickCardB(s, i) {
   let again = false;
   if (c.k === 'gun') q.tier = Math.min(tierMax(s), q.tier + n);   // 총 ★ +n(상한까지)
   else if (c.k === 'unit') { addSpecial(s, c.u, 'card', q.x, q.z); enhAdd(B, c.u, n); manualPick(s, B, c.u, () => { if ((spLv(q, c.u) || 0) < spLvMax(s)) addSpecial(s, c.u, 'card', q.x, q.z); }); }   // 레벨 +1, 희귀·전설이면 강화(등급은 레벨 수가 아니라 강화)
-  else if (c.k === 'fx') { if (fxCan(s, c.a)) fxAdd(s, c.a, 'card', q.x, q.z); enhAdd(B, c.a, n); manualPick(s, B, c.a, () => { if (fxCan(s, c.a)) fxAdd(s, c.a, 'card', q.x, q.z); }); }
+  else if (c.k === 'fx') { if (fxFull(s, c.a)) { const d = fxDropOf(s, opt && opt.drop); if (d) fxReplace(s, d, c.a); }   // 44절: 칸이 찼으면 opt.drop(없으면 가장 낮은 레벨)과 바꾼다
+    if (fxCan(s, c.a)) fxAdd(s, c.a, 'card', q.x, q.z); enhAdd(B, c.a, n); manualPick(s, B, c.a, () => { if (fxCan(s, c.a)) fxAdd(s, c.a, 'card', q.x, q.z); }); }
   else if (c.k === 'curse') { B.curse = BUILD.curse.mul; B.more += BUILD.curse.more; }
   else if (c.k === 'relic') { if (relicCan(e, c.r)) relicAdd(s, c.r); B.rel = 0; B.pre = (B.pre | 0) + 1; again = true; }
   else if (c.k === 'gunlv') { if (!B.gl) B.gl = {}; B.gl[c.g] = info.to; enhAdd(B, c.g, n); manualPick(s, B, c.g, () => { B.gl[c.g]++; }); }   // 총 Lv +1, 희귀·전설이면 총 강화

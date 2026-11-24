@@ -5310,3 +5310,32 @@ test('42절 — 보스 돌진: 숨 고르기와 함께 질주 좀비가 몰려�
   assert.ok(R.BOSS_PAT.charge.text().includes(`${Math.round(V.block * 100)}%`));
   assert.ok(C.RUSH.gap <= 8, '게이트 몰이 간격(달리는 속도로 0.5~0.7초)');
 });
+
+test('44절 — 탄 칸이 차도 새 탄 효과 카드가 나오고, 고르면 가진 효과 하나(고른 것 · 없으면 가장 낮은 레벨)와 바꾼다 — 새 효과는 버린 Lv × keep(내림) + 1', () => {
+  const at = () => { const s = C.newEndless({ seed: 31, ...BLD, ammoOpen: R.AMMO_IDS2 }); const pol = makeBot('strong', 1031, { skill: true }); for (let g = 0; g < 200000 && !C.offerOf(s); g++) C.step(s, pol(s)); return s; };
+  const s = at();
+  s.endless.seg = 9;   // 각성이 열린 뒤(Lv5 상한 없음)
+  s.endless.fx = { burst: 9, shock: 4 };
+  assert.ok(C.fxFull(s, 'frost') && !C.fxFull(s, 'burst'));
+  // 카드 후보에 칸이 찬 새 효과가 나온다
+  let seen = false;
+  for (let k = 0; k < 40 && !seen; k++) { s.endless.bld.rr = 9; C.rerollCards(s); seen = s.endless.offer.some((c) => c.k === 'fx' && !s.endless.fx[c.a]); }
+  assert.ok(seen, '칸이 찼어도 새 탄 효과 카드');
+  const pick = (drop) => {
+    const t = C.restore(C.snapshot(s));
+    t.endless.offer = [{ k: 'fx', a: 'frost', n: 1 }, { k: 'fx', a: 'burst', n: 1 }, { k: 'fx', a: 'shock', n: 1 }];
+    const info = C.cardInfo(t, t.endless.offer[0]);
+    assert.ok(info.full && info.drops.length === 2);
+    C.pickCard(t, 0, drop ? { drop } : undefined);
+    return { fx: t.endless.fx, ev: t.ev.filter((e) => e.t === 'fxSwap') };
+  };
+  const a = pick('burst');
+  assert.deepEqual(a.fx, { shock: 4, frost: Math.floor(9 * R.BUILD.fxSwap.keep) + 1 }, '고른 것(작렬 Lv9)을 버린다');
+  assert.equal(a.ev.length, 1);
+  const b = pick();
+  assert.deepEqual(b.fx, { burst: 9, frost: Math.floor(4 * R.BUILD.fxSwap.keep) + 1 }, '고르지 않으면 가장 낮은 레벨(전격 Lv4)');
+  // 칸이 남으면 바꾸지 않는다
+  const t = C.restore(C.snapshot(s)); t.endless.fx = { burst: 9 }; t.endless.offer = [{ k: 'fx', a: 'frost', n: 1 }];
+  assert.ok(!C.cardInfo(t, t.endless.offer[0]).full);
+  C.pickCard(t, 0); assert.deepEqual(t.endless.fx, { burst: 9, frost: 1 });
+});
