@@ -177,3 +177,21 @@ export function gearGap(data, L, upgrades, core = C) {
   }
   return out;
 }
+
+/* 39.2 카드 글: 풀이(' · '로 나뉜 항목)를 고르기 전·후 레벨로 견준다 — 바뀐 항목(숫자는 '전→후')·새 항목은 밝은 줄(hi), 그대로인 항목은 기본 글씨(lo). 같은 말은 한 번만 */
+const NUM_RE = /[+\-−×]?\d+(?:\.\d+)?/g;
+const partKey = (t) => t.replace(/\(최대\)/g, '').replace(NUM_RE, '#').trim();
+const partsOf = (txt) => String(txt || '').split(' · ').map((x) => x.trim()).filter(Boolean);
+export function diffParts(fromTxt, toTxt) {
+  const A = partsOf(fromTxt), B = partsOf(toTxt), hi = [], lo = [];
+  const byKey = new Map(A.map((t) => [partKey(t), t]));
+  for (const b of B) {
+    const a = byKey.get(partKey(b));
+    if (a === undefined) { hi.push(A.length ? `새로: ${b}` : b); continue; }
+    if (a === b) { lo.push(b); continue; }
+    const an = a.match(NUM_RE) || [];
+    let i = 0;
+    hi.push(b.replace(NUM_RE, (m) => { const o = an[i++]; return o !== undefined && o !== m ? `${o}→${m.replace(/^[+\-−×]/, '')}` : m; }));
+  }
+  return { hi, lo };
+}

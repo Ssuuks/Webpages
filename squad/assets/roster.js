@@ -413,6 +413,7 @@ export const BUILD = {
   rare: [0.9, 0.097, 0.003],   // 34절: 전설 0.01 → 0.003 — 전설이 새 규칙(진화 미리보기가 아니라)으로 세져서 판에 하나 볼까 말까로    // 카드 등급(일반·희귀·전설) 확률 — 예전 0.72·0.23·0.05에 정예·대왕 뒤 카드가 모두 희귀 이상이라 너무 흔했다(20절)
   tagRare: { hard: [0, 0.97, 0.03], super: [0, 0.88, 0.12] },   // 34절: 15·40% → 3·12%   // 정예·대왕 보스 뒤 첫 카드의 첫 (총이 아닌) 장만 이 확률(희귀 이상), 나머지 자리는 rare. 등급은 다시 뽑기로 안 바뀐다
   own: 3,               // 이미 가진 것(탄 효과·특수병)의 카드가 나올 가중치
+  fxLocked: 0.5,        // 39.7: ★로 아직 안 연 탄(판 안에서는 나온다)의 새 효과 카드 가중치
   reroll: 1,            // 판마다 다시 뽑기 횟수(대왕을 잡을 때마다 +1)
   curse: { p: 0.18, mul: 1.25, more: 2, from: 2 },   // 위험한 계약: from번째 보스 뒤부터 p 확률로 한 장 — 다음 구간 위협 ×mul, 대신 카드 more장 더
   relicMax: 5,          // 한 판 유물 수(예전 3)
@@ -576,14 +577,14 @@ function fx2Base(id, lv) {
 export const GUNS = {
   rifle: { name: '소총', stars: 0, color: '#FFE38A', line: '무난한 기본 총', text: () => '분대 폭에 고르게 · 사거리 30m' },
   shotgun: { name: '산탄총', stars: 60, color: '#FF8A5B', line: '가까이 · 넓게 · 세게 — 장애물 파괴', text: () => `옆 칸까지 퍼지는 펠릿 · 피해 ×${GUNK.shotgun.dmg}(${GUNK.shotgun.near}m 넘으면 줄어 ${GUNK.shotgun.range}m에서 ${apc(GUNK.shotgun.fall)}%) · 벽·장갑문 ×${GUNK.shotgun.wall}` },
-  marksman: { name: '저격총', stars: 120, color: '#7FE3FF', line: '멀리 · 한 점 · 무겁게 — 거물 사냥', text: () => `옆 ±${GUNK.marksman.aim}m 안 가장 센 적을 노려 초당 ${GUNK.marksman.hz}발 · 사거리 50m · 남는 피해는 뒤로 뚫고 간다 · 보스 ×${GUNK.marksman.boss}` },
+  marksman: { name: '저격총', stars: 120, color: '#7FE3FF', line: '멀리 · 한 점 · 무겁게 — 거물 사냥', text: () => `옆 ±${GUNK.marksman.aim}m 안 가장 센 적을 노려 초당 ${GUNK.marksman.hz}발 · 사거리 50m · 남는 피해는 뒤로 뚫고 간다(탄 효과는 처음 맞힌 적에게만) · 보스 ×${GUNK.marksman.boss}` },
 };
 export const GUN_IDS = Object.keys(GUNS);
 export const GUN_EVO = { rifle: '점사', shotgun: '슬러그', marksman: '헤드샷' };
 /* 36절: 화면 글에는 이름 대신 무엇을 하는지(이름은 일시정지 칸 이름에만) */
 export const GUN_EVO_TEXT = { rifle: '4번째 일제 사격마다 피해 ×2', shotgun: '맨 앞 적을 밀어내요', marksman: '체력 20% 아래 좀비는 한 발에 쓰러져요' };
 export const GUN_EVO2 = { rifle: '관통 점사', shotgun: '파편', marksman: '터지는 한 발' };
-const GUN_EVO2_TEXT = { rifle: '점사가 남는 피해를 뒤로 이어 간다(관통)', shotgun: '부순 벽의 파편이 벽 뒤 좀비에게', marksman: '쓰러뜨린 적이 터진다' };
+const GUN_EVO2_TEXT = { rifle: '점사가 남는 피해를 뒤로 이어 간다(관통 — 탄 효과는 처음 맞힌 적에게만)', shotgun: '부순 벽의 파편이 벽 뒤 좀비에게', marksman: '쓰러뜨린 적이 터진다(뚫고 간 적도)' };
 /* 총의 바탕 수치(Lv1) — 봇으로 맞춘다(21.12). 산탄: 피해·퍼짐·사거리·감쇠(near m부터 range에서 fall까지)·벽 / 저격: 초당 발·조준 폭·피해·보스 */
 export const GUNK = {
   shotgun: { dmg: 1.5, spread: 1.4, range: 24, near: 8, fall: 0.6, wall: 2 },   // 21.12: 1.4·22m·40%·×1.6이면 20.9구간(소총 29.4) — 1.6·24m·60%·×2로 28.4, 총 Lv 카드가 들어간 뒤 32.3(소총 27.5)이라 1.5·Lv4 감쇠 +2m로 28.3
@@ -610,11 +611,11 @@ export function gunText(id, lv) {
   const e = v.a > 1 ? `레벨 보너스 +${apc(v.a - 1)}% · ` : '';   // 36절: 진화 이름을 빼고 효과만
   const tail = v.evo2 ? ` · ${GUN_EVO2_TEXT[id]}` : '';
   if (id === 'shotgun') return e + `펠릿 ×${v.pel} · 피해 ×${v.dmg}(${v.near}m 넘으면 줄어요) · 벽·장갑문 ×${v.wall}${v.slug ? ' · 맨 앞 적을 밀어내요' : ''}` + tail;
-  if (id === 'marksman') return e + `초당 ${v.hz}발 · 조준 폭 ±${v.aim}m · 보스 ×${v.boss}${v.head ? ` · 체력 ${apc(v.head)}%${v.head >= 0.5 ? '(최대)' : ''} 아래 좀비는 바로 쓰러져요` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
+  if (id === 'marksman') return e + `초당 ${v.hz}발 · 조준 폭 ±${v.aim}m · 남는 피해는 뒤로 뚫고 가요(탄 효과는 처음 맞힌 적에게만) · 보스 ×${v.boss}${v.head ? ` · 체력 ${apc(v.head)}%${v.head >= 0.5 ? '(최대)' : ''} 아래 좀비는 바로 쓰러져요` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
   return e + `초당 ${v.hz}번${v.hz >= 18 ? '(최대)' : ''} · 퍼짐 ±${v.spread}m · 사거리 ${v.range}m${v.burst ? ` · ${v.burst.every}번째 사격마다 피해 ×${v.burst.k}` : ''}${v.over ? ` · 피해 ×${v.dmg}` : ''}` + tail;
 }
 /* 총 바꾸기(21.8): from구간부터 무기 상자의 p 몫에 다른 총, 대왕 뒤 카드에 king 확률로 '총 바꾸기' 한 장. 처음 잡는 총은 지금 총 Lv의 keep 몫(내림, 최소 1) */
-export const GUN_SWAP = { from: 7, p: 0.25, king: 0.2, keep: 0.5 };
+export const GUN_SWAP = { from: 7, p: 0.25, king: 0.2, keep: 0.5, stack: 1 };   // stack(39.8): 다른 총 상자를 열 때마다 그 총 Lv +stack(안 바꿔도 쌓인다)
 /* 카드 등급 = 강화(개편 판 — ENDGAME.md 18.8): 일반은 레벨 +1, 희귀는 레벨 +1 + 그 대상(탄 효과·특수병)의 부가 능력, 전설은 레벨 +1 + 규칙을 바꾸는 능력(판 끝까지).
    같은 강화를 또 뽑으면 그 강화가 한 단계 세진다(수치 ×enhStr — 한 번 더 뽑을 때마다 +50%, 규칙형은 효과가 한 번 더 겹친다). 수치는 모두 [초안].
    B.enh[id] = { r: 희귀를 뽑은 수, l: 전설을 뽑은 수 } */

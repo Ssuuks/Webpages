@@ -15,6 +15,7 @@ import { petBench } from '../tools/petbench.mjs';
 import { ammoBench } from '../tools/ammobench.mjs';
 import { createRequire } from 'node:module';
 import * as PL from '../assets/playlog.js';
+import { diffParts } from '../assets/insight.js';
 const require_ = createRequire(import.meta.url);
 
 const POOL = makePool(Math.max(1, Math.min(4, os.availableParallelism ? os.availableParallelism() : os.cpus().length)));
@@ -4690,7 +4691,7 @@ test('21.8 — 총 바꾸기: GUN_SWAP.from구간부터 무기 상자 일부에 
 });
 /* ---------- 22절: 칸막이 구간 — 행운 길 · 칸막이 미로 ---------- */
 const laneSeg = (seg, seed = 77) => C.buildSegment(seed, seg, 30000, 4, 0, { obs: true, flame: true, mul: C.bldThreat(seg), fe: 10, bk: true, terrain: true });
-test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구간부터, 행운 길은 luckFrom구간부터 — 행운 길은 세 칸에 소·중·대 상자 하나씩, 미로는 토막마다 벽 없는 칸이 열린 곳으로 이어진다', () => {
+test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구간부터, 행운 길은 luckFrom구간부터 — 행운 길은 세 칸에 꽝·중·대 상자 하나씩(셋 중 하나), 미로는 토막마다 벽 없는 칸이 열린 곳으로 이어진다', () => {
   const L = C.LANES;
   let maze = 0, luck = 0;
   for (let seed = 1; seed <= 12; seed++) for (let seg = 2; seg <= 30; seg++) {
@@ -4700,7 +4701,8 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
       if (l.k === 'luck') {
         luck++; assert.ok(seg >= L.luckFrom, `행운 길 ${seg}구간`);
         const cr = lv.props.filter((p) => p.luck && p.z > l.z0 && p.z < l.z1);
-        assert.deepEqual(cr.map((p) => p.reward.size).sort(), [1, 2, 3]);
+        assert.deepEqual(cr.map((p) => p.reward.size).sort(), [0, 2, 3], '꽝·중·대(39.6 — 예전 소·중·대)');
+        assert.equal(new Set(cr.map((p) => p.lg)).size, 1, '셋이 한 묶음(셋 중 하나 — 39.4)');
         assert.deepEqual(cr.map((p) => C.laneCell((p.x0 + p.x1) / 2)).sort(), [0, 1, 2], '세 칸에 하나씩');
       }
       if (l.k === 'maze') {
@@ -5062,4 +5064,211 @@ test('37절 — 개편 판 저격수·로켓병은 쏠 좀비가 없으면 분�
   const old = run({ ...UP10, unl: 3, ammoOpen: R.AMMO_IDS, relicsOpen: R.RELIC_IDS.filter((id) => !R.RELICS[id].b2), flame: true }, ['sniper', 'rocket']);
   assert.deepEqual([old.snipeAt, old.rocketAt], [0, 0], '앞 단계 판은 상자·철창을 안 친다');
   assert.ok(R.BUILD.spCrate > 0 && R.BUILD.spCrate < 1);
+});
+
+/* ---------- 39절: 플레이 피드백(v2.37.0 판 기록) ---------- */
+test('39.1 — 저격총 넘침 관통: 둘째 좀비부터는 피해만 — 작렬 둘레·유폭(쓰러질 때)은 처음 맞힌 좀비에게만', () => {
+  const mk = () => { const u = gunState('marksman', 20); u.endless.fx = { burst: 7 }; u.squad.fireAcc = -99; u.squad.sp = []; return u; };
+  // a(첫 좀비) → b(뒤, 넘침으로 쓰러짐), c는 b 옆 1m(작렬 둘레·유폭이 닿는 거리), d는 a 옆 1m
+  const run = (thru) => {
+    const u = mk();
+    const a = gfoe(u, 99801, 6, 100), b = gfoe(u, 99802, 12, 100), c = gfoe(u, 99803, 12, 1e6, { x: u.squad.x + 1 }), d = gfoe(u, 99804, 6, 1e6, { x: u.squad.x + 1 });
+    u.foes = [a, b, c, d];
+    u.bullets = [{ x: u.squad.x, z: a.z - 0.3, d: 5, dmg: thru ? 1000 : 1000, hm: 1, g: 'm', ...(thru ? { thru: 1 } : {}), r: 50 }];
+    for (let i = 0; i < 20; i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); }
+    return { b: b.alive, c: Math.round(1e6 - c.hp), d: Math.round(1e6 - d.hp) };
+  };
+  const t = run(true);
+  assert.equal(t.b, false, '넘침으로 뒤 좀비를 쓰러뜨린다');
+  assert.ok(t.d > 0, `첫 좀비 둘레는 작렬·유폭 ${t.d}`);
+  assert.equal(t.c, 0, `넘침으로 맞은 둘째 좀비 둘레는 아무것도 안 맞는다 ${t.c}`);
+  // 같은 총알이 b를 처음 맞히면(앞에 a가 없으면) b 둘레도 맞는다 — 규칙은 '처음 맞힌 좀비'
+  const u = mk(); const b = gfoe(u, 99812, 12, 100), c = gfoe(u, 99813, 12, 1e6, { x: u.squad.x + 1 }); u.foes = [b, c];
+  u.bullets = [{ x: u.squad.x, z: b.z - 0.3, d: 5, dmg: 1000, hm: 1, g: 'm', thru: 1, r: 50 }];
+  for (let i = 0; i < 20; i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); }
+  assert.ok(1e6 - c.hp > 0, '처음 맞힌 좀비면 둘레가 맞는다');
+  assert.ok(R.gunText('marksman', 1).includes('처음 맞힌 적에게만'), R.gunText('marksman', 1));
+});
+
+test('39.2 — 카드 글: 바뀐 항목은 숫자를 전→후로 밝은 줄에, 같은 항목은 기본 글씨에 한 번만, 새 항목은 \'새로:\'', () => {
+  const d = diffParts('레벨 보너스 +90% · 둘레 2.4m에 117% · 벽 ×2', '레벨 보너스 +105% · 둘레 2.5m에 123%(최대) · 벽 ×2 · 처치된 좀비도 터져요(50%)');
+  assert.deepEqual(d.hi, ['레벨 보너스 +90→105%', '둘레 2.4→2.5m에 117→123%(최대)', '새로: 처치된 좀비도 터져요(50%)']);
+  assert.deepEqual(d.lo, ['벽 ×2']);
+  // 실제 글로: 같은 수치 글이 hi와 lo에 함께 나오지 않는다
+  for (const a of R.AMMO_IDS2) for (const lv of [1, 4, 9, 12]) {
+    const x = diffParts(R.fx2Text(a, lv), R.fx2Text(a, lv + 1));
+    assert.ok(x.hi.length >= 1, `${a} Lv${lv}→${lv + 1}: 바뀌는 것이 있다`);
+    for (const h of x.hi) assert.ok(!x.lo.includes(h), `${a}: ${h}`);
+  }
+  assert.deepEqual(diffParts('', '초당 3발 · 보스 ×1.6').hi, ['초당 3발', '보스 ×1.6'], '새로 얻는 것은 전부 밝게(새로: 없이)');
+});
+
+test('39.4 — 행운 길: 셋 중 하나(하나가 열리면 나머지 둘은 잠긴다), 꽝·중·대, 길이 48m · 칸막이 구간 안에서는 독안개가 없다', () => {
+  assert.equal(C.LANES.luckLen, 48);
+  const s = C.newEndless({ seed: 31, ...BLD });
+  s.squad.n = 1000; s.foes = []; s.rows = []; s.saws = []; delete s.divs; s.props = []; s.squad.x = 0; s.hero = null; s.squad.sp = [];
+  const lg = 777, z = s.squad.z + 9;
+  const box = (x, size) => ({ id: s.nextId++, kind: 'crate', x0: x - 1, x1: x + 1, z, hp: 1, max: 1, alive: true, hitT: -9, reward: { type: 'lucky', size }, luck: true, lg });
+  const mid = box(0, 2), l = box(-3.33, 0), r = box(3.33, 3);
+  s.props.push(mid, l, r);
+  let seal = 0;
+  for (let i = 0; i < 90; i++) { C.step(s, { dir: 0, tx: 0 }); for (const e of s.ev) if (e.t === 'luckSeal') seal++; }
+  assert.equal(mid.alive, false, '가운데 상자가 열렸다');
+  assert.deepEqual([l.alive, r.alive, seal], [false, false, 2], '나머지 둘은 잠겼다');
+  assert.equal(s.stats.luck[2], 1, '기록: 연 행운 상자 크기');
+  // 꽝: 병력 −trap
+  const t = C.newEndless({ seed: 31, ...BLD }); t.squad.n = 1000; t.foes = []; t.rows = []; t.saws = []; delete t.divs; t.props = []; t.squad.x = 0; t.hero = null; t.squad.sp = [];
+  t.props.push({ id: t.nextId++, kind: 'crate', x0: -1, x1: 1, z: t.squad.z + 9, hp: 1, max: 1, alive: true, hitT: -9, reward: { type: 'lucky', size: 0 }, luck: true, lg: 5 });
+  for (let i = 0; i < 90; i++) C.step(t, { dir: 0, tx: 0 });
+  assert.ok(t.stats.lostBy['crate:trap'] >= 1000 * C.LANES.trap * 0.9, `꽝 ${JSON.stringify(t.stats.lostBy)}`);
+  // 행운 길 상자 셋은 꽝·중·대
+  let seen = null;
+  for (let k = 13; k < 60 && !seen; k++) { const seg = C.buildSegment(7, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 }); const lb = seg.props.filter((p) => p.lg); if (lb.length === 3) seen = lb.map((p) => p.reward.size).sort(); }
+  assert.deepEqual(seen, [0, 2, 3]);
+  // 독안개: 옆 칸(가운데에서 3.3m)에 서도 칸막이 구간 안이면 안 준다, 밖이면 준다
+  const fog = (inLane) => {
+    const u = C.newEndless({ seed: 31, ...BLD }); u.squad.n = 10000; u.foes = []; u.rows = []; u.saws = []; delete u.divs; u.props = []; u.hero = null; u.squad.sp = [];
+    u.endless.mut = ['fog']; u.squad.x = 3.3;
+    if (inLane) u.lanes = [{ id: 1, k: 'luck', z0: u.squad.z - 5, z1: u.squad.z + 200, open: [] }]; else delete u.lanes;
+    for (let i = 0; i < 60; i++) C.step(u, { dir: 0, tx: 3.3 });
+    return u.stats.lostBy.fog | 0;
+  };
+  assert.equal(fog(true), 0, '칸막이 구간 안');
+  assert.ok(fog(false) > 0, '칸막이 구간 밖');
+});
+
+test('39.5 — 게이트 몰이(게이트 줄이 연달아 — ×2 줄 하나 · ÷2 줄 하나)와 미로 게이트(토막마다 칸마다 한 칸), 굴림은 따로라 다른 배치가 그대로', () => {
+  let rush = null, maze = null;
+  for (let k = C.RUSH.from; k < 80 && !(rush && maze); k++) {
+    const seg = C.buildSegment(11, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 });
+    if (!rush && seg.plan.includes('rush')) rush = seg;
+    if (!maze && seg.plan.includes('maze')) maze = seg;
+  }
+  assert.ok(rush && maze, '몰이·미로가 나오는 구간이 있다');
+  const rr = rush.rows.filter((r) => r.kind === 'rush');
+  assert.ok(rr.length >= C.RUSH.n[0] && rr.length <= C.RUSH.n[1], `몰이 줄 ${rr.length}`);
+  assert.equal(rr.filter((r) => r.cells.some((c) => c.op === 'mul')).length, 1, '×2 줄 하나');
+  assert.equal(rr.filter((r) => r.cells.some((c) => c.op === 'div')).length, 1, '÷2 줄 하나');
+  for (const r of rr) assert.ok(Math.abs(r.cells[0].x0 + C.ROAD) < 1e-9 && Math.abs(r.cells[r.cells.length - 1].x1 - C.ROAD) < 1e-9, '줄이 길 전체를 덮는다');
+  const mr = maze.rows.filter((r) => r.kind === 'maze');
+  assert.equal(mr.length, C.LANES.stretch, '미로 토막마다 한 줄');
+  for (const r of mr) assert.equal(r.cells.length, 3);
+  for (const r of mr.slice(0, -1)) assert.ok(!r.cells.some((c) => c.op === 'mul'), '×2는 마지막 토막에만');
+  assert.ok(mr[mr.length - 1].cells.every((c) => c.op !== 'add' || c.v <= mr[0].cells.reduce((m, d) => Math.max(m, d.op === 'add' ? d.v : 0), 0) * 2), '마지막 토막의 뚫은 칸은 + 대신 ×2');
+  // 미로의 늘 이어지는 빈 칸은 그대로(벽이 없다) — 벽 대신 ÷2 칸에도 벽이 없다
+  assert.ok(maze.lanes && maze.lanes.length >= 1);
+});
+
+test('39.6 — 구간 성격: 풍요·보통·기근(시드·구간으로 정해진다, 1구간은 보통), 풍요는 좋은 칸이 크고 기근은 나쁜 칸이 크다', () => {
+  assert.equal(C.segMood(5, 1), '');
+  const n = { rich: 0, lean: 0, '': 0 };
+  for (let k = 2; k < 2002; k++) n[C.segMood(5, k)]++;
+  assert.ok(Math.abs(n.rich / 2000 - C.MOOD.rich.p) < 0.04 && Math.abs(n.lean / 2000 - C.MOOD.lean.p) < 0.04, JSON.stringify(n));
+  let rich = 0, lean = 0;
+  for (let k = 2; k < 40; k++) {
+    const seg = C.buildSegment(5, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 });
+    assert.equal(seg.mood || '', C.segMood(5, k));
+    if (seg.mood === 'rich') rich++; if (seg.mood === 'lean') lean++;
+  }
+  assert.ok(rich > 0 && lean > 0);
+  // 캠페인·앞 단계 판(지형 없음)에는 없다
+  assert.equal(C.buildSegment(5, 7, 5000, 0, 0, null).mood, undefined);
+});
+
+test('39.7 · 39.8 — 별로 안 연 탄도 판 안 카드 후보(무게 fxLocked) · 다른 총 상자를 열 때마다 그 총 Lv이 쌓인다', () => {
+  const s = C.newEndless({ seed: 31, ...BLD, ammoOpen: R.AMMO_IDS2, ammoStar: ['pierce'] });
+  assert.deepEqual(s.endless.ammoStar, ['pierce']);
+  const r = C.restore(C.snapshot(s)); assert.deepEqual(r.endless.ammoStar, ['pierce'], '이어하기');
+  assert.ok(R.BUILD.fxLocked > 0 && R.BUILD.fxLocked < 1);
+  // 총 상자
+  const u = C.newEndless({ seed: 31, ...BLD, gun: 'rifle' });
+  u.squad.n = 1000; u.foes = []; u.rows = []; u.saws = []; delete u.divs; u.props = []; u.squad.x = 0; u.hero = null; u.squad.sp = [];
+  u.endless.bld.gl = { rifle: 6 };
+  const open = () => { u.props.push({ id: u.nextId++, kind: 'crate', x0: -1, x1: 1, z: u.squad.z + 9, hp: 1, max: 1, alive: true, hitT: -9, reward: { type: 'gunx', g: 'shotgun' } }); for (let i = 0; i < 90; i++) C.step(u, { dir: 0, tx: 0 }); };
+  open();
+  assert.equal(u.endless.bld.gl.shotgun, Math.floor(6 * R.GUN_SWAP.keep) + R.GUN_SWAP.stack, '처음: 지금 Lv의 keep 몫 + stack');
+  open();
+  assert.equal(u.endless.bld.gl.shotgun, Math.floor(6 * R.GUN_SWAP.keep) + 2 * R.GUN_SWAP.stack, '또 주우면 또 쌓인다');
+  assert.equal(u.endless.bld.gt, 'rifle', '바꾸지는 않는다(보스 뒤에 고른다)');
+  assert.equal(u.stats.gunx, 2);
+});
+
+test('39.10 — 플레이 기록 v2: 떠난 특수병도 sp에, 탄 효과 출처를 나눠 센다, 변이·고른 카드·구간별 흐름·행운 상자', () => {
+  const s = C.newEndless({ seed: 31, ...BLD });
+  const pol = makeBot('strong', 1031, { skill: true });
+  for (let g = 0; g < 400000 && s.endless.bosses < 3 && s.phase !== 'lost'; g++) { const of = C.offerOf(s); if (of) { C.pickCard(s, 0); continue; } C.step(s, pol(s)); }
+  // 특수병 하나를 떠나보낸다(호위 부족과 같은 길 — B.down)
+  s.squad.sp.push({ id: s.nextId++, k: 'sniper', cd: 0, lv: 4 });
+  C.step(s, { dir: 0 });
+  s.squad.sp = s.squad.sp.filter((m) => m.k !== 'sniper');
+  const e = PL.entryOf(s, { ver: '9.9.9', sim: C.SIM, at: 1 });
+  assert.equal(e.fmt, 2);
+  assert.ok(e.sp.sniper >= 4 && !e.spEnd.sniper, `떠난 저격수 ${JSON.stringify([e.sp, e.spEnd])}`);
+  assert.ok(e.segs.length >= 3, `구간 기록 ${JSON.stringify(e.segs)}`);
+  for (const r of e.segs.slice(0, 3)) { assert.equal(r.length, 5); assert.ok(r[1] > 0 && r[2] > 0, JSON.stringify(r)); }
+  assert.deepEqual(e.segs.slice(0, 3).map((r) => r[0]), [1, 2, 3]);
+  assert.ok(Array.isArray(e.picks) && e.picks.length >= 2 && Array.isArray(e.mut), JSON.stringify(e.picks));
+  assert.ok(e.lanes && e.lanes.luck.length === 4);
+  const sum = Object.values(e.dmg).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum - 100) < 1, `피해 몫 합 ${sum}`);
+  for (const k of Object.keys(e.dmg)) assert.ok(PL.SRC_NAME[k], `출처 이름 ${k}`);
+  // 출처 나누기: 작렬 둘레는 splash, 유폭은 burst, 전격 사슬은 shock
+  const u = gunState('rifle', 20); u.endless.fx = { burst: 7, shock: 5 }; u.squad.fireAcc = -99; u.stats.dmg = {};
+  const a = gfoe(u, 99701, 6, 100); u.foes = [a, gfoe(u, 99702, 6.5, 50, { x: u.squad.x + 0.8 }), gfoe(u, 99703, 7, 1e6, { x: u.squad.x - 1 })];
+  u.bullets = [{ x: u.squad.x, z: a.z - 0.3, d: 5, dmg: 200, hm: 1 }];
+  for (let i = 0; i < 10; i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); }
+  assert.ok(u.stats.dmg.splash > 0 && u.stats.dmg.burst > 0 && u.stats.dmg.shock > 0 && !u.stats.dmg.chain, JSON.stringify(u.stats.dmg));
+  // 요약: 총 + 가장 높은 탄 효과 · 변이별
+  const S = PL.summarize([{ ...e, gun: 'marksman:3', fx: { burst: 9, shock: 2 }, mut: [[19, 'fog']] }, { ...e, bosses: 4, gun: 'rifle:2', fx: { shock: 3 }, mut: [] }]);
+  assert.ok(S.byBuild.some((r) => r.k === 'marksman+burst') && S.byBuild.some((r) => r.k === 'rifle+shock'));
+  assert.deepEqual(S.byMut.map((r) => r.k), ['fog']);
+});
+
+test('41절 — 저격총 자체의 능력(Lv10 터지는 한 발 · 전설 연발)은 넘침 관통으로 쓰러뜨린 적에게도 — 탄 효과만 첫 상대에게', () => {
+  const run = (gl, enh) => {
+    const u = gunState('marksman', 20, (w) => { w.endless.bld.gl = { marksman: gl }; if (enh) w.endless.bld.enh = enh; });
+    u.endless.fx = {}; u.squad.sp = []; u.squad.fireAcc = -99;
+    const a = gfoe(u, 99601, 6, 100), b = gfoe(u, 99602, 12, 100), c = gfoe(u, 99603, 12, 1e6, { x: u.squad.x + 1 });
+    u.foes = [a, b, c];
+    u.bullets = [{ x: u.squad.x, z: a.z - 0.3, d: 5, dmg: 1000, hm: 1, g: 'm', thru: 1, r: 50 }];
+    const f0 = u.squad.fireAcc;
+    C.step(u, { dir: 0 });
+    for (let i = 0; i < 10; i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); }
+    return { b: b.alive, c: Math.round(1e6 - c.hp), acc: f0 };
+  };
+  assert.equal(run(5).c, 0, 'Lv5(터짐 없음): 뚫고 간 적 옆은 안 맞는다');
+  const t = run(10);
+  assert.equal(t.b, false);
+  assert.ok(t.c >= Math.round(100 * R.gunVal('marksman', 10).pop * 0.99), `Lv10: 넘침으로 쓰러진 적도 터진다 ${t.c}`);
+  // 연발: 한 발로 둘을 쓰러뜨리면 두 번 찬다(상한 2 × v)
+  const leg = (enh) => { const u = gunState('marksman', 20, (w) => { w.endless.bld.enh = enh; }); u.endless.fx = {}; u.squad.sp = []; u.squad.fireAcc = -99;
+    const a = gfoe(u, 99611, 6, 100), b = gfoe(u, 99612, 12, 100); u.foes = [a, b];
+    u.bullets = [{ x: u.squad.x, z: a.z - 0.3, d: 5, dmg: 1000, hm: 1, g: 'm', thru: 1, r: 50 }]; const f0 = u.squad.fireAcc; for (let i = 0; i < 10; i++) C.step(u, { dir: 0 }); assert.equal(b.alive, false); return u.squad.fireAcc - f0; };
+  assert.ok(leg({ marksman: { r: 0, l: 1 } }) - leg(undefined) > 1.9 * R.ENH.marksman.legend.v, '연발이 넘침 처치에도 찬다');
+});
+
+test('41절 — 풍요 구간 보스 뒤 첫 카드: 강화가 있는 장 하나는 희귀 이상(굴림은 그대로 — 다른 장의 내용은 같다)', () => {
+  const at = () => { const s = C.newEndless({ seed: 31, ...BLD }); const pol = makeBot('strong', 1031, { skill: true }); for (let g = 0; g < 200000 && !C.offerOf(s); g++) C.step(s, pol(s)); return s; };
+  const a = at(), b = at();
+  a.endless.bld.rr = b.endless.bld.rr = 3;
+  delete a.endless.mood; b.endless.mood = 'rich';
+  C.rerollCards(a); C.rerollCards(b);
+  const ka = a.endless.offer.map((c) => c.k + (c.u || c.a || c.g || '')), kb = b.endless.offer.map((c) => c.k + (c.u || c.a || c.g || ''));
+  assert.deepEqual(kb, ka, '같은 카드');
+  const up = b.endless.offer.filter((c) => c.rich);
+  if (a.endless.offer.some((c) => ['unit', 'fx', 'gunlv'].includes(c.k) && (c.n | 0) < 2)) assert.equal(up.length, 1);
+  for (const c of up) assert.ok(c.n >= 2);
+});
+
+test('문서 — RULES.md(지금 규칙 한 장)의 버전이 패치 노트와 같고, 바뀐 규칙의 값이 코드와 맞다', async () => {
+  const fs = await import('node:fs');
+  const { PATCH } = await import('../assets/patch.js');
+  const doc = fs.readFileSync(new URL('../RULES.md', import.meta.url), 'utf8');
+  assert.ok(doc.split('\n')[0].includes(`v${PATCH.ver}`), `RULES.md 첫 줄 버전 = v${PATCH.ver}(규칙을 바꾸면 RULES.md도 고친다)`);
+  assert.ok(doc.includes(`${C.LANES.luckLen}m`) && doc.includes(`${C.LANES.mazeLen}m`), '행운 길·미로 길이');
+  assert.ok(doc.includes(`${C.RUSH.from}구간부터 ${Math.round(C.RUSH.p * 100)}%`), '게이트 몰이');
+  assert.ok(doc.includes(`풍요 ${Math.round(C.MOOD.rich.p * 100)}%`) && doc.includes(`기근 ${Math.round(C.MOOD.lean.p * 100)}%`), '구간 성격');
+  for (const g of R.GUN_IDS) assert.ok(doc.includes(`| ${R.GUNS[g].name} | ${R.GUNS[g].stars} |`), `총 ${g}`);
+  for (const id of R.RELIC_IDS) assert.ok(doc.includes(R.RELICS[id].name), `유물 ${id}`);
+  for (const id of R.MUT_IDS) assert.ok(doc.includes(R.MUTATIONS[id].name), `변이 ${id}`);
 });

@@ -4,7 +4,7 @@ import {
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
-  nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt,
+  nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt, LANES, segMood,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -19,7 +19,7 @@ import { entryOf, addLog, loadLog, clearLog, summarize, SRC_NAME, LOSS_NAME } fr
 import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, SHARD_COIN, petSpareShards, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
   FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO, GUN_EVO_TEXT, SUPPLY, SUPPLY_IDS } from './roster.js';
 import {
-  tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss,
+  tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss, diffParts
 } from './insight.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1447,6 +1447,69 @@ function logBars(el, rows, name, unit = '%') {
     row.append(lab, bar, num); el.appendChild(row);
   }
 }
+/* 39.3 이번 판의 딜량: 출처별 실제로 깎은 체력의 몫(위 n + 기타)·처치 수, 잃은 병력 까닭 위 셋 — 일시정지·판 끝 */
+function runDmgRows(st, n = 6) {
+  const d = (st && st.stats && st.stats.dmg) || {}, kb = (st && st.stats && st.stats.kb) || {};
+  const tot = Object.values(d).reduce((a, b) => a + b, 0);
+  if (!(tot > 0)) return [];
+  const rows = Object.entries(d).filter(([, v]) => v > 0).map(([k, v]) => ({ k, pct: Math.round((1000 * v) / tot) / 10, kills: kb[k] | 0 })).sort((a, b) => b.pct - a.pct);
+  if (rows.length <= n) return rows;
+  const rest = rows.slice(n - 1);
+  return [...rows.slice(0, n - 1), { k: '?', pct: Math.round(10 * rest.reduce((a, r) => a + r.pct, 0)) / 10, kills: rest.reduce((a, r) => a + r.kills, 0), more: rest.length }];
+}
+function runLossRows(st, n = 3) {
+  const L = (st && st.stats && st.stats.lostBy) || {}, tot = Object.values(L).reduce((a, b) => a + b, 0);
+  if (!(tot > 0)) return [];
+  return Object.entries(L).filter(([, v]) => v > 0).map(([k, v]) => ({ k, pct: Math.round((1000 * v) / tot) / 10 })).sort((a, b) => b.pct - a.pct).slice(0, n);
+}
+function runDmgBox(st, opt = {}) {
+  const rows = runDmgRows(st, opt.n || 6);
+  if (!rows.length) return null;
+  const box = document.createElement('div');
+  box.className = 'run-dmg';
+  const add = (title, list, name, extra) => {
+    const h = document.createElement('h4'); h.textContent = title; box.appendChild(h);
+    const el = document.createElement('div'); el.className = 'log-bars'; box.appendChild(el);
+    const max = Math.max(...list.map((r) => r.pct));
+    for (const r of list) {
+      const row = document.createElement('div'); row.className = 'log-row';
+      const lab = document.createElement('span'); lab.textContent = name(r);
+      const bar = document.createElement('i'); bar.style.width = `${Math.max(2, (100 * r.pct) / (max || 1))}%`;
+      const num = document.createElement('b'); num.textContent = `${r.pct}%${extra(r)}`;
+      row.append(lab, bar, num); el.appendChild(row);
+    }
+  };
+  add('이 판의 피해', rows, (r) => (r.k === '?' && r.more ? `기타 ${r.more}` : srcName(r.k)), (r) => (r.kills ? ` · ${fmtN(r.kills)}마리` : ''));
+  const ls = opt.loss === false ? [] : runLossRows(st);
+  if (ls.length) add('잃은 병력', ls, (r) => lossName(r.k), () => '');
+  return box;
+}
+/* 39.3 판 끝(무한모드): 구간마다 보스 앞 병력 곡선(작은 선 — 병력은 로그 눈금) */
+function segSpark(st) {
+  const segs = (st && st.stats && st.stats.segs) || [];
+  const pts = segs.filter((r) => r[1] > 0).map((r) => [r[0], Math.log10(r[1])]);
+  if (pts.length < 2) return null;
+  const W = 300, H = 56, x0 = pts[0][0], x1 = pts[pts.length - 1][0], ys = pts.map((p) => p[1]), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const X = (x) => 4 + ((x - x0) / Math.max(1, x1 - x0)) * (W - 8), Y = (y) => H - 6 - ((y - y0) / Math.max(1e-6, y1 - y0)) * (H - 12);
+  const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'seg-spark'); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `구간별 보스 앞 병력: ${segs.map((r) => `${r[0]}구간 ${fmtN(r[1])}`).join(', ')}`);
+  const pl = document.createElementNS(NS, 'polyline');
+  pl.setAttribute('points', pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' '));
+  svg.appendChild(pl);
+  const wrap = document.createElement('div'); wrap.className = 'run-dmg';
+  const h = document.createElement('h4'); h.textContent = `구간별 보스 앞 병력 (${x0}~${x1}구간)`;
+  wrap.append(h, svg);
+  return wrap;
+}
+function fillResDmg(endless) {
+  const el = $('resDmg');
+  el.textContent = '';
+  const dm = runDmgBox(s, endless ? {} : { n: 3, loss: false });
+  if (dm) el.appendChild(dm);
+  const sp = endless ? segSpark(s) : null;
+  if (sp) el.appendChild(sp);
+}
 const lossName = (k) => { const arena = k.endsWith('@boss'); const b = arena ? k.slice(0, -5) : k; return (LOSS_NAME[b] || LOSS_NAME[b.split(':')[0]] || b) + (arena && !b.startsWith('boss') ? ' (보스전)' : ''); };
 const srcName = (k) => SRC_NAME[k] || (AMMO[k] ? AMMO[k].name : UNITS[k] ? UNITS[k].name : k);
 function renderLog() {
@@ -1457,6 +1520,8 @@ function renderLog() {
   logBars($('logDmg'), S.dmg, srcName);
   logBars($('logGun'), S.byGun, (k) => (GUNS[k] ? GUNS[k].name : k), '');
   logBars($('logMain'), S.byMain, srcName, '');
+  logBars($('logBuild'), S.byBuild, (k) => { const [g, f] = k.split('+'); return `${GUNS[g] ? GUNS[g].name : g} + ${fxName(f)}`; }, '');   // 39.10
+  logBars($('logMut'), S.byMut, (k) => (MUTATIONS[k] ? MUTATIONS[k].name : k), '');
   logBars($('logDeath'), S.death.map((r) => ({ k: r.k, n: r.n })), lossName, '판');
   logBars($('logBand'), S.deathBand.map((r) => ({ k: r.k, n: r.n })), (k) => `${k}구간`, '판');
   logBars($('logLost'), S.lost, lossName);
@@ -1683,7 +1748,10 @@ function nextUnlockText(nx) {
 /* 구간 이름: '3구간 · 무너진 도시' */
 function segName(k) { const i = segInfo(k); return `${i.k}구간 · ${BIOMES[i.biome].name}`; }
 /* 구간이 시작될 때 알림: '정예 보스 · 3구간 · 무너진 도시' */
-function segToast(k) { const t = segInfo(k).tag; return `${t === 'super' ? '대왕이 기다려요 · ' : t === 'hard' ? '정예 보스 · ' : ''}${segName(k)}`; }
+/* 39.6 구간 성격: 개편 판만(시드·구간으로 정해져 미리 안다) */
+const MOOD_TEXT = { rich: '풍요 — 좋은 칸이 크고 보스 뒤 희귀 카드', lean: '기근 — 나쁜 칸이 커요' };
+function moodOf(k) { return s && s.endless && bldOf(s) ? segMood(s.endless.seed, k) : ''; }
+function segToast(k) { const t = segInfo(k).tag, m = moodOf(k); return `${t === 'super' ? '대왕이 기다려요 · ' : t === 'hard' ? '정예 보스 · ' : ''}${segName(k)}${m ? ` · ${MOOD_TEXT[m]}` : ''}`; }
 function levelOfSeg() { return { L: s.L, attempt: 0, endless: true, params: s.params, tag: s.params.tag }; }
 function setHudLevel() {
   const e = isEndless() && s && s.endless;
@@ -1778,7 +1846,8 @@ function prepareEndless() {
   // 단계 해금(store.endlessUnlocks 또는 시험 주소): 선형 단계(1 카드, 2 탄 효과·시너지 …), 화염병, 열린 유물, 별로 열린 탄종(탄종 바꾸기·탄 효과 카드의 후보).
   // 그 단계가 아닌 값은 newEndless가 버린다(1단계 판은 예전 그대로). 이어하기는 모두 스냅숏에서 온다
   const U = endlessUnlocksNow();
-  const ammoList = AMMO_IDS2.filter((id) => ammoOpen(id, totalStars(data)));   // 개편 판: 탄 일곱(24절)
+  const ammoList = AMMO_IDS2.filter((id) => ammoOpen(id, totalStars(data)));   // 개편 판: 탄 일곱(24절) — ★로 연 것(출격 탄)
+  // 39.7: 판 안의 탄 효과 카드는 일곱 다(★ 문턱은 출격 때 고르는 탄에만) — 안 연 탄은 무게 BUILD.fxLocked
   run.gun = gunForRun();
   // 출격 보급품(27절): 살 수 있는 것만(코인이 모자라면 안 든다) — 코인은 출격하는 순간(begin) 낸다
   const sup = supplyNow(U);
@@ -1786,7 +1855,7 @@ function prepareEndless() {
   const start2 = sup.men ? Math.round(start * SUPPLY.men.v) : start;
   run.start = start2;
   const hold = [...(sup.relic ? [sup.relic] : []), ...(testUnl.hold || [])];
-  s = newEndless({ seed, start: start2, fire: run.fire, hero, pets: petsForRun(), build: 2, ammo: run.ammo, gun: run.gun, unl: U.unl, ammoOpen: ammoList, flame: U.flame, relicsOpen: U.relics, ...(hold.length ? { relics: hold } : {}), ...(sup.legend || sup.revive ? { supply: { legend: sup.legend, revive: sup.revive } } : {}) });
+  s = newEndless({ seed, start: start2, fire: run.fire, hero, pets: petsForRun(), build: 2, ammo: run.ammo, gun: run.gun, unl: U.unl, ammoOpen: AMMO_IDS2.slice(), ammoStar: ammoList, flame: U.flame, relicsOpen: U.relics, ...(hold.length ? { relics: hold } : {}), ...(sup.legend || sup.revive ? { supply: { legend: sup.legend, revive: sup.revive } } : {}) });
   lv = levelOfSeg();
   run.L = s.L;
   par = 0;
@@ -1868,12 +1937,14 @@ function finishEndless() {
     if (B.gt && GUNS[B.gt]) parts.push([B.gt, GUNS[B.gt].name]);
     for (const a of AMMO_IDS2) if (fx[a]) parts.push([a, `${fxName(a)} Lv${fx[a]}`]);
     for (const m of s.squad.sp) if (UNITS[m.k]) parts.push([m.k, `${UNITS[m.k].name} Lv${m.lv || 1}`]);
+    for (const [k, lv] of Object.entries(s.stats.spPk || {})) if (UNITS[k] && !s.squad.sp.some((m) => m.k === k)) parts.push([k, `${UNITS[k].name} Lv${lv}(떠남)`]);   // 39.10: 끝에 떠난 특수병도
     if (parts.length) lines.push(['빌드', parts.map(([id, nm]) => `<span class="gname g${gradeOf(id)}">${nm}</span>`).join(' · ')]);
   }
   if (e.relics && e.relics.length) lines.push(['유물', e.relics.map((id) => nb((RELICS[id] ? RELICS[id].name : id) + ((e.spent || []).includes(id) ? '(썼어요)' : ''))).join(' · ')]);
   // 이 판의 기록으로 새 단계가 열렸으면(캠페인의 '새 탄종 열림'과 같은 자리) — 다음 판 출발 카드가 한 줄로 다시 알린다
   if (got.opened.length) lines.push(['새로 열림', `${got.opened.join(', ')} — 다음 판부터`]);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
+  fillResDmg(true);   // 39.3: 무한모드 — 출처별 피해·잃은 병력·구간별 병력 곡선
   $('resNear').hidden = true;
   const cause = CAUSE[s.cause] || CAUSE.foe;
   $('resCause').hidden = false;
@@ -1923,7 +1994,7 @@ function relicNow(id) {
     case 'fourth': return `지금 특수병 ${q.sp.length}명`;
     case 'pouch': return `지금 탄 효과 ${fxN}개`;
     case 'dice': return `지금 다시 뽑기 ${rerollsOf(s)}번 → ${rerollsOf(s) + RELICS.dice.n}번`;
-    case 'lucky': return '? 상자: 소 = 코인 + 병사 10% · 중 = 병사 30% · 대 = 총 ★ +1 + 병사 40%';
+    case 'lucky': return `? 상자: 꽝 → 소(코인 + 병사 10%) · 중 → 대(총 ★ +1 + 병사 ${pct(LANES.big)}%)`;
     case 'pledge': return q.sp.length ? `지금 특수병 ${q.sp.map((m) => `${UNITS[m.k] ? UNITS[m.k].name : m.k} Lv${m.lv || 1}`).join(' · ')}` : '';
     case 'manual': return '';
     default: return '';
@@ -1967,6 +2038,14 @@ function statOf(k, id, lv) {
   if (id === 'medic') return `되살림 ${pct(unitVal('medic', 'share', lv))}% · 잃는 병사 −${pct(1 - 1 / (1 + BUILD.med * lv))}%`;
   return `Lv${lv}`;
 }
+const enhLine = (c) => enhText(c).replace(/^ · /, '');
+/* 개편 판 카드 셋(탄 효과·특수병·총 Lv): 밝은 줄 = 이번에 얻는 것(바뀌는 값 · 새 능력 · 희귀·전설 강화), 기본 글씨 = 그대로인 것 · 나중(다음 문턱·칸 수) */
+function bldCardLines(fromTxt, toTxt, c, later = []) {
+  const d = diffParts(fromTxt, toTxt);
+  const hi = [...d.hi];
+  if (enhLine(c)) hi.push(enhLine(c));
+  return { delta: hi.join(' · '), det: [...d.lo, ...later.filter(Boolean)].join(' · ') };
+}
 const deltaOf = (k, id, from, to) => (bldOf(s) && to > from ? `지금 ${statOf(k, id, from)} → 고르면 ${statOf(k, id, to)}` : '');
 /* 특수병 레벨 글(개편 판의 로켓병은 간격·조준이 다르다 — BUILD.rocket) */
 function spUp(u, lv) {
@@ -1981,6 +2060,7 @@ function cardText(c) {
   if (c.k === 'gunlv') {   // 총 Lv(21.9): 그 총의 능력
     const G = GUNS[c.g];
     const evo = c.to < BUILD.evo ? ` · Lv${BUILD.evo}부터 ${GUN_EVO_TEXT[c.g]}` : '';
+    if (bldOf(s)) { const L2 = bldCardLines(gunText(c.g, c.from), gunText(c.g, c.to), c, [evo.replace(/^ · /, '')]); return { kind: '총 Lv', lead: G.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: L2.det, delta: L2.delta, col: G.color, icon: 'gun', n: c.n }; }
     return { kind: '총 Lv', lead: G.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${gunText(c.g, c.to)}${evo}${enhText(c)}`, delta: `지금 ${gunText(c.g, c.from)} → 고르면 Lv${c.to}`, col: G.color, icon: 'gun', n: c.n };
   }
   if (c.k === 'swap') {   // 총 바꾸기(21.8)
@@ -2005,6 +2085,12 @@ function cardText(c) {
       // 개편 판: 등급만큼 한 번에 오른다(합류도 Lv n으로). 위력 배수·전문화 안내
       const hint = SP_EVO[c.u] && c.to < BUILD.evo ? ` · Lv${BUILD.evo}부터 ${SP_EVO[c.u].text().replace(/^Lv\d+: /, '')}` : '';
       const delta = deltaOf('unit', c.u, c.from || 0, c.to);
+      if (bldOf(s)) {   // 39.2
+        const L2 = c.from ? bldCardLines(spUp(c.u, c.from) + spPowText(c.u, c.from), spUp(c.u, c.to) + spPowText(c.u, c.to), c, [pair.replace(/^ · /, ''), hint.replace(/^ · /, '')])
+          : bldCardLines('', spDesc(c.u) + spPowText(c.u, c.to), c, [pair.replace(/^ · /, ''), hint.replace(/^ · /, '')]);
+        return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: L2.det, delta: L2.delta, col: U.color, icon: c.u, n: c.n }
+          : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: L2.det, delta: L2.delta, col: U.color, icon: c.u, n: c.n };
+      }
       return c.from ? { kind: '특수병', lead: U.name, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${spUp(c.u, c.to)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, delta, col: U.color, icon: c.u, n: c.n }
         : { kind: '특수병', lead: '', from: '', to: `${U.name} 합류${c.to > 1 ? ` Lv${c.to}` : ''}`, det: `${spDesc(c.u)}${spPowText(c.u, c.to)}${pair}${hint}${enhText(c)}`, delta, col: U.color, icon: c.u, n: c.n };
     }
@@ -2017,6 +2103,13 @@ function cardText(c) {
     const nm = fxName(c.a), col = AMMO[c.a] ? AMMO[c.a].color : '#fff';
     const evo = c.n && c.to < BUILD.evo ? ` · Lv${BUILD.evo}에 진화` : '';
     const delta = deltaOf('fx', c.a, c.from || 0, c.to);
+    if (bldOf(s)) {   // 39.2
+      const fx0 = fxOf(s) || {}, used0 = AMMO_IDS2.filter((a) => fx0[a]).length;
+      const E = s.endless, locked = E && E.ammoStar && !E.ammoStar.includes(c.a) && AMMO[c.a] ? `출격 탄으로는 ★${AMMO[c.a].stars}에 열려요` : '';
+      const L2 = bldCardLines(c.from ? fxT(c.a, c.from) : '', fxT(c.a, c.to), c, [c.from ? '' : `칸 ${used0 + 1}/${fxSlots(s)}`, evo.replace(/^ · /, ''), locked]);
+      return c.from ? { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: L2.det, delta: L2.delta, col, icon: 'fx_' + c.a, n: c.n }
+        : { kind: '탄 효과', lead: '새 효과:', from: '', to: c.to > 1 ? `${nm} Lv${c.to}` : nm, det: L2.det, delta: L2.delta, col, icon: 'fx_' + c.a, n: c.n };
+    }
     if (c.from) return { kind: '탄 효과', lead: `${nm} 효과`, from: `Lv${c.from}`, to: `Lv${c.to}`, det: `Lv${c.to}: ${fxT(c.a, c.to)}${s && s.ammo === c.a && !bldOf(s) ? ' · 약점은 그대로' : ''}${evo}${enhText(c)}`, delta, col, icon: 'fx_' + c.a, n: c.n };
     const fx = fxOf(s) || {};
     const used = AMMO_IDS2.filter((a) => fx[a]).length;
@@ -2377,6 +2470,7 @@ function renderPausePanes(box) {
   st.className = 'st-grid';
   for (const [k, v] of pauseStats()) { const a = document.createElement('span'); a.textContent = k; const b = document.createElement('b'); b.textContent = v; st.append(a, b); }
   box.appendChild(st);
+  { const dm = runDmgBox(s); if (dm) box.appendChild(dm); }   // 39.3: 이 판의 피해·잃은 병력
   const det = document.createElement('div');
   det.className = 'inv-detail';
   const all = [];
@@ -2552,6 +2646,7 @@ function renderPauseUnits() {
   st.className = 'st-grid';
   for (const [k, v] of pauseStats()) { const a = document.createElement('span'); a.textContent = k; const b = document.createElement('b'); b.textContent = v; st.append(a, b); }
   box.appendChild(st);
+  { const dm = runDmgBox(s); if (dm) box.appendChild(dm); }   // 39.3: 이 판의 피해·잃은 병력
   if (items.length) {
     const grid = document.createElement('div');
     grid.className = 'inv-grid';
@@ -2781,7 +2876,7 @@ function handleEvents(ev) {
           combosShown = true;
         } else if (e.type === 'gun') { sfx.power(e.tier | 0); if (music) music.boost(4); vibe(25); } else if (e.type === 'lucky') {
           sfx.power(e.size); vibe(e.size >= 3 ? [20, 30, 20, 30, 40] : 20);
-          toast(e.size >= 3 ? '행운 대! ★ +1 · 병력 +40%' : e.size === 2 ? '행운 중 · 병력 +30%' : '행운 소 · 코인 · 병력 +10%', 1800);
+          toast(e.size >= 3 ? `행운 대! ★ +1 · 병력 +${pct(e.big || 0.4)}%` : e.size === 2 ? '행운 중 · 병력 +30%' : e.size === 1 ? '행운 소 · 코인 · 병력 +10%' : `꽝! 독가스 · 병력 −${pct(LANES.trap)}%`, 1800);
         } else if (e.type === 'gunx' && GUNS[e.g]) {
           // 다른 총 상자(21.8): 바꿀지는 다음 보스 뒤에 고른다
           sfx.power(2); vibe([15, 30, 15]);
@@ -2790,7 +2885,7 @@ function handleEvents(ev) {
         } else if (e.type === 'coin') sfx.coin(); else sfx.crate();
         break;
       case 'lanes':   // 칸막이 구간(22절): 처음엔 멈추고 설명, 그 뒤로는 짧게
-        if (e.k === 'luck') { if (!data.tips.luckLane) tip('luckLane', '행운 길! 세 칸 끝에 가려진 상자가 하나씩 있어요. 소·중·대 중 무엇이 나올지는 운 — 어느 칸이든 손해는 없어요. 들어가면 옆 칸으로 못 넘어가요.', true, '행운 길'); else toast('행운 길 — 칸을 골라요', 1400); }
+        if (e.k === 'luck') { if (!data.tips.luckLane2) tip('luckLane2', '행운 길! 세 칸 끝에 가려진 상자가 하나씩 — 꽝·중·대 중 무엇일지는 운이에요. 상자는 셋 중 하나만: 하나를 열면 나머지 둘은 잠겨요. 들어가면 옆 칸으로 못 넘어가요.', true, '행운 길'); else toast('행운 길 — 칸을 골라요', 1400); }
         else if (!data.tips.mazeLane) tip('mazeLane', '칸막이 미로! 칸막이 안에서는 제 칸에만 있어요(좀비도 못 넘어와요). 바닥이 초록인 열린 곳에서만 옆 칸으로 한 칸씩 건너요. 벽 없는 칸이 늘 이어져 있어요.', true, '칸막이 미로');
         else toast('칸막이 미로 — 초록 열린 곳에서 옆 칸으로', 1400);
         break;
@@ -2888,6 +2983,7 @@ function handleEvents(ev) {
         break;
       }
       case 'blast': sfx.boom(); vibe(e.by === 'chain' ? 15 : 30); break;
+      case 'luckSeal': if (!data.tips.luckSeal) toast('행운 길은 셋 중 하나 — 나머지 상자는 잠겼어요', 1800); data.tips.luckSeal = 1; break;
       case 'crateLost': {
         // 폭발 드럼통 둘레의 상자·철창이 내용물째 부서졌다(보상 없음) — 왜 못 받았는지
         const w = e.kind === 'cage' ? '철창' : '상자';
@@ -3157,6 +3253,7 @@ function finish() {
   if (newAmmo.length) lines.push(['새 탄종 열림', newAmmo.map((id) => AMMO[id].name).join(', ') + ' — 강화 화면에서 골라요']);
   if (newGun.length) lines.push(['새 총 열림', newGun.map((id) => GUNS[id].name).join(', ') + ' — 강화 화면에서 골라요(무한모드)']);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
+  fillResDmg(false);   // 39.3: 캠페인은 위 셋만
   renderNear(won);
   const cause = !won && !anyInput
     ? ['한 번도 움직이지 않았어요', FINE ? '←/→ 키로 큰 숫자 게이트 쪽으로 가세요' : '화면 왼쪽·오른쪽을 꾹 눌러 큰 숫자 게이트로 가세요']
@@ -3278,11 +3375,13 @@ function updateSpChips() {
   const mix = (v) => { key = (key * 131 + v + 7) % 2147483647; };
   for (const m of sp) { mix(UNIT_IDS.indexOf(m.k) + 1); mix(m.lv || 1); }
   mix(-1);
+  const downSp = s && bldOf(s) && Array.isArray(bldOf(s).down) ? bldOf(s).down.filter((d) => UNITS[d.k] && !sp.some((m) => m.k === d.k)) : [];
+  for (const m of downSp) { mix(UNIT_IDS.indexOf(m.k) + 41); mix(m.lv || 1); }
   if (fx) for (const a of AMMO_IDS2) mix(fx[a] | 0);
   mix(ammoChip ? AMMO_IDS.indexOf(ammoChip) + 1 : 0);
   if (rl) for (const id of rl) mix((RELIC_IDS.indexOf(id) + 1) * 3 + (spent.includes(id) ? 1 : 0));
   const Bg = s && bldOf(s);   // 총 종류(21절): 총·총 Lv·바꿀 총
-  if (Bg && Bg.gt) { mix(GUN_IDS.indexOf(Bg.gt) + 1); mix((Bg.gl && Bg.gl[Bg.gt]) || 1); mix(GUN_IDS.indexOf(Bg.gp) + 2); }
+  if (Bg && Bg.gt) { mix(GUN_IDS.indexOf(Bg.gt) + 1); mix((Bg.gl && Bg.gl[Bg.gt]) || 1); mix(GUN_IDS.indexOf(Bg.gp) + 2); mix((Bg.gp && Bg.gl && Bg.gl[Bg.gp]) || 0); }
   const muts = s && s.endless && s.endless.mut ? MUT_IDS.filter((id) => mutLv(s, id)) : [];
   for (const id of muts) mix((MUT_IDS.indexOf(id) + 1) * 5 + mutLv(s, id));
   if (key === spKey) return;
@@ -3296,7 +3395,10 @@ function updateSpChips() {
     chip.style.setProperty('--acc', WTIER[Math.min(WTIER.length - 1, tier)]);
     chip.appendChild(iconEl('gun', 2));
     const gl = Bg && Bg.gt ? (Bg.gl && Bg.gl[Bg.gt]) || 1 : 0;
-    chip.append(Bg && Bg.gt && GUNS[Bg.gt] ? `${GUNS[Bg.gt].name}${gl > 1 ? ` Lv${gl}` : ''}${Bg.gp && GUNS[Bg.gp] ? ` → ${GUNS[Bg.gp].name}?` : ''}` : s && bldOf(s) ? '총' : '무기');   // 개편 판: 총 이름·Lv(바꿀 총이 있으면 '→ 산탄총?')
+    // 39.9: 글자 없이 — 총 아이콘 · 총 Lv 숫자 · ★(바꿀 총이 있으면 '⇄' + 그 총 Lv)
+    if (gl > 1) chip.append(`${gl}`);
+    if (Bg && Bg.gp && GUNS[Bg.gp]) chip.append(` ⇄${(Bg.gl && Bg.gl[Bg.gp]) || ''}`);
+    chip.setAttribute('aria-label', Bg && Bg.gt && GUNS[Bg.gt] ? `${GUNS[Bg.gt].name} Lv${gl} ★${tier + 1}${Bg.gp && GUNS[Bg.gp] ? ` · 바꿀 총 ${GUNS[Bg.gp].name}` : ''}` : '무기');
     const b = document.createElement('b');
     b.textContent = s && bldOf(s) ? '★' + (tier + 1) : tier + '단계';
     chip.appendChild(b);
@@ -3307,9 +3409,9 @@ function updateSpChips() {
     chip.className = 'sp-chip fx-chip gun-chip' + (gmod >= BUILD.evo ? ' lv3' : '');
     chip.style.setProperty('--acc', '#FFC93C');
     chip.appendChild(iconEl('gun', 2));
-    chip.append('개조');
     const b = document.createElement('b');
-    b.textContent = 'Lv' + gmod;
+    b.textContent = '+' + gmod;
+    chip.setAttribute('aria-label', `무기 개조 Lv${gmod}`);
     chip.appendChild(b);
     box.appendChild(chip);
   }
@@ -3318,19 +3420,28 @@ function updateSpChips() {
     chip.className = 'sp-chip fx-chip';
     chip.style.setProperty('--acc', AMMO[ammoChip].color);
     chip.appendChild(iconEl('fx_' + ammoChip, 2));
-    chip.append(ammoName(ammoChip));
+    chip.setAttribute('aria-label', ammoName(ammoChip));
     box.appendChild(chip);
   }
   for (const m of sp) {
     const chip = document.createElement('span');
     chip.className = 'sp-chip' + ((m.lv || 1) > 1 ? ' up lv' + Math.min(3, m.lv) : '');
     chip.appendChild(iconEl(m.k, 2));
-    chip.append(UNITS[m.k] ? UNITS[m.k].name : m.k);
-    if ((m.lv || 1) > 1) {
-      const b = document.createElement('b');
-      b.textContent = 'Lv' + m.lv;
-      chip.appendChild(b);
-    }
+    const b = document.createElement('b');
+    b.textContent = `${m.lv || 1}`;
+    chip.appendChild(b);
+    chip.setAttribute('aria-label', `${UNITS[m.k] ? UNITS[m.k].name : m.k} Lv${m.lv || 1}`);
+    box.appendChild(chip);
+  }
+  // 39.9: 떠난 특수병(호위 부족 — 보스를 잡으면 돌아올 수 있다)은 흐린 칩으로
+  for (const d of downSp) {
+    const chip = document.createElement('span');
+    chip.className = 'sp-chip off';
+    chip.appendChild(iconEl(d.k, 2));
+    const b = document.createElement('b');
+    b.textContent = `${d.lv || 1}`;
+    chip.appendChild(b);
+    chip.setAttribute('aria-label', `${UNITS[d.k] ? UNITS[d.k].name : d.k} Lv${d.lv || 1} — 떠났어요(보스를 잡으면 돌아와요)`);
     box.appendChild(chip);
   }
   // 탄 효과(무한모드 2단계): 특수병 칩과 같은 모양 — 탄종 색 테두리, 레벨은 늘(효과는 Lv1부터 센다), Lv3은 금빛
@@ -3343,9 +3454,9 @@ function updateSpChips() {
     chip.className = 'sp-chip fx-chip' + (lv >= FX_LV_SOFT ? ' lv3' : '');
     chip.style.setProperty('--acc', AMMO[a].color);
     chip.appendChild(iconEl('fx_' + a, 2));
-    chip.append(fxName(a));
+    chip.setAttribute('aria-label', `${fxName(a)} Lv${lv}`);
     const b = document.createElement('b');
-    b.textContent = 'Lv' + lv;
+    b.textContent = `${lv}`;
     chip.appendChild(b);
     box.appendChild(chip);
   }
@@ -3371,11 +3482,13 @@ function updateSpChips() {
     const chip = document.createElement('span');
     chip.className = 'sp-chip mut-chip';
     chip.appendChild(iconEl('skull', 2));
-    chip.append(muts.map((id) => MUTATIONS[id].name + (mutLv(s, id) > 1 ? ' Ⅱ' : '')).join(' · '));
+    const b = document.createElement('b');   // 39.9: 이름 대신 걸린 변이 수(이름·풀이는 일시정지)
+    b.textContent = `${muts.length}`;
+    chip.appendChild(b);
     chip.setAttribute('aria-label', `적 변이: ${muts.map((id) => MUTATIONS[id].name).join(', ')}`);
     box.appendChild(chip);
   }
-  document.body.classList.toggle('has-sp', sp.length + nfx + (rl ? rl.length : 0) + (tier > 0 ? 1 : 0) + (ammoChip ? 1 : 0) + muts.length > 0);
+  document.body.classList.toggle('has-sp', sp.length + downSp.length + nfx + (rl ? rl.length : 0) + (tier > 0 ? 1 : 0) + (ammoChip ? 1 : 0) + muts.length > 0);
   // 칩이 두 줄로 넘치면(특수병 셋 + 효과 둘) 위에 뜨는 알림을 한 줄만큼 더 내린다 — 세 줄(넷째 자리·넓은 탄낭·유물 칩)이면 한 줄 더
   const hh = box.offsetHeight;
   document.body.classList.toggle('sp-wrap', hh > 40);
