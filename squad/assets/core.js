@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, SUPPLY, BOSS_FLOOR, GUNS, GUN_IDS, gunVal, GUN_SWAP } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, SUPPLY, BOSS_FLOOR, GUNS, GUN_IDS, gunVal, GUN_SWAP, HORN } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -489,8 +489,16 @@ function planChunks(p, g) {
   if (p.maze && chance(g, LANES.mazeP)) plan.splice(plan.length - 3, 0, 'maze');   // 칸막이(22절 — 개편 판만): 보스 앞 몰이 전에
   if (p.luck && chance(g, p.luckP || LANES.luckP)) plan.splice(1, 0, 'luck');   // 행운의 동전(유물)이면 p.luckP
   if (p.rush && p.rushRoll < RUSH.p) plan.splice(Math.max(1, plan.length - 2), 0, 'rush');   // 게이트 몰이(39.5): 굴림은 따로(p.rushRoll — 위 배치가 밀리지 않게), 마지막 게이트·몰이 앞
+  if (p.gaunt) {   // 함정 길(46.4): 굴림은 따로 — 첫 게이트 뒤 · 마지막 두 청크 앞 아무 데나, 구간마다 하나(GAUNT.two부터 둘)
+    const gg = { rs: hash(VERSION, 'gauntPlan', p.gauntSeed >>> 0, p.seg) };
+    for (let i = p.seg >= GAUNT.two ? 2 : 1; i > 0; i--) plan.splice(1 + Math.floor(rand(gg) * Math.max(1, plan.length - 3)), 0, 'gaunt');
+  }
   return plan;
 }
+
+/* 가속 발판·특별 구간 기록(46.1·46.3 — 개편 판 생성만) */
+function addPad(lv, x0, x1, z, len, mul) { (lv.pads || (lv.pads = [])).push({ id: lv.nextId++, x0, x1, z, len, mul }); }
+function addZone(lv, k, z0, z1) { (lv.zones || (lv.zones = [])).push({ id: lv.nextId++, k, z0, z1 }); }
 
 function lanes(count) {
   const out = [];
@@ -951,7 +959,28 @@ export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckL
 /* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로(45절: 11 → 7 → 3.5m, 줄은 모두 세 칸 — 끝 칸에서 반대쪽 끝 칸까지(5m)는 손가락 끌기(초당 16m)로도 0.31초라 달리는 동안(6구간 초당 12m) 3.75m — 한 줄 사이에 끝에서 끝으로는 못 간다, 옆 칸까지만) — 쏴서 올리는 덧셈 칸이 많고, ×2 줄 하나·÷2 줄 하나.
    숫자는 그 구간 기준 병력(bkScale)으로, 굴림은 따로(hash — 다른 청크의 배치가 밀리지 않게). 골든 값은 늘리지 않는다(잘 고르면 앞서 나가고, 못 고르면 뒤처진다)
    미로 게이트(39.5): 미로 토막 끝마다 칸마다 게이트 — 빈 칸 = 작은 +, 좀비 칸 뒤·벽 뒤 = 큰 +(마지막 토막은 ×2), 벽 칸 몇은 벽 대신 ÷2 */
-export const RUSH = { from: 6, p: 0.3, n: [10, 14], gap: 3.5, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.4 };
+export const RUSH = { from: 6, p: 0.3, n: [10, 14], gap: 7, boost: 2, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.4 };   // 46.2: 간격 3.5 → 7m + 들머리 길 전체 가속 발판 ×boost — 줄 사이 시간(0.29초)은 같고, 앞 줄 판이 뒷줄 숫자를 안 가린다
+/* 가속 발판(46.1 — 개편 판만): 분대 몸 가운데가 판의 x 범위 안에서 판 줄을 지나면 앞으로 달리는 속도 ×mul, len m 동안. 옆 빠르기는 그대로.
+   gaunt·fork·spit·wave: 함정 길(가속 톱날)·갈림길 위험한 쪽·독침 앞·무리 앞에 놓는 판의 배수 · 열리는 구간 · 몫 · 길이 */
+export const PAD = {
+  gaunt: 1.7, gauntLen: 32,
+  fork: { mul: 1.6, from: 10, p: 0.35, len: 16 },
+  spit: { mul: 1.5, from: 8, p: 0.4, len: 30 },
+  wave: { mul: 1.5, from: 12, p: 0.25, len: 22 },
+};
+/* 함정 길(46.4 — 개편 판만): from구간부터 구간마다 하나(two구간부터 둘). pats = [패턴, 열리는 구간] — 열린 것 중 무작위.
+   pair 쌍 톱날(반쪽 둘이 거울처럼) · zig 엇갈린 톱날(반쪽 셋 지그재그) · boost 가속 톱날 · guard 톱날 문지기(좋은 칸 앞 톱날 + 반쪽 가속) · double 겹 쌍 톱날.
+   gate: 마지막 톱날에서 게이트 줄까지(m), add·sub: 세 칸 게이트의 +a · −b(그 구간 기준 병력 몫) */
+export const GAUNT = { from: 4, two: 16, pats: [['pair', 4], ['zig', 7], ['boost', 10], ['guard', 13], ['double', 19]], gate: 6, add: [0.25, 0.5], sub: [0.2, 0.4] };
+/* 새 적 셋(46.6 — 개편 판만, 무리의 졸개를 바꾼다 — 따로 굴림):
+   bomb 자폭 좀비(질주 몸): 닿으면 병력 hit + 제 체력 몫, 총에 쓰러지면 둘레 r m 좀비에게 지금 화력 × dmg초 몫, 분대가 그 안이면 병력 near
+   leap 도약 좀비: at m 안에 오면 crouch초 웅크렸다가 dist m 앞으로(분대 x 쪽으로) T초에 뛴다
+   thief 게이트 도둑: 가장 좋은 덧셈 칸 ahead m 앞에 서서, 분대가 near m 안이면 그 칸을 초당 원래 값의 drain씩 빨아 먹는다(0 아래로) */
+export const FOE2 = {
+  bomb: { from: 5, two: 14, hp: 1.2, spd: 4.4, home: 1.8, hit: 0.08, near: 0.03, r: 2.2, dmg: 1.5 },
+  leap: { from: 10, n: 2, three: 20, hp: 1.5, at: 11, crouch: 0.45, dist: 6, T: 0.35 },
+  thief: { from: 14, two: 24, hp: 1.2, ahead: 4, near: 40, drain: 0.35 },
+};
 /* 구간 성격(39.6 — 개편 판만, 2구간부터): 풍요(rich — 좋은 칸 ×good·나쁜 칸 ×bad) · 보통 · 기근(lean). 시드·구간으로 정해 카드 화면에서 다음 구간 것을 미리 보인다 */
 export const MOOD = { from: 2, rich: { p: 0.2, good: 1.6, bad: 0.7, rare: true }, lean: { p: 0.25, good: 0.5, bad: 1.6 } };
 export function segMood(seed, k) {
@@ -1309,8 +1338,55 @@ const CHUNK = {
       const cells = ops.map(([op, v], c) => makeCell(op, v, ng, edges[c], edges[c + 1], lv.fireE));
       makeRow(lv, rowZ, cells, ng, 'gate', 'rush');
     }
-    (lv.rush || (lv.rush = [])).push({ z0: z + 20, z1: z + 20 + (n - 1) * RUSH.gap });
+    const zEnd = z + 20 + (n - 1) * RUSH.gap;
+    (lv.rush || (lv.rush = [])).push({ z0: z + 20, z1: zEnd });
+    // 46.2 가속 몰이: 첫 줄 8m 앞에 길 전체 가속 발판 — 마지막 줄을 지나 3m까지
+    addPad(lv, -ROAD - 1, ROAD + 1, z + 12, zEnd + 3 - (z + 12), RUSH.boost);
+    addZone(lv, 'rush', z + 19, zEnd + 1);
     return { len: 20 + n * RUSH.gap + 10, ng };
+  },
+
+  /* 함정 길(46.4 — GAUNT): 반쪽 톱날 둘이 한 줄에(거울처럼) · 지그재그 · 가속 발판 · 좋은 칸 앞 톱날 — 그리고 바로 뒤 세 칸 게이트. 굴림은 모두 따로(g2) */
+  gaunt(lv, g, p, z, ng) {
+    const g2 = { rs: hash(VERSION, 'gaunt', Math.round(z * 10), ng | 0, p.seg | 0) };
+    const open = GAUNT.pats.filter(([, from]) => p.seg >= from).map(([k]) => k);
+    const pat = open[Math.floor(rand(g2) * open.length)] || 'pair';
+    const spd = 3.5 + 1.5 * p.k;
+    const edges = [-ROAD, LANE_X[0], LANE_X[1], ROAD];
+    const half = (zz, side, u) => {   // 반쪽 톱날: side −1 왼쪽 반 · +1 오른쪽 반, u = 시작 자리(0 가운데 쪽 ~ 1 가장자리)
+      const xa = side < 0 ? -ROAD + 0.6 : 0.2, xb = side < 0 ? -0.2 : ROAD - 0.6;
+      const x = side < 0 ? xb - u * (xb - xa) : xa + u * (xb - xa);
+      lv.saws.push({ id: lv.nextId++, z: zz, x, xa, xb, spd, dir: side, w: 1.1, trap: 1 });   // 가장자리 쪽으로 출발
+    };
+    const pair = (zz, u) => { half(zz, -1, u); half(zz, 1, u); };   // 거울: 같은 u에서 서로 반대로 — 가운데에서 만났다 갈라진다
+    const full = (zz) => lv.saws.push({ id: lv.nextId++, z: zz, x: U(g2, -ROAD + 0.6, ROAD - 0.6), xa: -ROAD + 0.6, xb: ROAD - 0.6, spd, dir: rand(g2) < 0.5 ? 1 : -1, w: 1.1, trap: 1 });
+    const A = () => Math.max(2, nice(ng * U(g2, GAUNT.add[0], GAUNT.add[1]))), Bv = () => -Math.max(2, nice(ng * U(g2, GAUNT.sub[0], GAUNT.sub[1])));
+    let last = z + 20, ops = null, guard = -1;
+    if (pat === 'pair') pair(last, rand(g2));
+    else if (pat === 'zig') { const sd = rand(g2) < 0.5 ? -1 : 1; for (let i = 0; i < 3; i++) half(z + 18 + 5 * i, i & 1 ? -sd : sd, rand(g2)); last = z + 28; }
+    else if (pat === 'boost') { addPad(lv, -ROAD - 1, ROAD + 1, z + 8, PAD.gauntLen, PAD.gaunt); pair(z + 20, rand(g2)); full(z + 28); last = z + 28; }
+    else if (pat === 'double') { const u = rand(g2); pair(z + 20, u); pair(z + 26, (u + 0.5) % 1); last = z + 26; ops = [['mul', 2], ['div', 2], ['add', A()]]; }
+    if (pat === 'guard') {   // 톱날 문지기: 좋은 칸 4m 앞을 그 칸 폭만 오가는 톱날, 좋은 칸 쪽 반에 반쪽 가속 발판
+      guard = Math.floor(rand(g2) * 3);
+      ops = [['add', Bv()], ['add', Bv()], ['add', Bv()]];
+      ops[guard] = rand(g2) < 0.5 ? ['mul', 2] : ['add', 2 * A()];
+      pair(z + 16, rand(g2));   // 가속된 채 쌍 톱날부터
+      last = z + 24;
+    } else if (!ops) ops = shuffle(g2, [['add', A()], ['add', Bv()], rand(g2) < 0.5 ? ['add', A()] : ['add', Bv()]]);
+    else shuffle(g2, ops);
+    const rowZ = last + GAUNT.gate;
+    const cells = ops.map(([op, v], c) => makeCell(op, v, ng, edges[c], edges[c + 1], lv.fireE));
+    makeRow(lv, rowZ, cells, ng, 'gate', 'gaunt');
+    if (guard >= 0) {
+      const c = cells[guard];
+      lv.saws.push({ id: lv.nextId++, z: rowZ - 4, x: U(g2, c.x0 + 0.4, c.x1 - 0.4), xa: c.x0 + 0.4, xb: c.x1 - 0.4, spd, dir: rand(g2) < 0.5 ? 1 : -1, w: 1.1, trap: 1 });
+      const side = guard === 1 ? (rand(g2) < 0.5 ? -1 : 1) : guard === 0 ? -1 : 1;
+      addPad(lv, side < 0 ? -ROAD - 1 : 0, side < 0 ? 0 : ROAD + 1, rowZ - 24, 22, PAD.gaunt);
+    }
+    addZone(lv, 'gaunt', z + 8, rowZ + 1);
+    lv.marks.push({ t: 'gaunt', z: z + 8, pat });
+    // 골든 값은 늘리지 않는다(몰이와 같다 — 잘 지나면 앞서고, 못 지나면 뒤처진다. 늘리면 보스 체력·뒤 청크 위협이 함께 커진다)
+    return { len: rowZ - z + 14, ng };
   },
 
   /* 행운 길(22절): 칸막이로 나뉜 세 칸 끝에 가려진 상자 셋 — 소·중·대가 무작위(어느 칸이든 손해는 없다). 상자는 약하다(지나가며 쏘면 열린다) */
@@ -1325,6 +1401,7 @@ const CHUNK = {
       lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.0, x1: cx + 1.0, z: z1 - 8, hp, max: hp, alive: true, hitT: -9, reward: { type: 'lucky', size: sizes[c] }, luck: true, lg });
     }
     (lv.lanes || (lv.lanes = [])).push({ id: lv.nextId++, k: 'luck', z0, z1, open: [] });
+    addZone(lv, 'luck', z0, z1);
     return { len: z1 - z + 10, ng };
   },
   /* 칸막이 미로(22절): stretch토막. 토막이 바뀌는 곳마다 칸막이 하나가 LANES.open m 열린다(한 칸씩만 건넌다). 토막마다 '빈 칸'(벽 없음)이 하나 있고
@@ -1375,6 +1452,7 @@ const CHUNK = {
       lv.props.push({ id: lv.nextId++, kind: 'crate', x0: cx - 1.0, x1: cx + 1.0, z: z1 - 4, hp, max: hp, alive: true, hitT: -9, reward: { type: 'lucky', size: big }, luck: true, mazeBox: true, treasure: true }); }
     lane.id = lv.nextId++;
     (lv.lanes || (lv.lanes = [])).push(lane);
+    addZone(lv, 'maze', z0, z1);
     return { len: z1 - z + 12, ng };
   },
 
@@ -1649,7 +1727,7 @@ export function buildSegment(seed, k, n, tier = 0, attempt = 0, opt = null) {
 function buildSegment0(seed, k, n, tier, attempt, opt) {
   const p = segParams(k);
   const E = ENDLESS;
-  if (opt && opt.terrain) { p.hide = p.seg >= TERRAIN.hideFrom; p.tight = p.seg >= TERRAIN.tightFrom; p.chain = p.seg >= TERRAIN.chainFrom; p.maze = p.seg >= LANES.mazeFrom; p.luck = p.seg >= LANES.luckFrom; if (opt.luckP) p.luckP = opt.luckP; p.rush = p.seg >= RUSH.from; p.rushRoll = rand({ rs: hash(VERSION, 'rushPlan', seed >>> 0, p.seg) }); p.mazeGates = true; p.mood = segMood(seed, p.seg); }   // 지형(개편 판만 — 바퀴 3·4·5부터)
+  if (opt && opt.terrain) { p.hide = p.seg >= TERRAIN.hideFrom; p.tight = p.seg >= TERRAIN.tightFrom; p.chain = p.seg >= TERRAIN.chainFrom; p.maze = p.seg >= LANES.mazeFrom; p.luck = p.seg >= LANES.luckFrom; if (opt.luckP) p.luckP = opt.luckP; p.rush = p.seg >= RUSH.from; p.rushRoll = rand({ rs: hash(VERSION, 'rushPlan', seed >>> 0, p.seg) }); p.mazeGates = true; p.mood = segMood(seed, p.seg); p.gaunt = p.seg >= GAUNT.from; p.gauntSeed = seed >>> 0; }   // 지형(개편 판만 — 바퀴 3·4·5부터), 함정 길(46.4)
   const g = { rs: hash(VERSION, 'endless', seed >>> 0, p.seg, attempt) };
   const n0 = clamp(Math.floor(n), 1, E.maxN);
   // 뒤처진 분대(바닥선 아래)에게는 위협이 바닥선 병력 기준(화력 ∝ 병력^0.8)
@@ -1700,6 +1778,7 @@ function buildSegment0(seed, k, n, tier, attempt, opt) {
     lv.arenaZ = z + 12;
     placeSpecials(lv, p, false, hash(VERSION, 'endless-sp', seed >>> 0, p.seg, attempt), !!(opt && opt.flame));
     if (lv.og) { placeDrums(lv); obstacleMarks(lv); }
+    if (opt && opt.terrain) terrain46(lv, p, seed);   // 46.5·46.6: 가속 발판 · 새 적 셋(따로 굴림 — 위 배치·숫자는 그대로)
   } finally { GK = 1; NCAP = MAX_N; LEAKT = 1; delete lv.og; }
   // MAX 칸(높인 끝)은 쓰지 않는다 — 몰아 쏘기 확인(redFast)을 판 중간에 돌릴 수 없다
   for (const r of lv.rows) for (const c of r.cells) if (c.cap0 != null) { c.cap = c.cap0; delete c.cap0; }
@@ -1728,6 +1807,60 @@ function buildSegment0(seed, k, n, tier, attempt, opt) {
   lv.arrive = Gn;
   lv.bossHp = Math.max(30, Math.round(dps(Gn * p.boss.m, 0, FE) * (base / segMul(p.seg)) * E.bossMul0 * Math.pow(E.bossStep, p.seg - 1) * p.bossKill * bossHitFrac(Gn)));
   return lv;
+}
+/* 46.5·46.6(개편 판 지형): 청크를 다 만든 뒤 따로 굴려(hash) 더한다 — 갈림길 위험한 쪽·독침 앞·무리 앞의 가속 발판, 무리의 졸개 몇을 자폭·도약 좀비로,
+   게이트 줄의 가장 좋은 덧셈 칸 앞에 게이트 도둑. 갈림길·칸막이·몰이·함정 길 안의 좀비는 바꾸지 않는다 */
+function terrain46(lv, p, seed) {
+  const g = { rs: hash(VERSION, 'terrain46', seed >>> 0, p.seg) };
+  const k = p.seg;
+  const inSpecial = (z) => (lv.divs && lv.divs.some((d) => z >= d.z0 - 4 && z <= d.z1 + 2)) || (lv.lanes && lv.lanes.some((l) => z >= l.z0 - 4 && z <= l.z1 + 2))
+    || (lv.zones && lv.zones.some((o) => z >= o.z0 - 6 && z <= o.z1 + 2));
+  // 가속 발판 — 갈림길 위험한 쪽(벽·문·떼 앞, 갈린 뒤라 들어가면 못 피한다)
+  for (const d of lv.divs || []) {
+    if (k < PAD.fork.from || rand(g) >= PAD.fork.p) continue;
+    const wz = d.z0 + FORK_TAPER + FORK.wall;
+    addPad(lv, d.risk > 0 ? 0.2 : -ROAD - 1, d.risk > 0 ? ROAD + 1 : -0.2, wz - PAD.fork.len - 2, PAD.fork.len, PAD.fork.mul);
+    d.pad = 1;
+  }
+  // 독침 앞(길 전체) · 무리 앞(반쪽)
+  for (const ch of lv.chunks) {
+    if (ch.kind === 'spit' && k >= PAD.spit.from && rand(g) < PAD.spit.p) addPad(lv, -ROAD - 1, ROAD + 1, ch.z + 14, PAD.spit.len, PAD.spit.mul);
+    else if (ch.kind === 'wave' && k >= PAD.wave.from && rand(g) < PAD.wave.p) { const sd = rand(g) < 0.5 ? -1 : 1; addPad(lv, sd < 0 ? -ROAD - 1 : 0, sd < 0 ? 0 : ROAD + 1, ch.z + 6, PAD.wave.len, PAD.wave.mul); }
+  }
+  // 새 적 — 자폭(질주 몸) · 도약
+  const B = FOE2.bomb, Lp = FOE2.leap, T = FOE2.thief;
+  if (k >= B.from) {
+    for (const ch of lv.chunks) {
+      if (ch.kind === 'fork' || ch.kind === 'maze' || ch.kind === 'luck' || ch.kind === 'rush' || ch.kind === 'gaunt') continue;
+      const pool = lv.foes.filter((f) => f.kind === 'grunt' && !f.elite && !f.flank && !f.fork && !f.maze && !f.guard && f.z >= ch.z && f.z < ch.z + ch.len && !inSpecial(f.z)).sort((a, b) => a.z - b.z || a.id - b.id);
+      if (pool.length < 5) continue;
+      for (let i = k >= B.two ? 2 : 1; i > 0 && pool.length > 3; i--) {
+        const f = pool.splice(Math.floor(rand(g) * pool.length), 1)[0];
+        Object.assign(f, { kind: 'runner', r: FOE_BASE.runner.r, spd: B.spd, home: B.home, homeDist: FOE_BASE.runner.homeDist, elite: 'bomb' });
+        f.hp = f.max = Math.max(1, Math.round(f.hp * B.hp));
+      }
+      if (k >= Lp.from) for (let i = k >= Lp.three ? 3 : Lp.n; i > 0 && pool.length > 3; i--) {
+        const f = pool.splice(Math.floor(rand(g) * pool.length), 1)[0];
+        f.elite = 'leap';
+        f.hp = f.max = Math.max(1, Math.round(f.hp * Lp.hp));
+      }
+    }
+  }
+  // 게이트 도둑 — 보통·생각·판돈·잭팟·금색 줄(마지막 줄 빼고)의 가장 좋은 덧셈 칸 앞
+  if (k >= T.from) {
+    const lastZ = lv.rows.reduce((m, r) => Math.max(m, r.z), -Infinity);
+    const rows = lv.rows.filter((r) => r.src === 'gate' && ['plain', 'think', 'stake', 'jack', 'gold'].includes(r.kind) && r.z < lastZ && r.cells.some((c) => c.op === 'add' && c.v > 0) && !inSpecial(r.z));
+    for (let i = k >= T.two ? 2 : 1; i > 0 && rows.length; i--) {
+      const row = rows.splice(Math.floor(rand(g) * rows.length), 1)[0];
+      let ci = -1;
+      row.cells.forEach((c, j) => { if (c.op === 'add' && c.v > 0 && (ci < 0 || c.v > row.cells[ci].v)) ci = j; });
+      const c = row.cells[ci];
+      let ch = lv.chunks[0];
+      for (const o of lv.chunks) if (o.z <= row.z) ch = o;
+      const hp = Math.max(1, Math.round(dps(ch.ng, 0, lv.fireE || 0) * (ch.thr || 1) * T.hp));
+      lv.foes.push({ id: lv.nextId++, kind: 'grunt', x: (c.x0 + c.x1) / 2, z: row.z - T.ahead, hp, max: hp, alive: true, awake: false, hitT: -9, cd: 0, seed: (rand(g) * 1000) | 0, ...FOE_BASE.grunt, spd: 0, home: 0, homeDist: 0, elite: 'thief', row: row.id, ci, acc: 0 });
+    }
+  }
 }
 /* 2단계 장애물의 자리·개수(보이는 수치는 roster.js OBSTACLES) [초안].
    door.p: 4구간부터 갈림길 위험한 쪽이 장갑문일 몫(벽 · 좀비 떼 · 장갑문이 셋에 하나꼴).
@@ -1854,6 +1987,10 @@ export function newEndless(opt = {}) {
       // 출격 보급품(27절 — 산 판에만 필드가 생긴다): legend = 남은 전설 보장 수, revive = 남은 부활 수
       const so = opt.supply || {};
       if (so.legend || so.revive) s.endless.sup = { legend: so.legend ? 1 : 0, revive: so.revive ? 1 : 0 };
+    }
+    if (s.endless.bld && s.hero && s.hero.id === 'mungchi') {   // 46.7: 개편 판은 집합 나팔(newGame이 첫 구간 칸에 건 빠르기)을 되돌린다
+      const mul = heroVal('mungchi', 'pump', s.hero.lv);
+      for (const row of s.rows) for (const c of row.cells) if (c.op === 'add') c.step *= mul;
     }
     if (s.endless.relics && s.endless.relics.length) relicSeg(s);   // 처음부터 가진 유물(시험·측정): 첫 구간에도 구간 규칙(확성기·코일·나침반·조준경)을 건다 — 개편 판인지 안 뒤에(24절: 개편 판은 대신이 없다)
   }
@@ -2471,11 +2608,13 @@ function nextSegment(s) {
   const dz = q.z + ENDLESS.lead;
   const off = s.nextId;
   for (const r of seg.rows) { r.id += off; r.z += dz; }
-  for (const f of seg.foes) { f.id += off; f.z += dz; }
+  for (const f of seg.foes) { f.id += off; f.z += dz; if (f.row) f.row += off; }   // 게이트 도둑(46.6)은 노리는 줄 id도
   for (const pr of seg.props) { pr.id += off; if (pr.lg) pr.lg += off; pr.z += dz; }
   for (const w of seg.saws) { w.id += off; w.z += dz; }
   for (const m of seg.marks) m.z += dz;
   if (seg.divs && seg.divs.length) { for (const d of seg.divs) { d.id += off; if (d.wall) d.wall += off; d.z0 += dz; d.z1 += dz; } s.divs = seg.divs; } else delete s.divs;
+  if (seg.pads && seg.pads.length) { for (const o of seg.pads) { o.id += off; o.z += dz; } s.pads = seg.pads; } else delete s.pads;   // 가속 발판(46.1)
+  if (seg.zones && seg.zones.length) { for (const o of seg.zones) { o.id += off; o.z0 += dz; o.z1 += dz; } s.zones = seg.zones; } else delete s.zones;   // 특별 구간(46.3)
   if (seg.lanes && seg.lanes.length) { for (const l of seg.lanes) { l.id += off; l.z0 += dz; l.z1 += dz; for (const o of l.open) { o[1] += dz; o[2] += dz; } } s.lanes = seg.lanes; } else delete s.lanes;   // 칸막이 구간(22절)
   s.nextId = off + seg.nextId + 1;
   s.rows = seg.rows; s.foes = seg.foes; s.props = seg.props; s.saws = seg.saws; s.marks = seg.marks;
@@ -2491,7 +2630,7 @@ function nextSegment(s) {
   e.z0 = q.z;
   e.wait = 0;
   const h = s.hero;
-  if (h && h.id === 'mungchi') {
+  if (h && h.id === 'mungchi' && !e.bld) {   // 46.7: 개편 판은 '집합 나팔'(덧셈 칸 빠르기) 대신 '돌격 대형'
     const mul = heroVal('mungchi', 'pump', h.lv);
     for (const row of s.rows) for (const c of row.cells) if (c.op === 'add') c.step /= mul;
   }
@@ -2538,6 +2677,8 @@ export function newGame(lv, opt = {}) {
   // avg(별 기준을 재는 기준 봇용): 확률 대신 기대값으로 고르게 — par가 한 판의 운에 흔들리지 않게
   if (lv.divs && lv.divs.length) s.divs = structuredClone(lv.divs);   // 분리대(무한모드 갈림길 — 없는 판에는 필드도 없다)
   if (lv.lanes && lv.lanes.length) s.lanes = structuredClone(lv.lanes);   // 칸막이 구간(22절 — 개편 판만)
+  if (lv.pads && lv.pads.length) s.pads = structuredClone(lv.pads);   // 가속 발판(46.1 — 개편 판만)
+  if (lv.zones && lv.zones.length) s.zones = structuredClone(lv.zones);   // 특별 구간(46.3 — 개편 판만)
   // 탄종(ARSENAL.md 3절): 고른 판에만 s.ammo가 있다(보통탄이면 없다 — 해시 그대로)
   if (opt.ammo && AMMO[opt.ammo]) s.ammo = opt.ammo;
   // 여러 마리(opt.pets — 서로 다른 펫, PET_TEAM_MAX까지): 첫 마리는 s.pet(예전 그대로), 나머지는 s.pets — 한 마리 판에는 s.pets 필드가 없다(해시 그대로)
@@ -2909,6 +3050,7 @@ export function step(s, input) {
       d.seen = 1;   // 갈림길 45m 앞 알림(한 번). 나침반(유물)이 있으면 위험한 쪽 보상 상자의 속(reward)도 — 화면은 forkPeek로 벽 위에 띄운다
       const ev = { t: 'fork', z: d.z0, risk: d.risk, kind: d.kind || 'wall' };
       if (d.hidden) ev.hidden = true;
+      if (d.pad) ev.pad = true;   // 46.5: 위험한 쪽에 가속 발판
       const pk = forkPeek(s, d);
       if (pk) ev.reward = { ...pk.reward };
       emit(s, ev);
@@ -2916,7 +3058,7 @@ export function step(s, input) {
     const dv = divAt(s);
     if (dv) {
       const side = xPrev > 0 || (xPrev === 0 && q.vx > 0) ? 1 : -1;
-      const pad = Math.min(EDGE, divPad(dv, q.z + s.speed * DT, R));   // 이 틱에 나아간 자리 기준(전진은 바로 아래)
+      const pad = Math.min(EDGE, divPad(dv, q.z + runV(s) * DT, R));   // 이 틱에 나아간 자리 기준(전진은 바로 아래)
       if (side * q.x < pad) {
         if (ladderUse(s, side * q.vx < -0.5)) q.x = -side * pad;   // 사다리(24절): 밀고 있으면 구간마다 한 번 반대쪽으로 넘어간다
         else { q.x = side * pad; if (side * q.vx < 0) q.vx = 0; }
@@ -2927,7 +3069,7 @@ export function step(s, input) {
   // 칸막이 구간(22절): 45m 앞 알림, 안에서는 제 칸에 갇힌다(열린 곳에서만 옆 칸으로)
   if (s.lanes && s.phase === 'run') {
     for (const l of s.lanes) if (!l.seen && q.z + MARK_AHEAD >= l.z0) { l.seen = 1; emit(s, { t: 'lanes', k: l.k, z: l.z0 }); }
-    const zn = q.z + s.speed * DT, l = laneAt(s, zn);
+    const zn = q.z + runV(s) * DT, l = laneAt(s, zn);
     if (l) {
       const c = laneCell(xPrev);
       const [lo, hi] = laneBounds(l, c, zn, hitHalf(R) + 0.05);
@@ -2937,8 +3079,11 @@ export function step(s, input) {
   }
   /* 전진 */
   if (s.phase === 'run') {
-    q.vz = s.speed;
+    const zPrev = q.z;
+    q.vz = runV(s);
     q.z += q.vz * DT;
+    if (s.pads) padsUpdate(s, zPrev);   // 가속 발판(46.1 — 개편 판만)
+    if (q.boost && q.z >= q.boost.z1) { q.boost = null; emit(s, { t: 'boostEnd', x: q.x, z: q.z }); }
     if (q.z >= s.arenaZ) enterArena(s);
   } else if (s.phase === 'arena') {
     const left = s.stopZ - q.z;
@@ -2947,6 +3092,7 @@ export function step(s, input) {
   }
 
   rowsUpdate(s);
+  if (s.zones) zonesUpdate(s);   // 특별 구간 끝 병력 증감(46.3)
   marksUpdate(s);
   propsUpdate(s, R);
   sawsUpdate(s, R);
@@ -2975,6 +3121,29 @@ export function step(s, input) {
   return s;
 }
 
+/* 앞으로 달리는 속도: 가속 발판(46.1)을 밟았으면 ×mul(옆 빠르기는 그대로) */
+export const runV = (s) => s.speed * (s.squad.boost ? s.squad.boost.mul : 1);
+/* 가속 발판: 이 틱에 판 줄(z)을 지났고 분대 몸 가운데가 판의 x 범위 안이면 len m 동안 ×mul(겹치면 큰 배수, 같으면 더 긴 쪽) */
+function padsUpdate(s, z0) {
+  const q = s.squad;
+  for (const o of s.pads) {
+    if (o.z <= z0 || o.z > q.z || q.x < o.x0 || q.x > o.x1) continue;
+    const z1 = o.z + o.len, b = q.boost;
+    if (b && (o.mul < b.mul || (o.mul === b.mul && z1 <= b.z1))) continue;
+    q.boost = { z1, mul: o.mul };
+    emit(s, { t: 'boost', mul: o.mul, len: o.len, x: q.x, z: o.z, full: o.x1 - o.x0 > 2 * ROAD });
+  }
+}
+/* 특별 구간(46.3 — 가속 몰이·함정 길·미로·행운 길): 들어설 때 병력을 적고, 끝을 지나면 'zone' { k, n0, n1 } */
+function zonesUpdate(s) {
+  const q = s.squad;
+  for (const o of s.zones) {
+    if (o.done) continue;
+    if (o.n0 == null) { if (q.z < o.z0) continue; o.n0 = Math.round(q.n); emit(s, { t: 'zoneIn', k: o.k, z: o.z0 }); }
+    if (q.z >= o.z1) { o.done = 1; emit(s, { t: 'zone', k: o.k, n0: o.n0, n1: Math.round(q.n), z: o.z1 }); }
+  }
+}
+
 /* 병사가 모두 쓰러졌으면 그 틱에서 바로 끝낸다(날아가던 총알이 보스를 잡거나 상자로 되살아나지 않게) */
 function wiped(s) {
   const q = s.squad;
@@ -2995,7 +3164,9 @@ export const bldBossHp = (k) => Math.min(BUILD.bossHp.max, 1 + BUILD.bossHp.k * 
 const rageCd = (s) => { const l = mutLv(s, 'rage'); return l ? MUTATIONS.rage.cd[l - 1] : 1; };
 function enterArena(s) {
   s.phase = 'arena';
+  if (s.squad.boost) s.squad.boost = null;
   if (s.endless) segAcc(s).nb = Math.round(s.squad.n);
+  if (s.endless && s.endless.bld && s.endless.n0 != null) emit(s, { t: 'zone', k: 'run', n0: Math.round(s.endless.n0), n1: Math.round(s.squad.n), z: s.squad.z });   // 46.3: 이번 구간 달리기의 병력 증감
   const p = s.params;
   const rg = mutLv(s, 'rage');
   const hp = Math.round((s.bossHp > 0 ? s.bossHp : Math.round(dps(s.bossRef, 0, s.refFire || 0) * p.bossKill)) * (rg ? MUTATIONS.rage.hp[rg - 1] : 1) * (s.endless && s.endless.bld ? bldBossHp(s.endless.seg) : 1));
@@ -3069,7 +3240,7 @@ function marksUpdate(s) {
     if (m.done || q.z < m.z - MARK_AHEAD) continue;
     m.done = true;
     if (m.t === 'obstacle') obstacleSeen(s, m);
-    else emit(s, { t: m.t, z: m.z, x: 0 });
+    else emit(s, m.pat ? { t: m.t, z: m.z, x: 0, pat: m.pat } : { t: m.t, z: m.z, x: 0 });   // 함정 길(46.4)은 패턴도
   }
 }
 /* 장애물을 45m 앞에서 처음 볼 때(2단계 판 — 그 판에서 종류마다 한 번): 'obstacle' { kind, z } — 화면이 처음 한 번만 안내한다 */
@@ -3163,11 +3334,16 @@ function foesUpdate(s, R) {
       if (frostLeg && f.slowT > s.t && s.foes.some((o) => o !== f && o.alive && o.slowT > s.t && o.z < f.z && f.z - o.z < 0.9 && Math.abs(o.x - f.x) < 0.9)) continue;   // 전설 강화 '얼음 정체': 앞의 느려진 좀비에 막혀 멈춘다
       const fx0 = f.x;
       if (f.stunT > s.t) continue;   // 34절 전격 전설 '감전': 멈춰 있다(닿기 판정은 안 한다 — 멈춘 자리에서 그대로)
-      f.z -= (f.slowT > s.t ? f.spd * (1 - slowK) : f.spd) * rushK * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로), 질주(변이)면 더 빠르다
-      if (dz < f.homeDist) {
-        const d = q.x - f.x;
-        const m = f.home * DT;
-        f.x += d > m ? m : d < -m ? -m : d;
+      if (f.elite === 'thief') thiefDrain(s, f, dz);   // 게이트 도둑(46.6): 서서 칸을 빨아 먹는다
+      if (f.holdT > s.t) { /* 46.7 돌격 나팔에 밀려 멈춘 동안: 걷지 않는다(닿으면 그대로 문다) */ }
+      else if (f.elite === 'leap' && f.lp !== 3 && leapStep(s, f, dz)) { /* 도약 좀비(46.6): 웅크리기·뛰기 동안은 걷지 않는다 */ }
+      else {
+        f.z -= (f.slowT > s.t ? f.spd * (1 - slowK) : f.spd) * rushK * DT;   // 빙결탄에 맞은 동안 느리다(slowT가 없으면 그대로), 질주(변이)면 더 빠르다
+        if (dz < f.homeDist) {
+          const d = q.x - f.x;
+          const m = f.home * DT;
+          f.x += d > m ? m : d < -m ? -m : d;
+        }
       }
       if (s.lanes) { const l = laneAt(s, f.z); if (l) { const [lo, hi] = laneBounds(l, laneCell(fx0), f.z, f.r); f.x = clamp(f.x, lo, hi); } }   // 칸막이(22절): 좀비도 칸을 못 넘는다
     }
@@ -3175,11 +3351,13 @@ function foesUpdate(s, R) {
       f.alive = false;
       emit(s, { t: 'bite', kind: f.kind, x: f.x, z: f.z });
       let cost = contactCost(f.hp);
+      if (f.elite === 'bomb') { cost += Math.max(1, Math.round(q.n * FOE2.bomb.hit)); bombBlast(s, f, true); }   // 자폭 좀비(46.6): 닿으면 터진다
+      if (s.hero && s.hero.id === 'mungchi' && s.endless && s.endless.bld) cost = Math.max(1, Math.round(cost * (1 - heroVal('mungchi', 'guard', s.hero.lv))));   // 46.7 뭉치 '돌격 대형'
       if (f.slowT > s.t && fx && s.endless.bld && fx.frost) cost = Math.max(1, Math.round(cost * fx2Val('frost', fx.frost).loss));   // 빙결 Lv3+: 느려진 좀비에게 잃는 병사 −30%
       if (f.slowT > s.t && legOn(s, 'frost')) { cost = 0; emit(s, { t: 'shatter', x: f.x, z: f.z, r: 1.2, k: 2 }); }   // 34절 전설 '얼음 갑옷': 느려진 좀비는 닿으면 얼어 부서진다(안 잃는다)
       else if (legOn(s, 'flame') && s.flames && s.flames.some((zn) => inFire(zn, q.x, q.z))) cost = Math.max(1, Math.round(cost * (1 - ENH.flame.legend.v)));   // 34절 전설 '불꽃 방패'
       const medic = f.slowT > s.t && s.endless && s.endless.bld && comboOn(s, 'frostMedic');   // (큰 피해는 특수병을 쓰러뜨리므로 맞기 전에 본다)
-      if (cost > 0) lose(s, cost, s.phase === 'arena' ? 'summon' : f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
+      if (cost > 0) lose(s, cost, s.phase === 'arena' ? 'summon' : f.elite === 'bomb' ? 'bomb' : f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
       if (f.slowT > s.t && s.endless && s.endless.bld && fx.frost) {   // 느려진 좀비가 닿으면 터진다: 희귀 강화 '얼음 폭탄' + 빙결 넘침(21.10 — 느려지는 시간이 4초를 넘친 몫)
         const sh = (enhN(s, 'frost', 'r') ? ENH.frost.rare.v * enhV(s, 'frost', 'r') : 0) + fx2Val('frost', fx.frost).shatter;
         if (sh > 0) { fxBoom(s, f.x, f.z, 1.6, f.max * sh, f); emit(s, { t: 'shatter', x: f.x, z: f.z, r: 1.6, k: enhN(s, 'frost', 'r') }); }   // 그림: 얼음 조각
@@ -3191,6 +3369,64 @@ function foesUpdate(s, R) {
   }
   // 죽은 적은 가끔 걸러낸다
   if ((s.tick & 63) === 0) s.foes = s.foes.filter((f) => f.alive || f.z > q.z + 60);
+}
+
+/* 46.6 새 적 ---------- */
+/* 도약 좀비: at m 안에 오면 crouch초 웅크렸다가(lp 1 — 멈춤, 예고) T초 동안 dist m 앞으로·분대 x 쪽으로 뛴다(lp 2), 다 뛰면 lp 3(그 뒤로는 졸개처럼 걷는다).
+   웅크리거나 뛰는 틱이면 true(걷지 않는다) */
+function leapStep(s, f, dz) {
+  const L = FOE2.leap, q = s.squad;
+  if (!f.lp) {
+    if (s.phase !== 'run' || dz > L.at || dz < 2) return false;
+    f.lp = 1; f.lpT = s.t + L.crouch;
+    emit(s, { t: 'leapWarn', id: f.id, x: f.x, z: f.z });
+    return true;
+  }
+  if (f.lp === 1) {
+    if (s.t < f.lpT) return true;
+    f.lp = 2; f.lpT = s.t; f.lz0 = f.z; f.lx0 = f.x; f.lx1 = clamp(q.x + clamp(f.x - q.x, -0.6, 0.6), -4.6, 4.6);
+    emit(s, { t: 'leap', id: f.id, x: f.x, z: f.z, x1: f.lx1, z1: f.z - L.dist });
+  }
+  const u = Math.min(1, (s.t - f.lpT) / L.T);
+  f.z = f.lz0 - L.dist * u;
+  f.x = f.lx0 + (f.lx1 - f.lx0) * u;
+  if (u >= 1) f.lp = 3;
+  return true;
+}
+/* 게이트 도둑: 분대가 near m 안이면 노리는 칸(f.row · f.ci)의 숫자를 초당 원래 값의 drain씩 깎는다(0 아래로 — 빨강이 된다). 줄을 지났으면 그만 */
+function thiefDrain(s, f, dz) {
+  if (s.phase !== 'run' || dz > FOE2.thief.near) return;
+  const row = s.rows.find((r) => r.id === f.row);
+  if (!row || row.done) return;
+  const c = row.cells[f.ci];
+  if (!c || c.op !== 'add') return;
+  f.acc = (f.acc || 0) + FOE2.thief.drain * Math.max(2, Math.abs(c.v0)) * DT;
+  if (f.acc < 1) return;
+  const k = Math.floor(f.acc);
+  f.acc -= k;
+  c.v -= k;
+  f.drainT = s.t;
+  emit(s, { t: 'drain', row: row.id, ci: f.ci, v: c.v, x: f.x, z: f.z });
+}
+/* 자폭 좀비가 터진다(touch — 분대에 닿아서 / 아니면 총에 쓰러져서): 둘레 r m 좀비에게 지금 화력 × dmg초 몫(드럼통처럼).
+   쓰러져 터질 때 분대 몸이 그 안이면 병력 near(닿아서 터질 때의 손실은 foesUpdate가 센다) */
+function bombBlast(s, f, touch) {
+  const q = s.squad, B = FOE2.bomb, R = radius(q.n), r2 = B.r * B.r;
+  const dmg = B.dmg * dps(q.n, q.tier, s.fireLv) * heroDmg(s);
+  const e = { t: 'bomb', x: f.x, z: f.z, r: B.r, n: 0, touch: !!touch };
+  emit(s, e);
+  for (const o of s.foes) {
+    if (!o.alive || o === f) continue;
+    const dx = o.x - f.x, dz = o.z - f.z;
+    if (dx * dx + dz * dz > r2) continue;
+    e.n++;
+    hitFoe(s, o, dmg, 'drum', 'bomb');
+  }
+  if (!touch && !hornSafe && (s.phase === 'run' || s.phase === 'arena') && Math.abs(f.x - q.x) < B.r + hitHalf(R) && Math.abs(f.z - q.z) < B.r + SQUAD_DEPTH * R) {
+    const k = Math.max(1, Math.round(q.n * B.near));
+    e.near = k;
+    lose(s, k, 'bomb', f.x, f.z);
+  }
 }
 
 /* 독침: 분대가 지금 선 자리(그 틱의 전진을 앞질러)에 SPIT_T초 뒤 떨어진다. 폭 ±SPIT_R m — 비켜서려면 R + SPIT_R m(옆 칸 회피) */
@@ -3321,6 +3557,8 @@ function eliteDeath(s, f) {
     const T = Math.max(POOL_T, Math.min(tl, tr, 3));
     (s.pools || (s.pools = [])).push({ id: s.nextId++, x: f.x, z: f.z, t: T, T, life: POOL_LIFE, hit: 0 });
     emit(s, { t: 'pool', x: f.x, z: f.z });
+  } else if (f.elite === 'bomb') {
+    bombBlast(s, f, false);   // 46.6 자폭 좀비: 쓰러지면 둘레 좀비를 날린다
   } else if (f.elite === 'split') {
     const K = ELITE.split;
     const hp = Math.max(1, Math.round(f.max * K.kidHp));
@@ -3462,6 +3700,7 @@ function bulletsUpdate(s) {
   const bossK = (B2 && B2.rapid ? fx2Val('rapid', B2.rapid).boss : 1) * (gw ? gw.boss : 1);   // 속사 Lv3+: 보스에게 +30%, 저격총 ×1.3~
   const gWall = gw ? gw.wall : 1;   // 산탄총 벽·장갑문 ×1.6~
   const gateK = B2 && B2.cure ? fx2Val('cure', B2.cure).gate : 1;   // 치료 Lv3+: 덧셈 칸 쏘아 올리는 폭 +25%(24절)
+  const hornOff = !!(s.endless && s.endless.bld);   // 46.7: 개편 판의 돌격 나팔(총알 b.hm)은 덧셈 칸에 안 든다
   const acidArm = !!(B2 && B2.acid && fx2Val('acid', B2.acid).arm);   // 부식 Lv4+: 장갑·방패도 제 피해
   const acidBoss = B2 && B2.acid && fx2Val('acid', B2.acid).melt;   // 부식 Lv5: 보스는 겹마다 받는 총알 피해 +boss
   let w = 0;
@@ -3496,7 +3735,7 @@ function bulletsUpdate(s) {
     const bo = s.boss;
     if (bo && bo.hp > 0 && bo.z - 1 <= z1 && Math.abs(bo.x - b.x) < BOSS_HIT && bo.z - 1 < bestZ) { bestZ = bo.z - 1; hitKind = 4; hitObj = bo; }
 
-    if (hitKind === 1) { cellShot(s, hitObj, hitCell, b.dmg * gateK, b.x); continue; }   // 치료 Lv3+: 쏘아 올리는 폭 +25%
+    if (hitKind === 1) { cellShot(s, hitObj, hitCell, (hornOff && b.hm > 1 ? b.dmg / b.hm : b.dmg) * gateK, b.x); continue; }   // 치료 Lv3+: 쏘아 올리는 폭 +25% · 개편 판 돌격 나팔은 게이트에 안 든다(46.7)
     // 장갑문은 총알 종류만큼(doorMul), 방패 정예는 정면 총알을 막는다(shieldMul — 관통 효과면 제 피해). 둘 다 2단계 판의 4구간부터만 있다
     if (gw && hitKind === 2) {   // 개편 판(총 종류): 벽·장갑문 × 총의 벽 배수, 산탄 Lv10 파편(부순 벽 뒤 4m에 벽 체력의 몫)
       const wd = hitObj.kind === 'wall' || hitObj.kind === 'door', was = hitObj.alive;
@@ -4377,6 +4616,7 @@ function castHero(s) {
   h.shot = 0;
   s.stats.heroUses++;
   emit(s, { t: 'heroCast', id: h.id, x: q.x, z: q.z });
+  if (h.id === 'mungchi' && B) hornWave(s);   // 46.7 개편 판: 나팔 충격파
   if (h.id === 'bori') {
     const med = spLv(q, 'medic');
     const k = Math.round(Math.min(0.95, heroVal('bori', 'heal', h.lv) * (med ? synergyOf(med) : 1)) * q.recent);
@@ -4388,6 +4628,31 @@ function castHero(s) {
       emit(s, { t: 'heal', n: k, x: q.x, z: q.z });
     }
   }
+}
+
+/* 뭉치 돌격 나팔 충격파(개편 판 — 46.7): 앞 HORN.reach m · 분대 몸 옆 HORN.side m 안 좀비를 push m 밀어내고 stun초 멈춘다(독침 좀비는 멈추기만).
+   자폭 좀비는 밀린 자리에서 터진다(분대는 안 다친다). 앞 reach m 안의 보스는 boss초 비틀 */
+let hornSafe = false;
+function hornWave(s) {
+  const q = s.squad, R = radius(q.n);
+  let n = 0;
+  const bombs = [];
+  for (const f of s.foes) {
+    if (!f.alive) continue;
+    const dz = f.z - q.z;
+    if (dz < -0.5 || dz > HORN.reach || Math.abs(f.x - q.x) > R + HORN.side || f.kind === 'spit') continue;
+    n++;
+    if (f.elite !== 'thief') f.z += HORN.push;
+    f.holdT = s.t + HORN.stun;
+    if (f.lp === 1 || f.lp === 2) f.lp = 3;   // 도약 좀비: 웅크리기·뛰기가 끊긴다
+    if (f.elite === 'bomb') bombs.push(f);
+  }
+  hornSafe = true;
+  for (const f of bombs) if (f.alive) hitFoe(s, f, f.hp + 1, 'hero');
+  hornSafe = false;
+  const b = s.boss;
+  if (b && b.hp > 0 && b.z - q.z < HORN.reach + b.r) b.stun = Math.max(b.stun || 0, HORN.boss);
+  emit(s, { t: 'horn', x: q.x, z: q.z, reach: HORN.reach, w: R + HORN.side, n });
 }
 
 /* 스킬을 지금 쓰면 좋은가 — 봇·보정표(caltable·cyctable·지문)가 쓰는 규칙(바꾸면 SIM을 올리고 표를 다시 만든다).
@@ -4405,6 +4670,7 @@ export function heroWants(s) {
     let threat = 0;
     for (const f of s.foes) if (f.alive && f.z > q.z && f.z - q.z < 25 && Math.abs(f.x - q.x) < R + 1.5) threat += f.hp;
     if (threat >= 1.2 * D) return true;
+    if (s.endless && s.endless.bld) return false;   // 46.7: 개편 판 돌격 나팔은 게이트에 안 든다 — 싸움에만
     for (const row of s.rows) {
       const dz = row.z - q.z;
       if (row.done || dz < 10 || dz > 30) continue;
@@ -4444,7 +4710,7 @@ export function heroWantsAuto(s) {
     const dz = p.z - q.z;
     if (dz > 0 && dz < 22 && q.x + R > p.x0 && q.x - R < p.x1 && p.hp >= 1.5 * D) return true;
   }
-  if (near >= 0.3 * D) return false;   // 좀비가 오고 있으면 게이트에 쓰지 않는다
+  if (near >= 0.3 * D || (s.endless && s.endless.bld)) return false;   // 좀비가 오고 있으면 게이트에 쓰지 않는다 · 개편 판은 게이트에 안 든다(46.7)
   for (const row of s.rows) {
     const dz = row.z - q.z;
     if (row.done || dz < 12 || dz > 25) continue;

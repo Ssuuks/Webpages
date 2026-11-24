@@ -280,6 +280,22 @@ function toast(text, ms = 2200) {
   clearTimeout(toastT);
   toastT = setTimeout(() => { el.hidden = true; }, ms);
 }
+/* 46.3 특별 구간 끝 병력 증감 띠(가속 몰이·함정 길·미로·행운 길 끝, 보스 앞 '이번 구간 달리기') */
+let zoneT = 0;
+const ZONE_NAME = { rush: '가속 몰이', gaunt: '함정 길', maze: '칸막이 미로', luck: '행운 길', run: '이번 구간 달리기' };
+function showZone(e) {
+  const el = $('zoneBanner');
+  if (!el) return;
+  const d = Math.round(e.n1 - e.n0);
+  $('zoneName').textContent = ZONE_NAME[e.k] || '구간';
+  $('zoneDelta').textContent = (d >= 0 ? '+' : '−') + fmtN(Math.abs(d));
+  $('zoneFrom').textContent = `${fmtN(e.n0)} → ${fmtN(e.n1)}명`;
+  el.className = d >= 0 ? 'up' : 'down';
+  el.hidden = false;
+  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';   // 연달아 와도 다시 튀어나오게
+  clearTimeout(zoneT);
+  zoneT = setTimeout(() => { el.hidden = true; }, e.k === 'run' ? 2300 : 1700);
+}
 /* 확인 창: buttons = [{ label, primary, fn }] */
 function notice(title, text, buttons) {
   $('noticeTitle').textContent = title;
@@ -485,7 +501,8 @@ function renderHero() {
   const next = lvH && lvH < lim.max;
   const nextSkill = next ? `<br><em>Lv${lvH + 1}: ${H.skill.text(lvH + 1)}</em>` : '';
   const nextPassive = next ? `<br><em>Lv${lvH + 1}: ${H.passive.text(lvH + 1)}</em>` : '';
-  skill.innerHTML = `<b>스킬 · ${H.skill.name}</b>${H.skill.text(shown)}${nextSkill}<b style="margin-top:6px">패시브 · ${H.passive.name}</b>${H.passive.text(shown)}${nextPassive}`;
+  const endlessB = H.skillB ? `<b style="margin-top:6px">무한모드에서는</b>스킬: ${H.skillB.text(shown)}<br>패시브 · ${H.passiveB.name}: ${H.passiveB.text(shown)}` : '';   // 46.7
+  skill.innerHTML = `<b>스킬 · ${H.skill.name}</b>${H.skill.text(shown)}${nextSkill}<b style="margin-top:6px">패시브 · ${H.passive.name}</b>${H.passive.text(shown)}${nextPassive}${endlessB}`;
   box.appendChild(skill);
   const actions = document.createElement('div');
   actions.className = 'stack';
@@ -2929,6 +2946,21 @@ function handleEvents(ev) {
         else if (!data.tips.mazeLane) tip('mazeLane', '칸막이 미로! 칸막이 안에서는 제 칸에만 있어요(좀비도 못 넘어와요). 바닥이 초록인 열린 곳에서만 옆 칸으로 한 칸씩 건너요. 벽 없는 칸이 늘 이어져 있어요.', true, '칸막이 미로');
         else toast('칸막이 미로 — 초록 열린 곳에서 옆 칸으로', 1400);
         break;
+      case 'zone': if (s && s.endless) showZone(e); break;   // 46.3
+      case 'boost':   // 46.1 가속 발판
+        sfx.power(1); vibe(15);
+        if (!data.tips.pad) tip('pad', '가속 발판! 밟으면 앞으로 훨씬 빨리 달려요. 옆으로 움직이는 빠르기는 그대로라 톱날을 비키고 게이트를 고를 틈이 짧아요. 노란 점선이 끝나면 원래 속도로 돌아와요.', true, '가속 발판');
+        break;
+      case 'gaunt':   // 46.4 함정 길(45m 앞)
+        if (!data.tips.gaunt) tip('gaunt', '함정 길! 반쪽 톱날이 둘씩 오가요 — 틈을 보고 지나가면 바로 뒤에 게이트가 있어요. 톱날을 피하느라 나쁜 칸으로 밀리지 않게 미리 자리를 잡으세요.', true, '함정 길');
+        else toast(e.pat === 'boost' ? '함정 길 — 가속 발판 뒤 톱날!' : e.pat === 'guard' ? '함정 길 — 좋은 칸 앞 톱날' : '함정 길 — 톱날 뒤 게이트', 1300);
+        break;
+      case 'bomb':
+        sfx.boom(); vibe(e.touch || e.near ? 40 : 15);
+        tip('bomb', '빨간 고리 좀비는 자폭 좀비예요. 닿으면 크게 터지고, 쏴서 쓰러뜨리면 둘레 좀비까지 날려요 — 멀리서, 무리 한가운데 있을 때 쏘세요');
+        break;
+      case 'leapWarn': tip('leap', '노란 고리 좀비가 웅크리면 곧 앞으로 뛰어들어요. 웅크릴 때 잡거나 옆으로 비키세요'); break;
+      case 'drain': tip('thief', '분홍 고리 좀비는 게이트 도둑이에요. 서 있는 동안 뒤 게이트 숫자를 빨아 먹어요(빨강까지) — 먼저 쏴서 잡으세요'); break;
       case 'gunSwap': if (GUNS[e.g]) toast(`${GUNS[e.g].name} Lv${e.lv}로 바꿨어요 — ${GUNS[e.g].line}`, 2200); break;
       case 'fxSwap': toast(`${fxName(e.from)} Lv${e.fromLv}을 버리고 ${fxName(e.a)}(으)로 바꿨어요`, 2200); break;   // 44절
       case 'fxUp':
@@ -3015,6 +3047,7 @@ function handleEvents(ev) {
           tip('fork', '갈림길! 벽 숫자를 보고 골라요. 들어가면 옆으로 못 넘어가요');
           if (peek) toast(`갈림길 · ${peek}`, 2000);
         }
+        if (e.pad && !peek) setTimeout(() => toast('위험한 쪽에 가속 발판 — 깰 시간이 짧아요', 1500), 900);   // 46.5
         break;
       }
       case 'obstacle': {
@@ -3192,6 +3225,7 @@ const CAUSE = {
   boss: ['보스를 막지 못했어요', '빨간 구역을 피하고 보스 정면에 서세요. 병력이 많을수록 빨리 잡혀요'],
   summon: ['보스가 부른 졸개에게 당했어요', '졸개가 다가오기 전에 쏘세요. 보스 쪽으로 오는 길목에 서 있으면 함께 맞아요'],
   crate: ['부수지 못한 상자·철창에 부딪혔어요', '상자 숫자는 체력이에요. 다 부수거나 비켜 가세요'],
+  bomb: ['자폭 좀비가 품에서 터졌어요', '빨간 고리 좀비는 멀리서, 무리 한가운데 있을 때 쏘세요 — 둘레 좀비까지 날려요'],
 };
 
 /* 플레이 기록(32절): 끝난 판 한 줄 — 버전·빌드·출처별 피해·전멸한 곳. 이 기기에만 쌓인다(설정 → 플레이 기록) */
@@ -3376,7 +3410,7 @@ function canAffordUpg() {
 /* 판 안의 스킬 설명: 긴 나팔(속사 + 뭉치 시너지)이 켜졌으면 스킬 길이를 그 값으로(roster의 글은 기본 길이를 적는다) */
 function skillText(st) {
   const h = st.hero, H = HEROES[h.id];
-  const t = H.skill.text(h.lv);
+  const t = (bldOf(st) && H.skillB ? H.skillB : H.skill).text(h.lv);   // 46.7: 개편 판 뭉치는 돌격 나팔(충격파 · 게이트에 안 듦)
   return h.id === 'mungchi' && comboOn(st, 'rapidMungchi') ? t.replace(`${H.skill.dur}초`, `${COMBOS.rapidMungchi.v}초`) : t;
 }
 function setSkillFace() {

@@ -5345,7 +5345,7 @@ test('45절 — 게이트 몰이: 줄 간격 동안 끝 칸에서 반대쪽 끝 
     const s = C.newEndless({ seed: 31, ...BLD });
     for (let g = 0; g < 2000 && s.phase !== 'run'; g++) C.step(s, { dir: 0 });
     s.foes = []; s.rows = []; s.props = []; s.saws = []; delete s.divs; delete s.lanes;
-    s.speed = 12;   // 6구간(몰이가 나오기 시작하는 곳)의 달리는 속도 — 뒤 구간은 더 빨라 더 못 간다
+    s.speed = 12 * C.RUSH.boost;   // 6구간(몰이가 나오기 시작하는 곳)의 달리는 속도 × 들머리 가속 발판(46.2) — 뒤 구간은 더 빨라 더 못 간다
     const q = s.squad; q.x = -(C.ROAD * 2) / 3; q.vx = 0;
     const z0 = q.z;
     for (let g = 0; g < 400 && q.x <= C.LANE_X[1]; g++) C.step(s, inp);
@@ -5357,4 +5357,121 @@ test('45절 — 게이트 몰이: 줄 간격 동안 끝 칸에서 반대쪽 끝 
     const seg = C.buildSegment(11, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 });
     for (const r of seg.rows.filter((x) => x.kind === 'rush')) assert.equal(r.cells.length, 3);
   }
+});
+
+test('46절 — 가속 발판(밟으면 ×mul, len 뒤 원래대로 · 반쪽은 밖이면 안 걸림) · 가속 몰이(7m 간격 + 들머리 길 전체 발판) · 구간 끝 증감 · 함정 길(반쪽 톱날 쌍 바로 뒤 게이트) · 새 적 셋 · 뭉치 돌격(개편 판)', () => {
+  const bare = (o = {}) => {
+    const s = C.newEndless({ seed: 31, ...BLD, ...o });
+    for (let g = 0; g < 2000 && s.phase !== 'run'; g++) C.step(s, { dir: 0 });
+    s.foes = []; s.rows = []; s.props = []; s.saws = []; s.spits = []; delete s.divs; delete s.lanes; delete s.zones; delete s.pads;
+    if (s.hero) s.hero.charge = 0;
+    return s;
+  };
+  // 가속 발판
+  { const s = bare(), q = s.squad, v0 = s.speed;
+    q.x = 0; s.pads = [{ id: 1, x0: -6, x1: 6, z: q.z + 1, len: 8, mul: 2 }];
+    let got = 0; for (let i = 0; i < 12; i++) { C.step(s, { dir: 0 }); got += s.ev.filter((e) => e.t === 'boost').length; }
+    assert.equal(got, 1, '밟는 순간 한 번');
+    assert.ok(q.boost && Math.abs(q.vz - 2 * v0) < 1e-9, `밟으면 ×2 (${q.vz} / ${v0})`);
+    let end = 0; for (let i = 0; i < 120 && q.boost; i++) { C.step(s, { dir: 0 }); end += s.ev.filter((e) => e.t === 'boostEnd').length; }
+    const z1 = s.pads[0].z + s.pads[0].len; assert.ok(!q.boost && end === 1 && q.z >= z1 && q.z < z1 + 2 * v0 * C.DT + 1e-9, '판 줄에서 len m 뒤 끝');
+    C.step(s, { dir: 0 }); assert.ok(Math.abs(q.vz - v0) < 1e-9, '그다음 틱부터 원래대로');
+    const t = bare(); t.squad.x = -3; t.pads = [{ id: 1, x0: 0, x1: 6, z: t.squad.z + 1, len: 8, mul: 2 }];
+    for (let i = 0; i < 12; i++) C.step(t, { dir: 0 });
+    assert.ok(!t.squad.boost, '반쪽 발판 밖이면 안 걸린다'); }
+  // 가속 몰이 · 함정 길 생성
+  let rush = null, pats = new Set(), gauntSegs = 0;
+  for (let k = 2; k < 60; k++) {
+    const seg = C.buildSegment(11, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 });
+    const ng = seg.plan.filter((x) => x === 'gaunt').length;
+    assert.equal(ng, k < C.GAUNT.from ? 0 : k >= C.GAUNT.two ? 2 : 1, `${k}구간 함정 길 수`);
+    if (ng) gauntSegs++;
+    if (!rush && seg.plan.includes('rush')) rush = seg;
+    for (const ch of seg.chunks.filter((c) => c.kind === 'gaunt')) {
+      const saws = seg.saws.filter((w) => w.trap && w.z >= ch.z && w.z < ch.z + ch.len);
+      const row = seg.rows.find((r) => r.kind === 'gaunt' && r.z >= ch.z && r.z < ch.z + ch.len);
+      assert.ok(saws.length >= 2 && row && row.cells.length === 3, '함정 길: 톱날 둘 이상 + 세 칸 게이트');
+      const lastSaw = Math.max(...saws.map((w) => w.z));
+      assert.ok(row.z - lastSaw > 0 && row.z - lastSaw <= C.GAUNT.gate + 1e-9, `톱날 바로 뒤 게이트 ${row.z - lastSaw}m`);
+      const byZ = {}; for (const w of saws) (byZ[w.z] || (byZ[w.z] = [])).push(w);
+      if (Object.values(byZ).some((g) => g.length === 2 && g[0].xa * g[1].xa < 0 && g[0].xb - g[0].xa < C.ROAD)) pats.add('pair');   // 반쪽 둘이 한 줄에(왼쪽 반 · 오른쪽 반)
+      if ((seg.pads || []).some((o) => o.z >= ch.z && o.z < ch.z + ch.len)) pats.add('pad');
+    }
+    if (k >= C.FOE2.thief.from) for (const f of seg.foes.filter((x) => x.elite === 'thief')) {
+      const r = seg.rows.find((x) => x.id === f.row);
+      assert.ok(r && r.cells[f.ci].op === 'add' && r.cells[f.ci].v > 0 && Math.abs(r.z - C.FOE2.thief.ahead - f.z) < 1e-9 && f.spd === 0, '게이트 도둑은 덧셈 칸 앞에 서 있다');
+    }
+    for (const f of seg.foes) {
+      if (f.elite === 'bomb') assert.ok(k >= C.FOE2.bomb.from && f.kind === 'runner');
+      if (f.elite === 'leap') assert.ok(k >= C.FOE2.leap.from);
+      if (f.elite === 'thief') assert.ok(k >= C.FOE2.thief.from);
+    }
+  }
+  assert.ok(pats.has('pair') && pats.has('pad'), [...pats].join(','));
+  assert.ok(rush, '몰이가 나오는 구간');
+  const rr = rush.rows.filter((r) => r.kind === 'rush').sort((a, b) => a.z - b.z);
+  for (let i = 1; i < rr.length; i++) assert.ok(Math.abs(rr[i].z - rr[i - 1].z - C.RUSH.gap) < 1e-9, '몰이 줄 간격');
+  assert.ok((rush.pads || []).some((o) => o.mul === C.RUSH.boost && o.x0 <= -C.ROAD && o.x1 >= C.ROAD && o.z < rr[0].z && o.z + o.len > rr[rr.length - 1].z), '들머리 길 전체 가속 발판이 마지막 줄까지');
+  assert.ok((rush.zones || []).some((o) => o.k === 'rush'));
+  // 구간 끝 증감
+  { const s = bare(), q = s.squad;
+    s.zones = [{ id: 1, k: 'gaunt', z0: q.z + 0.5, z1: q.z + 4 }];
+    const n0 = Math.round(q.n); let zin = null, zout = null;
+    for (let i = 0; i < 60 && !zout; i++) { C.step(s, { dir: 0 }); for (const e of s.ev) { if (e.t === 'zoneIn') zin = e; if (e.t === 'zone') zout = e; } if (zin && !s.zones[0].cut) { q.n = Math.round(q.n * 0.5); s.zones[0].cut = 1; } }
+    assert.ok(zin && zout && zout.k === 'gaunt' && zout.n0 === n0 && zout.n1 === Math.round(q.n) && zout.n1 < zout.n0, JSON.stringify(zout));
+    q.z = s.arenaZ - 0.05; C.step(s, { dir: 0 });
+    const run = s.ev.find((e) => e.t === 'zone' && e.k === 'run');
+    assert.ok(run && run.n0 === Math.round(s.endless.n0) && run.n1 === Math.round(q.n), '보스 앞: 이번 구간 달리기 증감'); }
+  const foe = (s, o) => { const f = { id: s.nextId++, kind: 'grunt', x: s.squad.x, z: s.squad.z + 10, hp: 50, max: 50, alive: true, awake: true, hitT: -9, cd: 0, seed: 1, r: 0.42, spd: 3.2, home: 0.9, homeDist: 24, ...o }; f.max = f.hp; s.foes.push(f); return f; };
+  // 자폭: 닿으면 병력 hit 이상
+  { const s = bare(), q = s.squad; q.n = 1000;
+    foe(s, { kind: 'runner', elite: 'bomb', z: q.z + 0.6, hp: 1e9, spd: 0 });
+    C.step(s, { dir: 0 });
+    assert.ok((s.stats.lostBy.bomb | 0) >= Math.round(1000 * C.FOE2.bomb.hit), `자폭 닿음 ${s.stats.lostBy.bomb}`);
+    assert.ok(s.ev.some((e) => e.t === 'bomb' && e.touch)); }
+  // 자폭: 멀리서 쓰러뜨리면 둘레 좀비가 맞고 분대는 안 다친다
+  { const s = bare(), q = s.squad; q.n = 400;
+    const b = foe(s, { kind: 'runner', elite: 'bomb', z: q.z + 14, hp: 1, spd: 0, home: 0 });
+    const nb = [foe(s, { z: b.z + 0.8, x: b.x + 1.2, hp: 1e6, spd: 0, home: 0 }), foe(s, { z: b.z + 1.2, x: b.x - 1.2, hp: 1e6, spd: 0, home: 0 })];
+    for (let i = 0; i < 90 && b.alive; i++) C.step(s, { dir: 0 });
+    assert.ok(!b.alive && nb.every((f) => f.hp < f.max), '둘레 좀비가 터짐에 맞았다');
+    assert.equal(s.stats.lostBy.bomb | 0, 0, '멀리서 터지면 분대는 안 다친다'); }
+  // 도약: 웅크렸다가 dist m를 T초에
+  { const s = bare(), q = s.squad;
+    s.speed = 1;   // 분대가 거의 서 있게(뛰어든 좀비에 닿아 사라지지 않게 — 거리만 잰다)
+    const f = foe(s, { elite: 'leap', z: q.z + C.FOE2.leap.at + 3, hp: 1e9, home: 0 });
+    let warn = -1, leap = -1, zAt = 0;
+    for (let i = 0; i < 200 && f.lp !== 3 && f.alive; i++) { C.step(s, { dir: 0, tx: 4.4 }); for (const e of s.ev) { if (e.t === 'leapWarn') warn = s.tick; if (e.t === 'leap') { leap = s.tick; zAt = e.z; } } }
+    assert.ok(warn > 0 && leap - warn >= Math.round(C.FOE2.leap.crouch / C.DT) - 1, '웅크리기(예고)');
+    assert.ok(f.lp === 3 && Math.abs(zAt - C.FOE2.leap.dist - f.z) < 0.6, `뛰어든 거리 ${(zAt - f.z).toFixed(2)}`); }
+  // 게이트 도둑: 칸을 빨아 먹고, 잡히면 멈춘다
+  { const s = bare(), q = s.squad;
+    const c = C.makeCell('add', 20, 100, -C.ROAD, C.ROAD, 0);
+    const row = { id: s.nextId++, z: q.z + 30, cells: [c], done: false, chosen: -1, ng: 100, src: 'gate', kind: 'plain' };
+    s.rows = [row];
+    const f = foe(s, { elite: 'thief', x: 3.5, z: row.z - C.FOE2.thief.ahead, hp: 1e9, spd: 0, home: 0, homeDist: 0, row: row.id, ci: 0, acc: 0 });
+    q.x = 3.5;
+    for (let i = 0; i < 60; i++) C.step(s, { dir: 0, tx: 3.5 });
+    const drop = 20 - c.v;
+    assert.ok(drop >= 5 && drop <= 9, `1초에 원래 값의 ${C.FOE2.thief.drain * 100}%쯤 (${drop})`);
+    f.alive = false; const v1 = c.v;
+    let drains = 0; for (let i = 0; i < 30; i++) { C.step(s, { dir: 0, tx: -3.5 }); drains += s.ev.filter((e) => e.t === 'drain').length; }
+    assert.equal(drains, 0); assert.ok(c.v >= v1, '잡히면 그만 빤다'); }
+  // 뭉치 돌격(개편 판): 덧셈 칸 빠르기는 그대로, 나팔 충격파가 앞 좀비를 밀어내고 자폭 좀비는 분대를 안 다치게 터진다
+  { const a = C.newEndless({ seed: 31, ...BLD, hero: { id: 'mungchi', lv: 5 } }), b = C.newEndless({ seed: 31, ...BLD, hero: { id: 'nabi', lv: 5 } });
+    const st = (s) => s.rows.flatMap((r) => r.cells.filter((c) => c.op === 'add').map((c) => c.step));
+    const sa = st(a), sb = st(b);
+    assert.ok(sa.length === sb.length && sa.every((v, i) => Math.abs(v - sb[i]) < 1e-9 * sb[i]), '개편 판은 집합 나팔(칸 빠르기)이 없다');
+    const camp = C.newGame(C.prepareLevel(12), { hero: { id: 'mungchi', lv: 5 } }), camp0 = C.newGame(C.prepareLevel(12), {});
+    assert.ok(st(camp)[0] < st(camp0)[0], '캠페인은 그대로');
+    assert.ok(R.HEROES.mungchi.skillB.text(5).includes(`${R.HORN.reach}m`) && !R.HEROES.mungchi.skillB.text(5).includes('게이트 올리기에도'));
+    const s = bare({ hero: { id: 'mungchi', lv: 5 } }), q = s.squad; q.n = 500;
+    const g1 = foe(s, { z: q.z + 8, hp: 1e9 }), bm = foe(s, { kind: 'runner', elite: 'bomb', z: q.z + 3, hp: 1e9 }), far = foe(s, { z: q.z + R.HORN.reach + 6, hp: 1e9 });
+    const z1 = g1.z, zf = far.z;
+    s.hero.charge = 1; C.step(s, { dir: 0, skill: true });
+    assert.ok(s.ev.some((e) => e.t === 'horn'), '충격파');
+    assert.ok(g1.z > z1 + R.HORN.push - 0.2 && g1.holdT > s.t, `앞 좀비 밀려남 ${(g1.z - z1).toFixed(2)}`);
+    assert.ok(!bm.alive && (s.stats.lostBy.bomb | 0) === 0, '자폭 좀비는 터지고 분대는 안 다친다');
+    assert.ok(far.z <= zf, '먼 좀비는 그대로');
+    const zh = g1.z; C.step(s, { dir: 0 }); assert.ok(Math.abs(g1.z - zh) < 1e-9, '멈춘 동안 걷지 않는다'); }
 });

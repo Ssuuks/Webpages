@@ -200,7 +200,13 @@ const ELITE_COL = {
   toxic: { ring: '#B26BFF', glow: 'rgba(178,107,255,.35)', hi: '#F1DCFF', burst: ['#B26BFF', '#6B2FB8', '#F1DCFF'] },
   split: { ring: '#FF9A3D', glow: 'rgba(255,154,61,.32)', hi: '#FFE3B8', burst: ['#FF9A3D', '#FFD84A', '#E8607A'] },
   shield: { ring: OBSTACLES.shield.color, glow: 'rgba(63,224,208,.30)', hi: '#D8FFF9', burst: [OBSTACLES.shield.color, '#9AA2B0', '#E8ECF2'] },
+  // 46.6 새 적: 자폭 = 붉은 주황(드럼통 색 — 터진다), 도약 = 노랑, 게이트 도둑 = 분홍(게이트 파랑·빨강과 안 겹치게)
+  bomb: { ring: '#FF5A36', glow: 'rgba(255,90,54,.34)', hi: '#FFE2B0', burst: ['#FF5A36', '#FFD84A', '#3A2A2A'] },
+  leap: { ring: '#FFE14D', glow: 'rgba(255,225,77,.30)', hi: '#FFFBD6', burst: ['#FFE14D', '#FFB347', '#FFFBD6'] },
+  thief: { ring: '#FF6FD8', glow: 'rgba(255,111,216,.32)', hi: '#FFE0F6', burst: ['#FF6FD8', '#B03C90', '#FFE0F6'] },
 };
+/* 가속 발판(46.1) 색: 판 = 짙은 호박색, 셰브런 = 노랑(흐르는 빛), 가속 길 가장자리 점선 */
+const PAD_COL = { base: '#7A4A12', chev: '#FFC83D', hot: '#FFF4B0', edge: '#FFB347' };
 const MAX_PARTS = 320;
 const FLAG_X = [0, -0.55, 0.55];
 
@@ -1307,6 +1313,29 @@ export function createRenderer(cvs) {
           burst(e.x, 0.3, e.z, 14, ELITE_COL.toxic.burst, 3.5, 3);
           screenFlash(0.18, '190,120,255'); shake(0.25);
           break;
+        case 'bomb': {   // 46.6 자폭 좀비가 터졌다: 붉은 펑 + 반경 고리(닿아서 터졌으면 붉은 번쩍임·흔들림)
+          const br = e.r || 2.2;
+          fx('boom', e.x, 0.8, e.z, 0.4);
+          fx('glow', e.x, 0.8, e.z, 0.35, { col: '#FF5A36', r: br * 1.3 });
+          ring(e.x, e.z, 0.3, br, 0.35, '#FFE2B0', { thick: 2 });
+          burst(e.x, 0.9, e.z, 22, ELITE_COL.bomb.burst, 6, 5, 0.65);
+          if (e.touch || e.near) { screenFlash(0.24, '255,80,50'); shake(0.45); } else shake(0.18);
+          break;
+        }
+        case 'horn': {   // 46.7 뭉치 돌격 나팔 충격파: 금빛 고리 셋이 앞으로 번지고 밀려난 자리에 먼지
+          for (let i = 0; i < 3; i++) ring(e.x, e.z + 2 + i * 4, 0.5, e.w + i * 0.6, 0.35 + i * 0.08, i ? GOLD_BULLET : '#FFF4B0', { thick: i ? 1 : 2 });
+          burst(e.x, 0.4, e.z + 3, 18, [GOLD_BULLET, '#FFF4B0', '#E6D2B0'], 6, 2.5, 0.5);
+          shake(0.3);
+          break;
+        }
+        case 'leapWarn': burst(e.x, 0.2, e.z, 6, ELITE_COL.leap.burst, 1.5, 1.5, 0.4); break;
+        case 'leap': burst(e.x, 0.2, e.z, 10, ['#E6D2B0', '#FFE14D'], 3, 2.5, 0.5); break;
+        case 'drain': if (!lowFx() && Math.random() < 0.35) part(e.x + (Math.random() - 0.5) * 0.6, 1.2 + Math.random() * 0.5, e.z + 0.6, 0, 1.2, 0, 0.4, ELITE_COL.thief.ring, 1, -0.5); break;
+        case 'boost':   // 46.1 가속 발판을 밟았다: 발밑에 노란 고리가 앞으로 번진다
+          ring(e.x, q.z, 0.4, 2.4, 0.3, PAD_COL.chev, { follow: 'sq', thick: 2 });
+          burst(e.x, 0.3, q.z + 1, 12, [PAD_COL.chev, PAD_COL.hot, '#FFFFFF'], 4, 2, 0.4);
+          shake(0.12);
+          break;
         case 'split':   // 분열 좀비가 갈라졌다: 주황 고리가 번진다
           burst(e.x, 0.6, e.z, 10, ELITE_COL.split.burst, 4, 3);
           ring(e.x, e.z, 0.3, 1.4, 0.3, ELITE_COL.split.ring);
@@ -1820,7 +1849,7 @@ export function createRenderer(cvs) {
     const dz = row.z - q.z;
     const near = dz < 20 && dz > 0;
     const idx = pickCell(row, q.x);
-    const H = 2.7;
+    const H = row.kind === 'rush' ? 1.3 : 2.7;   // 46.2 가속 몰이: 판을 낮게(1.3m) — 7m 간격에서 앞 줄 판이 뒷줄 숫자를 안 가린다(앞 줄이 60m 앞일 때부터)
     const c0 = row.cells[0], cN = row.cells[row.cells.length - 1];
     if (!vface(c0.x0 - 0.17, cN.x1 + 0.17, H, H + 0.4, row.z)) return;
     const a = fadeIn(face.d);
@@ -1890,14 +1919,14 @@ export function createRenderer(cvs) {
         ctx.globalAlpha = a;
       }
       // 뭉치 돌격 나팔 중 쏘아 올리는 칸: 아래부터 금빛이 차오른다(스킬이 게이트에도 든다)
-      if (pumped && c.op === 'add' && s.hero && s.hero.id === 'mungchi' && s.hero.act > 0) {
+      if (pumped && c.op === 'add' && s.hero && s.hero.id === 'mungchi' && s.hero.act > 0 && !(s.endless && s.endless.bld)) {   // 46.7: 개편 판 나팔은 게이트에 안 든다
         const fill = c.cap > c.v0 ? Math.max(0.15, Math.min(1, (c.v - (c.v0 ?? 0)) / Math.max(1, c.cap - (c.v0 ?? 0)))) : 1;
         ctx.fillStyle = GOLD_BULLET; ctx.globalAlpha = a * 0.45;
         trap(face.ax, face.bx, face.ay, face.ax + (face.dx - face.ax) * fill, face.bx + (face.cx - face.bx) * fill, face.ay + (face.dy - face.ay) * fill);
         ctx.globalAlpha = a;
         if (!lowFx() && Math.random() < 0.3) part((c.x0 + c.x1) / 2 + (Math.random() - 0.5) * (c.x1 - c.x0) * 0.7, 0.4 + Math.random() * H * 0.6, row.z, 0, 1.4, 0, 0.5, GOLD_BULLET, 1, -0.3, 'star');
       }
-      ctx.fillStyle = sel ? '#FFFFFF' : pumped ? (s.hero && s.hero.id === 'mungchi' && s.hero.act > 0 && c.op === 'add' ? GOLD_BULLET : '#FFFFFF') : st.line;
+      ctx.fillStyle = sel ? '#FFFFFF' : pumped ? (s.hero && s.hero.id === 'mungchi' && s.hero.act > 0 && c.op === 'add' && !(s.endless && s.endless.bld) ? GOLD_BULLET : '#FFFFFF') : st.line;
       trapLine(face.ax, face.bx, face.ay, face.dx, face.cx, face.dy, sel ? 2 : 1);
       const mx = (face.ax + face.bx) / 2, my = (face.ay + face.dy) / 2 - bump;
       cellLabel(c, st, mx, my, pw, ph, sel);
@@ -2668,9 +2697,11 @@ export function createRenderer(cvs) {
 
   /* ---------- 좀비 ---------- */
   function drawFoe(s, f, lag, bio) {
-    const moving = f.kind !== 'spit' && f.awake;
+    const moving = f.kind !== 'spit' && f.awake && f.lp !== 1 && f.lp !== 2;   // 도약 좀비(46.6)는 웅크리기·뛰기 동안 걸음을 앞질러 그리지 않는다
     const z = moving ? f.z + f.spd * lag : f.z;
-    if (!project(view, f.x, 0, z)) return;
+    const hop = f.lp === 2 ? Math.sin(Math.PI * clamp((s.t - f.lpT) / 0.35, 0, 1)) * 1.5 : 0;   // 뛰는 동안 포물선
+    if (hop > 0 && project(view, f.x, 0, z)) { ctx.fillStyle = bio.shadow; ellipse(P.x, P.y, Math.max(2, f.r * P.s), Math.max(1, f.r * 0.36 * P.s)); }
+    if (!project(view, f.x, hop, z)) return;
     const a = fadeIn(P.d);
     if (!a) return;
     const sk = skinOf(f.kind, curBid);
@@ -2746,10 +2777,46 @@ export function createRenderer(cvs) {
         ctx.fillStyle = ec.ring; ctx.fillRect(hx - 1, hy - 1, 3, 3);
         ctx.fillStyle = ec.hi; ctx.fillRect(hx - 1, hy - 1, 1, 1);
         ctx.fillStyle = ec.ring; ctx.fillRect(hx - 3 + ph * 2, hy - 4 - (ph & 1), 1, 1);
+      } else if (f.elite === 'bomb') {
+        // 자폭: 둥근 폭탄 + 깜박이는 심지 불꽃(가까울수록 빨리)
+        const fast = f.z - s.squad.z < 12 ? 16 : 6;
+        ctx.fillStyle = OUT; ctx.fillRect(hx - 3, hy - 2, 6, 5); ctx.fillRect(hx - 2, hy - 3, 4, 7);
+        ctx.fillStyle = '#3A2A2A'; ctx.fillRect(hx - 2, hy - 1, 4, 3); ctx.fillRect(hx - 1, hy - 2, 2, 5);
+        ctx.fillStyle = ec.hi; ctx.fillRect(hx - 1, hy - 1, 1, 1);
+        ctx.fillStyle = OUT; ctx.fillRect(hx + 1, hy - 5, 1, 2);
+        if (((time * fast) | 0) & 1) { ctx.fillStyle = '#FFD84A'; ctx.fillRect(hx + 1, hy - 6, 2, 2); ctx.fillStyle = ec.ring; ctx.fillRect(hx + 2, hy - 7, 1, 1); }
+      } else if (f.elite === 'leap') {
+        // 도약: 위로 꺾인 화살(^) — 웅크리는 동안은 빠르게 깜박인다(곧 뛴다)
+        const warn = f.lp === 1;
+        if (!warn || (((time * 14) | 0) & 1)) {
+          ctx.fillStyle = OUT; ctx.fillRect(hx - 3, hy, 7, 2); ctx.fillRect(hx - 2, hy - 2, 5, 2); ctx.fillRect(hx - 1, hy - 3, 3, 1);
+          ctx.fillStyle = warn ? '#FFFFFF' : ec.ring; ctx.fillRect(hx - 2, hy, 1, 1); ctx.fillRect(hx + 2, hy, 1, 1); ctx.fillRect(hx - 1, hy - 1, 1, 1); ctx.fillRect(hx + 1, hy - 1, 1, 1); ctx.fillRect(hx, hy - 2, 1, 1);
+        }
+      } else if (f.elite === 'thief') {
+        // 게이트 도둑: 분홍 빨대(머리 위에서 노리는 칸 쪽으로)
+        ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 4, 3, 6);
+        ctx.fillStyle = ec.ring; ctx.fillRect(hx, hy - 3, 1, 4);
+        ctx.fillStyle = ec.hi; ctx.fillRect(hx, hy - 4 + (ph & 1), 1, 1);
       } else {
         const d = ph === 0 ? 1 : ph === 2 ? 3 : 2;
         ctx.fillStyle = OUT; ctx.fillRect(hx - d - 2, hy - 2, 4, 4); ctx.fillRect(hx + d - 1, hy - 2, 4, 4);
         ctx.fillStyle = ec.ring; ctx.fillRect(hx - d - 1, hy - 1, 2, 2); ctx.fillRect(hx + d, hy - 1, 2, 2);
+      }
+    }
+    if (f.elite === 'thief' && f.row) {
+      // 게이트 도둑(46.6): 노리는 칸 아래쪽까지 분홍 점선 — 빨아 먹는 동안 점이 칸에서 도둑 쪽으로 흐른다
+      const row = s.rows.find((r) => r.id === f.row), c = row && !row.done ? row.cells[f.ci] : null;
+      if (c) {
+        const x0 = Math.round(pxs), y0 = Math.round(pys) - Math.round(rr.ay * 0.6);
+        if (project(view, (c.x0 + c.x1) / 2, 0.5, row.z)) {
+          const x1 = P.x, y1 = P.y, n = 9, on = s.t - (f.drainT ?? -9) < 0.2, ph = (time * 4) % 1;
+          ctx.fillStyle = ELITE_COL.thief.ring;
+          for (let i = 0; i <= n; i++) {
+            const u = on ? ((i / n + ph) % 1) : i / n;
+            if (!on && (i & 1)) continue;
+            ctx.fillRect(Math.round(x1 + (x0 - x1) * u), Math.round(y1 + (y0 - y1) * u), on ? 2 : 1, on ? 2 : 1);
+          }
+        }
       }
     }
     if (f.slowT > s.t) {
@@ -3601,12 +3668,57 @@ export function createRenderer(cvs) {
   }
 
   /* ---------- 바닥 표시(조준 띠·그림자·독침 예고·내려찍기 구역·고리) ---------- */
+  /* 가속 발판(46.1): 판(트리거 줄 z 앞 2.4m) 위 셰브런이 앞으로 흐르는 빛, 가속이 이어지는 길(len m)의 가장자리 점선 */
+  function groundPar(xn0, xn1, zn, xf0, xf1, zf) {   // 땅 위 평행사변형: 가까운 변 xn0~xn1(zn), 먼 변 xf0~xf1(zf)
+    zn = Math.max(zn, view.camZ + 1.5);
+    if (zf <= zn || !project(view, xn0, 0.02, zn)) return;
+    const aL = P.x, ay = P.y; project(view, xn1, 0.02, zn); const aR = P.x;
+    if (!project(view, xf0, 0.02, zf)) return;
+    const bL = P.x, by = P.y; project(view, xf1, 0.02, zf);
+    trap(aL, aR, ay, bL, P.x, by);
+  }
+  function drawPad(o, qz) {
+    const x0 = Math.max(o.x0, -ROAD), x1 = Math.min(o.x1, ROAD);
+    if (o.z + o.len < qz - 2 || o.z - qz > view.far) return;
+    const a = project(view, (x0 + x1) / 2, 0, o.z) ? fadeIn(P.d) : 1;
+    if (!a) return;
+    ctx.globalAlpha = 0.55 * a;
+    ctx.fillStyle = PAD_COL.base;
+    groundQuad(x0 + 0.05, x1 - 0.05, o.z - 3.4, o.z + 0.2, 0.015);
+    ctx.globalAlpha = a;
+    const n = Math.max(1, Math.round((x1 - x0) / 2.2)), w = (x1 - x0) / n, ph = (time * 3) % 1;
+    for (let k = 0; k < 3; k++) {
+      const zc = o.z - 3.1 + k * 1.05, hot = ((k / 3 + 1 - ph) % 1) < 0.34;
+      ctx.fillStyle = hot ? PAD_COL.hot : PAD_COL.chev;
+      for (let i = 0; i < n; i++) {
+        const cx = x0 + w * (i + 0.5), hw = w * 0.34, th = 0.3;
+        groundPar(cx - hw, cx - hw + th, zc, cx - th / 2, cx + th / 2, zc + 0.85);   // 왼팔 /
+        groundPar(cx + hw - th, cx + hw, zc, cx - th / 2, cx + th / 2, zc + 0.85);   // 오른팔 \
+      }
+    }
+    // 가속이 이어지는 길: 가장자리 점선(2m마다)
+    ctx.fillStyle = PAD_COL.edge;
+    ctx.globalAlpha = 0.5 * a;
+    for (let z = o.z + 1; z < o.z + o.len; z += 2) {
+      if (z < qz - 3) continue;
+      if (x0 > -ROAD + 0.1) groundQuad(x0 - 0.08, x0 + 0.08, z, z + 0.9, 0.015);
+      if (x1 < ROAD - 0.1) groundQuad(x1 - 0.08, x1 + 0.08, z, z + 0.9, 0.015);
+      if (x0 <= -ROAD + 0.1 && x1 >= ROAD - 0.1) { groundQuad(-ROAD + 0.1, -ROAD + 0.26, z, z + 0.9, 0.015); groundQuad(ROAD - 0.26, ROAD - 0.1, z, z + 0.9, 0.015); }
+    }
+    ctx.globalAlpha = 1;
+  }
   function drawDecals(s, bio, qx, lag) {
     const q = sq;   // 카메라와 같은 시간축의 분대(R4)
     // 폭발 드럼통의 폭발 반경(맨 아래 — 분대 그림자·독침 고리가 위에). 지나친 통은 더 못 쏘므로 그리지 않는다
     for (const p of s.props) if (p.kind === 'drum' && p.alive && !p.passed) drawBlastZone(s, p);
+    if (s.pads) for (const o of s.pads) drawPad(o, q.z);
     if (q.n > 0) {
       const R = radius(q.n);
+      // 가속 중(46.1): 발밑 호박빛 + 양옆으로 흘러 지나가는 속도선
+      if (s.squad.boost && (s.phase === 'run') && project(view, qx, 0.02, q.z)) {
+        glow(P.x, P.y, (R + 1) * P.s, (R + 1) * P.s * 0.4, PAD_COL.chev, 0.3 + 0.1 * Math.sin(time * 20));
+        if (!reduce) for (let i = beats(28); i > 0; i--) { const sd = Math.random() < 0.5 ? -1 : 1; part(qx + sd * (R + 0.4 + Math.random() * 1.6), 0.15 + Math.random() * 1.2, q.z + 4 + Math.random() * 6, 0, 0, 0, 0.22, Math.random() < 0.5 ? '#FFFFFF' : PAD_COL.hot, 1, 0, 'streak'); }
+      }
       ctx.fillStyle = bio.aim;
       groundQuad(qx - R - 0.3, qx + R + 0.3, q.z + R * 0.5, q.z + 30, 0.01);
       // 그림자 = 분대 몸(옆 ±R, 앞뒤 ±SQUAD_DEPTH·R)보다 조금 넓게, 대형과 같은 둥근 네모(SIM 8)
@@ -4000,6 +4112,7 @@ export function createRenderer(cvs) {
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.y < 0) { p.y = 0; p.vy *= -0.3; p.vx *= 0.6; p.vz *= 0.6; }
       if (!project(view, p.x, p.y, p.z)) continue;
+      if (p.spr === 'streak') { ctx.fillStyle = p.c; ctx.fillRect(Math.round(P.x), Math.round(P.y), 1, Math.max(2, Math.round(P.s * 0.9))); continue; }   // 가속 속도선(46.1): 땅에 멈춘 점이 빠르게 지나가며 세로 줄로
       if (p.spr) {
         const fr = p.spr === 'coin' ? ((time * 10) | 0) & 3 : p.spr === 'smoke' ? (p.life < p.max * 0.5 ? 1 : 0) : p.spr === 'flick' ? (p.life > p.max * 0.6 ? 0 : p.life > p.max * 0.3 ? 1 : 2) : 0;
         if (p.life < p.max * 0.25 && (f60 & 1)) continue;

@@ -6,11 +6,11 @@ export const LOG_MAX = 300;
 
 /* 출처 이름(core hitFoe의 by · hitBossBonus의 by) */
 /* 39.10(기록 v2): 탄 효과를 나눠 센다 — pierce 관통 · splash 작렬 둘레 · burst 유폭 · shock 전격 사슬 · pop Lv10 터짐 · ember 불씨 폭발 불. 옛 기록의 chain은 전격·유폭·터짐이 섞인 값 */
-export const SRC_NAME = { gun: '총', pierce: '관통', splash: '작렬 둘레', burst: '유폭', shock: '전격', pop: '터짐(Lv10)', ember: '불씨 폭발', sniper: '저격수', rocket: '로켓병', flame: '화염병', chain: '전격·유폭(옛 기록)', acid: '부식', boom: '폭발(옛 기록)', hero: '영웅', drum: '드럼통', pet: '펫', card: '카드', cure: '치료', '?': '기타' };
+export const SRC_NAME = { gun: '총', pierce: '관통', splash: '작렬 둘레', burst: '유폭', shock: '전격', pop: '터짐(Lv10)', ember: '불씨 폭발', sniper: '저격수', rocket: '로켓병', flame: '화염병', chain: '전격·유폭(옛 기록)', acid: '부식', boom: '폭발(옛 기록)', hero: '영웅', drum: '드럼통', bomb: '자폭 좀비 폭발', pet: '펫', card: '카드', cure: '치료', '?': '기타' };
 /* 병사를 잃은 까닭(core lose의 cause[:sub]) */
 export const LOSS_NAME = {
   foe: '좀비에 닿음', brute: '거구', runner: '질주 좀비', gate: '게이트', wall: '벽에 부딪힘', saw: '톱날', spit: '독침', pool: '웅덩이',
-  boss: '보스', 'boss:stomp': '보스 밟기', 'boss:slam': '보스 내려찍기', summon: '보스 졸개', crate: '상자·철창', 'crate:trap': '꽝 상자', fog: '독안개', drum: '드럼통',
+  boss: '보스', 'boss:stomp': '보스 밟기', 'boss:slam': '보스 내려찍기', summon: '보스 졸개', crate: '상자·철창', 'crate:trap': '꽝 상자', fog: '독안개', drum: '드럼통', bomb: '자폭 좀비',
 };
 const r1 = (x) => Math.round(x * 10) / 10;
 
