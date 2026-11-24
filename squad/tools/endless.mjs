@@ -8,7 +8,7 @@
    --flame: 화염병 줄(4단계)을 연 판(특수병 카드·철창·금색 칸에 화염병이 나온다 — think는 화염병을 THINK.sp.flame으로 본다. '그 병과 우선' 고르기는 밸런스 때 더한다) */
 import * as C from '../assets/core.js';
 import * as R from '../assets/roster.js';
-import { AMMO_IDS, fxK, RELICS, RELIC_IDS, BUILD, fx2Val } from '../assets/roster.js';
+import { AMMO_IDS, fxK, RELICS, RELIC_IDS, BUILD, fx2Val, gunVal } from '../assets/roster.js';
 import { makeBot, rng } from '../tests/bots.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : process.argv[i + 1]; };
@@ -115,12 +115,11 @@ function thinkScoreB(s, c, f, K) {
   const g = (a, b) => Math.log(a / b);
   if (f.k === 'curse') return K.curse;
   if (f.k === 'relic') return ((THINK.relic)[c.r] || 0) * (1 + THINK.H);
-  if (f.k === 'keep') return g(C.WEAPON[f.to], C.WEAPON[f.from]) + 0.01;   // 총 바꾸기를 마다하면 ★ +1(21.8)
-  if (f.k === 'swap') return K.swap ?? 0.03;   // 다른 총: 봇은 총마다의 세기를 모른다 — 작은 값(★이 상한이면 바꾼다)
   let v = 0;
   const part = f.k === 'gun' ? 'gun' : f.k === 'unit' ? f.u : f.k === 'fx' ? f.a : f.k === 'gunlv' ? 'gunlv' : '';
   if (f.k === 'gun') v = g(C.WEAPON[f.to], C.WEAPON[f.from]);   // 총 ★(무기 단계)
   else if (f.k === 'fx' && f.a === 'rapid') v = g(fx2Val('rapid', f.to).pow, f.from ? fx2Val('rapid', f.from).pow : 1);
+  else if (f.k === 'gunlv' && f.g === 'marksman') { const a = gunVal('marksman', f.from), b = gunVal('marksman', f.to); v = g(b.dmg, a.dmg) + (b.thru && !a.thru ? 0.25 : 0) + (b.head && !a.head ? 0.05 : 0); }   // 48절: 저격총은 Lv마다 피해가 크게 오르고 Lv5에 넘침 관통 — 그만큼 값을 준다
   else v = (K.w[part] || 0.02) * (f.to - f.from) + (f.from ? 0 : K.first);   // 레벨마다 정해진 능력(성장 개편 — 세트·깊이 보상은 없어졌다)
   if (f.combos) v += (K.combo ?? THINK.combo) * f.combos.length;
   if (f.enh) v += f.enh === 'rare' ? K.enhRare : K.enhLegend;   // 카드 등급 = 강화: 부가 능력·규칙이 붙는 몫

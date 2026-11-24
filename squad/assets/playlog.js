@@ -43,7 +43,7 @@ export function entryOf(s, o = {}) {
     ammo: s.ammo || '', gun: B ? `${B.gt}:${(B.gl && B.gl[B.gt]) || 1}` : '', star: (q.tier | 0) + 1,
     fx, sp, spEnd, enh: B && B.enh ? B.enh : {}, relics: e && e.relics ? e.relics.slice() : [],
     mut: Array.isArray(st.mutAt) ? st.mutAt.map((r) => r.slice()) : [], picks: e && Array.isArray(e.picks) ? e.picks.slice() : [],
-    segs, lanes: { luck: Array.isArray(st.luck) ? st.luck.slice() : [0, 0, 0, 0], treasure: st.treasure | 0, gunx: st.gunx | 0, swap: st.swap | 0 },
+    segs, lanes: { luck: Array.isArray(st.luck) ? st.luck.slice() : [0, 0, 0, 0], treasure: st.treasure | 0 },
     sup: o.sup || null, quit: !!o.quit,
     dmg: share, kills: { ...(st.kb || {}) }, lost,
     death: st.death || null,

@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, SUPPLY, BOSS_FLOOR, GUNS, GUN_IDS, gunVal, GUN_SWAP, HORN } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, SUPPLY, BOSS_FLOOR, GUNS, GUN_IDS, gunVal, HORN } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -491,7 +491,11 @@ function planChunks(p, g) {
   if (p.rush && p.rushRoll < RUSH.p) plan.splice(Math.max(1, plan.length - 2), 0, 'rush');   // 게이트 몰이(39.5): 굴림은 따로(p.rushRoll — 위 배치가 밀리지 않게), 마지막 게이트·몰이 앞
   if (p.gaunt) {   // 함정 길(46.4): 굴림은 따로 — 첫 게이트 뒤 · 마지막 두 청크 앞 아무 데나, 구간마다 하나(GAUNT.two부터 둘)
     const gg = { rs: hash(VERSION, 'gauntPlan', p.gauntSeed >>> 0, p.seg) };
-    for (let i = p.seg >= GAUNT.two ? 2 : 1; i > 0; i--) plan.splice(1 + Math.floor(rand(gg) * Math.max(1, plan.length - 3)), 0, 'gaunt');
+    for (let i = p.seg >= GAUNT.two ? 2 : 1; i > 0; i--) {
+      let at = 1 + Math.floor(rand(gg) * Math.max(1, plan.length - 3));
+      while (plan[at - 1] === 'fork' && plan[at] === 'fork') at++;   // 연속 갈림길(25구간~) 사이에는 끼지 않는다
+      plan.splice(at, 0, 'gaunt');
+    }
   }
   return plan;
 }
@@ -1981,7 +1985,7 @@ export function newEndless(opt = {}) {
     // 빌드 개편(opt.build === 2 — ENDGAME.md 16절): 안 연 판에는 필드가 없다(앞 단계 지문 그대로)
     if (opt.build === 2) {
       s.endless.bld = newBld();
-      const g = GUNS[opt.gun] ? opt.gun : 'rifle';   // 총 종류(21절): 출격 때 고른 총, Lv1. gl = 총마다 Lv(바꿔도 기억한다), gp = 바꿀지 고를 총(무기 상자에서 — 다음 보스 뒤)
+      const g = GUNS[opt.gun] ? opt.gun : 'rifle';   // 총 종류(21절): 출격 때 고른 총, Lv1 — 판 끝까지 그 총(48절: 총 바꾸기 없앰). gl = 총의 Lv, gp는 옛 필드(늘 '')
       Object.assign(s.endless.bld, { gt: g, gl: { [g]: 1 }, gp: '' });
       s.endless.n0 = s.squad.n;   // 34절 의무병 전설 '응급 수혈'의 기준(구간을 시작한 병력 — startSegmentB가 고친다)
       // 출격 보급품(27절 — 산 판에만 필드가 생긴다): legend = 남은 전설 보장 수, revive = 남은 부활 수
@@ -2060,8 +2064,6 @@ function cardInfoB(s, c, B) {
     if (c.k === 'gun') return { k: 'gun', from: q.tier, to: Math.min(tierMax(s), q.tier + n), n };   // 총 ★ — 무기 개조는 ★로 합쳐졌다
     if (c.k === 'curse') return { k: 'curse', mul: BUILD.curse.mul, more: BUILD.curse.more };
     if (c.k === 'gunlv') { const lv = (B.gl && B.gl[c.g]) || 1; return { k: 'gunlv', g: c.g, from: lv, to: awakeOn(s) ? lv + 1 : Math.min(BUILD.evo, lv + 1), n }; }   // 총 Lv(21.9)
-    if (c.k === 'swap') { const lv = (B.gl && B.gl[c.g]) || Math.max(1, Math.floor(((B.gl && B.gl[B.gt]) || 1) * GUN_SWAP.keep)); return { k: 'swap', g: c.g, from: B.gt, fromLv: (B.gl && B.gl[B.gt]) || 1, to: lv, pend: !!c.pend }; }   // 총 바꾸기: 처음 잡는 총은 지금 Lv의 keep 몫
-    if (c.k === 'keep') return { k: 'keep', g: c.g, from: q.tier, to: Math.min(tierMax(s), q.tier + 1) };   // 그대로 — 대신 ★ +1
     if (c.k === 'unit') {
       const m = q.sp.find((o) => o.k === c.u);
       const o = { k: 'unit', u: c.u, from: m ? m.lv || 1 : 0, to: m ? Math.min(spLvMax(s), (m.lv || 1) + 1) : 1, n };   // 레벨은 늘 +1 — 희귀·전설은 강화(enh)
@@ -2475,11 +2477,6 @@ function makeOffer3(s) {
   if (firstOffer && e.mood === 'rich' && MOOD.rich.rare) { const c = out.find((o) => (o.k === 'unit' || o.k === 'fx' || o.k === 'gunlv') && (o.n | 0) < 2); if (c) { c.n = 2; c.rich = 1; } }
   // 전설 보급(27절): 강화가 있는 장(특수병·탄 효과·총 Lv) 하나를 전설로 — 굴림은 그대로(지문이 밀리지 않게), 고르면 보장이 줄어든다(pickCardB)
   if (e.sup && e.sup.legend > 0) { const c = out.find((o) => (o.k === 'unit' || o.k === 'fx' || o.k === 'gunlv') && (o.n | 0) < 3); if (c) { c.n = 3; c.sup = 1; } }
-  // 총 바꾸기(21.8): 대왕 뒤 첫 카드에 GUN_SWAP.king 확률로 한 장(가운데 자리 — 다른 총 하나). 등급·계약 굴림과 따로 굴린다
-  if (tag === 'super' && firstOffer && out.length >= 2) {
-    const gs = { rs: hash(VERSION, 'gunking', e.seed >>> 0, e.seg, B.rrn) };
-    if (rand(gs) < GUN_SWAP.king) { const others = GUN_IDS.filter((x) => x !== B.gt); const j = tagIdx === 1 ? (out.length > 2 ? 2 : 0) : 1; out[j] = { k: 'swap', g: others[Math.floor(rand(gs) * others.length)] }; }   // 가운데 자리(희귀 보장을 받은 장은 피한다)
-  }
   // 위험한 계약: 이 보스 뒤 첫 카드에만, 마지막 장 자리에
   const curse = rand(g) < BUILD.curse.p;
   if (curse && B.pi === 0 && !B.curse && e.bosses >= BUILD.curse.from && out.length >= 2 && out[out.length - 1].k !== 'spec') out[out.length - 1] = { k: 'curse' };
@@ -2487,7 +2484,6 @@ function makeOffer3(s) {
 }
 function makeOfferB(s) {
   const B = s.endless.bld;
-  if (B.gp && GUNS[B.gp] && B.gp !== B.gt) return [{ k: 'swap', g: B.gp, pend: true }, { k: 'keep', g: B.gp, pend: true }];   // 총 바꾸기(21.8): 맨 앞, 둘 중 하나는 꼭
   if (B.rel) { const r = relicOfferB(s); if (r) return r; B.rel = 0; }
   return makeOffer3(s);
 }
@@ -2503,7 +2499,7 @@ export function rerollCards(s) {
   return true;
 }
 export const rerollsOf = (s) => { const B = bldOf(s); return B ? B.rr : 0; };
-const pickName = (c) => (c.k === 'unit' ? 'unit:' + c.u : c.k === 'fx' ? 'fx:' + c.a : c.k === 'relic' ? 'relic:' + c.r : c.k === 'gunlv' ? 'gunlv:' + c.g : c.k === 'swap' ? 'swap:' + c.g : c.k === 'spec' ? 'spec:' + c.u + ':' + c.b : c.k === 'hero' ? 'hero:' + c.h : c.k === 'guard' ? 'guard:' + c.g : c.k);
+const pickName = (c) => (c.k === 'unit' ? 'unit:' + c.u : c.k === 'fx' ? 'fx:' + c.a : c.k === 'relic' ? 'relic:' + c.r : c.k === 'gunlv' ? 'gunlv:' + c.g : c.k === 'spec' ? 'spec:' + c.u + ':' + c.b : c.k === 'hero' ? 'hero:' + c.h : c.k === 'guard' ? 'guard:' + c.g : c.k);
 /* 카드 등급 n(2 희귀·3 전설)이면 대상 id의 강화 하나를 더 쌓는다 */
 function enhAdd(B, id, n) {
   if (n < 2 || !ENH[id]) return;
@@ -2536,14 +2532,6 @@ function pickCardB(s, i, opt) {
   else if (c.k === 'curse') { B.curse = BUILD.curse.mul; B.more += BUILD.curse.more; }
   else if (c.k === 'relic') { if (relicCan(e, c.r)) relicAdd(s, c.r); B.rel = 0; B.pre = (B.pre | 0) + 1; again = true; }
   else if (c.k === 'gunlv') { if (!B.gl) B.gl = {}; B.gl[c.g] = info.to; enhAdd(B, c.g, n); manualPick(s, B, c.g, () => { B.gl[c.g]++; }); }   // 총 Lv +1, 희귀·전설이면 총 강화
-  else if (c.k === 'swap' && GUNS[c.g]) {   // 총 바꾸기: 지금 총의 Lv은 기억해 두고, 처음 잡는 총은 지금 Lv의 keep 몫(★은 그대로)
-    s.stats.swap = (s.stats.swap | 0) + 1;
-    if (!B.gl) B.gl = {};
-    B.gl[c.g] = info.to;
-    B.gt = c.g;
-    if (c.pend) { B.gp = ''; B.pre = (B.pre | 0) + 1; again = true; }
-    emit(s, { t: 'gunSwap', g: c.g, lv: info.to, x: q.x, z: q.z });
-  } else if (c.k === 'keep') { q.tier = Math.min(tierMax(s), q.tier + 1); B.gp = ''; B.pre = (B.pre | 0) + 1; again = true; }
   e.picks.push(pickName(c));
   emit(s, { t: 'card', ...info, x: q.x, z: q.z });
   if (!again && B.more > 0) { B.more--; again = true; }
@@ -2565,21 +2553,8 @@ function startSegmentB(s) {
   gain(s, add, q.x, q.z, 'supply');
   emit(s, { t: 'supply', n: add, x: q.x, z: q.z });
   e.n0 = q.n;   // 34절 의무병 전설 '응급 수혈'의 기준(이 구간을 시작한 병력)
-  gunCrates(s);
   if (e.fx) fxCrates(s);
   if (e.relics) relicSeg(s);
-}
-/* 총 바꾸기 상자(21.8): GUN_SWAP.from구간부터 이번 구간 무기 상자의 GUN_SWAP.p 몫에 지금 총과 다른 총(시드·구간·상자 id로 정한다 — 상자 위에 그림).
-   열면 B.gp(바꿀지 고를 총) — 다음 보스 뒤 카드 화면 맨 앞에서 바꾸기 / 그대로(★ +1) */
-function gunCrates(s) {
-  const e = s.endless, B = e.bld;
-  if (!B || e.seg < GUN_SWAP.from) return;
-  const others = GUN_IDS.filter((g) => g !== B.gt);
-  for (const p of s.props) {
-    if (p.kind !== 'crate' || !p.reward || p.reward.type !== 'gun') continue;
-    const g = { rs: hash(VERSION, 'guncrate', e.seed >>> 0, e.seg, p.id) };
-    if (rand(g) < GUN_SWAP.p) p.reward = { type: 'gunx', g: others[Math.floor(rand(g) * others.length)] };
-  }
 }
 /* 쓰러진 특수병이 돌아온다(보스를 잡은 뒤 — 카드가 뜨기 전): 레벨은 BUILD.spBack 몫(최소 Lv1), 자리·호위 병사가 되면 */
 function spBack(s) {
@@ -2671,7 +2646,7 @@ export function newGame(lv, opt = {}) {
     refFire: lv.fireE || 0,
     nextId: lv.nextId + 1,
     ev: [],
-    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0, spUp: 0, flips: 0, dmg: {}, kb: {}, lostBy: {}, death: null, spPk: {}, segs: [], cur: null, mutAt: [], luck: [0, 0, 0, 0], treasure: 0, gunx: 0, swap: 0 },   // spPk·segs·cur·mutAt·luck·treasure·gunx·swap: 플레이 기록 v2(39.10)   // dmg·kb·lostBy·death: 플레이 기록(32절 — 출처별 피해·처치, 무엇에 잃었나, 전멸한 곳). 해시에 안 든다
+    stats: { kills: 0, killHp: 0, lost: 0, gained: 0, coins: 0, crates: 0, gates: 0, bossT: 0, spawned: start, healed: 0, spGot: 0, spLost: 0, heroUses: 0, healedAtArena: 0, spUp: 0, flips: 0, dmg: {}, kb: {}, lostBy: {}, death: null, spPk: {}, segs: [], cur: null, mutAt: [], luck: [0, 0, 0, 0], treasure: 0 },   // spPk·segs·cur·mutAt·luck·treasure: 플레이 기록 v2(39.10)   // dmg·kb·lostBy·death: 플레이 기록(32절 — 출처별 피해·처치, 무엇에 잃었나, 전멸한 곳). 해시에 안 든다
   };
   // 펫(ENDGAME.md 6절): 데려간 판에만 s.pet이 있다 — 펫 전용 난수 흐름(rs)을 따로 써서 판의 난수(s.rs)를 건드리지 않는다.
   // avg(별 기준을 재는 기준 봇용): 확률 대신 기대값으로 고르게 — par가 한 판의 운에 흔들리지 않게
@@ -2762,7 +2737,7 @@ export function restore(o) {
         for (const id of GUN_IDS) { const v = Math.floor(Number(gl[id]) || 0); if (v >= 1) ok[id] = Math.min(LV_SANE, v); }
         if (!ok[B.gt]) ok[B.gt] = 1;
         B.gl = ok;
-        B.gp = GUNS[B.gp] && B.gp !== B.gt ? B.gp : '';
+        B.gp = '';   // 48절: 총 바꾸기를 없앴다 — 옛 저장의 '바꿀지 고를 총'은 버린다
       }
       if (e.bld) {   // 카드 강화: 아는 대상만 r·l 정수(0 이상)
         const en = e.bld.enh && typeof e.bld.enh === 'object' ? e.bld.enh : {}, ok = {};
@@ -2795,7 +2770,7 @@ export function restore(o) {
         }
         e.fx = fx;
         for (const p of o.props) if (p.reward && p.reward.type === 'fx' && !AMMO[p.reward.a]) p.reward = { type: 'gun' };
-        for (const p of o.props) if (p.reward && p.reward.type === 'gunx' && !(e.bld && GUNS[p.reward.g])) p.reward = { type: 'gun' };   // 총 바꾸기 상자(개편 판만)
+        for (const p of o.props) if (p.reward && p.reward.type === 'gunx') p.reward = { type: 'gun' };   // 48절: 옛 저장의 다른 총 상자는 보통 무기 상자로
         // 알린 장애물 종류: 아는 것만 한 번씩(없으면 빈 목록 — 다시 알린다)
         e.obsSeen = Array.isArray(e.obsSeen) ? e.obsSeen.filter((k, i, l) => OBSTACLE_IDS.includes(k) && l.indexOf(k) === i) : [];
       } else { delete e.fx; delete e.obsSeen; }
@@ -2804,7 +2779,6 @@ export function restore(o) {
       const okRelic = (c) => relicCan(e, c.r);   // 유물 카드: 열린 것 중 아직 없는 것(RELIC.max개 아래)
       const okN = (c) => c.n === 1 || c.n === 2 || c.n === 3;
       const okCardB = (c) => c && typeof c === 'object' && (c.syn === undefined || c.syn === true) && (c.k === 'relic' ? okRelic(c) : c.k === 'curse' ? true
-        : c.k === 'swap' || c.k === 'keep' ? !!(GUNS[c.g] && e.bld && c.g !== e.bld.gt) && (c.pend === undefined || c.pend === true)   // 총 바꾸기(21.8)
         : c.k === 'spec' ? false : !okN(c) ? false : c.k === 'gun' ? true : c.k === 'gunlv' ? !!(GUNS[c.g] && e.bld && c.g === e.bld.gt) : c.k === 'unit' ? spKindsOf(o).includes(c.u)
           : c.k === 'fx' ? !!(e.fx && AMMO[c.a]) : false);
       const okCard = e.bld ? okCardB : (c) => c && typeof c === 'object' && (c.k === 'relic' ? okRelic(c) : kinds.includes(c.k) && (c.k !== 'unit' || spKindsOf(o).includes(c.u)) && ((c.k !== 'ammo' && c.k !== 'fx') || !!AMMO[c.a]) && (c.syn === undefined || c.syn === true));
@@ -3655,7 +3629,7 @@ function fire(s, R) {
       if (far || rng) bl.r = (rng || BULLET_RANGE) * (far ? PET_FAR : 1);
       if (gv && G.id !== 'rifle') {
         if (G.id === 'shotgun') { bl.g = 's'; bl.base = dmg; if (gv.slug) bl.slug = gv.slug / b; }   // 산탄: 거리로 줄어드는 피해(bulletsUpdate), 슬러그는 펠릿마다 나눠 민다
-        else { bl.g = 'm'; bl.thru = 1; bl.tx = aims[i].x; if (aims[i].tg) bl.tg = aims[i].tg; }   // 저격: 관통 예산 · 조준한 적(tx)을 따라 휘어 간다
+        else { bl.g = 'm'; if (gv.thru) bl.thru = 1; bl.tx = aims[i].x; if (aims[i].tg) bl.tg = aims[i].tg; }   // 저격: 조준한 적(tx)을 따라 휘어 간다 · 넘침 관통은 Lv5(진화)부터(48절)
       }
       if (bst && bst.thru) bl.thru = 1;   // 소총 Lv10 관통 점사
       if (pCrit && !pCrit.avg && rand(pCrit) < ppC) { bl.dmg = dmg * PET_CRIT; bl.c = 1; crits++; }
@@ -4252,18 +4226,7 @@ function openCrate(s, p) {
     emit(s, { t: 'crate', type: 'lucky', size: sz, tier: q.tier, big: p.lg ? LANES.big : 0.4, x, z: p.z });
     return;
   }
-  if (r.type === 'gunx' && bldOf(s)) {   // 총 바꾸기 상자(21.8): 바꿀지는 다음 보스 뒤에 고른다(달리는 중에는 멈추지 않는다)
-    const B = bldOf(s);
-    if (GUNS[r.g] && r.g !== B.gt) {
-      B.gp = r.g;
-      if (!B.gl) B.gl = {};
-      B.gl[r.g] = (B.gl[r.g] || Math.max(1, Math.floor(((B.gl[B.gt]) || 1) * GUN_SWAP.keep))) + GUN_SWAP.stack;   // 39.8: 주울 때마다 그 총 Lv이 쌓인다(안 바꿔도 — 처음이면 지금 총 Lv의 keep 몫에서)
-      s.stats.gunx = (s.stats.gunx | 0) + 1;
-    }
-    emit(s, { t: 'crate', type: 'gunx', g: r.g, lv: (B.gl && B.gl[r.g]) || 1, x, z: p.z });
-    return;
-  }
-  if (r.type === 'gun') {
+  if (r.type === 'gun' || r.type === 'gunx') {   // 48절: 다른 총 상자(gunx)는 없앴다 — 남은 것은 보통 무기 상자
     if (q.tier < tierMax(s)) { q.tier++; emit(s, { t: 'crate', type: 'gun', tier: q.tier, x, z: p.z }); }
     else { gain(s, crateMen(q.n, r), x, p.z, 'crate'); emit(s, { t: 'crate', type: 'men', x, z: p.z }); }
   } else if (r.type === 'men') {
