@@ -4695,7 +4695,7 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
         assert.deepEqual(cr.map((p) => C.laneCell((p.x0 + p.x1) / 2)).sort(), [0, 1, 2], '세 칸에 하나씩');
       }
       if (l.k === 'maze') {
-        // 토막마다 벽 없는 칸, 열린 곳은 칸막이 하나씩(한 칸씩만 건넌다)
+        // 토막마다 벽 없는 칸, 열린 곳은 토막이 바뀌는 곳마다 칸막이 둘 다(51절 — 예전엔 하나씩)
         const n = L.stretch, sl = (l.z1 - l.z0 - C.FORK_TAPER) / n;
         const walls = lv.props.filter((p) => p.maze);
         for (let i = 0; i < n; i++) {
@@ -4703,8 +4703,9 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
           const blocked = new Set(walls.filter((w) => w.z >= za && w.z < za + sl).map((w) => C.laneCell((w.x0 + w.x1) / 2)));
           assert.ok(blocked.size < 3, `${seed}/${seg}구간 ${i}번째 토막이 다 막혔다`);
         }
-        assert.equal(l.open.length, n - 1);
+        assert.equal(l.open.length, 2 * (n - 1), '토막이 바뀌는 곳마다 칸막이 둘 다(51절)');
         for (const o of l.open) assert.ok(o[0] === 0 || o[0] === 1);
+        for (let i = 0; i < l.open.length; i += 2) assert.ok(l.open[i][0] !== l.open[i + 1][0] && l.open[i][1] === l.open[i + 1][1] && l.open[i][2] - l.open[i][1] === L.open + 2, JSON.stringify(l.open));
       }
     }
   }
