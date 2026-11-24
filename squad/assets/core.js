@@ -626,6 +626,9 @@ function goldenValue(n, c) {
 export const FOE_HX = 0.8;
 /* 톱날이 맞는 몸: 땅 위 타원 — 옆으로 ±w.w/2(그린 날 폭), 앞뒤 ±SAW_HD */
 export const SAW_HD = 0.35;
+/* 톱날 피해(49절 — 개편 판만): 톱날마다 처음 닿는 순간 병력의 bite 몫을 한 번에 잃고, 닿아 있는 동안 초당 flat + rate × 병력.
+   캠페인·앞 단계 판은 예전 그대로 초당 4 + 0.35 × 병력(보정표·지문이 그 규칙으로 잰 값) */
+export const SAW2 = { bite: 0.08, flat: 6, rate: 0.55 };
 export const FOE_BASE = {
   grunt: { r: 0.42, spd: 3.2, home: 0.9, homeDist: 24 },
   runner: { r: 0.36, spd: 6.2, home: 2.8, homeDist: 26 },
@@ -959,11 +962,11 @@ export const TERRAIN = { hideFrom: 13, hideDist: 16, hideBonus: 1.3, tightFrom: 
    - luck 행운 길(luckFrom구간부터 luckP): 세 칸 모두 가려진 상자(소·중·대가 무작위) — 손해는 없고 무엇이 나올지가 운(18.8)
    - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막마다 칸막이 하나에 열린 곳(open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
 export const LANE_X = [-ROAD / 3, ROAD / 3];
-export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, open: 7, wallP: 0.75, trap: 0.15, big: 0.6 };   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60%
+export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, open: 7, wallP: 0.75, trap: 0.3, big: 0.6, foeN: [4, 7] };   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60% · 49절: 꽝 −15 → −30%, 미로 좀비 칸 foeN마리(3~5 → 4~6)
 /* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로(45절: 11 → 7 → 3.5m, 줄은 모두 세 칸 — 끝 칸에서 반대쪽 끝 칸까지(5m)는 손가락 끌기(초당 16m)로도 0.31초라 달리는 동안(6구간 초당 12m) 3.75m — 한 줄 사이에 끝에서 끝으로는 못 간다, 옆 칸까지만) — 쏴서 올리는 덧셈 칸이 많고, ×2 줄 하나·÷2 줄 하나.
    숫자는 그 구간 기준 병력(bkScale)으로, 굴림은 따로(hash — 다른 청크의 배치가 밀리지 않게). 골든 값은 늘리지 않는다(잘 고르면 앞서 나가고, 못 고르면 뒤처진다)
    미로 게이트(39.5): 미로 토막 끝마다 칸마다 게이트 — 빈 칸 = 작은 +, 좀비 칸 뒤·벽 뒤 = 큰 +(마지막 토막은 ×2), 벽 칸 몇은 벽 대신 ÷2 */
-export const RUSH = { from: 6, p: 0.3, n: [10, 14], gap: 7, boost: 2, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.4 };   // 46.2: 간격 3.5 → 7m + 들머리 길 전체 가속 발판 ×boost — 줄 사이 시간(0.29초)은 같고, 앞 줄 판이 뒷줄 숫자를 안 가린다
+export const RUSH = { from: 6, p: 0.3, n: [10, 14], gap: 7, boost: 2, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.6 };   // 49절: 미로 벽 자리의 ÷2 몫 0.4 → 0.6(빌드와 상관없는 페널티 — 벽·좀비 체력을 올리면 총을 덜 키운 빌드만 크게 졌다) · 46.2: 간격 3.5 → 7m + 들머리 길 전체 가속 발판 ×boost — 줄 사이 시간(0.29초)은 같고, 앞 줄 판이 뒷줄 숫자를 안 가린다
 /* 가속 발판(46.1 — 개편 판만): 분대 몸 가운데가 판의 x 범위 안에서 판 줄을 지나면 앞으로 달리는 속도 ×mul, len m 동안. 옆 빠르기는 그대로.
    gaunt·fork·spit·wave: 함정 길(가속 톱날)·갈림길 위험한 쪽·독침 앞·무리 앞에 놓는 판의 배수 · 열리는 구간 · 몫 · 길이 */
 export const PAD = {
@@ -1433,7 +1436,7 @@ const CHUNK = {
           else { wallProp(lv, x0 + 0.15, x1 - 0.15, za + sl * 0.62, wh, { maze: true }); kinds[c] = 'wall'; }
         } else if (c !== free || chance(g, 0.5)) {
           if (c !== free) kinds[c] = 'foe';
-          const m = 3 + Math.floor(rand(g) * 3);
+          const m = LANES.foeN[0] + Math.floor(rand(g) * (LANES.foeN[1] - LANES.foeN[0]));   // 49절: 3~5 → 4~6마리
           for (let k = 0; k < m; k++) addFoe(lv, g, 'grunt', U(g, x0 + 0.6, x1 - 0.6), za + 3 + U(g, 0, sl - 6), hp, { maze: true });
           // 미로 보상(28절): 빈 칸이 아닌 좀비 칸은 무리 뒤에 작은 행운 상자 — 뚫고 가면 얻는다(굴림 없이 — 뒤 배치가 밀리지 않게)
           if (c !== free && i > 0) lv.props.push({ id: lv.nextId++, kind: 'crate', x0: (x0 + x1) / 2 - 0.9, x1: (x0 + x1) / 2 + 0.9, z: za + sl - 1.5, hp: Math.max(1, Math.round(D * 0.06)), max: Math.max(1, Math.round(D * 0.06)), alive: true, hitT: -9, reward: { type: 'lucky', size: 1 }, luck: true, mazeBox: true });
@@ -3259,13 +3262,20 @@ function propsUpdate(s, R) {
 
 function sawsUpdate(s, R) {
   const q = s.squad;
+  const B = !!(s.endless && s.endless.bld);
   for (const w of s.saws) {
     w.x += w.dir * w.spd * DT;
     if (w.x > w.xb) { w.x = w.xb; w.dir = -1; }
     if (w.x < w.xa) { w.x = w.xa; w.dir = 1; }
     if (touches(w.x - q.x, w.z - q.z, hitHalf(R), SQUAD_DEPTH * R, w.w / 2, SAW_HD)) {
       if (wardBlock(s, 'saw', w.id, w.x, w.z)) continue;   // 방패막(유물): 구간마다 처음 닿은 톱날 하나
-      q.lossAcc += (4 + 0.35 * q.n) * DT;
+      if (B && !w.bit && q.n > 0) {   // 49절: 처음 닿는 순간 한 입 — 스치기만 해도, 가속돼 빨리 지나가도 이만큼은 잃는다
+        w.bit = 1;
+        const k = Math.max(1, Math.round(q.n * SAW2.bite));
+        emit(s, { t: 'sawBite', n: k, x: w.x, z: w.z });
+        lose(s, k, 'saw', w.x, w.z);
+      }
+      q.lossAcc += (B ? SAW2.flat + SAW2.rate * q.n : 4 + 0.35 * q.n) * DT;
       if (q.lossAcc >= 1) {
         const k = Math.floor(q.lossAcc);
         q.lossAcc -= k;
@@ -5087,8 +5097,10 @@ export function botTarget(s, opt = {}) {
     const gap = R + POOL_R + 0.3;
     cands.push(clamp(pl.x - gap, -EDGE, EDGE), clamp(pl.x + gap, -EDGE, EDGE));
   }
-  // 톱날 한 번 스치는 손실(띠를 지나는 시간 동안 초당 4 + 0.35n의 대부분)
-  const sawCost = (4 + 0.35 * q.n) * ((2 * (0.55 * R + 0.35)) / vz) * 0.8 + 1;
+  // 톱날 한 번 스치는 손실(띠를 지나는 시간 동안 초당 4 + 0.35n의 대부분 — 개편 판은 처음 닿는 한 입 + 초당 SAW2, 49절)
+  const sawCost = s.endless && s.endless.bld
+    ? q.n * SAW2.bite + (SAW2.flat + SAW2.rate * q.n) * ((2 * (0.55 * R + 0.35)) / vz) * 0.8 + 1
+    : (4 + 0.35 * q.n) * ((2 * (0.55 * R + 0.35)) / vz) * 0.8 + 1;
   // 2단계 장애물: 장갑문에 들어가는 총알 몫, 앞에 있는 폭발 드럼통(닿아도 안 다치고 보상도 없다 — 옆 상자를 같이 쏘면 상자째 터진다)
   const dk = doorMul(s);
   const drums = [];

@@ -1252,6 +1252,12 @@ export function createRenderer(cvs) {
           fx('puff', e.x, 0.7, e.z, 0.35);
           shake(0.3);
           break;
+        case 'sawBite':   // 49절 톱날에 처음 닿았다: 쇳불꽃 + 핏방울, 붉은 번쩍임·흔들림(한 입에 크게 잃는다)
+          burst(e.x, 0.6, e.z, 16, ['#FFF4B0', '#FFB347', '#DDE3EA'], 6, 4, 0.45);
+          burst(q.x, 0.8, q.z, 10, FX_COL.blood, 3, 3);
+          screenFlash(0.22, '232,56,79');
+          shake(0.35);
+          break;
         case 'wallCrash':
           burst(e.x, 0.9, e.z, 22, e.kind === 'door' ? FX_COL.iron : FX_COL.stone, 4, 4, 0.7);
           burst(q.x, 0.8, q.z, 10, FX_COL.blood, 3, 3);
