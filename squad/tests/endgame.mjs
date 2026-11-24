@@ -5339,3 +5339,22 @@ test('44절 — 탄 칸이 차도 새 탄 효과 카드가 나오고, 고르면 
   assert.ok(!C.cardInfo(t, t.endless.offer[0]).full);
   C.pickCard(t, 0); assert.deepEqual(t.endless.fx, { burst: 9, frost: 1 });
 });
+
+test('45절 — 게이트 몰이: 줄 간격 동안 끝 칸에서 반대쪽 끝 칸으로는 못 간다(손가락 끌기·글쇠 모두, 몰이가 나오는 가장 느린 구간에서도) · 줄은 모두 세 칸', () => {
+  const cross = (inp) => {
+    const s = C.newEndless({ seed: 31, ...BLD });
+    for (let g = 0; g < 2000 && s.phase !== 'run'; g++) C.step(s, { dir: 0 });
+    s.foes = []; s.rows = []; s.props = []; s.saws = []; delete s.divs; delete s.lanes;
+    s.speed = 12;   // 6구간(몰이가 나오기 시작하는 곳)의 달리는 속도 — 뒤 구간은 더 빨라 더 못 간다
+    const q = s.squad; q.x = -(C.ROAD * 2) / 3; q.vx = 0;
+    const z0 = q.z;
+    for (let g = 0; g < 400 && q.x <= C.LANE_X[1]; g++) C.step(s, inp);
+    return q.z - z0;
+  };
+  const touch = cross({ tx: (C.ROAD * 2) / 3 }), key = cross({ dir: 1 });
+  assert.ok(touch > C.RUSH.gap && key > C.RUSH.gap, `끝에서 끝까지 달린 거리 손가락 ${touch.toFixed(2)}m · 글쇠 ${key.toFixed(2)}m > 줄 간격 ${C.RUSH.gap}m`);
+  for (let k = C.RUSH.from; k < 80; k++) {
+    const seg = C.buildSegment(11, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 });
+    for (const r of seg.rows.filter((x) => x.kind === 'rush')) assert.equal(r.cells.length, 3);
+  }
+});

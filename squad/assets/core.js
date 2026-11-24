@@ -948,10 +948,10 @@ export const TERRAIN = { hideFrom: 13, hideDist: 16, hideBonus: 1.3, tightFrom: 
    - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막마다 칸막이 하나에 열린 곳(open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
 export const LANE_X = [-ROAD / 3, ROAD / 3];
 export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, open: 7, wallP: 0.75, trap: 0.15, big: 0.6 };   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60%
-/* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로(42절: 11 → 7m — 달리는 속도로 0.5~0.7초, 옆으로 길 반을 건너는 시간쯤이라 욕심내면 놓친다) — 쏴서 올리는 덧셈 칸이 많고, ×2 줄 하나·÷2 줄 하나.
+/* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로(45절: 11 → 7 → 3.5m, 줄은 모두 세 칸 — 끝 칸에서 반대쪽 끝 칸까지(5m)는 손가락 끌기(초당 16m)로도 0.31초라 달리는 동안(6구간 초당 12m) 3.75m — 한 줄 사이에 끝에서 끝으로는 못 간다, 옆 칸까지만) — 쏴서 올리는 덧셈 칸이 많고, ×2 줄 하나·÷2 줄 하나.
    숫자는 그 구간 기준 병력(bkScale)으로, 굴림은 따로(hash — 다른 청크의 배치가 밀리지 않게). 골든 값은 늘리지 않는다(잘 고르면 앞서 나가고, 못 고르면 뒤처진다)
    미로 게이트(39.5): 미로 토막 끝마다 칸마다 게이트 — 빈 칸 = 작은 +, 좀비 칸 뒤·벽 뒤 = 큰 +(마지막 토막은 ×2), 벽 칸 몇은 벽 대신 ÷2 */
-export const RUSH = { from: 6, p: 0.3, n: [8, 11], gap: 7, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.4 };
+export const RUSH = { from: 6, p: 0.3, n: [10, 14], gap: 3.5, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.4 };
 /* 구간 성격(39.6 — 개편 판만, 2구간부터): 풍요(rich — 좋은 칸 ×good·나쁜 칸 ×bad) · 보통 · 기근(lean). 시드·구간으로 정해 카드 화면에서 다음 구간 것을 미리 보인다 */
 export const MOOD = { from: 2, rich: { p: 0.2, good: 1.6, bad: 0.7, rare: true }, lean: { p: 0.25, good: 0.5, bad: 1.6 } };
 export function segMood(seed, k) {
@@ -1303,11 +1303,9 @@ const CHUNK = {
     const A = () => Math.max(2, nice(ng * U(g2, RUSH.add[0], RUSH.add[1]))), Bv = () => -Math.max(2, nice(ng * U(g2, RUSH.sub[0], RUSH.sub[1])));
     for (let i = 0; i < n; i++) {
       const rowZ = z + 20 + i * RUSH.gap;
-      const three = i % 3 === 2;
-      const edges = three ? [-ROAD, LANE_X[0], LANE_X[1], ROAD] : [-ROAD, 0, ROAD];
-      let ops = i === iMul ? [['mul', 2], ['add', Bv()]] : i === iDiv ? [['div', 2], ['add', A()]] : [['add', A()], ['add', Bv()]];
-      if (three) ops.push(i === iMul || i === iDiv ? ['add', Bv()] : ['add', A()]);
-      ops = shuffle(g2, ops);
+      const edges = [-ROAD, LANE_X[0], LANE_X[1], ROAD];   // 45절: 늘 세 칸(두 칸이면 가운데 선 하나만 넘으면 돼 끝에서 끝이 짧다)
+      const ops = i === iMul ? [['mul', 2], ['add', Bv()], ['add', Bv()]] : i === iDiv ? [['div', 2], ['add', A()], ['add', Bv()]] : [['add', A()], ['add', Bv()], rand(g2) < 0.5 ? ['add', A()] : ['add', Bv()]];
+      shuffle(g2, ops);
       const cells = ops.map(([op, v], c) => makeCell(op, v, ng, edges[c], edges[c + 1], lv.fireE));
       makeRow(lv, rowZ, cells, ng, 'gate', 'rush');
     }
