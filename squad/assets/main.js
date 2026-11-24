@@ -395,7 +395,7 @@ function renderTitle() {
     const where = st.endless && st.endless.offer ? '카드 고르는 중' : st.boss ? '보스전' : `보스까지 ${Math.round(progress(st) * 100)}%`;
     $('resumeInfo').textContent = `${runName(r)} · ${fmtN(st.squad.n)}명 · ${where} · ${ago(r.at)} 저장`;
     // 첫 게이트를 지난 판만 진 판으로 센다(무한모드는 진 판이 없다 — 모은 코인을 받고 끝난다)
-    $('resumeConfirm').querySelector('.warn').textContent = r.mode === 'endless' ? '이 판을 여기서 끝낼까요? 지금까지 모은 코인은 받아요.'
+    $('resumeConfirm').querySelector('.warn').textContent = r.mode === 'endless' ? '이 판을 여기서 끝낼까요? 모은 코인을 받고, 최고 기록·플레이 기록에도 남아요.'
       : restartCounts(st) ? '이 판을 포기할까요? 진 판으로 기록돼요.' : '이 판을 포기할까요?';
   }
 }
@@ -1288,9 +1288,12 @@ function tryStart(L, opts = {}) {
 }
 function abandonRun(r) {
   if (r.mode === 'endless') {
-    // 무한모드는 포기해도 모은 코인·기록을 받는다
+    // 무한모드는 포기해도 모은 코인·기록을 받는다 — 최고 기록·대왕 누적(settleEndless)과 플레이 기록 한 줄(그만둔 판 — 50절)
     const st = restore(r.state);
-    if (st && st.endless) { const got = settleEndless(st, r.id); if (got.coins > 0) toast(`무한모드 정산 · 코인 +${got.coins}`, 2200); }
+    if (st && st.endless) {
+      const got = settleEndless(st, r.id);   // 다른 탭이 이미 정산한 판이면 paid false — 기록도 두 번 쌓지 않는다
+      if (got.paid) { logRun(st, true, r); toast(`무한모드 정산 · 보스 ${got.bosses}${got.record ? ' · 최고 기록!' : ''}${got.coins > 0 ? ` · 코인 +${got.coins}` : ''}`, 2200); }
+    }
     else { data.lastRunId = r.id; save(data); }
     clearRun();
     return;
@@ -1532,7 +1535,7 @@ const srcName = (k) => SRC_NAME[k] || (AMMO[k] ? AMMO[k].name : UNITS[k] ? UNITS
 function renderLog() {
   const log = loadLog();
   const S = summarize(log, logVer);
-  $('logMeta').textContent = `${logVer ? `v${logVer}` : '모든 버전'} · 무한모드 ${S.endless}판 · 캠페인 ${S.campaign}판${S.endless ? ` · 평균 보스 ${S.mean} · 최고 ${S.best}` : ''} — 전체 기록 ${log.length}판(${Object.entries(S.versions).map(([v, n]) => `v${v} ${n}`).join(', ') || '없음'})`;
+  $('logMeta').textContent = `${logVer ? `v${logVer}` : '모든 버전'} · 무한모드 ${S.endless}판${S.quit ? `(그만둔 판 ${S.quit})` : ''} · 캠페인 ${S.campaign}판${S.endless ? ` · 평균 보스 ${S.mean} · 최고 ${S.best}` : ''} — 전체 기록 ${log.length}판(${Object.entries(S.versions).map(([v, n]) => `v${v} ${n}`).join(', ') || '없음'})`;
   $('logAll').textContent = logVer ? '모든 버전 보기' : `v${PATCH.ver}만 보기`;
   logBars($('logDmg'), S.dmg, srcName);
   logBars($('logGun'), S.byGun, (k) => (GUNS[k] ? GUNS[k].name : k), '');
@@ -3213,9 +3216,10 @@ const CAUSE = {
 };
 
 /* 플레이 기록(32절): 끝난 판 한 줄 — 버전·빌드·출처별 피해·전멸한 곳. 이 기기에만 쌓인다(설정 → 플레이 기록) */
-function logRun(st, quit = false) {
-  if (!st || attract || testRun()) return;
-  try { addLog(entryOf(st, { ver: PATCH.ver, sim: SIM, cycle: run && run.cycle, sup: run && run.sup ? { ...run.sup } : null, quit })); } catch { /* 기록은 놀이를 막지 않는다 */ }
+/* r: 판 정보(보급품·회차) — 지금 판(run)이 아닌 저장된 판을 타이틀에서 포기할 때는 그 판의 것. 타이틀 뒤 봇 판(attract)은 안 쌓는다(저장된 판을 포기하는 st는 그 판이 아니다) */
+function logRun(st, quit = false, r = run) {
+  if (!st || (attract && st === s) || testRun()) return;
+  try { addLog(entryOf(st, { ver: PATCH.ver, sim: SIM, cycle: r && r.cycle, sup: r && r.sup ? { ...r.sup } : null, quit })); } catch { /* 기록은 놀이를 막지 않는다 */ }
 }
 function finish() {
   if (resultShown) return;
@@ -3795,7 +3799,7 @@ function restartRun(opts = {}) {
   if (!lv) return;
   if (isEndless()) {
     // 무한모드: 지금 판을 정산(모은 코인을 받는다)하고 새 판
-    if (s && s.endless && run) { logRun(s, true); const got = settleEndless(s, run.id); if (got.coins > 0) toast(`코인 +${got.coins}`, 1400); }
+    if (s && s.endless && run) { const got = settleEndless(s, run.id); if (got.paid) logRun(s, true); if (got.coins > 0) toast(`코인 +${got.coins}`, 1400); }
     clearRun();
     startEndless({ quick: true });
     return;

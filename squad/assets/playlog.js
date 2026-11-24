@@ -66,11 +66,12 @@ export function clearLog(ls = globalThis.localStorage) { try { ls.removeItem(LOG
 
 const band = (seg) => { const a = Math.floor((Math.max(1, seg) - 1) / 6) * 6 + 1; return `${a}~${a + 5}`; };
 
-/* 요약: 버전 ver(없으면 전부)의 무한모드 판으로 — 출처별 피해 몫(판마다 몫의 평균), 총·주력 출처별 평균 보스, 전멸 까닭·구간대, 잃은 병사 까닭 */
+/* 요약: 버전 ver(없으면 전부)의 무한모드 판으로 — 출처별 피해 몫(판마다 몫의 평균), 총·주력 출처별 평균 보스, 전멸 까닭·구간대, 잃은 병사 까닭.
+   그만둔 판(quit — 포기 · 다시 시작)도 판 수 · 평균 · 최고 · 빌드별 평균에 든다(50절 — 그 판에서 잡은 보스까지가 그 판의 기록). quit = 그 가운데 그만둔 판 수. 전멸 까닭은 전멸한 판만 */
 export function summarize(log, ver = '') {
   const runs = log.filter((x) => x && (!ver || x.v === ver));
-  const end = runs.filter((x) => x.mode === 'endless' && !x.quit);
-  const out = { runs: runs.length, endless: end.length, campaign: runs.length - end.length, versions: {}, dmg: [], byGun: [], byMain: [], byBuild: [], byMut: [], death: [], deathBand: [], lost: [], best: 0, mean: 0 };
+  const end = runs.filter((x) => x.mode === 'endless');
+  const out = { runs: runs.length, endless: end.length, quit: end.filter((x) => x.quit).length, campaign: runs.length - end.length, versions: {}, dmg: [], byGun: [], byMain: [], byBuild: [], byMut: [], death: [], deathBand: [], lost: [], best: 0, mean: 0 };
   for (const x of log) out.versions[x.v || '?'] = (out.versions[x.v || '?'] | 0) + 1;
   if (!end.length) return out;
   const avg = (rows, key) => {

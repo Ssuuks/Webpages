@@ -5526,3 +5526,18 @@ test('49절 — 함정·미로 페널티: 개편 판의 톱날은 처음 닿는 
   assert.ok(share > 0.52 && share < 0.68, `÷2 몫 ${share.toFixed(2)} (벽 ${walls} · ÷2 ${divs})`);
   assert.ok(packs.length > 20 && Math.min(...packs) >= C.LANES.foeN[0] && Math.max(...packs) < C.LANES.foeN[1], `좀비 칸 ${Math.min(...packs)}~${Math.max(...packs)}`);
 });
+
+test('50절 — 플레이 기록: 그만둔 무한모드 판(포기 · 다시 시작 — quit)도 판 수 · 평균 · 최고에 들고 캠페인으로 세지 않는다, 전멸 까닭은 전멸한 판만', () => {
+  const e = { fmt: 2, v: '9.9.9', mode: 'endless', bosses: 6, gun: 'rifle:2', dmg: { gun: 100 }, fx: {}, mut: [], lost: { foe: 10 }, death: { cause: 'foe', sub: '', seg: 7, arena: false } };
+  const q = { ...e, bosses: 12, quit: true, death: null };
+  const S = PL.summarize([e, q, { ...e, mode: 'campaign', bosses: 0, death: null }], '9.9.9');
+  assert.deepEqual([S.endless, S.quit, S.campaign], [2, 1, 1]);
+  assert.equal(S.best, 12, '그만둔 판의 보스도 최고 기록');
+  assert.equal(S.mean, 9);
+  assert.deepEqual(S.death, [{ k: 'foe', n: 1 }], '전멸 까닭은 전멸한 판만');
+  // 저장된 판을 타이틀에서 포기하면(main.js abandonRun) 정산(settleEndless)이 실제로 준 판만 quit 기록 한 줄 — 그 판의 상태로
+  const src = require_('node:fs').readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  const ab = src.slice(src.indexOf('function abandonRun(r)'), src.indexOf('function ownLoadout()'));
+  assert.ok(/const got = settleEndless\(st, r\.id\);[^\n]*\n\s*if \(got\.paid\) \{ logRun\(st, true, r\)/.test(ab), 'abandonRun이 무한모드 판을 정산한 뒤 기록한다');
+  assert.ok(src.includes('function logRun(st, quit = false, r = run) {\n  if (!st || (attract && st === s) || testRun()) return;'), '타이틀 뒤 봇 판(attract)이어도 저장된 판은 기록한다');
+});
