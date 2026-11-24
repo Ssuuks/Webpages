@@ -3065,8 +3065,9 @@ test('펫의 세기(합격 기준): 만렙 펫의 승률 오름폭은 화력 강
 
 /* ---------- 탄종(ARSENAL.md 3절 '별 무기고') ---------- */
 test('탄종: 모은 별로 열리고(45·90·135·180), 보통탄 판은 상태·해시가 그대로다', () => {
-  assert.deepEqual(R.AMMO_IDS.map((id) => R.AMMO[id].stars), [45, 90, 135, 180]);
-  assert.ok(!R.ammoOpen('pierce', 44) && R.ammoOpen('pierce', 45) && !R.ammoOpen('nope', 999));
+  assert.deepEqual(R.AMMO_IDS.map((id) => R.AMMO[id].stars), [20, 40, 70, 100]);   // 42절: 당겼다
+  assert.ok(!R.ammoOpen('pierce', 19) && R.ammoOpen('pierce', 20) && !R.ammoOpen('nope', 999));
+  assert.ok(Math.max(...R.AMMO_IDS2.map((id) => R.AMMO[id].stars), ...R.GUN_IDS.map((g) => R.GUNS[g].stars)) <= 200, '42절: 2회차 중반(한 회차 별 180개)이면 다 열린다');
   const lv = C.prepareLevel(22);
   const co = C.expectLoadout(22);
   const a = C.newGame(lv, co), b = C.newGame(lv, { ...co, ammo: '' }), c = C.newGame(lv, { ...co, ammo: 'nope' });
@@ -5271,4 +5272,40 @@ test('문서 — RULES.md(지금 규칙 한 장)의 버전이 패치 노트와 �
   for (const g of R.GUN_IDS) assert.ok(doc.includes(`| ${R.GUNS[g].name} | ${R.GUNS[g].stars} |`), `총 ${g}`);
   for (const id of R.RELIC_IDS) assert.ok(doc.includes(R.RELICS[id].name), `유물 ${id}`);
   for (const id of R.MUT_IDS) assert.ok(doc.includes(R.MUTATIONS[id].name), `변이 ${id}`);
+});
+
+test('42절 — 보스 돌진: 숨 고르기와 함께 질주 좀비가 몰려오고, 그동안 보스 최대 체력의 block을 깎으면 돌진을 막는다(비틀거림) · 게이트 몰이 간격 · 별 문턱', () => {
+  const arena = () => {
+    const s = C.newEndless({ seed: 31, ...BLD });
+    const pol = makeBot('strong', 1031, { skill: true });
+    s.squad.n = 4000;
+    for (let g = 0; g < 400000 && !(s.boss && s.endless.seg >= 2); g++) { const of = C.offerOf(s); if (of) { C.pickCard(s, 0); continue; } C.step(s, pol(s)); }
+    const b = s.boss;
+    b.hp = b.max = 1e12; b.all = ['charge']; b.pat = ['charge']; b.up = {}; b.pcd = {}; b.seen = []; b.slam = null; b.slamCd = 99; b.summonCd = 99; b.vol = null; b.dash = null; b.king = 0; s.spits = []; s.squad.sp = [];
+    s.foes.forEach((f) => { f.alive = false; });
+    if (s.hero) s.hero.charge = 0;
+    b.pcd.charge = 99; for (let i = 0; i < 120; i++) C.step(s, { dir: 0 });   // 분대가 멈춰 설 때까지
+    s.foes.forEach((f) => { f.alive = false; });
+    b.z = s.squad.z + 0.55 * C.radius(s.squad.n) + b.r * 0.6 + R.BOSS_PAT.charge.dist + R.BOSS_PAT.charge.stop + 4;
+    b.pcd.charge = 0;
+    return s;
+  };
+  const V = R.BOSS_PAT.charge;
+  // 질주 좀비가 함께
+  { const s = arena(); const n0 = s.foes.length; C.step(s, { dir: 0 });
+    const b = s.boss; assert.ok(b.dash && !b.dash.go, '숨 고르기');
+    const esc = s.foes.slice(n0).filter((f) => f.charge);
+    assert.equal(esc.length, V.n, '질주 좀비 n마리'); assert.ok(esc.every((f) => f.kind === 'runner' && f.alive));
+    assert.ok(Math.abs(b.dash.need - V.block * b.max) < 1);
+    // 막기: 숨 고르는 동안 block만큼 깎는다
+    b.hp -= b.dash.need + 1; C.step(s, { dir: 0 });
+    assert.equal(b.dash, null, '돌진이 막혔다'); assert.ok(b.stun > 0, '비틀거린다'); assert.ok(s.ev.some((e) => e.t === 'bossBlock'));
+    let dash = 0; for (let i = 0; i < Math.round((V.warn + V.dash) / C.DT); i++) { C.step(s, { dir: 0 }); dash += s.ev.filter((e) => e.t === 'bossCharge').length; }
+    assert.equal(dash, 0, '뛰어들지 않았다'); }
+  // 못 막으면 그대로 뛰어든다
+  { const s = arena(); C.step(s, { dir: 0 }); const b = s.boss, z0 = b.z;
+    for (let i = 0; i < Math.round((V.warn + V.dash) / C.DT) + 3; i++) C.step(s, { dir: 0 });
+    assert.ok(z0 - b.z > V.dist * 0.9, `뛰어들었다 ${(z0 - b.z).toFixed(2)}`); assert.ok(!s.ev.some((e) => e.t === 'bossBlock')); }
+  assert.ok(R.BOSS_PAT.charge.text().includes(`${Math.round(V.block * 100)}%`));
+  assert.ok(C.RUSH.gap <= 8, '게이트 몰이 간격(달리는 속도로 0.5~0.7초)');
 });

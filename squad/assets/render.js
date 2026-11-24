@@ -1648,6 +1648,9 @@ export function createRenderer(cvs) {
         // 숨 돌리기(의무병 희귀 강화): 특수병이 잠깐 하얗게 반짝
         case 'breath': breathT = time; break;
         // 넉백(개편 판 보스): 붙은 보스를 쏴서 밀어냈다 — 충격파 고리·먼지·짧은 흔들림
+        case 'bossBlock':   // 42절: 숨 고르는 동안 보스를 세게 쏴서 돌진을 막았다 — 넉백과 같은 충격파 + 금빛 고리
+          ring(e.x, e.z, 0.5, 3.5, 0.5, GOLD_BULLET, { thick: 3 });
+        // falls through
         case 'bossKnock': {
           knockT = time;
           ring(e.x, q.z + R, 0.5, 4.5, 0.4, '#FFFFFF', { thick: 2 });
@@ -2817,6 +2820,15 @@ export function createRenderer(cvs) {
       if (t < 0.8 && (f60 & 2)) x += 0.12;
     }
     if (!project(view, x, 0, z)) return;
+    if (b.dash && !b.dash.go && b.dash.need > 0) {   // 42절: 돌진 숨 고르기 — 막기까지 깎은 몫을 발밑 고리로(가득 차면 막는다)
+      const u = Math.max(0, Math.min(1, (b.dash.hp0 - b.hp) / b.dash.need));
+      const N = 28, d = Math.max(2, Math.round(P.s * 0.22)), cx = P.x, cy = P.y, rx = P.s * 2.4, ry = P.s * 0.8;   // 도트 고리(그림 결에 맞게 사각 점)
+      for (let i = 0; i < N; i++) {
+        const a = -Math.PI / 2 + (Math.PI * 2 * i) / N;
+        ctx.fillStyle = i / N < u ? (u >= 1 ? '#FFFFFF' : '#FFE38A') : 'rgba(14,10,26,0.55)';
+        ctx.fillRect(Math.round(cx + Math.cos(a) * rx - d / 2), Math.round(cy + Math.sin(a) * ry - d / 2), d, d);
+      }
+    }
     const bs0 = skinOf('boss', curBid), bs = atlas.has(bs0) ? bs0 : 'boss';
     const sh = atlas.sheet(bs);
     const want = (P.s * 6.4) / (sh.frames[0][0].h - 2);

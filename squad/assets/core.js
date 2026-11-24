@@ -948,10 +948,10 @@ export const TERRAIN = { hideFrom: 13, hideDist: 16, hideBonus: 1.3, tightFrom: 
    - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막마다 칸막이 하나에 열린 곳(open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
 export const LANE_X = [-ROAD / 3, ROAD / 3];
 export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, open: 7, wallP: 0.75, trap: 0.15, big: 0.6 };   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60%
-/* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로 — 쏴서 올리는 덧셈 칸이 많고, ×2 줄 하나·÷2 줄 하나.
+/* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로(42절: 11 → 7m — 달리는 속도로 0.5~0.7초, 옆으로 길 반을 건너는 시간쯤이라 욕심내면 놓친다) — 쏴서 올리는 덧셈 칸이 많고, ×2 줄 하나·÷2 줄 하나.
    숫자는 그 구간 기준 병력(bkScale)으로, 굴림은 따로(hash — 다른 청크의 배치가 밀리지 않게). 골든 값은 늘리지 않는다(잘 고르면 앞서 나가고, 못 고르면 뒤처진다)
    미로 게이트(39.5): 미로 토막 끝마다 칸마다 게이트 — 빈 칸 = 작은 +, 좀비 칸 뒤·벽 뒤 = 큰 +(마지막 토막은 ×2), 벽 칸 몇은 벽 대신 ÷2 */
-export const RUSH = { from: 6, p: 0.3, n: [8, 11], gap: 11, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.4 };
+export const RUSH = { from: 6, p: 0.3, n: [8, 11], gap: 7, add: [0.2, 0.45], sub: [0.2, 0.4], mazeAdd: 0.15, mazeBig: 0.4, mazeDiv: 0.4 };
 /* 구간 성격(39.6 — 개편 판만, 2구간부터): 풍요(rich — 좋은 칸 ×good·나쁜 칸 ×bad) · 보통 · 기근(lean). 시드·구간으로 정해 카드 화면에서 다음 구간 것을 미리 보인다 */
 export const MOOD = { from: 2, rich: { p: 0.2, good: 1.6, bad: 0.7, rare: true }, lean: { p: 0.25, good: 0.5, bad: 1.6 } };
 export function segMood(seed, k) {
@@ -4101,13 +4101,27 @@ function bossPatUpdate(s, R, b) {
   const reach = q.z + 0.55 * R + b.r * 0.6;
   if (b.dash) {
     b.dash.t -= DT;
-    if (b.dash.t <= 0) {
+    if (!b.dash.go && b.dash.need > 0 && b.dash.hp0 - b.hp >= b.dash.need) {   // 42절: 숨 고르는 동안 보스를 세게 쏘면 돌진을 막는다 — 비틀거린다
+      b.dash = null;
+      b.stun = BOSS_KNOCK.stun;
+      emit(s, { t: 'bossBlock', x: b.x, z: b.z, stun: BOSS_KNOCK.stun });
+    } else if (b.dash.t <= 0) {
       if (!b.dash.go) { b.dash.go = true; b.dash.t = BOSS_PAT.charge.dash; emit(s, { t: 'bossCharge', x: b.x, z: b.z }); }
       else b.dash = null;
     } else if (b.dash.go) b.z = Math.max(reach + BOSS_PAT.charge.stop, b.z - (b.dash.d / BOSS_PAT.charge.dash) * DT);   // 분대 앞 stop m에서 멈춘다(바로 붙지 않게)
   } else if (patOn(b, 'charge') && b.pcd.charge <= 0 && b.z - reach > (upOf(b, 'charge') & 2 ? BOSS_PAT.charge.dist2 : BOSS_PAT.charge.dist) + BOSS_PAT.charge.stop && patFree(b)) {
-    b.dash = { t: BOSS_PAT.charge.warn, go: false, d: upOf(b, 'charge') & 2 ? BOSS_PAT.charge.dist2 : BOSS_PAT.charge.dist };
+    const CH = BOSS_PAT.charge;
+    b.dash = { t: CH.warn, go: false, d: upOf(b, 'charge') & 2 ? CH.dist2 : CH.dist, hp0: b.hp, need: CH.block * b.max };
     b.pcd.charge = patCd(s, b, 'charge');
+    {   // 42절: 질주 좀비가 보스와 함께 몰려온다(보스 앞을 가린다 — 막으려면 뚫고 보스를 쏴야 한다)
+      const n = upOf(b, 'charge') & 2 ? CH.n2 : CH.n;
+      const hp = Math.max(1, Math.round(CH.hp * SUMMON_HP * dps(s.bossRef, 0, s.refFire || 0) * (s.refMul || 1)));
+      for (let i = 0; i < n; i++) {
+        const x = clamp(b.x - 3 + (6 * (i + 0.5)) / n + (rand(s) - 0.5) * 0.6, -EDGE, EDGE);
+        s.foes.push({ id: s.nextId++, kind: 'runner', x, z: b.z - 1.5 - rand(s) * 1.5, hp, max: hp, alive: true, awake: true, hitT: -9, cd: 0, seed: (rand(s) * 1000) | 0, ...FOE_BASE.runner, home: 0, homeDist: 0, charge: 1 });
+      }
+      emit(s, { t: 'summon', n, charge: true });
+    }
     b.ps = b.t;
     emit(s, { t: 'bossChargeWarn', x: b.x, z: b.z, warn: BOSS_PAT.charge.warn });
     patSay(s, b, 'charge');

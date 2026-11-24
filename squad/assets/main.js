@@ -3029,7 +3029,8 @@ function handleEvents(ev) {
         break;
       case 'bossChargeWarn': sfx.roar(); vibe([20, 30, 20]); break;
       case 'bossCharge': vibe(40); break;
-      case 'bossKnock': sfx.boom(); vibe([30, 40, 30]); break;   // 붙은 보스를 쏴서 밀어냈다
+      case 'bossKnock': sfx.boom(); vibe([30, 40, 30]); break;
+      case 'bossBlock': sfx.boom(); vibe([30, 40, 30]); toast('돌진을 막았어요!', 1400); break;   // 42절   // 붙은 보스를 쏴서 밀어냈다
       case 'revive': if (e.id === 'supply') { sfx.heal(); vibe([40, 60, 40]); toast(`불굴 보급! ${fmtN(e.n)}명으로 되살아났어요`, 2200); } break;
       case 'stomp': sfx.stomp(); vibe(30); break;
       case 'field': sfx.power(1); vibe(25); toast('야전 병원 · 치료된 병사가 손실을 막았어요 (구간마다 한 번)', 1800); break;   // 24절 치료 + 의무병
