@@ -5259,3 +5259,16 @@ test('41절 — 풍요 구간 보스 뒤 첫 카드: 강화가 있는 장 하나
   if (a.endless.offer.some((c) => ['unit', 'fx', 'gunlv'].includes(c.k) && (c.n | 0) < 2)) assert.equal(up.length, 1);
   for (const c of up) assert.ok(c.n >= 2);
 });
+
+test('문서 — RULES.md(지금 규칙 한 장)의 버전이 패치 노트와 같고, 바뀐 규칙의 값이 코드와 맞다', async () => {
+  const fs = await import('node:fs');
+  const { PATCH } = await import('../assets/patch.js');
+  const doc = fs.readFileSync(new URL('../RULES.md', import.meta.url), 'utf8');
+  assert.ok(doc.split('\n')[0].includes(`v${PATCH.ver}`), `RULES.md 첫 줄 버전 = v${PATCH.ver}(규칙을 바꾸면 RULES.md도 고친다)`);
+  assert.ok(doc.includes(`${C.LANES.luckLen}m`) && doc.includes(`${C.LANES.mazeLen}m`), '행운 길·미로 길이');
+  assert.ok(doc.includes(`${C.RUSH.from}구간부터 ${Math.round(C.RUSH.p * 100)}%`), '게이트 몰이');
+  assert.ok(doc.includes(`풍요 ${Math.round(C.MOOD.rich.p * 100)}%`) && doc.includes(`기근 ${Math.round(C.MOOD.lean.p * 100)}%`), '구간 성격');
+  for (const g of R.GUN_IDS) assert.ok(doc.includes(`| ${R.GUNS[g].name} | ${R.GUNS[g].stars} |`), `총 ${g}`);
+  for (const id of R.RELIC_IDS) assert.ok(doc.includes(R.RELICS[id].name), `유물 ${id}`);
+  for (const id of R.MUT_IDS) assert.ok(doc.includes(R.MUTATIONS[id].name), `변이 ${id}`);
+});
