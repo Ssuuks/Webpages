@@ -3065,8 +3065,9 @@ test('펫의 세기(합격 기준): 만렙 펫의 승률 오름폭은 화력 강
 
 /* ---------- 탄종(ARSENAL.md 3절 '별 무기고') ---------- */
 test('탄종: 모은 별로 열리고(45·90·135·180), 보통탄 판은 상태·해시가 그대로다', () => {
-  assert.deepEqual(R.AMMO_IDS.map((id) => R.AMMO[id].stars), [45, 90, 135, 180]);
-  assert.ok(!R.ammoOpen('pierce', 44) && R.ammoOpen('pierce', 45) && !R.ammoOpen('nope', 999));
+  assert.deepEqual(R.AMMO_IDS.map((id) => R.AMMO[id].stars), [20, 40, 70, 100]);   // 42절: 당겼다
+  assert.ok(!R.ammoOpen('pierce', 19) && R.ammoOpen('pierce', 20) && !R.ammoOpen('nope', 999));
+  assert.ok(Math.max(...R.AMMO_IDS2.map((id) => R.AMMO[id].stars), ...R.GUN_IDS.map((g) => R.GUNS[g].stars)) <= 200, '42절: 2회차 중반(한 회차 별 180개)이면 다 열린다');
   const lv = C.prepareLevel(22);
   const co = C.expectLoadout(22);
   const a = C.newGame(lv, co), b = C.newGame(lv, { ...co, ammo: '' }), c = C.newGame(lv, { ...co, ammo: 'nope' });
@@ -4624,9 +4625,10 @@ test('21.2.1 — 저격총: 옆 ±(R + aim) 안 체력이 가장 큰 적을 노�
   u.foes = [small, big, out];
   C.step(u, { dir: 0 });
   assert.equal(u.bullets.length, 1, '병력 400 아래는 한 발');
-  assert.ok(u.bullets[0].tg === big.id && Math.abs(u.bullets[0].x - big.x) < 1e-9 && u.bullets[0].r === 50, '조준 폭 안 가장 센 적(밖의 더 센 적은 아니다)');
-  big.x += 0.4; u.squad.fireAcc = -99; C.step(u, { dir: 0 });
-  assert.ok(Math.abs(u.bullets[0].x - big.x) < 1e-9, '조준한 적을 따라간다');
+  assert.ok(u.bullets[0].tg === big.id && u.bullets[0].tx === big.x && u.bullets[0].r === 50, '조준 폭 안 가장 센 적(밖의 더 센 적은 아니다)');
+  assert.ok(Math.abs(u.bullets[0].x - u.squad.x) <= R0 + 1, `43절: 분대 앞에서 쏜다(표적 자리에서 생기지 않는다) ${(u.bullets[0].x - u.squad.x).toFixed(2)}`);
+  big.x += 0.4; u.squad.fireAcc = -99; for (let i = 0; i < 12; i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); }
+  assert.ok(Math.abs(u.bullets[0].x - big.x) < 1e-9, '휘어 가서 조준한 적을 따라간다');
   // 관통 예산: 앞 적(체력 30)을 잡고 남은 70이 뒤 적에게
   const w = gunState('marksman'); w.squad.fireAcc = -99;
   const a = gfoe(w, 99830, 6, 30), b = gfoe(w, 99831, 6.3, 1e9);
@@ -5271,4 +5273,88 @@ test('문서 — RULES.md(지금 규칙 한 장)의 버전이 패치 노트와 �
   for (const g of R.GUN_IDS) assert.ok(doc.includes(`| ${R.GUNS[g].name} | ${R.GUNS[g].stars} |`), `총 ${g}`);
   for (const id of R.RELIC_IDS) assert.ok(doc.includes(R.RELICS[id].name), `유물 ${id}`);
   for (const id of R.MUT_IDS) assert.ok(doc.includes(R.MUTATIONS[id].name), `변이 ${id}`);
+});
+
+test('42절 — 보스 돌진: 숨 고르기와 함께 질주 좀비가 몰려오고, 그동안 보스 최대 체력의 block을 깎으면 돌진을 막는다(비틀거림) · 게이트 몰이 간격 · 별 문턱', () => {
+  const arena = () => {
+    const s = C.newEndless({ seed: 31, ...BLD });
+    const pol = makeBot('strong', 1031, { skill: true });
+    s.squad.n = 4000;
+    for (let g = 0; g < 400000 && !(s.boss && s.endless.seg >= 2); g++) { const of = C.offerOf(s); if (of) { C.pickCard(s, 0); continue; } C.step(s, pol(s)); }
+    const b = s.boss;
+    b.hp = b.max = 1e12; b.all = ['charge']; b.pat = ['charge']; b.up = {}; b.pcd = {}; b.seen = []; b.slam = null; b.slamCd = 99; b.summonCd = 99; b.vol = null; b.dash = null; b.king = 0; s.spits = []; s.squad.sp = [];
+    s.foes.forEach((f) => { f.alive = false; });
+    if (s.hero) s.hero.charge = 0;
+    b.pcd.charge = 99; for (let i = 0; i < 120; i++) C.step(s, { dir: 0 });   // 분대가 멈춰 설 때까지
+    s.foes.forEach((f) => { f.alive = false; });
+    b.z = s.squad.z + 0.55 * C.radius(s.squad.n) + b.r * 0.6 + R.BOSS_PAT.charge.dist + R.BOSS_PAT.charge.stop + 4;
+    b.pcd.charge = 0;
+    return s;
+  };
+  const V = R.BOSS_PAT.charge;
+  // 질주 좀비가 함께
+  { const s = arena(); const n0 = s.foes.length; C.step(s, { dir: 0 });
+    const b = s.boss; assert.ok(b.dash && !b.dash.go, '숨 고르기');
+    const esc = s.foes.slice(n0).filter((f) => f.charge);
+    assert.equal(esc.length, V.n, '질주 좀비 n마리'); assert.ok(esc.every((f) => f.kind === 'runner' && f.alive));
+    assert.ok(Math.abs(b.dash.need - V.block * b.max) < 1);
+    // 막기: 숨 고르는 동안 block만큼 깎는다
+    b.hp -= b.dash.need + 1; C.step(s, { dir: 0 });
+    assert.equal(b.dash, null, '돌진이 막혔다'); assert.ok(b.stun > 0, '비틀거린다'); assert.ok(s.ev.some((e) => e.t === 'bossBlock'));
+    let dash = 0; for (let i = 0; i < Math.round((V.warn + V.dash) / C.DT); i++) { C.step(s, { dir: 0 }); dash += s.ev.filter((e) => e.t === 'bossCharge').length; }
+    assert.equal(dash, 0, '뛰어들지 않았다'); }
+  // 못 막으면 그대로 뛰어든다
+  { const s = arena(); C.step(s, { dir: 0 }); const b = s.boss, z0 = b.z;
+    for (let i = 0; i < Math.round((V.warn + V.dash) / C.DT) + 3; i++) C.step(s, { dir: 0 });
+    assert.ok(z0 - b.z > V.dist * 0.9, `뛰어들었다 ${(z0 - b.z).toFixed(2)}`); assert.ok(!s.ev.some((e) => e.t === 'bossBlock')); }
+  assert.ok(R.BOSS_PAT.charge.text().includes(`${Math.round(V.block * 100)}%`));
+  assert.ok(C.RUSH.gap <= 8, '게이트 몰이 간격(달리는 속도로 0.5~0.7초)');
+});
+
+test('44절 — 탄 칸이 차도 새 탄 효과 카드가 나오고, 고르면 가진 효과 하나(고른 것 · 없으면 가장 낮은 레벨)와 바꾼다 — 새 효과는 버린 Lv × keep(내림) + 1', () => {
+  const at = () => { const s = C.newEndless({ seed: 31, ...BLD, ammoOpen: R.AMMO_IDS2 }); const pol = makeBot('strong', 1031, { skill: true }); for (let g = 0; g < 200000 && !C.offerOf(s); g++) C.step(s, pol(s)); return s; };
+  const s = at();
+  s.endless.seg = 9;   // 각성이 열린 뒤(Lv5 상한 없음)
+  s.endless.fx = { burst: 9, shock: 4 };
+  assert.ok(C.fxFull(s, 'frost') && !C.fxFull(s, 'burst'));
+  // 카드 후보에 칸이 찬 새 효과가 나온다
+  let seen = false;
+  for (let k = 0; k < 40 && !seen; k++) { s.endless.bld.rr = 9; C.rerollCards(s); seen = s.endless.offer.some((c) => c.k === 'fx' && !s.endless.fx[c.a]); }
+  assert.ok(seen, '칸이 찼어도 새 탄 효과 카드');
+  const pick = (drop) => {
+    const t = C.restore(C.snapshot(s));
+    t.endless.offer = [{ k: 'fx', a: 'frost', n: 1 }, { k: 'fx', a: 'burst', n: 1 }, { k: 'fx', a: 'shock', n: 1 }];
+    const info = C.cardInfo(t, t.endless.offer[0]);
+    assert.ok(info.full && info.drops.length === 2);
+    C.pickCard(t, 0, drop ? { drop } : undefined);
+    return { fx: t.endless.fx, ev: t.ev.filter((e) => e.t === 'fxSwap') };
+  };
+  const a = pick('burst');
+  assert.deepEqual(a.fx, { shock: 4, frost: Math.floor(9 * R.BUILD.fxSwap.keep) + 1 }, '고른 것(작렬 Lv9)을 버린다');
+  assert.equal(a.ev.length, 1);
+  const b = pick();
+  assert.deepEqual(b.fx, { burst: 9, frost: Math.floor(4 * R.BUILD.fxSwap.keep) + 1 }, '고르지 않으면 가장 낮은 레벨(전격 Lv4)');
+  // 칸이 남으면 바꾸지 않는다
+  const t = C.restore(C.snapshot(s)); t.endless.fx = { burst: 9 }; t.endless.offer = [{ k: 'fx', a: 'frost', n: 1 }];
+  assert.ok(!C.cardInfo(t, t.endless.offer[0]).full);
+  C.pickCard(t, 0); assert.deepEqual(t.endless.fx, { burst: 9, frost: 1 });
+});
+
+test('45절 — 게이트 몰이: 줄 간격 동안 끝 칸에서 반대쪽 끝 칸으로는 못 간다(손가락 끌기·글쇠 모두, 몰이가 나오는 가장 느린 구간에서도) · 줄은 모두 세 칸', () => {
+  const cross = (inp) => {
+    const s = C.newEndless({ seed: 31, ...BLD });
+    for (let g = 0; g < 2000 && s.phase !== 'run'; g++) C.step(s, { dir: 0 });
+    s.foes = []; s.rows = []; s.props = []; s.saws = []; delete s.divs; delete s.lanes;
+    s.speed = 12;   // 6구간(몰이가 나오기 시작하는 곳)의 달리는 속도 — 뒤 구간은 더 빨라 더 못 간다
+    const q = s.squad; q.x = -(C.ROAD * 2) / 3; q.vx = 0;
+    const z0 = q.z;
+    for (let g = 0; g < 400 && q.x <= C.LANE_X[1]; g++) C.step(s, inp);
+    return q.z - z0;
+  };
+  const touch = cross({ tx: (C.ROAD * 2) / 3 }), key = cross({ dir: 1 });
+  assert.ok(touch > C.RUSH.gap && key > C.RUSH.gap, `끝에서 끝까지 달린 거리 손가락 ${touch.toFixed(2)}m · 글쇠 ${key.toFixed(2)}m > 줄 간격 ${C.RUSH.gap}m`);
+  for (let k = C.RUSH.from; k < 80; k++) {
+    const seg = C.buildSegment(11, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 });
+    for (const r of seg.rows.filter((x) => x.kind === 'rush')) assert.equal(r.cells.length, 3);
+  }
 });

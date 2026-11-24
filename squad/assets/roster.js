@@ -242,15 +242,16 @@ export function openEggs(pets, n, rnd = Math.random) {
    강화가 아니라 맞바꿈이다 — 어느 탄종이든 전체 승률은 보통탄과 비슷하고 잘 맞는 상황이 다르다(tools/ammobench.mjs).
    dmg: 한 발 피해 배수, range: 사거리(m, 없으면 기본 30), pierce: 좀비를 맞힌 뒤 바로 뒤 좀비 하나에 주는 몫,
    splash·r: 좀비에 맞으면 둘레 r(m)의 다른 좀비에 주는 몫, slow·T: 맞은 좀비가 T초 동안 느려지는 몫(보스는 안 느려진다) */
+/* 42절: 별 문턱을 당겼다 — 캠페인 탄 20·40·70·100, 무한모드 탄 130·160·190, 총 50·90(한 회차 별 180개 — 2회차 중반이면 다 열린다) */
 export const AMMO = {
-  pierce: { name: '관통탄', stars: 45, dmg: 0.96, pierce: 0.6, color: '#F4F7FF' },
-  burst: { name: '작렬탄', stars: 90, range: 27, splash: 0.35, r: 1, color: '#FFB347' },
-  rapid: { name: '속사탄', stars: 135, dmg: 1.15, range: 24, color: '#FFE38A' },
-  frost: { name: '빙결탄', stars: 180, dmg: 0.97, slow: 0.25, T: 0.8, color: '#8FD3FF' },
+  pierce: { name: '관통탄', stars: 20, dmg: 0.96, pierce: 0.6, color: '#F4F7FF' },
+  burst: { name: '작렬탄', stars: 40, range: 27, splash: 0.35, r: 1, color: '#FFB347' },
+  rapid: { name: '속사탄', stars: 70, dmg: 1.15, range: 24, color: '#FFE38A' },
+  frost: { name: '빙결탄', stars: 100, dmg: 0.97, slow: 0.25, T: 0.8, color: '#8FD3FF' },
   // 24절 새 탄(개편 판 무한모드만 — b2): 출격 탄종 화면에는 '무한모드 전용'으로, 캠페인 출격에는 안 든다(보통탄으로). 효과는 fx2Val
-  shock: { name: '전격탄', stars: 225, chain: 0.4, color: '#D6CCFF', b2: true },
-  acid: { name: '부식탄', stars: 270, acid: 0.03, color: '#9BE36B', b2: true },
-  cure: { name: '치료탄', stars: 315, cure: 0.04, color: '#FF8FB8', b2: true },
+  shock: { name: '전격탄', stars: 130, chain: 0.4, color: '#D6CCFF', b2: true },
+  acid: { name: '부식탄', stars: 160, acid: 0.03, color: '#9BE36B', b2: true },
+  cure: { name: '치료탄', stars: 190, cure: 0.04, color: '#FF8FB8', b2: true },
 };
 /* 소개 글(좋은 점 · 대신 잃는 점)은 수치에서 만든다 — 수치를 고치면 글도 따라간다 */
 const apc = (x) => Math.round(x * 100);
@@ -413,6 +414,7 @@ export const BUILD = {
   rare: [0.9, 0.097, 0.003],   // 34절: 전설 0.01 → 0.003 — 전설이 새 규칙(진화 미리보기가 아니라)으로 세져서 판에 하나 볼까 말까로    // 카드 등급(일반·희귀·전설) 확률 — 예전 0.72·0.23·0.05에 정예·대왕 뒤 카드가 모두 희귀 이상이라 너무 흔했다(20절)
   tagRare: { hard: [0, 0.97, 0.03], super: [0, 0.88, 0.12] },   // 34절: 15·40% → 3·12%   // 정예·대왕 보스 뒤 첫 카드의 첫 (총이 아닌) 장만 이 확률(희귀 이상), 나머지 자리는 rare. 등급은 다시 뽑기로 안 바뀐다
   own: 3,               // 이미 가진 것(탄 효과·특수병)의 카드가 나올 가중치
+  fxSwap: { w: 0.5, keep: 0.5 },   // 44절: 탄 칸이 차도 새 탄 효과 카드가 나온다(무게 w) — 고르면 가진 효과 하나와 바꾸고, 새 효과는 버린 효과 Lv × keep(내림)에서 +1
   fxLocked: 0.5,        // 39.7: ★로 아직 안 연 탄(판 안에서는 나온다)의 새 효과 카드 가중치
   reroll: 1,            // 판마다 다시 뽑기 횟수(대왕을 잡을 때마다 +1)
   curse: { p: 0.18, mul: 1.25, more: 2, from: 2 },   // 위험한 계약: from번째 보스 뒤부터 p 확률로 한 장 — 다음 구간 위협 ×mul, 대신 카드 more장 더
@@ -450,7 +452,7 @@ export const BOSS_PAT = {
   slam: { name: '내려찍기', then: 0.3, ext: 0.5, text: () => '빨간 띠가 생긴 칸을 내려찍어요 — 옆 칸으로 비키세요' },
   volley: { name: '독침 세례', n: 3, gap: 0.7, cd: 6, first: 2.5, hit: 0.12, gap2: 0.5, cd2: 4.5, n2: 5, r2: 1.3, text: () => '독침을 잇달아 던져요 — 계속 움직이세요' },
   line: { name: '좀비 장벽', n: 7, hp: 1.2, gap: 2.8, cd: 7, first: 4, cd2: 5, row2: 4, text: () => '길을 가로지르는 졸개 줄 — 빈틈으로 빠지거나 쏴서 뚫으세요' },
-  charge: { name: '돌진', warn: 0.9, dash: 0.4, dist: 2, cd: 6.5, first: 3.5, cd2: 4.5, dist2: 3, stop: 1.5, text: () => '숨을 고른 뒤 앞으로 뛰어들어요 — 붙으면 몰아 쏴서 밀어내세요' },   // stop: 돌진이 분대 앞 이만큼(m)에서 멈춘다(바로 붙지 않게)
+  charge: { name: '돌진', warn: 1.5, dash: 0.4, dist: 2, cd: 6.5, first: 3.5, cd2: 4.5, dist2: 3, stop: 1.5, block: 0.08, n: 6, n2: 9, hp: 0.8, text: () => `질주 좀비를 몰고 숨을 골라요 — 그동안 보스 체력 ${Math.round(BOSS_PAT.charge.block * 100)}%를 깎으면 돌진을 막아요` },   // stop: 돌진이 분대 앞 이만큼(m)에서 멈춘다(바로 붙지 않게) · 42절: 숨 고르기(warn) 동안 질주 좀비 n마리(범위 확대 n2)가 함께 나오고, 그동안 보스 최대 체력의 block을 깎으면 돌진을 막는다(비틀거림)
   wide: { name: '넓은 내려찍기', pad: 0.25, then2: 0.6, text: () => '세 칸 중 두 칸을 한꺼번에 내려찍어요 — 남은 가장자리 칸으로' },
   double: { name: '연속 내려찍기', then: 0.3, text: () => '내려찍은 뒤 지금 선 칸을 곧바로 한 번 더' },   // 옛 저장(23절 전)의 보스만 — 지금은 내려찍기의 간격 강화판
 };
@@ -576,8 +578,8 @@ function fx2Base(id, lv) {
    - head 저격 Lv5 '헤드샷': 맞은 뒤 체력이 이 몫 아래인 일반 좀비는 바로 쓰러진다 · pop 저격 Lv10: 쓰러뜨린 적이 터져 둘레 1.6m에 제 체력의 몫 */
 export const GUNS = {
   rifle: { name: '소총', stars: 0, color: '#FFE38A', line: '무난한 기본 총', text: () => '분대 폭에 고르게 · 사거리 30m' },
-  shotgun: { name: '산탄총', stars: 60, color: '#FF8A5B', line: '가까이 · 넓게 · 세게 — 장애물 파괴', text: () => `옆 칸까지 퍼지는 펠릿 · 피해 ×${GUNK.shotgun.dmg}(${GUNK.shotgun.near}m 넘으면 줄어 ${GUNK.shotgun.range}m에서 ${apc(GUNK.shotgun.fall)}%) · 벽·장갑문 ×${GUNK.shotgun.wall}` },
-  marksman: { name: '저격총', stars: 120, color: '#7FE3FF', line: '멀리 · 한 점 · 무겁게 — 거물 사냥', text: () => `옆 ±${GUNK.marksman.aim}m 안 가장 센 적을 노려 초당 ${GUNK.marksman.hz}발 · 사거리 50m · 남는 피해는 뒤로 뚫고 간다(탄 효과는 처음 맞힌 적에게만) · 보스 ×${GUNK.marksman.boss}` },
+  shotgun: { name: '산탄총', stars: 50, color: '#FF8A5B', line: '가까이 · 넓게 · 세게 — 장애물 파괴', text: () => `옆 칸까지 퍼지는 펠릿 · 피해 ×${GUNK.shotgun.dmg}(${GUNK.shotgun.near}m 넘으면 줄어 ${GUNK.shotgun.range}m에서 ${apc(GUNK.shotgun.fall)}%) · 벽·장갑문 ×${GUNK.shotgun.wall}` },
+  marksman: { name: '저격총', stars: 90, color: '#7FE3FF', line: '멀리 · 한 점 · 무겁게 — 거물 사냥', text: () => `옆 ±${GUNK.marksman.aim}m 안 가장 센 적을 노려 초당 ${GUNK.marksman.hz}발 · 사거리 50m · 남는 피해는 뒤로 뚫고 간다(탄 효과는 처음 맞힌 적에게만) · 보스 ×${GUNK.marksman.boss}` },
 };
 export const GUN_IDS = Object.keys(GUNS);
 export const GUN_EVO = { rifle: '점사', shotgun: '슬러그', marksman: '헤드샷' };
