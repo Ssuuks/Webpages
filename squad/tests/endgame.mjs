@@ -4783,7 +4783,7 @@ test('개편 판의 think: 카드 종류마다 점수를 매기고(총 ★ · �
   const to = C.cardInfo(t, { k: 'men' }).to;
   assert.equal(thinkScore(t, { k: 'men' }), (Math.pow(to / 100, 0.8) - 1) * (1 + 2 * Math.min(1, Math.max(0, (C.segFloor(t.endless.seg + 1) - 100) / (to - 100)))));
 });
-test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사람(sloppy0.1) 16판 — 정밀·한파가 탄막·폭발 사이(±3구간 띠 안)에 든다, 생각해서 고르기(think)는 아무거나보다 확실히 멀리 간다', async (t) => {
+test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사람(sloppy0.1) 32판 — 정밀·한파가 탄막·폭발 사이(±3구간 띠 안)에 든다, 생각해서 고르기(think)는 아무거나보다 확실히 멀리 간다', async (t) => {
   // 세트·깊이 보상을 없앤 뒤 잰 값(32판, 위협 곡선 1.06): think 26.6 · 아무거나 22.8 (16판 think 26.1 · 탄막 21.1 · 폭발 16.6).
   // 성장 개편 3단계 뒤 잰 값(32판, 위협 곡선 1.07): 탄막 23.6 · 폭발 18.5 · 정밀 16.5 · 한파 23.4 · think 24.0 · 아무거나 24.0.
   // 총 ★ 합치기 뒤 잰 값(32판): 탄막 19.8 · 폭발 24.1 · think 25.3 · 아무거나 23.1 (정밀·한파는 16판 18.7·19.3).
@@ -4796,7 +4796,8 @@ test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사�
     frost: 'b:fx:frost>spec:medic>unit:medic>guard>gun',
     think: 'think', random: 'random',
   };
-  const run = (picker) => Promise.all(Array.from({ length: 16 }, (_, i) => POOL.run({ kind: 'call', module: url, fn: 'cardRun', args: [i, 'sloppy0.1', picker, BLD30, 50] })));
+  // 48절: 16 → 32판 — 지형이 어려워져 앞 구간 전멸이 늘자 16판으로는 흔들림이 컸다(같은 think가 시드 0~15 25.4 · 16~31 29.7)
+  const run = (picker) => Promise.all(Array.from({ length: 32 }, (_, i) => POOL.run({ kind: 'call', module: url, fn: 'cardRun', args: [i, 'sloppy0.1', picker, BLD30, 50] })));
   const names = Object.keys(BUILDS);
   const rs = await Promise.all(names.map((k) => run(BUILDS[k])));
   const m = Object.fromEntries(names.map((k, i) => [k, mean(rs[i].map((r) => r.bosses))]));

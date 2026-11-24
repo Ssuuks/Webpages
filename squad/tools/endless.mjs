@@ -56,7 +56,7 @@ export const THINK = {
   relic: { compass: 0.02, dice: 0.03, megaphone: 0.02, coil: 0.08, fourth: 0.05, pledge: 0.05, bag: 0, pouch: 0.04, ward: 0.05, loot: 0.06, scope: 0.04, resonator: 0.04, drum: 0.05, charge: 0.03, ladder: 0.01, lucky: 0.03, manual: 0.05 },   // 24절 새 유물(초안)
   // 빌드 개편 판(thinkScoreB — 아래 식): 값은 '화력이 이만큼(자연로그) 는다'로 어림한 것 [초안 — 잰 값은 ENDGAME.md 19절]
   b: {
-    w: { pierce: 0.02, burst: 0.03, frost: 0.03, shock: 0.03, acid: 0.03, cure: 0.03, sniper: 0.05, rocket: 0.025, flame: 0.03, medic: 0.025, shield: 0.06, chg: 0.01, dur: 0.02, gunlv: 0.04 },   // shock·acid·cure: 24절 새 탄(초안 — 작렬·빙결과 같은 몫에서 시작)   // 유효 레벨(deep) 하나의 몫(gunlv: 총 Lv — 21.9, 초안)
+    w: { pierce: 0.02, burst: 0.03, frost: 0.03, shock: 0.03, acid: 0.03, cure: 0.03, sniper: 0.035, rocket: 0.04, flame: 0.04, medic: 0.05, shield: 0.06, chg: 0.01, dur: 0.02, gunlv: 0.04 },   // shock·acid·cure: 24절 새 탄(초안 — 작렬·빙결과 같은 몫에서 시작)   // 유효 레벨(deep) 하나의 몫(gunlv: 총 Lv — 21.9, 초안)
     enhRare: 0.06, enhLegend: 0.4,    // 희귀·전설 강화 하나의 몫(초안 — 전설은 2차 진화 즉시 + 핵심 수치 ×2라 크게, ENDGAME.md 20절)
     first: 0.08,    // 새 특수병·탄 효과를 처음 얻는 몫(레벨 1이 나머지보다 얼마나 더 값진가 — 자리를 잡는 일)
     tier: {         // 세트가 단계마다 더하는 몫(누적이 아니라 그 단계에 오를 때 더해지는 값)
@@ -64,7 +64,7 @@ export const THINK = {
     },
     prog: 0.5,      // 다음 단계를 향한 걸음의 몫(그 단계 몫 × 이 값 × 걸음 비율) — 한 세트에 모으게 한다
     spec: 0.12,     // 전문화 한 장(둘 중 어느 쪽이든 — 전문화를 미루면 그만큼 카드 한 장을 놓친다)
-    curse: 0.1,     // 위험한 계약(카드 +2장 vs 다음 구간 위협 ×1.25)
+    curse: 0,       // 위험한 계약(카드 +2장 vs 다음 구간 위협 ×1.25) — 48절: 지형이 어려워져 0.1이면 6구간(첫 대왕) 앞에서 무너졌다. 0이면 다른 쓸 만한 카드가 있으면 안 고른다(32판 think 22.5 → 27.6, 아무거나 24.0 — 의무병·로켓병·화염병 값 올림 · 저격수 0.05 → 0.035와 함께)
     reroll: 0.08,   // 이 점수 아래면 다시 뽑기(남았으면)
   },
 };
