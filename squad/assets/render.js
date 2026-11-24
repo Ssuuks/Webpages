@@ -3377,10 +3377,12 @@ export function createRenderer(cvs) {
         continue;
       }
       if (b.g === 'm') {   // 저격 예광탄(21절): 길고 밝은 줄 + 하늘색 머리
-        if (!project(view, b.x, 0.75, b.z + ext - 5)) continue;
-        const len = Math.max(3, Math.round(P.y) - hy);
-        ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 1, 4, len + 2);
-        ctx.fillStyle = col; ctx.fillRect(hx, hy, 2, len);
+        if (!project(view, b.x - (b.dx || 0) * 5, 0.75, b.z + ext - 5)) continue;   // 43절: 휘어 가는 총알은 꼬리가 온 쪽으로 기운다
+        const len = Math.max(3, Math.round(P.y) - hy), tx = Math.round(P.x) - hx;
+        if (tx) {   // 기운 꼬리: 줄마다 옆으로 밀어 그린다(도트 결)
+          for (let k = 0; k < len; k++) { const ox = Math.round((tx * k) / len); ctx.fillStyle = OUT; ctx.fillRect(hx + ox - 1, hy + k, 4, 1); }
+          for (let k = 0; k < len; k++) { const ox = Math.round((tx * k) / len); ctx.fillStyle = col; ctx.fillRect(hx + ox, hy + k, 2, 1); }
+        } else { ctx.fillStyle = OUT; ctx.fillRect(hx - 1, hy - 1, 4, len + 2); ctx.fillStyle = col; ctx.fillRect(hx, hy, 2, len); }
         ctx.fillStyle = GUN_COL.marksman; ctx.fillRect(hx, hy, 2, Math.max(2, len >> 2));
         ctx.fillStyle = '#FFFFFF'; ctx.fillRect(hx, hy, 1, 1);
         continue;

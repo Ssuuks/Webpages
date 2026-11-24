@@ -3390,12 +3390,12 @@ function fire(s, R) {
       // 고르게 퍼뜨리되 매번 조금씩 어긋나게(황금비 수열 — 난수를 쓰지 않는다)
       const j = ((q.volley * 0.618034 + i * 0.381966) % 1) - 0.5;
       let x = q.x - span + ((i + 0.5 + j * 0.8) / b) * 2 * span;
-      if (aims) x = aims[i].x;
+      if (aims) x = clamp(aims[i].x, q.x - R, q.x + R);   // 43절: 저격총은 분대 앞(몸 폭 안)에서 쏘고 표적 쪽으로 휘어 간다 — 표적 자리에서 총알이 생기지 않게
       const bl = { x, z: q.z + 0.4 * R, d: 0, dmg, hm };
       if (far || rng) bl.r = (rng || BULLET_RANGE) * (far ? PET_FAR : 1);
       if (gv && G.id !== 'rifle') {
         if (G.id === 'shotgun') { bl.g = 's'; bl.base = dmg; if (gv.slug) bl.slug = gv.slug / b; }   // 산탄: 거리로 줄어드는 피해(bulletsUpdate), 슬러그는 펠릿마다 나눠 민다
-        else { bl.g = 'm'; bl.thru = 1; if (aims[i].tg) bl.tg = aims[i].tg; }   // 저격: 관통 예산 · 조준한 적을 따라간다
+        else { bl.g = 'm'; bl.thru = 1; bl.tx = aims[i].x; if (aims[i].tg) bl.tg = aims[i].tg; }   // 저격: 관통 예산 · 조준한 적(tx)을 따라 휘어 간다
       }
       if (bst && bst.thru) bl.thru = 1;   // 소총 Lv10 관통 점사
       if (pCrit && !pCrit.avg && rand(pCrit) < ppC) { bl.dmg = dmg * PET_CRIT; bl.c = 1; crits++; }
@@ -3420,6 +3420,8 @@ function fire(s, R) {
   }
 }
 
+/* 43절: 저격총 총알이 표적 쪽으로 휘는 기울기(앞으로 1m에 옆으로 m) — 조준 폭 끝(분대 몸 밖 2.5m)의 적도 6m 앞이면 닿는다 */
+const MK_STEER = 0.6;
 /* 39.1: 넘침 관통으로 쓰러뜨리는 동안 1 — 쓰러질 때 탄 효과(유폭·얼음 번짐·전염·치료·산성 웅덩이)를 안 낸다 */
 let noFx = 0;
 function bulletsUpdate(s) {
@@ -3444,7 +3446,8 @@ function bulletsUpdate(s) {
   for (let i = 0; i < list.length; i++) {
     const b = list[i];
     if (b.g === 's' && gw) b.dmg = b.base * (b.d <= gw.near ? 1 : 1 - (1 - gw.fall) * Math.min(1, (b.d - gw.near) / Math.max(1, gw.range - gw.near)));   // 산탄: near m 뒤로 range에서 fall까지 준다
-    if (b.tg) { const f = near.find((o) => o.id === b.tg); if (f && f.alive) b.x = f.x; else b.tg = 0; }   // 저격: 조준한 적을 따라간다
+    if (b.tg) { const f = near.find((o) => o.id === b.tg); if (f && f.alive) b.tx = f.x; else b.tg = 0; }   // 저격: 조준한 적을 따라간다
+    if (b.tx != null) { const m = adv * MK_STEER, dx = clamp(b.tx - b.x, -m, m); b.x += dx; b.dx = dx / adv; if (!b.tg && Math.abs(b.tx - b.x) < 1e-6) delete b.tx; }   // 43절: 옆으로는 앞으로 1m에 MK_STEER m까지 — 분대 앞에서 표적 쪽으로 휘어 간다
     const z0 = b.z;
     const z1 = z0 + adv;
     let bestZ = Infinity;
@@ -3492,7 +3495,7 @@ function bulletsUpdate(s) {
       if (kill && b.g === 'm' && gw.pop) fxBoom(s, f.x, f.z, 1.6, f.max * gw.pop, f);   // 터지는 한 발(41절: 저격총 자체의 능력이라 넘침으로 쓰러뜨린 적도 터진다 — 탄 효과만 첫 상대에게)
       if (b.slug && f.alive) f.z += b.slug;   // 슬러그: 맨 앞(맞은) 적을 밀어낸다
       const left = kill && b.thru ? b.dmg - hp0 / mul : 0;
-      if (left > b.dmg * 0.02) { b.th = 1; b.dmg = left; if (b.g === 's') b.base = left; b.tg = 0; b.z = f.z + 0.01; list[w++] = b; }   // 남은 피해로 계속 날아간다
+      if (left > b.dmg * 0.02) { b.th = 1; b.dmg = left; if (b.g === 's') b.base = left; b.tg = 0; delete b.tx; b.dx = 0; b.z = f.z + 0.01; list[w++] = b; }   // 남은 피해로 계속 날아간다
       continue;
     }
     if (B2 && hitKind === 2) { const wd = hitObj.kind === 'wall' || hitObj.kind === 'door'; if (wd && B2.acid) acidAdd(s, hitObj, B2); hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK : 1)); if (wd && B2.pierce && B2.pierce >= 10) wallThru(s, b, hitObj, near, B2.pierce); if (wd && legOn(s, 'pierce')) ricochet(s, b, hitObj); continue; }   // 관통 Lv10 · 전설 강화 '벽 뚫기'

@@ -4625,9 +4625,10 @@ test('21.2.1 — 저격총: 옆 ±(R + aim) 안 체력이 가장 큰 적을 노�
   u.foes = [small, big, out];
   C.step(u, { dir: 0 });
   assert.equal(u.bullets.length, 1, '병력 400 아래는 한 발');
-  assert.ok(u.bullets[0].tg === big.id && Math.abs(u.bullets[0].x - big.x) < 1e-9 && u.bullets[0].r === 50, '조준 폭 안 가장 센 적(밖의 더 센 적은 아니다)');
-  big.x += 0.4; u.squad.fireAcc = -99; C.step(u, { dir: 0 });
-  assert.ok(Math.abs(u.bullets[0].x - big.x) < 1e-9, '조준한 적을 따라간다');
+  assert.ok(u.bullets[0].tg === big.id && u.bullets[0].tx === big.x && u.bullets[0].r === 50, '조준 폭 안 가장 센 적(밖의 더 센 적은 아니다)');
+  assert.ok(Math.abs(u.bullets[0].x - u.squad.x) <= R0 + 1, `43절: 분대 앞에서 쏜다(표적 자리에서 생기지 않는다) ${(u.bullets[0].x - u.squad.x).toFixed(2)}`);
+  big.x += 0.4; u.squad.fireAcc = -99; for (let i = 0; i < 12; i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); }
+  assert.ok(Math.abs(u.bullets[0].x - big.x) < 1e-9, '휘어 가서 조준한 적을 따라간다');
   // 관통 예산: 앞 적(체력 30)을 잡고 남은 70이 뒤 적에게
   const w = gunState('marksman'); w.squad.fireAcc = -99;
   const a = gfoe(w, 99830, 6, 30), b = gfoe(w, 99831, 6.3, 1e9);
