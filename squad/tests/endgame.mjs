@@ -4110,7 +4110,7 @@ test('Lv10 2차 진화(개편 판): 관통 벽 너머 · 작렬 벽·보스 연�
   const f9 = fl(9), f10 = fl(10);
   assert.ok(Math.abs(f9.moved) < 1e-9 && Math.abs(f10.moved - f10.squad) < 0.5 && f10.moved > 1, `따라오는 불 ${f9.moved} ${f10.moved} (분대 ${f10.squad})`);
   // 의무병: Lv10이면 구간마다 한 번 전멸 직전에 바닥선의 절반으로(Lv9는 전멸)
-  const wipe = (lv, seg = 13) => { let u = mk({}, seg); u.squad.n = 1; u.squad.sp = [{ id: 9, k: 'medic', cd: 0, lv }]; u.foes = []; u = C.restore(JSON.parse(JSON.stringify(C.snapshot(u)))); const evs = []; u.saws = [{ id: 99280, z: u.squad.z + 1, x: u.squad.x, xa: -5, xb: 5, spd: 0, dir: 1, w: 1.1 }]; let again = false, mid = null; for (let k = 0; k < 200 && u.phase !== "lost"; k++) { C.step(u, { dir: 0 }); for (const e of u.ev) evs.push(e); u.squad.z = u.saws[0].z; if (!again && evs.some((e) => e.t === "revive")) { again = true; mid = { h: C.stateHash(u), snap: JSON.parse(JSON.stringify(C.snapshot(u))) }; u.squad.n = 1; } } return { s: u, mid, rev: evs.filter((e) => e.t === 'revive').map(({ x, z, ...e }) => e), phase: u.phase }; };   // 톱날(소프트 손실이 아니라 의무병의 방탄이 안 듣는다)이 1명뿐인 분대를 전멸시킨다
+  const wipe = (lv, seg = 13) => { let u = mk({}, seg); u.squad.n = 1; u.squad.sp = [{ id: 9, k: 'medic', cd: 0, lv }]; u.foes = []; u = C.restore(JSON.parse(JSON.stringify(C.snapshot(u)))); const evs = []; u.saws = [{ id: 99280, z: u.squad.z + 1, x: u.squad.x, xa: -5, xb: 5, spd: 0, dir: 1, w: 1.1 }]; let again = false, mid = null; for (let k = 0; k < 200 && u.phase !== "lost"; k++) { C.step(u, { dir: 0 }); for (const e of u.ev) evs.push(e); u.squad.z = u.saws[0].z; if (!again && evs.some((e) => e.t === "revive")) { again = true; mid = { h: C.stateHash(u), snap: JSON.parse(JSON.stringify(C.snapshot(u))) }; u.squad.n = 1; u.squad.pool = 0; } } return { s: u, mid, rev: evs.filter((e) => e.t === 'revive').map(({ x, z, ...e }) => e), phase: u.phase }; };   // 톱날(소프트 손실이 아니라 의무병의 방탄이 안 듣는다)이 1명뿐인 분대를 전멸시킨다 — 되살린 틱에 톱날이 되살린 병력에서도 깎아 회복 풀이 차므로(49절 한 입 뒤 같은 틱) 다시 1명으로 둘 때 풀도 비운다
   const w9 = wipe(9), w10 = wipe(10);
   assert.equal(w9.phase, 'lost');
   assert.equal(w10.rev.length, 1, '구간마다 한 번');
@@ -5474,4 +5474,55 @@ test('48절 — 저격총은 후반형(넘침 관통은 Lv5 진화부터 · 헤�
   w.foes = [a, b]; w.bullets = [{ x: a.x, z: a.z - 0.2, d: 5, dmg: 100, hm: 1, g: 'm', r: 50 }];
   for (let i = 0; i < 3; i++) C.step(w, { dir: 0 });
   assert.ok(!a.alive && b.hp === 1e9, '관통 없는 저격 한 발은 앞 적에서 멈춘다');
+});
+
+test('49절 — 함정·미로 페널티: 개편 판의 톱날은 처음 닿는 순간 한 입(SAW2.bite) + 초당 더 크게(캠페인은 그대로), 미로는 ÷2 칸 · 좀비 수가 늘었고, 행운 길 꽝은 −30%', () => {
+  const K = C.SAW2;
+  const pass = (s, spd = 0, boost = 0) => {
+    const q = s.squad;
+    s.foes = []; s.rows = []; s.props = []; s.bullets = []; s.spits = []; delete s.divs; delete s.lanes; delete s.zones; delete s.pads; s.hero = null; q.sp = []; q.x = 0;
+    if (boost) q.boost = { z1: q.z + 200, mul: boost };
+    s.saws = [{ id: 99990, z: q.z + 6, x: spd ? -4 : 0, xa: -5, xb: 5, spd, dir: 1, w: 1.1 }];
+    const n0 = q.n, ev = [];
+    for (let i = 0; i < 90; i++) { C.step(s, { dir: 0, tx: 0 }); for (const e of s.ev) ev.push(e); }
+    return { f: (n0 - q.n) / n0, bites: ev.filter((e) => e.t === 'sawBite') };
+  };
+  const mk = (n) => { const s = C.newEndless({ seed: 31, ...BLD }); s.endless.seg = 10; s.squad.n = n; return s; };
+  // 정면으로 지나면 한 입 + 닿아 있는 동안 — 예전(초당 4 + 0.35n, 7.5%쯤)보다 훨씬 크다(지금 19%쯤)
+  const head = pass(mk(600));
+  assert.equal(head.bites.length, 1, '한 입은 톱날마다 한 번');
+  assert.ok(head.bites[0].n === Math.round(600 * K.bite), `한 입 ${head.bites[0].n}`);
+  assert.ok(head.f > 0.15 && head.f < 0.3, `정면 ${head.f.toFixed(3)}`);
+  // 스치기만 해도 · 가속돼 빨리 지나가도 한 입은 잃는다
+  const graze = pass(mk(600), 18.5), fast = pass(mk(600), 0, 1.7);
+  assert.ok(graze.bites.length === 1 && graze.f >= K.bite * 0.95, `스침 ${graze.f.toFixed(3)}`);
+  assert.ok(fast.f >= K.bite + 0.03 && fast.f < head.f, `가속 ${fast.f.toFixed(3)}`);
+  // 방패막(유물)이면 한 입도 안 잃는다
+  const w = C.newEndless({ seed: 31, ...BLD, relics: ['ward'] }); w.endless.seg = 10; w.squad.n = 600;
+  const wd = pass(w);
+  assert.ok(wd.f === 0 && !wd.bites.length, `방패막 ${wd.f}`);
+  // 캠페인은 예전 그대로(한 입 없음, 초당 4 + 0.35n)
+  const camp = C.newGame(C.prepareLevel(12), { start: 600 });
+  const cp = pass(camp);
+  assert.ok(!cp.bites.length && Math.abs(cp.f - 73 / 600) < 1e-9, `캠페인 ${cp.f.toFixed(4)} — 예전 코드로 잰 값 600 → 527`);
+  // 미로: ÷2 칸이 벽 자리의 RUSH.mazeDiv쯤, 좀비 칸은 foeN마리(벽·좀비 체력은 그대로 — 빌드와 상관없는 페널티), 행운 길 꽝 −30%
+  assert.ok(C.LANES.foeN[0] >= 4 && C.RUSH.mazeDiv >= 0.6 && C.LANES.trap === 0.3 && !('wallK' in C.LANES) && !('foeHp' in C.LANES));
+  let walls = 0, divs = 0, packs = [];
+  for (let seed = 1; seed <= 12; seed++) for (let seg = C.LANES.mazeFrom; seg <= 24; seg++) {
+    const lv = laneSeg(seg, seed);
+    for (const l of lv.lanes || []) {
+      if (l.k !== 'maze') continue;
+      const n = C.LANES.stretch, sl = (l.z1 - l.z0 - C.FORK_TAPER) / n;
+      for (let i = 1; i < n; i++) {
+        const za = l.z0 + C.FORK_TAPER + i * sl;
+        walls += lv.props.filter((p) => p.maze && p.kind === 'wall' && p.z >= za && p.z < za + sl).length;
+        const row = lv.rows.find((r) => r.kind === 'maze' && r.z > za && r.z <= za + sl);
+        if (row) divs += row.cells.filter((c) => c.op === 'div').length;
+        for (let c = 0; c < 3; c++) { const m = lv.foes.filter((f) => f.maze && C.laneCell(f.x) === c && f.z >= za && f.z < za + sl).length; if (m) packs.push(m); }
+      }
+    }
+  }
+  const share = divs / Math.max(1, walls + divs);
+  assert.ok(share > 0.52 && share < 0.68, `÷2 몫 ${share.toFixed(2)} (벽 ${walls} · ÷2 ${divs})`);
+  assert.ok(packs.length > 20 && Math.min(...packs) >= C.LANES.foeN[0] && Math.max(...packs) < C.LANES.foeN[1], `좀비 칸 ${Math.min(...packs)}~${Math.max(...packs)}`);
 });

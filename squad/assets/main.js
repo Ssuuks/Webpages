@@ -4,7 +4,7 @@ import {
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
   RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
-  nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt, LANES, segMood,
+  nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt, LANES, SAW2, segMood,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -2876,7 +2876,10 @@ function watchTips() {
     else if (p.kind === 'cage') tip('cage', '철창을 쏴서 부수면 갇힌 특수병이 합류해요');
     else tip('crate', '상자를 쏴서 부수면 무기·병력 보상! 못 부수고 부딪히면 병사를 잃어요');
   }
-  for (const w of s.saws) if (w.z - q.z < 26 && w.z > q.z) tip('saw', '톱날이 움직이는 범위를 피하세요');
+  for (const w of s.saws) if (w.z - q.z < 26 && w.z > q.z) {
+    if (s.endless && s.endless.bld) tip('saw2', `톱날에 닿으면 그 순간 병력 ${pct(SAW2.bite)}%를 잃고, 닿아 있는 동안 더 잃어요. 움직이는 범위를 피하세요`, false, '톱날');   // 49절(개편 판)
+    else tip('saw', '톱날이 움직이는 범위를 피하세요');
+  }
   for (const f of s.foes) if (f.alive && f.kind === 'brute' && f.z - q.z < 36) tip('brute', '거구 좀비는 단단해요. 옆으로 비켜 가세요');
 }
 
@@ -2909,6 +2912,7 @@ function handleEvents(ev) {
         break;
       case 'wallBreak': sfx.crate(); break;
       case 'wallCrash': sfx.stomp(); vibe(40); break;
+      case 'sawBite': vibe(40); break;   // 49절: 톱날 한 입(소리는 'loss'의 톱날 소리)
       case 'crate':
         if (e.type === 'fx') {
           // 탄종 상자(무기가 이미 3단계): 떠 있던 탄 효과를 얻었다 — 레벨과 켜진 시너지까지 한 줄
