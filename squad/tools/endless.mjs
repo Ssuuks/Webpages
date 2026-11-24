@@ -8,7 +8,7 @@
    --flame: 화염병 줄(4단계)을 연 판(특수병 카드·철창·금색 칸에 화염병이 나온다 — think는 화염병을 THINK.sp.flame으로 본다. '그 병과 우선' 고르기는 밸런스 때 더한다) */
 import * as C from '../assets/core.js';
 import * as R from '../assets/roster.js';
-import { AMMO_IDS, fxK, RELICS, RELIC_IDS, BUILD, fx2Val } from '../assets/roster.js';
+import { AMMO_IDS, fxK, RELICS, RELIC_IDS, BUILD, fx2Val, gunVal } from '../assets/roster.js';
 import { makeBot, rng } from '../tests/bots.mjs';
 
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i < 0 ? d : process.argv[i + 1]; };
@@ -56,7 +56,7 @@ export const THINK = {
   relic: { compass: 0.02, dice: 0.03, megaphone: 0.02, coil: 0.08, fourth: 0.05, pledge: 0.05, bag: 0, pouch: 0.04, ward: 0.05, loot: 0.06, scope: 0.04, resonator: 0.04, drum: 0.05, charge: 0.03, ladder: 0.01, lucky: 0.03, manual: 0.05 },   // 24절 새 유물(초안)
   // 빌드 개편 판(thinkScoreB — 아래 식): 값은 '화력이 이만큼(자연로그) 는다'로 어림한 것 [초안 — 잰 값은 ENDGAME.md 19절]
   b: {
-    w: { pierce: 0.02, burst: 0.03, frost: 0.03, shock: 0.03, acid: 0.03, cure: 0.03, sniper: 0.05, rocket: 0.025, flame: 0.03, medic: 0.025, shield: 0.06, chg: 0.01, dur: 0.02, gunlv: 0.04 },   // shock·acid·cure: 24절 새 탄(초안 — 작렬·빙결과 같은 몫에서 시작)   // 유효 레벨(deep) 하나의 몫(gunlv: 총 Lv — 21.9, 초안)
+    w: { pierce: 0.02, burst: 0.03, frost: 0.03, shock: 0.03, acid: 0.03, cure: 0.03, sniper: 0.035, rocket: 0.04, flame: 0.04, medic: 0.05, shield: 0.06, chg: 0.01, dur: 0.02, gunlv: 0.04 },   // shock·acid·cure: 24절 새 탄(초안 — 작렬·빙결과 같은 몫에서 시작)   // 유효 레벨(deep) 하나의 몫(gunlv: 총 Lv — 21.9, 초안)
     enhRare: 0.06, enhLegend: 0.4,    // 희귀·전설 강화 하나의 몫(초안 — 전설은 2차 진화 즉시 + 핵심 수치 ×2라 크게, ENDGAME.md 20절)
     first: 0.08,    // 새 특수병·탄 효과를 처음 얻는 몫(레벨 1이 나머지보다 얼마나 더 값진가 — 자리를 잡는 일)
     tier: {         // 세트가 단계마다 더하는 몫(누적이 아니라 그 단계에 오를 때 더해지는 값)
@@ -64,7 +64,7 @@ export const THINK = {
     },
     prog: 0.5,      // 다음 단계를 향한 걸음의 몫(그 단계 몫 × 이 값 × 걸음 비율) — 한 세트에 모으게 한다
     spec: 0.12,     // 전문화 한 장(둘 중 어느 쪽이든 — 전문화를 미루면 그만큼 카드 한 장을 놓친다)
-    curse: 0.1,     // 위험한 계약(카드 +2장 vs 다음 구간 위협 ×1.25)
+    curse: 0.005,   // 위험한 계약(카드 +2장 vs 다음 구간 위협 ×1.25) — 48절: 지형이 어려워져 0.1이면 6구간(첫 대왕) 앞에서 무너졌다. 0.005면 다른 쓸 만한 카드가 있으면 안 고른다(32판 think 22.5 → 27.6, 아무거나 24.0 — 의무병·로켓병·화염병 값 올림 · 저격수 0.05 → 0.035와 함께)
     reroll: 0.08,   // 이 점수 아래면 다시 뽑기(남았으면)
   },
 };
@@ -115,12 +115,11 @@ function thinkScoreB(s, c, f, K) {
   const g = (a, b) => Math.log(a / b);
   if (f.k === 'curse') return K.curse;
   if (f.k === 'relic') return ((THINK.relic)[c.r] || 0) * (1 + THINK.H);
-  if (f.k === 'keep') return g(C.WEAPON[f.to], C.WEAPON[f.from]) + 0.01;   // 총 바꾸기를 마다하면 ★ +1(21.8)
-  if (f.k === 'swap') return K.swap ?? 0.03;   // 다른 총: 봇은 총마다의 세기를 모른다 — 작은 값(★이 상한이면 바꾼다)
   let v = 0;
   const part = f.k === 'gun' ? 'gun' : f.k === 'unit' ? f.u : f.k === 'fx' ? f.a : f.k === 'gunlv' ? 'gunlv' : '';
   if (f.k === 'gun') v = g(C.WEAPON[f.to], C.WEAPON[f.from]);   // 총 ★(무기 단계)
   else if (f.k === 'fx' && f.a === 'rapid') v = g(fx2Val('rapid', f.to).pow, f.from ? fx2Val('rapid', f.from).pow : 1);
+  else if (f.k === 'gunlv' && f.g === 'marksman') { const a = gunVal('marksman', f.from), b = gunVal('marksman', f.to); v = g(b.dmg, a.dmg) + (b.thru && !a.thru ? 0.25 : 0) + (b.head && !a.head ? 0.05 : 0); }   // 48절: 저격총은 Lv마다 피해가 크게 오르고 Lv5에 넘침 관통 — 그만큼 값을 준다
   else v = (K.w[part] || 0.02) * (f.to - f.from) + (f.from ? 0 : K.first);   // 레벨마다 정해진 능력(성장 개편 — 세트·깊이 보상은 없어졌다)
   if (f.combos) v += (K.combo ?? THINK.combo) * f.combos.length;
   if (f.enh) v += f.enh === 'rare' ? K.enhRare : K.enhLegend;   // 카드 등급 = 강화: 부가 능력·규칙이 붙는 몫

@@ -408,6 +408,18 @@ body.has-sp.sp-wrap #toast { top: calc(max(12px, env(safe-area-inset-top)) + 136
 body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 172px); }
 #toast { position: fixed; left: 50%; top: calc(max(12px, env(safe-area-inset-top)) + 64px); transform: translateX(-50%); width: max-content; max-width: min(420px, 90vw); text-align: center; z-index: 40; pointer-events: none; padding: 10px 16px; border-radius: 14px; background: var(--amber); color: var(--amber-ink); font-family: var(--display); font-size: 16px; border: 3px solid var(--edge); box-shadow: 0 4px 0 var(--edge); }
 
+/* 46.3 특별 구간 끝 병력 증감: 분대 뒤쪽 빈 길(영웅 버튼 바로 위)에 큰 띠(늘면 파랑 · 줄면 빨강) — 앞 게이트를 가리지 않게 */
+#zoneBanner { position: fixed; left: 50%; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 100px); transform: translateX(-50%); z-index: 39; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 0; padding: 8px 18px 10px; border-radius: 16px; background: rgba(18, 13, 34, 0.82); border: 3px solid var(--edge); box-shadow: 0 4px 0 var(--edge); font-family: var(--display); color: var(--text); animation: zoneIn 0.25s cubic-bezier(.3, 1.6, .5, 1); }
+#zoneBanner[hidden] { display: none; }
+#zoneName { font-size: 13px; color: var(--muted); }
+#zoneDelta { font-size: 34px; line-height: 1.05; font-weight: 400; text-shadow: 0 3px 0 var(--edge); }
+#zoneFrom { font-size: 13px; color: var(--muted); }
+#zoneBanner.up #zoneDelta { color: var(--blue); }
+#zoneBanner.down #zoneDelta { color: var(--red); }
+#zoneBanner.up { border-color: #3E8BEA; }
+#zoneBanner.down { border-color: #A92644; }
+@keyframes zoneIn { from { transform: translate(-50%, 10px) scale(1.25); opacity: 0; } }
+
 /* 결과 */
 #resTitle { font-family: var(--display); font-size: 56px; text-align: center; color: var(--amber); line-height: 1.05; text-shadow: 0 4px 0 var(--amber-dark), 0 7px 0 var(--edge); }
 #scrResult.lost #resTitle { color: var(--red); text-shadow: 0 4px 0 #A92644, 0 7px 0 var(--edge); }
@@ -592,6 +604,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
 <div id="guide" hidden role="dialog" aria-modal="true" aria-labelledby="guideText"><div class="guide-card"><small id="guideHead">안내</small><p id="guideText"></p><button id="guideOk" class="btn primary">확인 · 눌러서 계속</button></div></div>
 <div id="rotate" role="alert"><div><span aria-hidden="true">📱</span>세로로 돌려 주세요</div></div>
 <div id="toast" hidden role="status"></div>
+<div id="zoneBanner" hidden role="status"><span id="zoneName"></span><b id="zoneDelta"></b><span id="zoneFrom"></span></div>
 <div id="infoPop" hidden role="dialog" aria-modal="true" aria-labelledby="infoHead"><div class="info-card"><b id="infoHead"></b><div id="infoBody"></div><button id="infoOk" class="btn small">닫기</button></div></div>
 
 <section id="scrTitle" class="screen" hidden>

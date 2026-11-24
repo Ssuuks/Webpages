@@ -3565,7 +3565,7 @@ test('빌드 개편: 안 연 판에는 bld가 없고, 연 판의 카드에는 �
   assert.ok(of && of.length === 3, JSON.stringify(of));
   assert.deepEqual(of, C.offerOf(b));
   for (const c of of) {
-    assert.ok(['gun', 'gunlv', 'swap', 'unit', 'fx', 'hero', 'guard', 'spec'].includes(c.k), c.k);   // 21절: 총 Lv·총 바꾸기
+    assert.ok(['gun', 'gunlv', 'unit', 'fx', 'hero', 'guard', 'spec'].includes(c.k), c.k);   // 21절: 총 Lv(48절: 총 바꾸기 없음)
     if (c.k !== 'spec') assert.ok(c.n >= 1 && c.n <= 3, `등급 ${c.n}`);
     assert.ok(C.cardInfo(a, c), '카드 글을 만들 값이 있다');
   }
@@ -4324,8 +4324,10 @@ test('23.4 — 대왕: 체력 문턱(75·50·25%)마다 특수 패턴 하나를 
     assert.ok(maxOn <= 2, `켜진 특수 패턴 ≤ 2 (${maxOn})`);
     assert.deepEqual(phases.map((p) => p.ph), [1, 2, 3], `${seg}구간 문턱 셋`);
     assert.deepEqual(phases.map((p) => p.pat), [[sp[0], sp[1]], [sp[1], sp[2]], [sp[2], sp[3]]], '둘씩 밀려 간다');
-    // 새 패턴은 숨 고르기 뒤 곧(문턱을 넘을 때 이미 뜬 내려찍기 예고는 끝까지 간다 — 그 몫 1초까지 봐 준다)
-    for (const p of phases) for (const k of p.fresh) if (k !== 'wide' && firstUse[k] != null && firstUse[k] >= p.t) assert.ok(firstUse[k] - p.t <= R.BUILD.bossPat.calm + R.BUILD.bossPat.first + 1.0, `${k}: 문턱 뒤 ${(firstUse[k] - p.t).toFixed(2)}초에 처음`);
+    // 새 패턴은 숨 고르기 뒤 곧(문턱을 넘을 때 이미 시작한 패턴은 끝까지 간다 — 내려찍기 예고 1초, 42절부터 돌진 숨 고르기 + 뛰어들기(1.5 + 0.4초)까지 봐 준다.
+    // 48절: 지형이 바뀌어 18구간 대왕 앞 흐름이 달라지자, 문턱에서 이미 시작한 돌진 뒤로 새 패턴이 밀린 판이 나왔다 — 예전 허용 1초는 42절 전 돌진(0.9초) 기준)
+    const busy = Math.max(1.0, R.BOSS_PAT.charge.warn + R.BOSS_PAT.charge.dash);
+    for (const p of phases) for (const k of p.fresh) if (k !== 'wide' && firstUse[k] != null && firstUse[k] >= p.t) assert.ok(firstUse[k] - p.t <= R.BUILD.bossPat.calm + R.BUILD.bossPat.first + busy, `${k}: 문턱 뒤 ${(firstUse[k] - p.t).toFixed(2)}초에 처음`);
   }
 });
 test('23.2 — 강화판: 독침 세례 범위(발 수·폭)·간격, 돌진 범위, 좀비 장벽 범위(두 줄 — 빈틈은 그대로, 서로 다른 칸), 넓은 내려찍기 간격(매번)·범위(안전 칸이 반대쪽으로 한 번 더), 내려찍기 범위(띠가 칸 경계를 넘는다). 다시 쓰기는 원래 cd × cdFloor 아래로 안 내려간다', () => {
@@ -4589,7 +4591,8 @@ test('21 — 총 종류: 출격 때 고른 총(모르는 총·없으면 소총),
   // 저장·복원: 총 상태가 이어지고 해시에 든다, 깨진 값은 고친다
   const w = C.newEndless({ seed: 31, ...BLD, gun: 'shotgun' }); w.endless.bld.gl = { shotgun: 3, rifle: 2 }; w.endless.bld.gp = 'marksman';
   const r = C.restore(JSON.parse(JSON.stringify(C.snapshot(w))));
-  assert.deepEqual([r.endless.bld.gt, r.endless.bld.gl, r.endless.bld.gp], ['shotgun', { rifle: 2, shotgun: 3 }, 'marksman']);
+  assert.deepEqual([r.endless.bld.gt, r.endless.bld.gl, r.endless.bld.gp], ['shotgun', { rifle: 2, shotgun: 3 }, ''], '48절: 옛 저장의 바꿀 총(gp)은 버린다');
+  w.endless.bld.gp = '';
   assert.equal(C.stateHash(r), C.stateHash(w));
   const v = JSON.parse(JSON.stringify(C.snapshot(w))); v.endless.bld.gt = 'nope'; v.endless.bld.gl = { rifle: -2, laser: 9 }; v.endless.bld.gp = 'rifle';
   const vr = C.restore(v);
@@ -4657,39 +4660,23 @@ test('21.9 — 총 Lv 카드: 그 총의 Lv +1(각성 전 Lv5 상한), 희귀·�
   for (let x = 1; x <= 80; x++) { const o = C.snapshot(base); o.endless.seed = x; o.endless.offer = null; o.endless.bld.rel = 0; for (const c of C.offerOf(C.restore(o)) || []) if (c.k === 'gunlv') { seen++; assert.equal(c.g, 'shotgun'); } }
   assert.ok(seen > 5, `총 Lv 카드 ${seen}`);
 });
-test('21.8 — 총 바꾸기: GUN_SWAP.from구간부터 무기 상자 일부에 다른 총, 열면 다음 보스 뒤 맨 앞에 바꾸기/그대로(★ +1) — 다시 뽑기 없음. 바꾸면 ★ 그대로, 지금 총 Lv은 기억, 새 총은 keep 몫부터', () => {
-  // 상자에 다른 총이 든다(시드로 정해진다 — 그 구간부터)
-  let found = 0, early = 0;
-  for (let seed = 1; seed <= 40 && found < 3; seed++) {
-    const u = bldRun(seed, R.GUN_SWAP.from - 1, { n: 9000, each: (s) => { if (s.squad.n < 9000) s.squad.n = 9000; } });
+test('21.8 → 48절 — 총 바꾸기는 없다: 다른 총 상자 · 대왕 뒤 바꾸기 카드가 안 나오고, 옛 저장의 다른 총 상자는 보통 무기 상자 · 바꾸기 카드는 버린다', () => {
+  assert.equal(R.GUN_SWAP, undefined);
+  for (let seed = 1; seed <= 12; seed++) {
+    const u = bldRun(seed, 7, { n: 9000, each: (s) => { if (s.squad.n < 9000) s.squad.n = 9000; } });
     if (u.phase === 'lost') continue;
-    C.pickCard(u, 0); while (C.offerOf(u)) C.pickCard(u, 0);
-    for (const p of u.props) if (p.reward && p.reward.type === 'gunx') { found++; assert.ok(R.GUNS[p.reward.g] && p.reward.g !== u.endless.bld.gt); }
+    for (let i = 0; i < 6 && C.offerOf(u); i++) { assert.ok(C.offerOf(u).every((c) => c.k !== 'swap' && c.k !== 'keep'), '바꾸기 카드 없음'); C.pickCard(u, 0); }
+    for (const p of u.props) assert.ok(!(p.reward && p.reward.type === 'gunx'), '다른 총 상자 없음');
   }
-  for (let seed = 1; seed <= 10; seed++) { const u = bldRun(seed, 1); C.pickCard(u, 0); while (C.offerOf(u)) C.pickCard(u, 0); for (const p of u.props) if (p.reward && p.reward.type === 'gunx') early++; }
-  assert.ok(found >= 1 && early === 0, `다른 총 상자 ${found}, 앞 구간 ${early}`);
-  // 열면 gp, 다음 카드 화면 맨 앞에 바꾸기/그대로
+  // 옛 저장: 다른 총 상자 → 보통 무기 상자, 바꾸기 카드 → 버리고 새로 뽑는다, gp는 ''
   const base = bldRun(33, 2, { co: { gun: 'marksman' } });
-  const o = C.snapshot(base); o.endless.offer = null; o.endless.bld.gl = { marksman: 5 }; o.endless.bld.gp = 'shotgun'; o.endless.bld.rel = 0;
+  const o = C.snapshot(base); o.endless.bld.gp = 'shotgun'; o.endless.offer = [{ k: 'swap', g: 'shotgun', pend: true }, { k: 'keep', g: 'shotgun', pend: true }];
+  o.props.push({ id: 99901, kind: 'crate', x0: -1.1, x1: 1.1, z: o.squad.z + 40, hp: 5, max: 5, alive: true, hitT: -9, reward: { type: 'gunx', g: 'shotgun' } });
   const u = C.restore(o);
-  const of = C.offerOf(u);
-  assert.deepEqual(of.map((c) => c.k + ':' + c.g), ['swap:shotgun', 'keep:shotgun']);
-  assert.equal(C.rerollCards(u), false, '다시 뽑기 없음');
-  const tier = u.squad.tier;
-  const sw = C.restore(C.snapshot(u)); C.pickCard(sw, 0);
-  assert.deepEqual([sw.endless.bld.gt, sw.endless.bld.gl, sw.endless.bld.gp, sw.squad.tier], ['shotgun', { marksman: 5, shotgun: Math.floor(5 * R.GUN_SWAP.keep) }, '', tier]);
-  assert.ok(C.offerOf(sw) && C.offerOf(sw).every((c) => c.k !== 'swap' && c.k !== 'keep'), '이어서 보통 카드');
-  const kp = C.restore(C.snapshot(u)); C.pickCard(kp, 1);
-  assert.deepEqual([kp.endless.bld.gt, kp.endless.bld.gp, kp.squad.tier], ['marksman', '', Math.min(C.tierMax(kp), tier + 1)]);
-  // 되돌아가면 그 총의 Lv 그대로
-  const back = C.restore(C.snapshot(sw)); back.endless.offer = [{ k: 'swap', g: 'marksman' }]; C.pickCard(back, 0);
-  assert.deepEqual([back.endless.bld.gt, back.endless.bld.gl.marksman], ['marksman', 5]);
-  // 다른 총 상자를 열면 gp(바로 바뀌지 않는다)
-  const cr = gunState('rifle', 9); cr.squad.fireAcc = -99;
-  const p = { id: 99900, kind: 'crate', x0: -1.1, x1: 1.1, z: cr.squad.z + 3, hp: 1, max: 1, alive: true, hitT: -9, reward: { type: 'gunx', g: 'shotgun' } };
-  cr.props = [p]; cr.bullets = [{ x: 0, z: p.z - 0.2, d: 2, dmg: 10, hm: 1 }];
-  C.step(cr, { dir: 0 });
-  assert.deepEqual([p.alive, cr.endless.bld.gt, cr.endless.bld.gp], [false, 'rifle', 'shotgun']);
+  assert.equal(u.endless.bld.gp, '');
+  assert.ok(C.offerOf(u).every((c) => c.k !== 'swap' && c.k !== 'keep'));
+  assert.deepEqual(u.props.find((p) => p.id === 99901).reward, { type: 'gun' });
+  assert.equal(u.endless.bld.gt, 'marksman', '총은 출격 때 고른 그대로');
 });
 /* ---------- 22절: 칸막이 구간 — 행운 길 · 칸막이 미로 ---------- */
 const laneSeg = (seg, seed = 77) => C.buildSegment(seed, seg, 30000, 4, 0, { obs: true, flame: true, mul: C.bldThreat(seg), fe: 10, bk: true, terrain: true });
@@ -4798,7 +4785,7 @@ test('개편 판의 think: 카드 종류마다 점수를 매기고(총 ★ · �
   const to = C.cardInfo(t, { k: 'men' }).to;
   assert.equal(thinkScore(t, { k: 'men' }), (Math.pow(to / 100, 0.8) - 1) * (1 + 2 * Math.min(1, Math.max(0, (C.segFloor(t.endless.seg + 1) - 100) / (to - 100)))));
 });
-test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사람(sloppy0.1) 16판 — 정밀·한파가 탄막·폭발 사이(±3구간 띠 안)에 든다, 생각해서 고르기(think)는 아무거나보다 확실히 멀리 간다', async (t) => {
+test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사람(sloppy0.1) 32판 — 정밀·한파가 탄막·폭발 사이(±3구간 띠 안)에 든다, 생각해서 고르기(think)는 아무거나보다 확실히 멀리 간다', async (t) => {
   // 세트·깊이 보상을 없앤 뒤 잰 값(32판, 위협 곡선 1.06): think 26.6 · 아무거나 22.8 (16판 think 26.1 · 탄막 21.1 · 폭발 16.6).
   // 성장 개편 3단계 뒤 잰 값(32판, 위협 곡선 1.07): 탄막 23.6 · 폭발 18.5 · 정밀 16.5 · 한파 23.4 · think 24.0 · 아무거나 24.0.
   // 총 ★ 합치기 뒤 잰 값(32판): 탄막 19.8 · 폭발 24.1 · think 25.3 · 아무거나 23.1 (정밀·한파는 16판 18.7·19.3).
@@ -4811,7 +4798,8 @@ test('빌드 세트의 균형(봇 — 합격 기준): 강화 30·집중한 사�
     frost: 'b:fx:frost>spec:medic>unit:medic>guard>gun',
     think: 'think', random: 'random',
   };
-  const run = (picker) => Promise.all(Array.from({ length: 16 }, (_, i) => POOL.run({ kind: 'call', module: url, fn: 'cardRun', args: [i, 'sloppy0.1', picker, BLD30, 50] })));
+  // 48절: 16 → 32판 — 지형이 어려워져 앞 구간 전멸이 늘자 16판으로는 흔들림이 컸다(같은 think가 시드 0~15 25.4 · 16~31 29.7)
+  const run = (picker) => Promise.all(Array.from({ length: 32 }, (_, i) => POOL.run({ kind: 'call', module: url, fn: 'cardRun', args: [i, 'sloppy0.1', picker, BLD30, 50] })));
   const names = Object.keys(BUILDS);
   const rs = await Promise.all(names.map((k) => run(BUILDS[k])));
   const m = Object.fromEntries(names.map((k, i) => [k, mean(rs[i].map((r) => r.bosses))]));
@@ -5089,7 +5077,8 @@ test('39.1 — 저격총 넘침 관통: 둘째 좀비부터는 피해만 — 작
   u.bullets = [{ x: u.squad.x, z: b.z - 0.3, d: 5, dmg: 1000, hm: 1, g: 'm', thru: 1, r: 50 }];
   for (let i = 0; i < 20; i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); }
   assert.ok(1e6 - c.hp > 0, '처음 맞힌 좀비면 둘레가 맞는다');
-  assert.ok(R.gunText('marksman', 1).includes('처음 맞힌 적에게만'), R.gunText('marksman', 1));
+  assert.ok(R.gunText('marksman', R.GUNK.marksman.thru).includes('처음 맞힌 적에게만'), R.gunText('marksman', R.GUNK.marksman.thru));
+  assert.ok(!R.gunText('marksman', 1).includes('뚫고'), '48절: Lv5 전에는 넘침 관통이 없다');
 });
 
 test('39.2 — 카드 글: 바뀐 항목은 숫자를 전→후로 밝은 줄에, 같은 항목은 기본 글씨에 한 번만, 새 항목은 \'새로:\'', () => {
@@ -5177,22 +5166,11 @@ test('39.6 — 구간 성격: 풍요·보통·기근(시드·구간으로 정해
   assert.equal(C.buildSegment(5, 7, 5000, 0, 0, null).mood, undefined);
 });
 
-test('39.7 · 39.8 — 별로 안 연 탄도 판 안 카드 후보(무게 fxLocked) · 다른 총 상자를 열 때마다 그 총 Lv이 쌓인다', () => {
+test('39.7 — 별로 안 연 탄도 판 안 카드 후보(무게 fxLocked)(39.8 다른 총 상자는 48절에서 없앴다)', () => {
   const s = C.newEndless({ seed: 31, ...BLD, ammoOpen: R.AMMO_IDS2, ammoStar: ['pierce'] });
   assert.deepEqual(s.endless.ammoStar, ['pierce']);
   const r = C.restore(C.snapshot(s)); assert.deepEqual(r.endless.ammoStar, ['pierce'], '이어하기');
   assert.ok(R.BUILD.fxLocked > 0 && R.BUILD.fxLocked < 1);
-  // 총 상자
-  const u = C.newEndless({ seed: 31, ...BLD, gun: 'rifle' });
-  u.squad.n = 1000; u.foes = []; u.rows = []; u.saws = []; delete u.divs; u.props = []; u.squad.x = 0; u.hero = null; u.squad.sp = [];
-  u.endless.bld.gl = { rifle: 6 };
-  const open = () => { u.props.push({ id: u.nextId++, kind: 'crate', x0: -1, x1: 1, z: u.squad.z + 9, hp: 1, max: 1, alive: true, hitT: -9, reward: { type: 'gunx', g: 'shotgun' } }); for (let i = 0; i < 90; i++) C.step(u, { dir: 0, tx: 0 }); };
-  open();
-  assert.equal(u.endless.bld.gl.shotgun, Math.floor(6 * R.GUN_SWAP.keep) + R.GUN_SWAP.stack, '처음: 지금 Lv의 keep 몫 + stack');
-  open();
-  assert.equal(u.endless.bld.gl.shotgun, Math.floor(6 * R.GUN_SWAP.keep) + 2 * R.GUN_SWAP.stack, '또 주우면 또 쌓인다');
-  assert.equal(u.endless.bld.gt, 'rifle', '바꾸지는 않는다(보스 뒤에 고른다)');
-  assert.equal(u.stats.gunx, 2);
 });
 
 test('39.10 — 플레이 기록 v2: 떠난 특수병도 sp에, 탄 효과 출처를 나눠 센다, 변이·고른 카드·구간별 흐름·행운 상자', () => {
@@ -5345,7 +5323,7 @@ test('45절 — 게이트 몰이: 줄 간격 동안 끝 칸에서 반대쪽 끝 
     const s = C.newEndless({ seed: 31, ...BLD });
     for (let g = 0; g < 2000 && s.phase !== 'run'; g++) C.step(s, { dir: 0 });
     s.foes = []; s.rows = []; s.props = []; s.saws = []; delete s.divs; delete s.lanes;
-    s.speed = 12;   // 6구간(몰이가 나오기 시작하는 곳)의 달리는 속도 — 뒤 구간은 더 빨라 더 못 간다
+    s.speed = 12 * C.RUSH.boost;   // 6구간(몰이가 나오기 시작하는 곳)의 달리는 속도 × 들머리 가속 발판(46.2) — 뒤 구간은 더 빨라 더 못 간다
     const q = s.squad; q.x = -(C.ROAD * 2) / 3; q.vx = 0;
     const z0 = q.z;
     for (let g = 0; g < 400 && q.x <= C.LANE_X[1]; g++) C.step(s, inp);
@@ -5357,4 +5335,143 @@ test('45절 — 게이트 몰이: 줄 간격 동안 끝 칸에서 반대쪽 끝 
     const seg = C.buildSegment(11, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 });
     for (const r of seg.rows.filter((x) => x.kind === 'rush')) assert.equal(r.cells.length, 3);
   }
+});
+
+test('46절 — 가속 발판(밟으면 ×mul, len 뒤 원래대로 · 반쪽은 밖이면 안 걸림) · 가속 몰이(7m 간격 + 들머리 길 전체 발판) · 구간 끝 증감 · 함정 길(반쪽 톱날 쌍 바로 뒤 게이트) · 새 적 셋 · 뭉치 돌격(개편 판)', () => {
+  const bare = (o = {}) => {
+    const s = C.newEndless({ seed: 31, ...BLD, ...o });
+    for (let g = 0; g < 2000 && s.phase !== 'run'; g++) C.step(s, { dir: 0 });
+    s.foes = []; s.rows = []; s.props = []; s.saws = []; s.spits = []; delete s.divs; delete s.lanes; delete s.zones; delete s.pads;
+    if (s.hero) s.hero.charge = 0;
+    return s;
+  };
+  // 가속 발판
+  { const s = bare(), q = s.squad, v0 = s.speed;
+    q.x = 0; s.pads = [{ id: 1, x0: -6, x1: 6, z: q.z + 1, len: 8, mul: 2 }];
+    let got = 0; for (let i = 0; i < 12; i++) { C.step(s, { dir: 0 }); got += s.ev.filter((e) => e.t === 'boost').length; }
+    assert.equal(got, 1, '밟는 순간 한 번');
+    assert.ok(q.boost && Math.abs(q.vz - 2 * v0) < 1e-9, `밟으면 ×2 (${q.vz} / ${v0})`);
+    let end = 0; for (let i = 0; i < 120 && q.boost; i++) { C.step(s, { dir: 0 }); end += s.ev.filter((e) => e.t === 'boostEnd').length; }
+    const z1 = s.pads[0].z + s.pads[0].len; assert.ok(!q.boost && end === 1 && q.z >= z1 && q.z < z1 + 2 * v0 * C.DT + 1e-9, '판 줄에서 len m 뒤 끝');
+    C.step(s, { dir: 0 }); assert.ok(Math.abs(q.vz - v0) < 1e-9, '그다음 틱부터 원래대로');
+    const t = bare(); t.squad.x = -3; t.pads = [{ id: 1, x0: 0, x1: 6, z: t.squad.z + 1, len: 8, mul: 2 }];
+    for (let i = 0; i < 12; i++) C.step(t, { dir: 0 });
+    assert.ok(!t.squad.boost, '반쪽 발판 밖이면 안 걸린다'); }
+  // 가속 몰이 · 함정 길 생성
+  let rush = null, pats = new Set(), gauntSegs = 0;
+  for (let k = 2; k < 60; k++) {
+    const seg = C.buildSegment(11, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 });
+    const ng = seg.plan.filter((x) => x === 'gaunt').length;
+    assert.equal(ng, k < C.GAUNT.from ? 0 : k >= C.GAUNT.two ? 2 : 1, `${k}구간 함정 길 수`);
+    if (ng) gauntSegs++;
+    if (!rush && seg.plan.includes('rush')) rush = seg;
+    for (const ch of seg.chunks.filter((c) => c.kind === 'gaunt')) {
+      const saws = seg.saws.filter((w) => w.trap && w.z >= ch.z && w.z < ch.z + ch.len);
+      const row = seg.rows.find((r) => r.kind === 'gaunt' && r.z >= ch.z && r.z < ch.z + ch.len);
+      assert.ok(saws.length >= 2 && row && row.cells.length === 3, '함정 길: 톱날 둘 이상 + 세 칸 게이트');
+      const lastSaw = Math.max(...saws.map((w) => w.z));
+      assert.ok(row.z - lastSaw > 0 && row.z - lastSaw <= C.GAUNT.gate + 1e-9, `톱날 바로 뒤 게이트 ${row.z - lastSaw}m`);
+      const byZ = {}; for (const w of saws) (byZ[w.z] || (byZ[w.z] = [])).push(w);
+      if (Object.values(byZ).some((g) => g.length === 2 && g[0].xa * g[1].xa < 0 && g[0].xb - g[0].xa < C.ROAD)) pats.add('pair');   // 반쪽 둘이 한 줄에(왼쪽 반 · 오른쪽 반)
+      if ((seg.pads || []).some((o) => o.z >= ch.z && o.z < ch.z + ch.len)) pats.add('pad');
+    }
+    if (k >= C.FOE2.thief.from) for (const f of seg.foes.filter((x) => x.elite === 'thief')) {
+      const r = seg.rows.find((x) => x.id === f.row);
+      assert.ok(r && r.cells[f.ci].op === 'add' && r.cells[f.ci].v > 0 && Math.abs(r.z - C.FOE2.thief.ahead - f.z) < 1e-9 && f.spd === 0, '게이트 도둑은 덧셈 칸 앞에 서 있다');
+    }
+    for (const f of seg.foes) {
+      if (f.elite === 'bomb') assert.ok(k >= C.FOE2.bomb.from && f.kind === 'runner');
+      if (f.elite === 'leap') assert.ok(k >= C.FOE2.leap.from);
+      if (f.elite === 'thief') assert.ok(k >= C.FOE2.thief.from);
+    }
+  }
+  assert.ok(pats.has('pair') && pats.has('pad'), [...pats].join(','));
+  assert.ok(rush, '몰이가 나오는 구간');
+  const rr = rush.rows.filter((r) => r.kind === 'rush').sort((a, b) => a.z - b.z);
+  for (let i = 1; i < rr.length; i++) assert.ok(Math.abs(rr[i].z - rr[i - 1].z - C.RUSH.gap) < 1e-9, '몰이 줄 간격');
+  assert.ok((rush.pads || []).some((o) => o.mul === C.RUSH.boost && o.x0 <= -C.ROAD && o.x1 >= C.ROAD && o.z < rr[0].z && o.z + o.len > rr[rr.length - 1].z), '들머리 길 전체 가속 발판이 마지막 줄까지');
+  assert.ok((rush.zones || []).some((o) => o.k === 'rush'));
+  // 구간 끝 증감
+  { const s = bare(), q = s.squad;
+    s.zones = [{ id: 1, k: 'gaunt', z0: q.z + 0.5, z1: q.z + 4 }];
+    const n0 = Math.round(q.n); let zin = null, zout = null;
+    for (let i = 0; i < 60 && !zout; i++) { C.step(s, { dir: 0 }); for (const e of s.ev) { if (e.t === 'zoneIn') zin = e; if (e.t === 'zone') zout = e; } if (zin && !s.zones[0].cut) { q.n = Math.round(q.n * 0.5); s.zones[0].cut = 1; } }
+    assert.ok(zin && zout && zout.k === 'gaunt' && zout.n0 === n0 && zout.n1 === Math.round(q.n) && zout.n1 < zout.n0, JSON.stringify(zout));
+    q.z = s.arenaZ - 0.05; C.step(s, { dir: 0 });
+    const run = s.ev.find((e) => e.t === 'zone' && e.k === 'run');
+    assert.ok(run && run.n0 === Math.round(s.endless.n0) && run.n1 === Math.round(q.n), '보스 앞: 이번 구간 달리기 증감'); }
+  const foe = (s, o) => { const f = { id: s.nextId++, kind: 'grunt', x: s.squad.x, z: s.squad.z + 10, hp: 50, max: 50, alive: true, awake: true, hitT: -9, cd: 0, seed: 1, r: 0.42, spd: 3.2, home: 0.9, homeDist: 24, ...o }; f.max = f.hp; s.foes.push(f); return f; };
+  // 자폭: 닿으면 병력 hit 이상
+  { const s = bare(), q = s.squad; q.n = 1000;
+    foe(s, { kind: 'runner', elite: 'bomb', z: q.z + 0.6, hp: 1e9, spd: 0 });
+    C.step(s, { dir: 0 });
+    assert.ok((s.stats.lostBy.bomb | 0) >= Math.round(1000 * C.FOE2.bomb.hit), `자폭 닿음 ${s.stats.lostBy.bomb}`);
+    assert.ok(s.ev.some((e) => e.t === 'bomb' && e.touch)); }
+  // 자폭: 멀리서 쓰러뜨리면 둘레 좀비가 맞고 분대는 안 다친다
+  { const s = bare(), q = s.squad; q.n = 400;
+    const b = foe(s, { kind: 'runner', elite: 'bomb', z: q.z + 14, hp: 1, spd: 0, home: 0 });
+    const nb = [foe(s, { z: b.z + 0.8, x: b.x + 1.2, hp: 1e6, spd: 0, home: 0 }), foe(s, { z: b.z + 1.2, x: b.x - 1.2, hp: 1e6, spd: 0, home: 0 })];
+    for (let i = 0; i < 90 && b.alive; i++) C.step(s, { dir: 0 });
+    assert.ok(!b.alive && nb.every((f) => f.hp < f.max), '둘레 좀비가 터짐에 맞았다');
+    assert.equal(s.stats.lostBy.bomb | 0, 0, '멀리서 터지면 분대는 안 다친다'); }
+  // 도약: 웅크렸다가 dist m를 T초에
+  { const s = bare(), q = s.squad;
+    s.speed = 1;   // 분대가 거의 서 있게(뛰어든 좀비에 닿아 사라지지 않게 — 거리만 잰다)
+    const f = foe(s, { elite: 'leap', z: q.z + C.FOE2.leap.at + 3, hp: 1e9, home: 0 });
+    let warn = -1, leap = -1, zAt = 0;
+    for (let i = 0; i < 200 && f.lp !== 3 && f.alive; i++) { C.step(s, { dir: 0, tx: 4.4 }); for (const e of s.ev) { if (e.t === 'leapWarn') warn = s.tick; if (e.t === 'leap') { leap = s.tick; zAt = e.z; } } }
+    assert.ok(warn > 0 && leap - warn >= Math.round(C.FOE2.leap.crouch / C.DT) - 1, '웅크리기(예고)');
+    assert.ok(f.lp === 3 && Math.abs(zAt - C.FOE2.leap.dist - f.z) < 0.6, `뛰어든 거리 ${(zAt - f.z).toFixed(2)}`); }
+  // 게이트 도둑: 칸을 빨아 먹고, 잡히면 멈춘다
+  { const s = bare(), q = s.squad;
+    const c = C.makeCell('add', 20, 100, -C.ROAD, C.ROAD, 0);
+    const row = { id: s.nextId++, z: q.z + 30, cells: [c], done: false, chosen: -1, ng: 100, src: 'gate', kind: 'plain' };
+    s.rows = [row];
+    const f = foe(s, { elite: 'thief', x: 3.5, z: row.z - C.FOE2.thief.ahead, hp: 1e9, spd: 0, home: 0, homeDist: 0, row: row.id, ci: 0, acc: 0 });
+    q.x = 3.5;
+    for (let i = 0; i < 60; i++) C.step(s, { dir: 0, tx: 3.5 });
+    const drop = 20 - c.v;
+    assert.ok(drop >= 5 && drop <= 9, `1초에 원래 값의 ${C.FOE2.thief.drain * 100}%쯤 (${drop})`);
+    f.alive = false; const v1 = c.v;
+    let drains = 0; for (let i = 0; i < 30; i++) { C.step(s, { dir: 0, tx: -3.5 }); drains += s.ev.filter((e) => e.t === 'drain').length; }
+    assert.equal(drains, 0); assert.ok(c.v >= v1, '잡히면 그만 빤다'); }
+  // 뭉치 돌격(개편 판): 덧셈 칸 빠르기는 그대로, 나팔 충격파가 앞 좀비를 밀어내고 자폭 좀비는 분대를 안 다치게 터진다
+  { const a = C.newEndless({ seed: 31, ...BLD, hero: { id: 'mungchi', lv: 5 } }), b = C.newEndless({ seed: 31, ...BLD, hero: { id: 'nabi', lv: 5 } });
+    const st = (s) => s.rows.flatMap((r) => r.cells.filter((c) => c.op === 'add').map((c) => c.step));
+    const sa = st(a), sb = st(b);
+    assert.ok(sa.length === sb.length && sa.every((v, i) => Math.abs(v - sb[i]) < 1e-9 * sb[i]), '개편 판은 집합 나팔(칸 빠르기)이 없다');
+    const camp = C.newGame(C.prepareLevel(12), { hero: { id: 'mungchi', lv: 5 } }), camp0 = C.newGame(C.prepareLevel(12), {});
+    assert.ok(st(camp)[0] < st(camp0)[0], '캠페인은 그대로');
+    assert.ok(R.HEROES.mungchi.skillB.text(5).includes(`${R.HORN.reach}m`) && !R.HEROES.mungchi.skillB.text(5).includes('게이트 올리기에도'));
+    const s = bare({ hero: { id: 'mungchi', lv: 5 } }), q = s.squad; q.n = 500;
+    const g1 = foe(s, { z: q.z + 8, hp: 1e9 }), bm = foe(s, { kind: 'runner', elite: 'bomb', z: q.z + 3, hp: 1e9 }), far = foe(s, { z: q.z + R.HORN.reach + 6, hp: 1e9 });
+    const z1 = g1.z, zf = far.z;
+    s.hero.charge = 1; C.step(s, { dir: 0, skill: true });
+    assert.ok(s.ev.some((e) => e.t === 'horn'), '충격파');
+    assert.ok(g1.z > z1 + R.HORN.push - 0.2 && g1.holdT > s.t, `앞 좀비 밀려남 ${(g1.z - z1).toFixed(2)}`);
+    assert.ok(!bm.alive && (s.stats.lostBy.bomb | 0) === 0, '자폭 좀비는 터지고 분대는 안 다친다');
+    assert.ok(far.z <= zf, '먼 좀비는 그대로');
+    const zh = g1.z; C.step(s, { dir: 0 }); assert.ok(Math.abs(g1.z - zh) < 1e-9, '멈춘 동안 걷지 않는다'); }
+});
+
+test('48절 — 저격총은 후반형(넘침 관통은 Lv5 진화부터 · 헤드샷 Lv3 · 피해가 Lv마다 크게), 산탄총은 초반형(바탕 피해가 크고 레벨로는 조금만)', () => {
+  const K = R.GUNK.marksman;
+  for (let lv = 1; lv <= 12; lv++) {
+    const m = R.gunVal('marksman', lv);
+    assert.equal(m.thru, lv >= K.thru, `Lv${lv} 넘침 관통`);
+    assert.equal(m.head > 0, lv >= K.head, `Lv${lv} 헤드샷`);
+    if (lv > 1) assert.ok(m.dmg > R.gunVal('marksman', lv - 1).dmg, `Lv${lv} 저격 피해가 오른다`);
+  }
+  const mGrow = R.gunVal('marksman', 10).dmg / R.gunVal('marksman', 1).dmg, sGrow = R.gunVal('shotgun', 10).dmg / R.gunVal('shotgun', 1).dmg;
+  assert.ok(mGrow > 1.8 && sGrow < 1.1, `Lv1 → Lv10 피해 — 저격 ×${mGrow.toFixed(2)} · 산탄 ×${sGrow.toFixed(2)}`);
+  assert.ok(R.gunVal('shotgun', 1).dmg >= 1.8 && R.gunVal('marksman', 1).dmg <= 0.5, '산탄은 처음부터 세고 저격은 처음엔 약하다');
+  // 실제 총알: Lv1 저격은 thru가 없고 Lv5는 있다
+  const shot = (lv) => { const u = gunState('marksman', 9, (w) => { w.endless.bld.gl = { marksman: lv }; w.squad.n = 100; }); u.foes = [gfoe(u, 99870, 20, 1e9)]; C.step(u, { dir: 0 }); return u.bullets[0]; };
+  assert.ok(!shot(1).thru && !shot(4).thru && shot(5).thru === 1, 'Lv5부터 넘침 관통 총알');
+  // 넘침 관통이 없으면 남는 피해는 버려진다
+  const w = gunState('marksman', 9, (u) => { u.endless.bld.gl = { marksman: 1 }; }); w.squad.fireAcc = -99;
+  const a = gfoe(w, 99880, 6, 30), b = gfoe(w, 99881, 6.3, 1e9);
+  w.foes = [a, b]; w.bullets = [{ x: a.x, z: a.z - 0.2, d: 5, dmg: 100, hm: 1, g: 'm', r: 50 }];
+  for (let i = 0; i < 3; i++) C.step(w, { dir: 0 });
+  assert.ok(!a.alive && b.hp === 1e9, '관통 없는 저격 한 발은 앞 적에서 멈춘다');
 });
