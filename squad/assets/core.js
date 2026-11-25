@@ -2552,6 +2552,9 @@ export function rerollCards(s) {
   return true;
 }
 export const rerollsOf = (s) => { const B = bldOf(s); return B ? B.rr : 0; };
+/* 56절: 다시 뽑기를 새로 채울 때의 수(판의 기본 + 재굴림 주사위) · 다음에 새로 채우는 보스 수 */
+export const rerollBase = (s) => BUILD.reroll + (relicOn(s, 'dice') ? RELICS.dice.n : 0);
+export const rerollNext = (s) => (Math.floor(((s.endless && s.endless.bosses) || 0) / BUILD.rerollReset) + 1) * BUILD.rerollReset;
 const pickName = (c) => (c.k === 'unit' ? 'unit:' + c.u : c.k === 'fx' ? 'fx:' + c.a : c.k === 'relic' ? 'relic:' + c.r : c.k === 'gunlv' ? 'gunlv:' + c.g : c.k === 'spec' ? 'spec:' + c.u + ':' + c.b : c.k === 'hero' ? 'hero:' + c.h : c.k === 'guard' ? 'guard:' + c.g : c.k);
 /* 카드 등급 n(2 희귀·3 전설)이면 대상 id의 강화 하나를 더 쌓는다 */
 function enhAdd(B, id, n) {
@@ -2949,10 +2952,12 @@ function lose(s, k, cause, x, z, sub) {
     // 짓밟기(보스가 닿은 뒤)로 잃은 병사는 회복 풀로 가지 않는다 — 닿기 전에 잡는 것이 보스전의 목표
     // 의무병은 레벨만큼(Lv1 60%·Lv2 70%·Lv3 80%), 보리의 응급처치는 의무병 레벨만큼 더(짝 효과 — 의무병이 없거나 Lv1이면 그대로)
     const med = spLv(q, 'medic');
-    const share = sub === 'stomp' ? 0 : Math.min(Math.max(SHARE_MAX, med ? unitVal('medic', 'share', med) : 0), (med ? unitVal('medic', 'share', med) : 0) + (h && h.id === 'bori' ? heroVal('bori', 'share', h.lv) * (med ? synergyOf(med) : 1) : 0));
+    const bori = h && h.id === 'bori' ? heroVal('bori', B ? 'shareB' : 'share', h.lv) : 0;   // 56절: 개편 판 보리는 응급 간호(shareB — 게이트 밖 모든 손실)
+    const share = sub === 'stomp' ? 0 : Math.min(Math.max(SHARE_MAX, med ? unitVal('medic', 'share', med) : 0), (med ? unitVal('medic', 'share', med) : 0) + bori * (med ? synergyOf(med) : 1));
     // 개편 판(55절): 되살림은 좀비 · 보스 피해만(MED_CAUSE), Lv5 진화는 '방역'(변이 한 단계 낮게 — mutWard)
     const mLeg = 0;   // 34절: 의무병 전설은 '응급 수혈'(아래)   // 전설 강화 '기적의 손': 더 돌아온다
-    if (!B || MED_CAUSE.has(cause)) q.pool += real * Math.min(1, share + mLeg);   // 55절: 개편 판은 좀비 · 보스에게 잃은 병사만 되살린다(Lv5 '소생' +30%p는 '방역'으로 바뀌었다)
+    if (!B || MED_CAUSE.has(cause)) q.pool += real * Math.min(1, share + mLeg);
+    else if (bori && sub !== 'stomp') q.pool += real * Math.min(1, bori);   // 56절: 의무병이 못 살리는 손실(톱날 · 벽 · 상자 · 독안개 · 웅덩이)도 보리는 되살린다   // 55절: 개편 판은 좀비 · 보스에게 잃은 병사만 되살린다(Lv5 '소생' +30%p는 '방역'으로 바뀌었다)
   }
   if (soft && q.sp.length && (sub === 'slam' || real >= Math.max(3, Math.ceil(0.15 * before)))) spDrop(s, 'hit');
   escort(s);
@@ -4455,7 +4460,7 @@ function bossUpdate(s, R) {
       e.bosses++;
       { const c = segAcc(s); (s.stats.segs || (s.stats.segs = [])).push([e.seg, c.nb, Math.round(b.t * 10) / 10, Math.round(c.lost), Math.round(c.gate)]); s.stats.cur = null; }   // 플레이 기록 v2: 구간마다 [구간, 보스 앞 병력, 보스전 초, 잃은 병력, 게이트 득실]
       if (e.bld && e.fx && e.fx.cure && fx2Val('cure', e.fx.cure).mass && e.cureSeg === e.seg && e.cureN > 0) { const n = Math.round(e.cureN * FX_NEW.cure.boss); if (n > 0) { gain(s, n, b.x, b.z, 'cure'); emit(s, { t: 'cure', n, x: b.x, z: b.z, boss: true }); } }   // 집단 치료(치료 Lv5): 보스를 잡으면 그 구간 치료의 50% 더
-      if (e.bld) { const B = e.bld; B.pi = 0; B.rrn = 0; B.more = 0; B.rel = 1; B.pre = 0; if (p.tag === 'super') { B.rr += 1 + (relicOn(s, 'dice') ? RELICS.dice.king : 0); mutRoll(s); } }
+      if (e.bld) { const B = e.bld; B.pi = 0; B.rrn = 0; B.more = 0; B.rel = 1; B.pre = 0; if (p.tag === 'super') { B.rr += 1 + (relicOn(s, 'dice') ? RELICS.dice.king : 0); mutRoll(s); } if (e.bosses % BUILD.rerollReset === 0) B.rr = rerollBase(s); }   // 56절: 다시 뽑기는 rerollReset구간마다 새로 채운다(남은 것은 사라진다)
       const coins = segCoins(e.seg);
       e.bank += coins;
       s.stats.bossT += b.t;

@@ -4,7 +4,7 @@ import {
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul, swapCombos,
   RELIC, relicsOf, mutLv, mutRaw, mutWard, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
-  nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt, LANES, SAW2, segMood,
+  nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, rerollNext, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt, LANES, SAW2, segMood,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
 import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
@@ -2204,7 +2204,7 @@ function renderPick() {
   // 다시 뽑기(개편 판): 남은 횟수가 있을 때만
   const rr = $('pickReroll');
   rr.hidden = !(B && rerollsOf(s) > 0);
-  if (!rr.hidden) rr.textContent = `다시 뽑기 (${rerollsOf(s)}번 남음)${FINE ? ' · R' : ''}`;
+  if (!rr.hidden) rr.textContent = `다시 뽑기 (${rerollsOf(s)}번 · ${rerollNext(s)}번째 보스에 새로)${FINE ? ' · R' : ''}`;   // 56절
   list.setAttribute('aria-label', relic ? '유물 카드' : '보상 카드');
   offer.forEach((c, i) => {
     const info = cardInfo(s, c);

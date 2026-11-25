@@ -1644,7 +1644,7 @@ test('유물 아홉(roster.RELICS): 이름·좋은 점·대신 쪽 글은 수치
   assert.deepEqual(L9.map((id) => R.RELICS[id].name), ['나침반', '재굴림 주사위', '빨간 확성기', '과부하 코일', '넷째 자리', '부활 서약', '수집가의 가방', '넓은 탄낭', '방패막']);
   assert.deepEqual(L9.map((id) => [R.RELICS[id].text(), R.RELICS[id].cost()]), [
     ['갈림길 상자 속이 45m 앞에서 보이고, 위험한 쪽 상자 병사 ×1.5', ''],
-    ['카드 다시 뽑기를 지금 3번 더, 대왕을 잡을 때마다 2번씩 더 받아요', ''],
+    ['다시 뽑기를 지금 3번, 대왕마다 2번 더(10구간마다 채울 때도 3번 더)', ''],
     ['빨간(−) 게이트를 쏘면 숫자가 1.5배 빨리 올라요', '파란(+) 게이트는 0.8배로 느리게'],
     ['총 ★을 한 칸 더 올릴 수 있어요(★ 상한 +1)', '지원병 상자의 병사 −30%'],
     ['특수병을 3명 → 4명까지 데려가요', '특수병 한 명마다 필요한 병사 4 → 6명'],
@@ -5594,4 +5594,27 @@ test('51절 — 곱하기 줄이기 · 자동 보급은 절대치: 개편 판의
   const sup = (n) => { const s = bldRun(40, 1); s.squad.n = n; const of = C.offerOf(s); C.pickCard(s, Math.max(0, of.findIndex((c) => c.k === 'gun'))); return s.ev.find((e) => e.t === 'supply').n; };
   assert.equal(sup(100), sup(1000), '보급은 지금 병력과 상관없다');
   assert.equal(sup(100), C.segSupply(1));
+});
+
+test('56절 — 보리(개편 판): 응급 간호는 게이트 밖 모든 손실(벽 · 톱날 · 독안개도)을 되살린다 · 다시 뽑기는 rerollReset구간마다 새로 채운다(남은 것은 사라진다)', () => {
+  const wall = (hero) => {
+    const u = C.newEndless({ seed: 31, ...BLD, hero: { id: hero, lv: 5 } });
+    u.endless.fx = {}; u.squad.n = 1000; u.squad.sp = []; u.foes = []; u.squad.pool = 0; u.squad.fireAcc = -99;
+    u.props = [{ id: 99702, kind: 'wall', x0: -5, x1: 5, z: u.squad.z + 0.2, hp: 2000, max: 2000, alive: true, hitT: -9 }];
+    const n0 = u.squad.n; C.step(u, { dir: 0 });
+    return { lost: n0 - u.squad.n, pool: u.squad.pool };
+  };
+  const b = wall('bori'), m = wall('mungchi');
+  assert.ok(b.lost > 0 && m.lost > 0, '벽에 잃는다');
+  assert.equal(m.pool, 0, '뭉치는 벽 손실을 되살리지 않는다');
+  assert.ok(Math.abs(b.pool / b.lost - R.heroVal('bori', 'shareB', 5)) < 0.02, `보리 ${b.pool}/${b.lost}`);
+  assert.ok(R.HEROES.bori.passiveB && R.HEROES.bori.skillB && R.HEROES.bori.passiveB.text(5).includes(`${Math.round(R.heroVal('bori', 'shareB', 5) * 100)}%`));
+  // 다시 뽑기: 대왕(6)에 +1, rerollReset(10)번째 보스에 새로 — 판의 기본으로
+  let pre = -1, at10 = -1, base = -1;
+  bldRun(31, 10, { n: 9000, through: true, each: (s) => { const B = s.endless.bld; if (s.squad.n < 9000) s.squad.n = 9000; if (s.endless.bosses === 9) pre = B.rr; if (s.endless.bosses === 10 && at10 < 0) { at10 = B.rr; base = C.rerollBase(s); } } });
+  assert.ok(pre > base, `9번째 보스 뒤 쌓인 ${pre} > 기본 ${base}`);
+  assert.equal(at10, base, `${R.BUILD.rerollReset}번째 보스에 새로(쌓인 것은 사라진다)`);
+  const s = C.newEndless({ seed: 31, ...BLD }); s.endless.bosses = 13;
+  assert.equal(C.rerollNext(s), 20);
+  assert.equal(C.rerollBase(s), R.BUILD.reroll);
 });
