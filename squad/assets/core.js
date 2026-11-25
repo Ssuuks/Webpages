@@ -2950,7 +2950,7 @@ function lose(s, k, cause, x, z, sub) {
     // 의무병은 레벨만큼(Lv1 60%·Lv2 70%·Lv3 80%), 보리의 응급처치는 의무병 레벨만큼 더(짝 효과 — 의무병이 없거나 Lv1이면 그대로)
     const med = spLv(q, 'medic');
     const share = sub === 'stomp' ? 0 : Math.min(Math.max(SHARE_MAX, med ? unitVal('medic', 'share', med) : 0), (med ? unitVal('medic', 'share', med) : 0) + (h && h.id === 'bori' ? heroVal('bori', 'share', h.lv) * (med ? synergyOf(med) : 1) : 0));
-    // 의무병 전문화(개편 판): 소생 — 좀비에게 잃은 병사가 모두 돌아온다, 경호 — 특수병이 맞아서 쓰러지지 않는다
+    // 개편 판(55절): 되살림은 좀비 · 보스 피해만(MED_CAUSE), Lv5 진화는 '방역'(변이 한 단계 낮게 — mutWard)
     const mLeg = 0;   // 34절: 의무병 전설은 '응급 수혈'(아래)   // 전설 강화 '기적의 손': 더 돌아온다
     if (!B || MED_CAUSE.has(cause)) q.pool += real * Math.min(1, share + mLeg);   // 55절: 개편 판은 좀비 · 보스에게 잃은 병사만 되살린다(Lv5 '소생' +30%p는 '방역'으로 바뀌었다)
   }
