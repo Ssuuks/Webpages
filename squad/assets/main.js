@@ -2,8 +2,8 @@
 import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWantsAuto, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
-  CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
-  RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
+  CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul, swapCombos,
+  RELIC, relicsOf, mutLv, mutRaw, mutWard, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
   nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt, LANES, SAW2, segMood,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
@@ -2069,11 +2069,14 @@ function bldCardLines(fromTxt, toTxt, c, later = []) {
 const deltaOf = (k, id, from, to) => (bldOf(s) && to > from ? `지금 ${statOf(k, id, from)} → 고르면 ${statOf(k, id, to)}` : '');
 /* 특수병 레벨 글(개편 판의 로켓병은 간격·조준이 다르다 — BUILD.rocket) */
 function spUp(u, lv) {
+  if (u === 'medic' && bldOf(s)) return `좀비·보스에게 잃은 병사의 ${pct(unitVal('medic', 'share', lv))}%를 되살려요`;   // 55절: 개편 판은 좀비 · 보스 피해만
   if (u !== 'rocket' || !bldOf(s)) return UNITS[u].up(lv);
   const L = Math.min(lv, BUILD.evo);
   return `${Math.round(unitVal('rocket', 'every', L) * BUILD.rocket.cd * 100) / 100}초마다 로켓(폭발 반경 ${unitVal('rocket', 'r', L)}m) — 길을 막은 벽을 먼저 뚫어요(벽 피해 ×${BUILD.rocket.wall})`;
 }
-const spDesc = (u) => (u === 'rocket' && bldOf(s) ? `${spUp('rocket', 1)}. 벽이 없으면 가장 큰 무리, 보스전에서는 보스` : UNITS[u].desc);
+const spDesc = (u) => (u === 'rocket' && bldOf(s) ? `${spUp('rocket', 1)}. 벽이 없으면 가장 큰 무리, 보스전에서는 보스`
+  : u === 'medic' && bldOf(s) ? `좀비·보스에게 잃은 병사의 ${pct(unitVal('medic', 'share', 1))}%를 몇 초 뒤 되살려요(독안개·웅덩이·벽·상자·톱날은 안 돼요)` : UNITS[u].desc);   // 55절
+const spRole = (u) => (u === 'medic' && bldOf(s) ? '좀비·보스에게 잃은 병사를 몇 초 뒤 되살려요' : UNITS[u].role);
 function cardText(c) {
   if (c.k === 'curse') return { kind: '위험한 계약', lead: '', from: '', to: `카드 ${c.more}장 더`, det: `지금 카드를 ${c.more}장 더 골라요`, cost: `다음 구간 위협 ×${c.mul}`, col: '#FF5E7A', icon: 'star', curse: true };
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
@@ -2118,7 +2121,8 @@ function cardText(c) {
     if (bldOf(s) && c.full) {   // 44절: 칸이 찼다 — 고르면 가진 효과 하나와 바꾼다
       const E = s.endless, locked = E && E.ammoStar && !E.ammoStar.includes(c.a) && AMMO[c.a] ? `출격 탄으로는 ★${AMMO[c.a].stars}에 열려요` : '';
       const L2 = bldCardLines('', fxT(c.a, c.to), c, [`칸이 차 있어요 — 고르면 가진 효과 하나와 바꿔요(버린 효과 Lv의 절반 + 1)`, locked]);
-      return { kind: '탄 효과 바꾸기', lead: '새 효과:', from: '', to: `${nm} Lv${c.to}`, det: L2.det, delta: L2.delta, col, icon: 'fx_' + c.a, n: c.n };
+      const tos = (c.drops || []).map((d) => d.to), hi = tos.length ? Math.max(...tos) : c.to;   // 52절: 레벨은 버리는 효과에 따라 — 'Lv2~4'(글은 가장 낮은 레벨)
+      return { kind: '탄 효과 바꾸기', lead: '새 효과:', from: '', to: `${nm} Lv${c.to}${hi > c.to ? `~${hi}` : ''}`, det: L2.det, delta: L2.delta, col, icon: 'fx_' + c.a, n: c.n };
     }
     if (bldOf(s)) {   // 39.2
       const fx0 = fxOf(s) || {}, used0 = AMMO_IDS2.filter((a) => fx0[a]).length;
@@ -2185,6 +2189,7 @@ function pickSummary(picks) {
 }
 function renderPick() {
   pickDrop = null;
+  $('pickGain').hidden = true; $('scrPick').classList.remove('drop');   // 52절: 바꿀 탄 효과 고르기에서 돌아오면
   const list = $('pickList');
   list.textContent = '';
   const offer = offerOf(s) || [];
@@ -2331,24 +2336,57 @@ function showDrop(i, info) {
   const list = $('pickList');
   list.textContent = '';
   $('pickTitle').textContent = '바꿀 탄 효과를 골라요';
-  const col = AMMO[info.a] ? AMMO[info.a].color : '#fff';
-  const card = (cls, ic, kindTxt, chgTxt, detTxt, data) => {
-    const b = document.createElement('button');
-    b.className = 'pick-card ' + cls;
-    Object.assign(b.dataset, data);
+  $('pickSub').textContent = '버린 효과 자리에 새 효과가 들어가요';
+  $('pickReroll').hidden = true;   // 다시 뽑기는 카드 화면에서(돌아가기)
+  $('scrPick').classList.add('drop');
+  const nm = fxName(info.a), colOf = (a) => (AMMO[a] ? AMMO[a].color : '#fff');
+  /* 카드 한 장: lines = [[글, 칸 이름]] — pick-delta 얻는 것(밝게) · pick-syn 켜지는 시너지 · pick-cost 꺼지는 시너지 · pick-det 풀이 · pick-rule 규칙 */
+  const fill = (b, col, ic, kindTxt, chg, lines) => {
     b.style.setProperty('--acc', col);
     const icn = document.createElement('span'); icn.className = 'pick-ic'; if (ic) icn.appendChild(iconEl(ic, 3));
     const body = document.createElement('span'); body.className = 'pick-body';
     const k = document.createElement('span'); k.className = 'pick-kind'; k.textContent = kindTxt;
-    const ch = document.createElement('span'); ch.className = 'pick-chg'; ch.textContent = chgTxt;
+    const ch = document.createElement('span'); ch.className = 'pick-chg';
+    if (chg[0]) ch.append(chg[0]);
+    if (chg[1]) { const em = document.createElement('em'); em.textContent = chg[1]; ch.append(chg[0] ? ' → ' : '', em); }
+    if (chg[2]) ch.append(chg[2]);
     body.append(k, ch);
-    if (detTxt) { const d = document.createElement('span'); d.className = 'pick-det'; d.textContent = detTxt; body.appendChild(d); }
+    for (const [t, cls] of lines) if (t) { const d = document.createElement('span'); d.className = cls; d.textContent = t; body.appendChild(d); }
     b.append(icn, body);
-    b.setAttribute('aria-label', `${kindTxt}: ${chgTxt}. ${detTxt || ''}`);
-    list.appendChild(b);
+    b.setAttribute('aria-label', `${kindTxt}: ${ch.textContent}. ${lines.filter((l) => l[0]).map((l) => l[0]).join('. ')}`);
   };
-  for (const d of info.drops) card('', 'fx_' + d.a, '버리기', `${fxName(d.a)} Lv${d.lv} → ${fxName(info.a)} Lv${d.to}`, fxT(info.a, d.to), { i: String(i), drop: d.a });
-  card('drop-back', '', '돌아가기', '다른 카드 고르기', '', { i: '99', back: '1' });
+  // 위: 새로 얻는 효과 — 누르는 카드가 아니다(한 번만 싣는다). 레벨은 버리는 효과에 따라 달라서(버린 Lv의 절반 + 1) 가장 낮은 레벨의 글,
+  // 그보다 높은 레벨이 있으면 레벨마다 더 얻는 것만 한 줄씩(아래 카드에 되풀이하지 않는다)
+  const lvs = [...new Set(info.drops.map((d) => d.to))].sort((x, y) => x - y), lo = lvs[0], hi = lvs[lvs.length - 1];
+  const capped = info.drops.some((d) => Math.floor(d.lv * BUILD.fxSwap.keep) + 1 > d.to);
+  const g = $('pickGain');
+  g.textContent = '';
+  fill(g, colOf(info.a), 'fx_' + info.a, '새로 얻는 효과', ['', nm, lo === hi ? ` Lv${lo}` : ` Lv${lo}~${hi}`], [
+    [lo === hi ? fxT(info.a, lo) : `Lv${lo}: ${fxT(info.a, lo)}`, 'pick-det'],
+    ...lvs.slice(1).map((lv, j) => [`Lv${lv}이면 더: ${diffParts(fxT(info.a, lvs[j]), fxT(info.a, lv)).hi.map((t) => t.replace(/^새로: /, '')).join(' · ')}`, 'pick-delta']),
+    [`레벨 = 버리는 효과 Lv의 절반(내림) + 1${capped ? ` · 각성 전에는 Lv${BUILD.evo}까지` : ''}`, 'pick-rule'],
+  ]);
+  g.hidden = false;
+  // 아래: 버릴 효과마다 — 지금 그 효과(잃는 것) · 꺼지고 켜지는 시너지
+  for (const d of info.drops) {
+    const b = document.createElement('button');
+    b.className = 'pick-card';
+    Object.assign(b.dataset, { i: String(i), drop: d.a });
+    const sw = swapCombos(s, d.a, info.a, d.to);
+    const enh = enhN(s, d.a, 'r') + enhN(s, d.a, 'l');
+    fill(b, colOf(d.a), 'fx_' + d.a, '버리기', [`${fxName(d.a)} Lv${d.lv}`, `${nm} Lv${d.to}`], [
+      [`잃는 효과: ${fxT(d.a, d.lv)}${enh ? ` · 이 효과의 강화도 쉬어요` : ''}`, 'pick-det'],
+      [sw.on.length ? `켜지는 시너지 ${comboNames(sw.on)}` : '', 'pick-syn'],
+      [sw.off.length ? `꺼지는 시너지 ${comboNames(sw.off)}` : '', 'pick-cost'],
+    ]);
+    list.appendChild(b);
+  }
+  const back = document.createElement('button');
+  back.className = 'pick-card drop-back';
+  Object.assign(back.dataset, { i: '99', back: '1' });
+  fill(back, '', '', '돌아가기', ['다른 카드 고르기'], []);
+  back.style.removeProperty('--acc');
+  list.appendChild(back);
 }
 function pickActivate(b) {
   if (!b) return;
@@ -2547,16 +2585,17 @@ function renderPausePanes(box) {
     grid.appendChild(c);
   };
   // 적 변이: 칸 셋 밖, 해골 칩 줄(적 쪽 정보)
-  const muts = s.endless && s.endless.mut ? MUT_IDS.filter((id) => mutLv(s, id)) : [];
+  const muts = s.endless && s.endless.mut ? MUT_IDS.filter((id) => mutRaw(s, id)) : [];
   if (muts.length) {
     const row = document.createElement('div');
     row.className = 'mut-row';
     for (const id of muts) {
-      const l = mutLv(s, id);
+      const l = mutLv(s, id), raw = mutRaw(s, id);   // 55절: 방역이면 받는 단계(l)가 쌓인 단계(raw)보다 하나 낮다
       const b = document.createElement('button');
       b.type = 'button';
-      b.append(iconEl('skull', 1), `${MUTATIONS[id].name}${l > 1 ? ' Ⅱ' : ''}`);
-      const it = { name: `적 변이 ${MUTATIONS[id].name}${l > 1 ? ' Ⅱ' : ''}`, lines: [MUTATIONS[id].text(l)] };
+      if (!l) b.classList.add('off');
+      b.append(iconEl('skull', 1), `${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}${l < raw ? ' · 방역' : ''}`);
+      const it = { name: `적 변이 ${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}`, lines: [l ? MUTATIONS[id].text(l) : '', l < raw ? (l ? '의무병 ‘방역’으로 한 단계 낮게 받아요' : '의무병 ‘방역’으로 지금은 안 받아요') : ''].filter(Boolean) };
       b.addEventListener('click', () => { sfx.click(); show(it); });
       row.appendChild(b);
     }
@@ -2588,7 +2627,7 @@ function renderPausePanes(box) {
     const U = UNITS[m.k];
     if (!U) continue;
     const lv = m.lv || 1;
-    const lines = [lv > 1 ? `${U.role}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k)];
+    const lines = [lv > 1 ? `${spRole(m.k)}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k)];
     if (SP_EVO[m.k] && lv >= BUILD.evo) lines.push(`진화 ‘${SP_EVO[m.k].name}’: ${SP_EVO[m.k].text()}`);
     if (SP_EVO2[m.k] && lv >= 10) lines.push(`2차 진화 ‘${SP_EVO2[m.k].name}’: ${SP_EVO2[m.k].text()}`);
     if (lv > BUILD.evo) lines.push(`레벨 보너스 +${Math.round((awk(lv) - 1) * 100)}%`);
@@ -2652,7 +2691,7 @@ function renderPauseUnits() {
     const U = UNITS[m.k];
     if (!U) continue;
     const lv = m.lv || 1;
-    let text = lv > 1 ? `${U.role}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k);
+    let text = lv > 1 ? `${spRole(m.k)}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k);
     // 짝 영웅과 함께면 그 짝 효과(화염병 + 뭉치: 돌격 나팔 동안 불 지대 폭 — 화염병 줄을 연 무한모드 판에만 화염병이 있다)
     if (U.pair && s.hero && HEROES[s.hero.id] && HEROES[s.hero.id].match === m.k) text += ` · 짝 효과: ${U.pair(lv)}`;
     if (lv < spLvMax(s)) text += ` · 또 구하면 Lv${lv + 1}`;
@@ -2679,7 +2718,10 @@ function renderPauseUnits() {
     for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * (rl && rl.includes('pledge') ? 1 : BUILD.spBack)))}로 돌아와요`, '쓰러짐');
   }
   // 적 변이(개편 판 — 대왕을 잡을 때마다 하나씩 쌓인다)
-  if (s.endless && s.endless.mut) for (const id of MUT_IDS) { const l = mutLv(s, id); if (l) addRow('skull', `변이 ${MUTATIONS[id].name}${l > 1 ? ' Ⅱ' : ''}`, MUTATIONS[id].text(l), '변이'); }
+  if (s.endless && s.endless.mut) for (const id of MUT_IDS) {   // 55절: 방역이면 한 단계 낮게 — 안 받는 변이도 '방역'으로 보인다
+    const l = mutLv(s, id), raw = mutRaw(s, id);
+    if (raw) addRow('skull', `변이 ${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}${l < raw ? ' · 방역' : ''}`, l ? MUTATIONS[id].text(l) + (l < raw ? ' · 방역으로 한 단계 낮게' : '') : '의무병 ‘방역’으로 안 받아요', '변이');
+  }
   if (fx) for (const id of combosOn(s)) addRow('star', `시너지 ${COMBOS[id].name}`, comboText(id, !!bldOf(s)), '시너지');
   if (rl) for (const id of rl) {
     const Rl = RELICS[id];
@@ -3137,7 +3179,11 @@ function handleEvents(ev) {
       }
       case 'offer': openPick(); break;
       // 적 변이(대왕 뒤 — 판 끝까지 쌓인다): 다음 구간이 시작될 때 안내창으로(35절 — 예전엔 이 줄이 없어 안내가 한 번도 안 떴다)
-      case 'mutation': if (MUTATIONS[e.id]) mutNote = `${mutNote ? mutNote + '\n' : ''}적 변이 ‘${MUTATIONS[e.id].name}${e.lv > 1 ? ' Ⅱ' : ''}’: ${MUTATIONS[e.id].text(e.lv)}`; break;
+      case 'mutation': if (MUTATIONS[e.id]) {   // 55절: 의무병 '방역'이면 한 단계 낮게(eff — 0이면 안 받는다)
+        const ef = e.eff ?? e.lv, nm = `적 변이 ‘${MUTATIONS[e.id].name}${e.lv > 1 ? ' Ⅱ' : ''}’`;
+        const line = ef <= 0 ? `${nm} — 의무병 ‘방역’으로 안 받아요` : `${nm}: ${MUTATIONS[e.id].text(ef)}${ef < e.lv ? ' (방역으로 한 단계 낮게)' : ''}`;
+        mutNote = `${mutNote ? mutNote + '\n' : ''}${line}`;
+      } break;
       case 'supply': {
         // 개편 판: 보스를 잡으면 자동 보급(증원 카드 대신) — 고른 카드와 다음 구간을 한 줄로(대왕 뒤에는 변이도)
         const mn = mutNote;
