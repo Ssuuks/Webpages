@@ -3,7 +3,7 @@ import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWantsAuto, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
   CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul, swapCombos,
-  RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
+  RELIC, relicsOf, mutLv, mutRaw, mutWard, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
   nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt, LANES, SAW2, segMood,
 } from './core.js';
 import { createRenderer, RELIC_COL, WTIER } from './render.js';
@@ -2069,11 +2069,14 @@ function bldCardLines(fromTxt, toTxt, c, later = []) {
 const deltaOf = (k, id, from, to) => (bldOf(s) && to > from ? `지금 ${statOf(k, id, from)} → 고르면 ${statOf(k, id, to)}` : '');
 /* 특수병 레벨 글(개편 판의 로켓병은 간격·조준이 다르다 — BUILD.rocket) */
 function spUp(u, lv) {
+  if (u === 'medic' && bldOf(s)) return `좀비·보스에게 잃은 병사의 ${pct(unitVal('medic', 'share', lv))}%를 되살려요`;   // 55절: 개편 판은 좀비 · 보스 피해만
   if (u !== 'rocket' || !bldOf(s)) return UNITS[u].up(lv);
   const L = Math.min(lv, BUILD.evo);
   return `${Math.round(unitVal('rocket', 'every', L) * BUILD.rocket.cd * 100) / 100}초마다 로켓(폭발 반경 ${unitVal('rocket', 'r', L)}m) — 길을 막은 벽을 먼저 뚫어요(벽 피해 ×${BUILD.rocket.wall})`;
 }
-const spDesc = (u) => (u === 'rocket' && bldOf(s) ? `${spUp('rocket', 1)}. 벽이 없으면 가장 큰 무리, 보스전에서는 보스` : UNITS[u].desc);
+const spDesc = (u) => (u === 'rocket' && bldOf(s) ? `${spUp('rocket', 1)}. 벽이 없으면 가장 큰 무리, 보스전에서는 보스`
+  : u === 'medic' && bldOf(s) ? `좀비·보스에게 잃은 병사의 ${pct(unitVal('medic', 'share', 1))}%를 몇 초 뒤 되살려요(독안개·웅덩이·벽·상자·톱날은 안 돼요)` : UNITS[u].desc);   // 55절
+const spRole = (u) => (u === 'medic' && bldOf(s) ? '좀비·보스에게 잃은 병사를 몇 초 뒤 되살려요' : UNITS[u].role);
 function cardText(c) {
   if (c.k === 'curse') return { kind: '위험한 계약', lead: '', from: '', to: `카드 ${c.more}장 더`, det: `지금 카드를 ${c.more}장 더 골라요`, cost: `다음 구간 위협 ×${c.mul}`, col: '#FF5E7A', icon: 'star', curse: true };
   if (c.k === 'men') return { kind: '증원', lead: '병력', from: fmtN(c.from), to: fmtN(c.to), det: `병사 ${fmtN(c.to - c.from)}명이 바로 합류해요 (×${CARD.men})`, col: '#6CC0FF', icon: 'men' };
@@ -2582,16 +2585,17 @@ function renderPausePanes(box) {
     grid.appendChild(c);
   };
   // 적 변이: 칸 셋 밖, 해골 칩 줄(적 쪽 정보)
-  const muts = s.endless && s.endless.mut ? MUT_IDS.filter((id) => mutLv(s, id)) : [];
+  const muts = s.endless && s.endless.mut ? MUT_IDS.filter((id) => mutRaw(s, id)) : [];
   if (muts.length) {
     const row = document.createElement('div');
     row.className = 'mut-row';
     for (const id of muts) {
-      const l = mutLv(s, id);
+      const l = mutLv(s, id), raw = mutRaw(s, id);   // 55절: 방역이면 받는 단계(l)가 쌓인 단계(raw)보다 하나 낮다
       const b = document.createElement('button');
       b.type = 'button';
-      b.append(iconEl('skull', 1), `${MUTATIONS[id].name}${l > 1 ? ' Ⅱ' : ''}`);
-      const it = { name: `적 변이 ${MUTATIONS[id].name}${l > 1 ? ' Ⅱ' : ''}`, lines: [MUTATIONS[id].text(l)] };
+      if (!l) b.classList.add('off');
+      b.append(iconEl('skull', 1), `${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}${l < raw ? ' · 방역' : ''}`);
+      const it = { name: `적 변이 ${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}`, lines: [l ? MUTATIONS[id].text(l) : '', l < raw ? (l ? '의무병 ‘방역’으로 한 단계 낮게 받아요' : '의무병 ‘방역’으로 지금은 안 받아요') : ''].filter(Boolean) };
       b.addEventListener('click', () => { sfx.click(); show(it); });
       row.appendChild(b);
     }
@@ -2623,7 +2627,7 @@ function renderPausePanes(box) {
     const U = UNITS[m.k];
     if (!U) continue;
     const lv = m.lv || 1;
-    const lines = [lv > 1 ? `${U.role}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k)];
+    const lines = [lv > 1 ? `${spRole(m.k)}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k)];
     if (SP_EVO[m.k] && lv >= BUILD.evo) lines.push(`진화 ‘${SP_EVO[m.k].name}’: ${SP_EVO[m.k].text()}`);
     if (SP_EVO2[m.k] && lv >= 10) lines.push(`2차 진화 ‘${SP_EVO2[m.k].name}’: ${SP_EVO2[m.k].text()}`);
     if (lv > BUILD.evo) lines.push(`레벨 보너스 +${Math.round((awk(lv) - 1) * 100)}%`);
@@ -2687,7 +2691,7 @@ function renderPauseUnits() {
     const U = UNITS[m.k];
     if (!U) continue;
     const lv = m.lv || 1;
-    let text = lv > 1 ? `${U.role}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k);
+    let text = lv > 1 ? `${spRole(m.k)}. 지금 ${spUp(m.k, lv)}` : spDesc(m.k);
     // 짝 영웅과 함께면 그 짝 효과(화염병 + 뭉치: 돌격 나팔 동안 불 지대 폭 — 화염병 줄을 연 무한모드 판에만 화염병이 있다)
     if (U.pair && s.hero && HEROES[s.hero.id] && HEROES[s.hero.id].match === m.k) text += ` · 짝 효과: ${U.pair(lv)}`;
     if (lv < spLvMax(s)) text += ` · 또 구하면 Lv${lv + 1}`;
@@ -2714,7 +2718,10 @@ function renderPauseUnits() {
     for (const d of Bd.down) addRow(d.k, `${UNITS[d.k].name} 쓰러짐`, `보스를 잡으면 Lv${Math.max(1, Math.floor(d.lv * (rl && rl.includes('pledge') ? 1 : BUILD.spBack)))}로 돌아와요`, '쓰러짐');
   }
   // 적 변이(개편 판 — 대왕을 잡을 때마다 하나씩 쌓인다)
-  if (s.endless && s.endless.mut) for (const id of MUT_IDS) { const l = mutLv(s, id); if (l) addRow('skull', `변이 ${MUTATIONS[id].name}${l > 1 ? ' Ⅱ' : ''}`, MUTATIONS[id].text(l), '변이'); }
+  if (s.endless && s.endless.mut) for (const id of MUT_IDS) {   // 55절: 방역이면 한 단계 낮게 — 안 받는 변이도 '방역'으로 보인다
+    const l = mutLv(s, id), raw = mutRaw(s, id);
+    if (raw) addRow('skull', `변이 ${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}${l < raw ? ' · 방역' : ''}`, l ? MUTATIONS[id].text(l) + (l < raw ? ' · 방역으로 한 단계 낮게' : '') : '의무병 ‘방역’으로 안 받아요', '변이');
+  }
   if (fx) for (const id of combosOn(s)) addRow('star', `시너지 ${COMBOS[id].name}`, comboText(id, !!bldOf(s)), '시너지');
   if (rl) for (const id of rl) {
     const Rl = RELICS[id];
@@ -3172,7 +3179,11 @@ function handleEvents(ev) {
       }
       case 'offer': openPick(); break;
       // 적 변이(대왕 뒤 — 판 끝까지 쌓인다): 다음 구간이 시작될 때 안내창으로(35절 — 예전엔 이 줄이 없어 안내가 한 번도 안 떴다)
-      case 'mutation': if (MUTATIONS[e.id]) mutNote = `${mutNote ? mutNote + '\n' : ''}적 변이 ‘${MUTATIONS[e.id].name}${e.lv > 1 ? ' Ⅱ' : ''}’: ${MUTATIONS[e.id].text(e.lv)}`; break;
+      case 'mutation': if (MUTATIONS[e.id]) {   // 55절: 의무병 '방역'이면 한 단계 낮게(eff — 0이면 안 받는다)
+        const ef = e.eff ?? e.lv, nm = `적 변이 ‘${MUTATIONS[e.id].name}${e.lv > 1 ? ' Ⅱ' : ''}’`;
+        const line = ef <= 0 ? `${nm} — 의무병 ‘방역’으로 안 받아요` : `${nm}: ${MUTATIONS[e.id].text(ef)}${ef < e.lv ? ' (방역으로 한 단계 낮게)' : ''}`;
+        mutNote = `${mutNote ? mutNote + '\n' : ''}${line}`;
+      } break;
       case 'supply': {
         // 개편 판: 보스를 잡으면 자동 보급(증원 카드 대신) — 고른 카드와 다음 구간을 한 줄로(대왕 뒤에는 변이도)
         const mn = mutNote;

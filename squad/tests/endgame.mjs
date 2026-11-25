@@ -3616,8 +3616,10 @@ test('적 변이(개편 판): 대왕을 잡으면 다음 바퀴의 변이가 시
   assert.equal(k.endless.bosses, 6);
   assert.equal(k.endless.mut.length, 1, '첫 대왕 뒤 변이 하나');
   assert.ok(R.MUT_IDS.includes(k.endless.mut[0]));
-  assert.equal(C.mutLv(k, k.endless.mut[0]), 1);
-  assert.deepEqual(evs.map(({ t, ...e }) => e), [{ id: k.endless.mut[0], lv: 1, seg: 7 }], 'mutation 이벤트(대왕을 잡은 틱에 한 번)');
+  assert.equal(C.mutRaw(k, k.endless.mut[0]), 1);
+  assert.equal(C.mutLv(k, k.endless.mut[0]), C.mutWard(k) ? 0 : 1, '의무병 Lv5 방역이면 한 단계 낮게(55절)');
+  assert.deepEqual(evs.map(({ t, eff, ...e }) => e), [{ id: k.endless.mut[0], lv: 1, seg: 7 }], 'mutation 이벤트(대왕을 잡은 틱에 한 번)');
+  assert.ok(evs[0].eff === 0 || evs[0].eff === 1);
   assert.deepEqual(bldRun(32, 6, { n: 9000, each: (s) => { if (s.squad.n < 9000) s.squad.n = 9000; } }).endless.mut, k.endless.mut, '같은 시드는 같은 변이');
   // 규칙: 연달아 같은 것은 안 나오고, 또 나오면 2단계(최대 2), 같은 시드·구간이면 같은 굴림
   const roll = (seed, segs) => {
@@ -3949,10 +3951,13 @@ test('특수병 Lv1~5·짝 넷(개편 판, 18.3): 전문화 카드는 없고 Lv5
   const flame = (lv) => { const u = C.newEndless({ seed: 31, ...BLD, flame: true }); u.endless.fx = {}; u.squad.n = 600; u.props = []; u.rows = []; u.saws = []; u.bullets = []; delete u.divs; u.squad.fireAcc = -99; u.squad.sp = [{ id: 8, k: 'flame', cd: 0, lv }]; u.foes = [{ id: 99101, kind: 'grunt', x: 0, z: u.squad.z + 12, hp: 1e9, max: 1e9, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9 }]; C.step(u, { dir: 0 }); return u.flames && u.flames[0] ? u.flames[0].len : 0; };
   const f4 = flame(4), f5 = flame(5);
   assert.ok(f4 > 0 && Math.abs(f5 / f4 - R.SP_EVO.flame.v) < 1e-9 || f5 > f4 * 1.5, `불 지대 길이 ${f4} → ${f5}`);
-  // 의무병 Lv5: 잃은 병사가 회복 풀에 30%p 더 쌓인다
+  // 55절: 의무병은 좀비 · 보스 피해만 되살린다(벽에 부딪혀 잃은 병사는 안 쌓인다) · Lv5 '방역' = 변이를 한 단계 낮게(예전 '소생' +30%p)
   const pool = (lv) => { const u = C.newEndless({ seed: 31, ...BLD }); u.endless.fx = {}; u.squad.n = 1000; u.squad.sp = [{ id: 9, k: 'medic', cd: 0, lv }]; u.foes = []; u.props = [{ id: 99102, kind: 'wall', x0: -5, x1: 5, z: u.squad.z + 0.2, hp: 1e9, max: 1e9, alive: true, hitT: -9 }]; u.squad.pool = 0; u.squad.fireAcc = -99; const n0 = u.squad.n; C.step(u, { dir: 0 }); return { lost: n0 - u.squad.n, pool: u.squad.pool + 0 }; };
   const m4 = pool(4), m5 = pool(5);
-  assert.ok(m4.lost > 0 && m5.lost > 0 && m5.pool / m5.lost > m4.pool / m4.lost, `회복 풀 ${m4.pool}/${m4.lost} → ${m5.pool}/${m5.lost}`);
+  assert.ok(m4.lost > 0 && m5.lost > 0 && m4.pool === 0 && m5.pool === 0, `벽 손실은 되살리지 않는다 ${m4.pool}/${m4.lost} · ${m5.pool}/${m5.lost}`);
+  const ward = (lv) => { const u = C.newEndless({ seed: 31, ...BLD }); u.endless.mut = ['fog', 'rush', 'rush']; u.squad.sp = [{ id: 9, k: 'medic', cd: 0, lv }]; return [C.mutLv(u, 'fog'), C.mutLv(u, 'rush'), C.mutRaw(u, 'rush'), C.mutWard(u)]; };
+  assert.deepEqual(ward(4), [1, 2, 2, false]);
+  assert.deepEqual(ward(5), [0, 1, 2, true], '방역: 1단계는 안 받고 2단계는 1단계로');
   // 짝: 작렬 + 화염병 — 불 지대에서 죽은 좀비가 터져 이웃에 제 체력의 50%. 빙결 + 의무병 — 느려진 좀비에게 잃은 병사는 바로 돌아온다
   const boom = (withBurst) => { const u = C.newEndless({ seed: 31, ...BLD, flame: true }); u.endless.fx = withBurst ? { burst: 1 } : { frost: 1 }; u.squad.n = 600; u.squad.sp = [{ id: 8, k: 'flame', cd: 99, lv: 1 }]; u.props = []; u.rows = []; u.saws = []; u.bullets = []; delete u.divs; u.squad.fireAcc = -99; const a = { id: 99110, kind: 'grunt', x: 0, z: u.squad.z + 10, hp: 50, max: 50, spd: 0, home: 0, homeDist: 0, r: 0.42, alive: true, awake: true, hitT: -9 }, b = { ...a, id: 99111, x: 1.2, hp: 1e6, max: 1e6 }; u.foes = [a, b]; u.flames = [{ id: 1, x: 0, z: a.z, w: 2, len: 2, t: 2, T: 2, d: 1e4, lv: 1 }]; C.step(u, { dir: 0 }); return { dead: !a.alive, b: Math.round(1e6 - b.hp) }; };
   const bf = boom(true), nf = boom(false);
@@ -4705,7 +4710,7 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
         }
         assert.equal(l.open.length, 2 * (n - 1), '토막이 바뀌는 곳마다 칸막이 둘 다(51절)');
         for (const o of l.open) assert.ok(o[0] === 0 || o[0] === 1);
-        for (let i = 0; i < l.open.length; i += 2) assert.ok(l.open[i][0] !== l.open[i + 1][0] && l.open[i][1] === l.open[i + 1][1] && l.open[i][2] - l.open[i][1] === L.open + 2, JSON.stringify(l.open));
+        for (let i = 0; i < l.open.length; i += 2) assert.ok(l.open[i][0] !== l.open[i + 1][0] && l.open[i][1] === l.open[i + 1][1] && Math.abs(l.open[i][2] - l.open[i][1] - (L.open + 2)) < 1e-9, JSON.stringify(l.open));   // 55절: 간격을 좁혀도 열린 곳은 그대로
       }
     }
   }
@@ -5405,7 +5410,7 @@ test('46절 — 가속 발판(밟으면 ×mul, len 뒤 원래대로 · 반쪽은
     }
     if (k >= C.FOE2.thief.from) for (const f of seg.foes.filter((x) => x.elite === 'thief')) {
       const r = seg.rows.find((x) => x.id === f.row);
-      assert.ok(r && r.cells[f.ci].op === 'add' && r.cells[f.ci].v > 0 && Math.abs(r.z - C.FOE2.thief.ahead - f.z) < 1e-9 && f.spd === 0, '게이트 도둑은 덧셈 칸 앞에 서 있다');
+      assert.ok(r && r.cells[f.ci].op === 'add' && r.cells[f.ci].v > 0 && Math.abs(r.z - C.FOE2.thief.ahead * (seg.dense || 1) - f.z) < 1e-9 && f.spd === 0, '게이트 도둑은 덧셈 칸 앞에 서 있다(55절 — 뒤 구간은 거리 × dense)');
     }
     for (const f of seg.foes) {
       if (f.elite === 'bomb') assert.ok(k >= C.FOE2.bomb.from && f.kind === 'runner');

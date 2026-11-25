@@ -393,7 +393,7 @@ export const MUTATIONS = {
   rush: { name: '질주', v: [2, 2.6], text: (lv) => `좀비가 ${MUTATIONS.rush.v[lv - 1]}배 빨라요 — 빙결·로켓이 잘 막아요` },
   rage: { name: '분노한 보스', hp: [1.5, 1.8], cd: [0.8, 0.7], text: (lv) => `보스 체력 ×${MUTATIONS.rage.hp[lv - 1]}, 공격 간격 ${apc(MUTATIONS.rage.cd[lv - 1])}% — 속사·저격이 잘 막아요` },
   thick: { name: '두꺼운 벽', v: [1.5, 1.9], text: (lv) => `벽·장갑문 체력 ×${MUTATIONS.thick.v[lv - 1]} — 관통·총 ★이 잘 막아요` },
-  fog: { name: '독안개', v: [0.055, 0.075], text: (lv) => `길 가장자리(가운데에서 ${FOG_X}m 밖)에서 병력이 초당 ${apc(MUTATIONS.fog.v[lv - 1])}% 줄어요 — 의무병이 잘 막아요` },
+  fog: { name: '독안개', v: [0.055, 0.075], text: (lv) => `길 가장자리(가운데에서 ${FOG_X}m 밖)에서 병력이 초당 ${apc(MUTATIONS.fog.v[lv - 1])}% 줄어요 — 의무병 Lv5 ‘방역’이 한 단계 막아요` },
 };
 export const MUT_IDS = Object.keys(MUTATIONS);
 export const MUT_MAX_LV = 2;
@@ -711,7 +711,7 @@ export const SP_EVO = {
   sniper: { name: '거물 사냥', v: 3, cap: 0.5, text: () => `Lv5: 보스·정예·거구·독침 좀비에게 저격 위력 ×${SP_EVO.sniper.v}, 보스전 추가 피해 한도 +${apc(SP_EVO.sniper.cap)}%` },
   rocket: { name: '쌍발', text: () => 'Lv5: 한 번에 로켓 2발을 쏴요' },
   flame: { name: '불바다', v: 2, text: () => `Lv5: 불 지대 길이 ×${SP_EVO.flame.v}` },
-  medic: { name: '소생', v: 0.3, text: () => `Lv5: 잃은 병사가 ${apc(SP_EVO.medic.v)}%p 더 돌아와요(게이트·짓밟기 제외)` },
+  medic: { name: '방역', text: () => 'Lv5: 적 변이를 한 단계 낮게 받아요(1단계 변이는 안 받아요)' },   // 55절: 예전 '소생'(되살림 +30%p)
 };
 /* 개편 판에 더해지는 시너지(COMBOS와 같은 모양 — 앞 단계 판은 COMBO_IDS 여섯만 본다) */
 Object.assign(COMBOS, {
