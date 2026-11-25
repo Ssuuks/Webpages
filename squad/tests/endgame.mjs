@@ -3826,7 +3826,7 @@ test('빌드 개편: 다시 뽑기는 카드를 바꾸고 횟수를 쓴다 — �
   const k = bldRun(32, 6, { n: 9000, each: (s) => { if (s.squad.n < 9000) s.squad.n = 9000; } });
   assert.ok(k.endless.bosses >= 6 && C.rerollsOf(k) >= 1, `대왕 뒤 다시 뽑기 ${C.rerollsOf(k)}`);
 });
-test('빌드 개편: 카드를 고르면 그만큼 오르고(총 ★은 화력에), 다음 구간이 시작되며 자동 보급(+20%)을 받는다', () => {
+test('빌드 개편: 카드를 고르면 그만큼 오르고(총 ★은 화력에), 다음 구간이 시작되며 자동 보급(구간 기준 병력의 몫 — 51절)을 받는다', () => {
   const s = bldRun(40, 1);
   const of = C.offerOf(s);
   const i = Math.max(0, of.findIndex((c) => c.k === 'gun'));
@@ -3835,7 +3835,7 @@ test('빌드 개편: 카드를 고르면 그만큼 오르고(총 ★은 화력�
   assert.equal(C.offerOf(s), null);
   assert.equal(s.endless.seg, 2);
   const sup = s.ev.find((e) => e.t === 'supply');
-  assert.ok(sup && sup.n === Math.round(n0 * R.BUILD.supply['']), JSON.stringify(sup));
+  assert.ok(sup && sup.n === C.segSupply(1) && s.squad.n === n0 + sup.n, JSON.stringify(sup));
   if (c.k === 'gun') assert.equal(s.squad.tier, info.to);   // 총 ★ — 무기 개조는 ★로 합쳐졌다
   assert.ok(s.endless.picks.length === 1);
 });
@@ -4695,7 +4695,7 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
         assert.deepEqual(cr.map((p) => C.laneCell((p.x0 + p.x1) / 2)).sort(), [0, 1, 2], '세 칸에 하나씩');
       }
       if (l.k === 'maze') {
-        // 토막마다 벽 없는 칸, 열린 곳은 칸막이 하나씩(한 칸씩만 건넌다)
+        // 토막마다 벽 없는 칸, 열린 곳은 토막이 바뀌는 곳마다 칸막이 둘 다(51절 — 예전엔 하나씩)
         const n = L.stretch, sl = (l.z1 - l.z0 - C.FORK_TAPER) / n;
         const walls = lv.props.filter((p) => p.maze);
         for (let i = 0; i < n; i++) {
@@ -4703,8 +4703,9 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
           const blocked = new Set(walls.filter((w) => w.z >= za && w.z < za + sl).map((w) => C.laneCell((w.x0 + w.x1) / 2)));
           assert.ok(blocked.size < 3, `${seed}/${seg}구간 ${i}번째 토막이 다 막혔다`);
         }
-        assert.equal(l.open.length, n - 1);
+        assert.equal(l.open.length, 2 * (n - 1), '토막이 바뀌는 곳마다 칸막이 둘 다(51절)');
         for (const o of l.open) assert.ok(o[0] === 0 || o[0] === 1);
+        for (let i = 0; i < l.open.length; i += 2) assert.ok(l.open[i][0] !== l.open[i + 1][0] && l.open[i][1] === l.open[i + 1][1] && l.open[i][2] - l.open[i][1] === L.open + 2, JSON.stringify(l.open));
       }
     }
   }
@@ -5128,7 +5129,7 @@ test('39.4 — 행운 길: 셋 중 하나(하나가 열리면 나머지 둘은 �
   assert.ok(fog(false) > 0, '칸막이 구간 밖');
 });
 
-test('39.5 — 게이트 몰이(게이트 줄이 연달아 — ×2 줄 하나 · ÷2 줄 하나)와 미로 게이트(토막마다 칸마다 한 칸), 굴림은 따로라 다른 배치가 그대로', () => {
+test('39.5 — 게이트 몰이(게이트 줄이 연달아 — 큰 + 줄 하나 · ÷2 줄 하나, 51절부터 ×2 없음)와 미로 게이트(토막마다 칸마다 한 칸), 굴림은 따로라 다른 배치가 그대로', () => {
   let rush = null, maze = null;
   for (let k = C.RUSH.from; k < 80 && !(rush && maze); k++) {
     const seg = C.buildSegment(11, k, 5000, 0, 0, { bk: true, terrain: true, mul: 1 });
@@ -5138,14 +5139,18 @@ test('39.5 — 게이트 몰이(게이트 줄이 연달아 — ×2 줄 하나 ·
   assert.ok(rush && maze, '몰이·미로가 나오는 구간이 있다');
   const rr = rush.rows.filter((r) => r.kind === 'rush');
   assert.ok(rr.length >= C.RUSH.n[0] && rr.length <= C.RUSH.n[1], `몰이 줄 ${rr.length}`);
-  assert.equal(rr.filter((r) => r.cells.some((c) => c.op === 'mul')).length, 1, '×2 줄 하나');
+  assert.ok(!rr.some((r) => r.cells.some((c) => c.op === 'mul')), '몰이에 ×2 없음(51절)');
+  const best = rr.map((r) => Math.max(...r.cells.map((c) => (c.op === 'add' ? c.v : 0)))).sort((a, b) => b - a);
+  assert.ok(best[0] >= 1.5 * best[1], `큰 + 줄 하나 ${best.slice(0, 3)}`);
   assert.equal(rr.filter((r) => r.cells.some((c) => c.op === 'div')).length, 1, '÷2 줄 하나');
   for (const r of rr) assert.ok(Math.abs(r.cells[0].x0 + C.ROAD) < 1e-9 && Math.abs(r.cells[r.cells.length - 1].x1 - C.ROAD) < 1e-9, '줄이 길 전체를 덮는다');
   const mr = maze.rows.filter((r) => r.kind === 'maze');
   assert.equal(mr.length, C.LANES.stretch, '미로 토막마다 한 줄');
   for (const r of mr) assert.equal(r.cells.length, 3);
-  for (const r of mr.slice(0, -1)) assert.ok(!r.cells.some((c) => c.op === 'mul'), '×2는 마지막 토막에만');
-  assert.ok(mr[mr.length - 1].cells.every((c) => c.op !== 'add' || c.v <= mr[0].cells.reduce((m, d) => Math.max(m, d.op === 'add' ? d.v : 0), 0) * 2), '마지막 토막의 뚫은 칸은 + 대신 ×2');
+  for (const r of mr) assert.ok(!r.cells.some((c) => c.op === 'mul'), '미로에 ×2 없음(51절)');
+  const top = (r) => Math.max(0, ...r.cells.map((c) => (c.op === 'add' ? c.v : 0)));
+  const endBig = top(mr[mr.length - 1]), midBig = Math.max(...mr.slice(0, -1).map(top));
+  assert.ok(endBig > midBig || mr[mr.length - 1].cells.every((c) => c.op !== 'add' || c.v <= midBig * 0.6), `마지막 토막의 뚫은 칸은 더 큰 + ${endBig} · ${midBig}`);
   // 미로의 늘 이어지는 빈 칸은 그대로(벽이 없다) — 벽 대신 ÷2 칸에도 벽이 없다
   assert.ok(maze.lanes && maze.lanes.length >= 1);
 });
@@ -5540,4 +5545,20 @@ test('50절 — 플레이 기록: 그만둔 무한모드 판(포기 · 다시 �
   const ab = src.slice(src.indexOf('function abandonRun(r)'), src.indexOf('function ownLoadout()'));
   assert.ok(/const got = settleEndless\(st, r\.id\);[^\n]*\n\s*if \(got\.paid\) \{ logRun\(st, true, r\)/.test(ab), 'abandonRun이 무한모드 판을 정산한 뒤 기록한다');
   assert.ok(src.includes('function logRun(st, quit = false, r = run) {\n  if (!st || (attract && st === s) || testRun()) return;'), '타이틀 뒤 봇 판(attract)이어도 저장된 판은 기록한다');
+});
+
+test('51절 — 곱하기 줄이기 · 자동 보급은 절대치: 개편 판의 ×는 보스 직전 줄에만(몰이 · 미로 · 함정 길에는 없다), 보급은 지금 병력과 상관없이 B(k) × BUILD.supply', () => {
+  const where = {};
+  for (const seed of [3, 11, 29]) for (let k = 2; k < 40; k++) {
+    const seg = C.buildSegment(seed, k, C.segBk(k) * 6, 2, 0, { obs: true, bk: true, terrain: true, mul: 1 });
+    for (const r of seg.rows) if (r.cells.some((c) => c.op === 'mul')) where[r.kind] = (where[r.kind] || 0) + 1;
+  }
+  assert.deepEqual(Object.keys(where).filter((k) => k !== 'last'), [], JSON.stringify(where));
+  // 보급: 같은 구간이면 병력이 10배여도 같은 수, 대왕은 더
+  assert.equal(C.segSupply(4), Math.round(C.segBk(4) * R.BUILD.supply['']));
+  assert.equal(C.segSupply(6), Math.round(C.segBk(6) * R.BUILD.supply.super));
+  assert.ok(C.segSupply(6) > C.segSupply(5) * 2);
+  const sup = (n) => { const s = bldRun(40, 1); s.squad.n = n; const of = C.offerOf(s); C.pickCard(s, Math.max(0, of.findIndex((c) => c.k === 'gun'))); return s.ev.find((e) => e.t === 'supply').n; };
+  assert.equal(sup(100), sup(1000), '보급은 지금 병력과 상관없다');
+  assert.equal(sup(100), C.segSupply(1));
 });
