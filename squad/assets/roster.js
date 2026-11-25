@@ -360,7 +360,7 @@ export const OBSTACLE_IDS = Object.keys(OBSTACLES);
 const LANES_LUCK_P = 0.35;   // core LANES.luckP(행운 길 기본 확률 — 행운의 동전 글에만, tests/endgame.mjs가 같은지 본다)
 export const RELICS = {
   compass: { name: '나침반', kings: 0, tribe: 'luck', ahead: 45, v: 1.5, text: () => `갈림길 상자 속이 ${RELICS.compass.ahead}m 앞에서 보이고, 위험한 쪽 상자 병사 ×${RELICS.compass.v}`, cost: () => '' },
-  dice: { name: '재굴림 주사위', kings: 0, tribe: 'build', n: 3, king: 1, text: () => `카드 다시 뽑기를 지금 ${RELICS.dice.n}번 더, 대왕을 잡을 때마다 ${1 + RELICS.dice.king}번씩 더 받아요(10구간마다 새로 채울 때도 ${RELICS.dice.n}번 더)`, cost: () => '' },
+  dice: { name: '재굴림 주사위', kings: 0, tribe: 'build', n: 3, king: 1, text: () => `다시 뽑기를 지금 ${RELICS.dice.n}번, 대왕마다 ${1 + RELICS.dice.king}번 더(10구간마다 채울 때도 ${RELICS.dice.n}번 더)`, cost: () => '' },
   megaphone: { name: '빨간 확성기', kings: 0, tribe: 'grow', red: 1.5, blue: 0.8, text: () => `빨간(−) 게이트를 쏘면 숫자가 ${RELICS.megaphone.red}배 빨리 올라요`, cost: () => `파란(+) 게이트는 ${RELICS.megaphone.blue}배로 느리게` },
   coil: { name: '과부하 코일', kings: 0, tribe: 'build', tier: 4, men: 0.7, text: () => `총 ★을 한 칸 더 올릴 수 있어요(★ 상한 +1)`, cost: () => `지원병 상자의 병사 −${apc(1 - RELICS.coil.men)}%` },
   loot: { name: '전리품 자루', kings: 1, tribe: 'build', b2: true, n: 1, text: () => `보스를 잡은 뒤 고르는 카드가 3장 → ${3 + RELICS.loot.n}장`, cost: () => '' },
