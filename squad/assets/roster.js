@@ -98,9 +98,11 @@ export const HEROES = {
     look: '하트 간호모, 흰 리본으로 묶은 솜사탕빛 트윈테일, 몸보다 큰 하트 가방, 볼에 반창고',
     line: '다치면 혼나요! …그래도 다치면 바로 와요.',
     unlock: { type: 'clear', L: 8, text: '레벨 8을 깨면 합류' },
-    num: { share: [0.08, 0.18], heal: [0.4, 0.55], guard: 0.5 },
+    num: { share: [0.08, 0.18], heal: [0.4, 0.55], guard: 0.5, shareB: [0.25, 0.4] },   // shareB: 56절 개편 판 응급 간호(봇 32판 — 0.35~0.55 23.1 · 0.2~0.35 19.2 · 0.1~0.2 22.1, 뭉치 17.0 — 흔들림이 커 가운데로)
     passive: { name: '응급처치', text: (lv) => `잃은 병사의 ${pc(hv('bori', 'share', lv))}%가 천천히 돌아와요(게이트 손실 제외). 의무병 레벨이 오르면 더 많이` },
     skill: { name: '괜찮아 주사', cd: 20, dur: 2.5, text: (lv) => `방금 잃은 병사의 ${pc(hv('bori', 'heal', lv))}%를 바로 되살리고, 잠깐 손실을 크게 줄여요(의무병 Lv2·Lv3이면 더 많이)` },
+    passiveB: { name: '응급 간호', text: (lv) => `게이트 말고 무엇에 잃었든(톱날 · 벽 · 상자 · 독안개 · 웅덩이도) ${pc(hv('bori', 'shareB', lv))}%가 천천히 돌아와요 — 의무병이 못 살리는 손실까지` },
+    skillB: { name: '괜찮아 주사', text: (lv) => `방금 잃은 병사(무엇에 잃었든)의 ${pc(hv('bori', 'heal', lv))}%를 바로 되살리고, ${HEROES.bori.skill.dur}초 동안 잃는 병사를 절반으로 줄여요` },
   },
   nabi: {
     name: '나비', role: '저격', color: '#4FD1C5', match: 'sniper',
@@ -358,7 +360,7 @@ export const OBSTACLE_IDS = Object.keys(OBSTACLES);
 const LANES_LUCK_P = 0.35;   // core LANES.luckP(행운 길 기본 확률 — 행운의 동전 글에만, tests/endgame.mjs가 같은지 본다)
 export const RELICS = {
   compass: { name: '나침반', kings: 0, tribe: 'luck', ahead: 45, v: 1.5, text: () => `갈림길 상자 속이 ${RELICS.compass.ahead}m 앞에서 보이고, 위험한 쪽 상자 병사 ×${RELICS.compass.v}`, cost: () => '' },
-  dice: { name: '재굴림 주사위', kings: 0, tribe: 'build', n: 3, king: 1, text: () => `카드 다시 뽑기를 지금 ${RELICS.dice.n}번 더, 대왕을 잡을 때마다 ${1 + RELICS.dice.king}번씩 더 받아요`, cost: () => '' },
+  dice: { name: '재굴림 주사위', kings: 0, tribe: 'build', n: 3, king: 1, text: () => `카드 다시 뽑기를 지금 ${RELICS.dice.n}번 더, 대왕을 잡을 때마다 ${1 + RELICS.dice.king}번씩 더 받아요(10구간마다 새로 채울 때도 ${RELICS.dice.n}번 더)`, cost: () => '' },
   megaphone: { name: '빨간 확성기', kings: 0, tribe: 'grow', red: 1.5, blue: 0.8, text: () => `빨간(−) 게이트를 쏘면 숫자가 ${RELICS.megaphone.red}배 빨리 올라요`, cost: () => `파란(+) 게이트는 ${RELICS.megaphone.blue}배로 느리게` },
   coil: { name: '과부하 코일', kings: 0, tribe: 'build', tier: 4, men: 0.7, text: () => `총 ★을 한 칸 더 올릴 수 있어요(★ 상한 +1)`, cost: () => `지원병 상자의 병사 −${apc(1 - RELICS.coil.men)}%` },
   loot: { name: '전리품 자루', kings: 1, tribe: 'build', b2: true, n: 1, text: () => `보스를 잡은 뒤 고르는 카드가 3장 → ${3 + RELICS.loot.n}장`, cost: () => '' },
@@ -423,12 +425,14 @@ export const BUILD = {
   fxSwap: { w: 0.5, keep: 0.5 },   // 44절: 탄 칸이 차도 새 탄 효과 카드가 나온다(무게 w) — 고르면 가진 효과 하나와 바꾸고, 새 효과는 버린 효과 Lv × keep(내림)에서 +1
   fxLocked: 0.5,        // 39.7: ★로 아직 안 연 탄(판 안에서는 나온다)의 새 효과 카드 가중치
   reroll: 1,            // 판마다 다시 뽑기 횟수(대왕을 잡을 때마다 +1)
+  rerollReset: 10,      // 56절: 보스 이만큼마다 다시 뽑기를 reroll(+ 재굴림 주사위 n)으로 새로 채운다 — 남은 것은 사라진다(예전엔 판 끝까지 쌓였다)
   curse: { p: 0.18, mul: 1.25, more: 2, from: 2 },   // 위험한 계약: from번째 보스 뒤부터 p 확률로 한 장 — 다음 구간 위협 ×mul, 대신 카드 more장 더
   relicMax: 5,          // 한 판 유물 수(예전 3)
   relicFrom: 3,         // 이 구간부터 정예·대왕 보스 뒤에 유물(예전 6 — 대왕만)
   pouch: 4,             // 넓은 탄낭의 슬롯(예전 3 — 증원 카드가 없어 대신 쪽도 없다)
   // 특수병 위력(쉽게 쓰러지는 만큼 세게): dmg 배수 × (1 + lv·(레벨 − 1)). 의무병은 레벨마다 좀비·보스에게 잃는 병사 ÷(1 + med·레벨), 회복 +50%
-  sp: { sniper: { dmg: 3, lv: 0.72 }, rocket: { dmg: 0.8, lv: 0.062 }, flame: { dmg: 2, lv: 0.31 } },   // 33절: 로켓 1 → 0.8(높은 레벨에서 피해 몫 46% — 화면을 덮었다)   // lv: 레벨(−1)마다 위력 +이만큼(깊이 보상 deep()을 없애며 Lv5 값이 그대로이도록 deep(4)/4 ≈ 2.05배)
+  sp: { sniper: { dmg: 3, lv: 0.45 },   // 56절: 0.72 → 0.45(사람 판 v2.45.0 — 저격수 Lv16이 피해 32%, 예전 판 67% · 늦은 보스전 1~3초. 레벨마다 로켓 0.062 · 화염 0.31보다 훨씬 가팔랐다. 봇 저격 빌드 12.3 → 11.9(0.3) — 봇은 손실로 끝나 거의 그대로)
+        rocket: { dmg: 0.8, lv: 0.062 }, flame: { dmg: 2, lv: 0.31 } },   // 33절: 로켓 1 → 0.8(높은 레벨에서 피해 몫 46% — 화면을 덮었다)   // lv: 레벨(−1)마다 위력 +이만큼(깊이 보상 deep()을 없애며 Lv5 값이 그대로이도록 deep(4)/4 ≈ 2.05배)
   med: 0.048,           // 의무병 레벨마다 좀비·보스에게 잃는 병사 ÷(1 + med × 레벨)(깊이 보상을 없애며 Lv5 값이 그대로이도록 올렸다)
   spBoss: 0.06,         // 특수병 레벨 1당 보스전 추가 피해 한도(예전 0.02)
   spCrate: 0.3,   // 37절: 개편 판 저격수가 상자·철창을 칠 때 몫(저격은 한 발이 커서 그대로면 상자가 바로 녹는다)
