@@ -2,7 +2,7 @@
 import {
   DT, START_N, EDGE, UNLOCK, SIM, prepareLevel, newGame, step, botInput, heroWantsAuto, starsFor, starGoals, parFor, coinsFor,
   progress, radius, snapshot, restore, newEndless, endlessCoins, segInfo, upgCap, expectAt, petCoinMul,
-  CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul,
+  CARD, WEAPON, pickCard, offerOf, segKings, cardInfo, fxOf, fxSlots, combosOn, comboOn, doorMul, swapCombos,
   RELIC, relicsOf, mutLv, enhN, tierMax, spMax, spEscort, eggP, fxCan, flameOn,
   nMax, fmtN, relicFits, spLvMax, bldOf, rerollCards, rerollsOf, relicMax, PET_TEAM_MAX, gunOf, dps, fxLv, comboParts, comboList, COMBO_HALF, bossPatsAt, LANES, SAW2, segMood,
 } from './core.js';
@@ -2118,7 +2118,8 @@ function cardText(c) {
     if (bldOf(s) && c.full) {   // 44절: 칸이 찼다 — 고르면 가진 효과 하나와 바꾼다
       const E = s.endless, locked = E && E.ammoStar && !E.ammoStar.includes(c.a) && AMMO[c.a] ? `출격 탄으로는 ★${AMMO[c.a].stars}에 열려요` : '';
       const L2 = bldCardLines('', fxT(c.a, c.to), c, [`칸이 차 있어요 — 고르면 가진 효과 하나와 바꿔요(버린 효과 Lv의 절반 + 1)`, locked]);
-      return { kind: '탄 효과 바꾸기', lead: '새 효과:', from: '', to: `${nm} Lv${c.to}`, det: L2.det, delta: L2.delta, col, icon: 'fx_' + c.a, n: c.n };
+      const tos = (c.drops || []).map((d) => d.to), hi = tos.length ? Math.max(...tos) : c.to;   // 52절: 레벨은 버리는 효과에 따라 — 'Lv2~4'(글은 가장 낮은 레벨)
+      return { kind: '탄 효과 바꾸기', lead: '새 효과:', from: '', to: `${nm} Lv${c.to}${hi > c.to ? `~${hi}` : ''}`, det: L2.det, delta: L2.delta, col, icon: 'fx_' + c.a, n: c.n };
     }
     if (bldOf(s)) {   // 39.2
       const fx0 = fxOf(s) || {}, used0 = AMMO_IDS2.filter((a) => fx0[a]).length;
@@ -2185,6 +2186,7 @@ function pickSummary(picks) {
 }
 function renderPick() {
   pickDrop = null;
+  $('pickGain').hidden = true; $('scrPick').classList.remove('drop');   // 52절: 바꿀 탄 효과 고르기에서 돌아오면
   const list = $('pickList');
   list.textContent = '';
   const offer = offerOf(s) || [];
@@ -2331,24 +2333,57 @@ function showDrop(i, info) {
   const list = $('pickList');
   list.textContent = '';
   $('pickTitle').textContent = '바꿀 탄 효과를 골라요';
-  const col = AMMO[info.a] ? AMMO[info.a].color : '#fff';
-  const card = (cls, ic, kindTxt, chgTxt, detTxt, data) => {
-    const b = document.createElement('button');
-    b.className = 'pick-card ' + cls;
-    Object.assign(b.dataset, data);
+  $('pickSub').textContent = '버린 효과 자리에 새 효과가 들어가요';
+  $('pickReroll').hidden = true;   // 다시 뽑기는 카드 화면에서(돌아가기)
+  $('scrPick').classList.add('drop');
+  const nm = fxName(info.a), colOf = (a) => (AMMO[a] ? AMMO[a].color : '#fff');
+  /* 카드 한 장: lines = [[글, 칸 이름]] — pick-delta 얻는 것(밝게) · pick-syn 켜지는 시너지 · pick-cost 꺼지는 시너지 · pick-det 풀이 · pick-rule 규칙 */
+  const fill = (b, col, ic, kindTxt, chg, lines) => {
     b.style.setProperty('--acc', col);
     const icn = document.createElement('span'); icn.className = 'pick-ic'; if (ic) icn.appendChild(iconEl(ic, 3));
     const body = document.createElement('span'); body.className = 'pick-body';
     const k = document.createElement('span'); k.className = 'pick-kind'; k.textContent = kindTxt;
-    const ch = document.createElement('span'); ch.className = 'pick-chg'; ch.textContent = chgTxt;
+    const ch = document.createElement('span'); ch.className = 'pick-chg';
+    if (chg[0]) ch.append(chg[0]);
+    if (chg[1]) { const em = document.createElement('em'); em.textContent = chg[1]; ch.append(chg[0] ? ' → ' : '', em); }
+    if (chg[2]) ch.append(chg[2]);
     body.append(k, ch);
-    if (detTxt) { const d = document.createElement('span'); d.className = 'pick-det'; d.textContent = detTxt; body.appendChild(d); }
+    for (const [t, cls] of lines) if (t) { const d = document.createElement('span'); d.className = cls; d.textContent = t; body.appendChild(d); }
     b.append(icn, body);
-    b.setAttribute('aria-label', `${kindTxt}: ${chgTxt}. ${detTxt || ''}`);
-    list.appendChild(b);
+    b.setAttribute('aria-label', `${kindTxt}: ${ch.textContent}. ${lines.filter((l) => l[0]).map((l) => l[0]).join('. ')}`);
   };
-  for (const d of info.drops) card('', 'fx_' + d.a, '버리기', `${fxName(d.a)} Lv${d.lv} → ${fxName(info.a)} Lv${d.to}`, fxT(info.a, d.to), { i: String(i), drop: d.a });
-  card('drop-back', '', '돌아가기', '다른 카드 고르기', '', { i: '99', back: '1' });
+  // 위: 새로 얻는 효과 — 누르는 카드가 아니다(한 번만 싣는다). 레벨은 버리는 효과에 따라 달라서(버린 Lv의 절반 + 1) 가장 낮은 레벨의 글,
+  // 그보다 높은 레벨이 있으면 레벨마다 더 얻는 것만 한 줄씩(아래 카드에 되풀이하지 않는다)
+  const lvs = [...new Set(info.drops.map((d) => d.to))].sort((x, y) => x - y), lo = lvs[0], hi = lvs[lvs.length - 1];
+  const capped = info.drops.some((d) => Math.floor(d.lv * BUILD.fxSwap.keep) + 1 > d.to);
+  const g = $('pickGain');
+  g.textContent = '';
+  fill(g, colOf(info.a), 'fx_' + info.a, '새로 얻는 효과', ['', nm, lo === hi ? ` Lv${lo}` : ` Lv${lo}~${hi}`], [
+    [lo === hi ? fxT(info.a, lo) : `Lv${lo}: ${fxT(info.a, lo)}`, 'pick-det'],
+    ...lvs.slice(1).map((lv, j) => [`Lv${lv}이면 더: ${diffParts(fxT(info.a, lvs[j]), fxT(info.a, lv)).hi.map((t) => t.replace(/^새로: /, '')).join(' · ')}`, 'pick-delta']),
+    [`레벨 = 버리는 효과 Lv의 절반(내림) + 1${capped ? ` · 각성 전에는 Lv${BUILD.evo}까지` : ''}`, 'pick-rule'],
+  ]);
+  g.hidden = false;
+  // 아래: 버릴 효과마다 — 지금 그 효과(잃는 것) · 꺼지고 켜지는 시너지
+  for (const d of info.drops) {
+    const b = document.createElement('button');
+    b.className = 'pick-card';
+    Object.assign(b.dataset, { i: String(i), drop: d.a });
+    const sw = swapCombos(s, d.a, info.a, d.to);
+    const enh = enhN(s, d.a, 'r') + enhN(s, d.a, 'l');
+    fill(b, colOf(d.a), 'fx_' + d.a, '버리기', [`${fxName(d.a)} Lv${d.lv}`, `${nm} Lv${d.to}`], [
+      [`잃는 효과: ${fxT(d.a, d.lv)}${enh ? ` · 이 효과의 강화도 쉬어요` : ''}`, 'pick-det'],
+      [sw.on.length ? `켜지는 시너지 ${comboNames(sw.on)}` : '', 'pick-syn'],
+      [sw.off.length ? `꺼지는 시너지 ${comboNames(sw.off)}` : '', 'pick-cost'],
+    ]);
+    list.appendChild(b);
+  }
+  const back = document.createElement('button');
+  back.className = 'pick-card drop-back';
+  Object.assign(back.dataset, { i: '99', back: '1' });
+  fill(back, '', '', '돌아가기', ['다른 카드 고르기'], []);
+  back.style.removeProperty('--acc');
+  list.appendChild(back);
 }
 function pickActivate(b) {
   if (!b) return;

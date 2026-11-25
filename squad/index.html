@@ -525,7 +525,16 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
 }
 .pick-card.press, .pick-card:active { transform: translateY(3px); box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 1px 0 var(--edge); }
 .pick-card.sel { border-color: var(--amber); }
-.pick-card.drop-back { --acc: var(--edge); opacity: 0.85; }   /* 44절: 바꿀 탄 효과 고르기의 '돌아가기' */
+.pick-card.drop-back { --acc: var(--edge); opacity: 0.85; min-height: 52px; grid-template-columns: 1fr; padding-left: 16px; }   /* 44절: 바꿀 탄 효과 고르기의 '돌아가기'(52절 — 아이콘 없이 낮게) */
+.pick-card.drop-back .pick-ic { display: none; }
+/* 52절: 바꿀 탄 효과 고르기 — 위는 새로 얻는 효과(누르는 카드가 아니다: 테두리가 그 탄 색 점선), 아래 카드는 버릴 효과의 지금 효과 */
+.pick-gain { border-style: dashed; border-color: var(--acc, var(--amber)); animation: pickHead 0.25s ease-out; cursor: default; }
+.pick-gain:active { transform: none; box-shadow: inset 5px 0 0 var(--acc, var(--amber)), 0 4px 0 var(--edge); }
+.pick-rule { font-size: 12px; line-height: 1.35; font-weight: 700; color: var(--text); }
+/* 효과가 넷이면 카드가 다섯 장 — 화면보다 길면 이 칸만 위아래로 민다(그림자 · 고리가 잘리지 않게 안쪽 여백) */
+#scrPick.drop .pick-card { min-height: 0; padding-top: 7px; padding-bottom: 7px; }
+#scrPick.drop .pick-chg { font-size: 20px; }
+#scrPick.drop .pick { grid-auto-rows: max-content; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; width: min(436px, calc(100% + 16px)); padding: 10px 8px 8px; margin: -10px -8px -8px; }
 .pick-ic { width: 48px; height: 48px; border-radius: 12px; background: var(--panel2); border: 2px solid var(--acc, var(--edge)); display: grid; place-items: center; }
 .pick-ic canvas { width: 33px; height: 33px; }
 .pick-ic .dot { width: 22px; height: 22px; border-radius: 50%; }
@@ -734,6 +743,7 @@ body.has-sp.sp-wrap3 #toast { top: calc(max(12px, env(safe-area-inset-top)) + 17
       <span id="pickSub">다음 구간이 시작되기 전에 하나를 골라요</span>
       <span class="pick-next" id="pickNext"></span>
     </div>
+    <div class="pick-card pick-gain" id="pickGain" role="note" hidden></div>
     <div class="pick-list" id="pickList" role="group" aria-label="보상 카드"></div>
     <button id="pickReroll" class="btn pick-reroll" hidden>다시 뽑기</button>
   </div>

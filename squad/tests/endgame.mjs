@@ -5323,6 +5323,29 @@ test('44절 — 탄 칸이 차도 새 탄 효과 카드가 나오고, 고르면 
   C.pickCard(t, 0); assert.deepEqual(t.endless.fx, { burst: 9, frost: 1 });
 });
 
+test('52절 — 바꿀 탄 효과 고르기: swapCombos가 버리면 꺼지는 · 들이면 켜지는 시너지를 세고, 상태(탄 효과 표의 키 순서 · 지문)는 그대로', () => {
+  const s = C.newEndless({ seed: 31, ...BLD, ammoOpen: R.AMMO_IDS2 });
+  s.endless.fx = { pierce: 7, rapid: 6 };
+  s.squad.sp = [{ id: 9001, k: 'sniper', cd: 1, lv: 3 }];
+  assert.equal(s.hero && s.hero.id, 'mungchi');
+  const on0 = C.combosOn(s);
+  assert.ok(on0.includes('pierceSniper') && on0.includes('rapidMungchi'), `켜진 시너지 ${on0}`);
+  const h0 = C.stateHash(s), keys0 = Object.keys(s.endless.fx).join();
+  assert.deepEqual(C.swapCombos(s, 'pierce', 'acid', 4), { off: ['pierceSniper'], on: ['acidSniper'] }, '관통을 버리고 부식 — 꿰뚫는 저격 꺼짐 · 녹이는 저격 켜짐');
+  assert.deepEqual(C.swapCombos(s, 'rapid', 'acid', 4), { off: ['rapidMungchi'], on: ['acidSniper'] }, '속사를 버리면 긴 나팔 꺼짐');
+  assert.deepEqual(C.swapCombos(s, 'rapid', 'frost', 2), { off: ['rapidMungchi'], on: [] });
+  assert.deepEqual(C.swapCombos(s, 'burst', 'acid'), { off: [], on: [] }, '없는 효과는 버릴 수 없다');
+  assert.equal(C.stateHash(s), h0, '지문 그대로');
+  assert.equal(Object.keys(s.endless.fx).join(), keys0, '키 순서 그대로');
+  assert.deepEqual(s.endless.fx, { pierce: 7, rapid: 6 });
+  // 카드의 버릴 후보는 레벨이 다르다(버린 Lv의 절반 + 1) — 화면은 'Lv lo~hi'
+  s.endless.seg = 9; s.endless.fx = { pierce: 7, burst: 3 };
+  const info = C.cardInfo(s, { k: 'fx', a: 'acid', n: 1 });
+  assert.ok(info.full);
+  assert.deepEqual(info.drops.map((d) => d.to), [4, 2]);
+  assert.equal(info.to, 2, '카드의 to는 가장 낮은 레벨');
+});
+
 test('45절 — 게이트 몰이: 줄 간격 동안 끝 칸에서 반대쪽 끝 칸으로는 못 간다(손가락 끌기·글쇠 모두, 몰이가 나오는 가장 느린 구간에서도) · 줄은 모두 세 칸', () => {
   const cross = (inp) => {
     const s = C.newEndless({ seed: 31, ...BLD });

@@ -2152,6 +2152,19 @@ function fxReplace(s, drop, a) {
   fx[a] = Math.min(bldOf(s) && !awakeOn(s) ? BUILD.evo - 1 : Infinity, lv);
   emit(s, { t: 'fxSwap', from: drop, fromLv: lv0, a, x: s.squad.x, z: s.squad.z });
 }
+/* 52절(바꿀 탄 효과 고르기 화면): drop을 버리고 a를 Lv to로 들이면 꺼지는 시너지 · 켜지는 시너지 { off, on }.
+   탄 효과 표를 잠깐 바꿔 셌다가 그대로(키 순서까지) 되돌린다 — 상태 · 지문은 그대로 */
+export function swapCombos(s, drop, a, to = 1) {
+  const fx = fxOf(s);
+  if (!fx || !fx[drop] || fx[a]) return { off: [], on: [] };
+  const was = combosOn(s), keep = { ...fx };
+  delete fx[drop];
+  fx[a] = Math.max(1, to | 0);
+  const now = combosOn(s);
+  for (const k of Object.keys(fx)) delete fx[k];
+  Object.assign(fx, keep);
+  return { off: was.filter((id) => !now.includes(id)), on: now.filter((id) => !was.includes(id)) };
+}
 export function fxCan(s, a) {
   const fx = fxOf(s);
   if (!fx || !AMMO[a]) return false;
