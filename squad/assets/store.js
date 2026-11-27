@@ -33,6 +33,7 @@ export function defaults() {
     endSeen: 0,                      // 엔딩 화면을 본 가장 높은 회차
     cyc: {},                         // 2회차부터의 진행: { '2': { maxL, cur, stars, best, fails } }
     upgX: { start: 0, fire: 0, coin: 0 },   // 10단계 위로 산 강화(upg는 옛 탭이 0~10으로 자르므로 따로 둔다)
+    fin: { start: 0, fire: 0, coin: 0 },    // 최종 강화(57.7 — 무한모드에만): 강화가 최종(30단계)이면 그 칸이 +N으로 이어진다 — 시작 병력 칸 = 방호
     heroX: {},                       // 영웅마다 Lv5 위로 올린 레벨(heroes.lv는 옛 탭이 5로 자른다)
     endless: { best: 0, bestN: 0, runs: 0, unl: 0, kings: 0, rel: 0 },   // 무한모드 최고 기록(잡은 보스 수·최대 병력)과 판 수, 알린 해금 단계, 대왕 누적 처치, 출발 카드가 알린 유물 수
     pets: { own: {}, sel: '', team: [], slots: 1, eggs: 0, pity: 0, got: 0 },   // 펫: 가진 펫 → { lv, sh(조각) }, 고른 펫, 알 개수, 천장 세기, 받은 첫 알
@@ -87,6 +88,10 @@ export function endlessStage(d, stageMax = 1) {
 /* 강화 단계(10단계 위 포함)와 영웅 레벨(Lv5 위 포함) */
 export const upgLv = (d, id) => (d.upg[id] | 0) + (d.upgX ? d.upgX[id] | 0 : 0);
 export function addUpg(d, id) { if ((d.upg[id] | 0) < 10) d.upg[id] = (d.upg[id] | 0) + 1; else d.upgX[id] = (d.upgX[id] | 0) + 1; }
+/* 최종 강화(57.7): 그 강화가 최종 상한(CAPS.upgFinal)이면 열린다. finLv = 산 +N */
+export const finLv = (d, id) => (d.fin ? d.fin[id] | 0 : 0);
+export const finOpenFor = (d, id) => upgLv(d, id) >= CAPS.upgFinal;
+export function addFin(d, id) { if (!d.fin) d.fin = { start: 0, fire: 0, coin: 0 }; d.fin[id] = (d.fin[id] | 0) + 1; }
 export const heroLvOf = (d, id) => { const l = d.heroes.lv[id] | 0; return l + (l >= HERO_MAX_LV && d.heroX ? d.heroX[id] | 0 : 0); };
 export function addHeroLv(d, id) { if ((d.heroes.lv[id] | 0) < HERO_MAX_LV) d.heroes.lv[id] = (d.heroes.lv[id] | 0) + 1; else d.heroX[id] = (d.heroX[id] | 0) + 1; }
 
@@ -126,6 +131,7 @@ export function normalize(o) {
     seenHeroes: Array.isArray(o.seenHeroes) ? o.seenHeroes.slice() : [],
     cyc: {},
     upgX: { ...d.upgX, ...(o.upgX && typeof o.upgX === 'object' ? o.upgX : {}) },
+    fin: { ...d.fin, ...(o.fin && typeof o.fin === 'object' ? o.fin : {}) },
     heroX: { ...(o.heroX && typeof o.heroX === 'object' ? o.heroX : {}) },
     endless: { ...d.endless, ...(o.endless && typeof o.endless === 'object' ? o.endless : {}) },
   };
@@ -148,6 +154,7 @@ export function normalize(o) {
   if (!out.heroes.lv[out.heroes.sel]) out.heroes.sel = Object.keys(out.heroes.lv)[0] || '';
   // 엔드게임 필드: 10단계 위 강화는 10단계를 채운 강화에만, Lv5 위 영웅 레벨은 Lv5인 영웅에만(산 것은 깎지 않는다)
   for (const k of Object.keys(out.upgX)) out.upgX[k] = out.upg[k] >= 10 ? clampInt(out.upgX[k], 0, 10000) : 0;
+  for (const k of Object.keys(out.fin)) if (k in d.fin) out.fin[k] = clampInt(out.fin[k], 0, 10000); else delete out.fin[k];   // 최종 강화: 아는 칸만, 0 이상 정수(산 것은 깎지 않는다)
   for (const id of Object.keys(out.heroX)) {
     if (!HERO_IDS.includes(id) || (out.heroes.lv[id] | 0) < HERO_MAX_LV) delete out.heroX[id];
     else out.heroX[id] = clampInt(out.heroX[id], 0, HERO_LV_HARD - HERO_MAX_LV);
@@ -273,23 +280,24 @@ export function cycleStars(d, c) {
   return n;
 }
 
-/* 상한 단계(ENDGAME.md 57절 — 회차마다 끝없이 풀던 상한을 2회차 안에서 끝낸다):
+/* 상한 단계(ENDGAME.md 57절 — 회차마다 끝없이 풀던 상한을 2회차 안에서 끝낸다 · 57.7 보상은 단계적으로):
    1 = 1회차(엔딩 전) — 진행에 따라 강화 10단계 · 영웅 Lv5(core.upgCap · roster.heroCap, 그대로)
    2 = 2회차가 열림 — 진행 조건 없이 강화 CAPS.upgOpen · 영웅 CAPS.heroOpen까지
-   3 = 최종 — 2회차 엔딩 또는 어느 회차든 L1~60 모두 별 3개(올 별3): 강화 CAPS.upgFinal · 영웅 CAPS.heroFinal, 그 위로는 안 오른다.
+   + 보상 한 칸씩(순서 상관없이): 2회차 엔딩(end2Done) · 어느 회차든 L1~60 모두 별 3개(올 별3 — allStars) — 하나면 3, 둘 다면 4 = 최종(CAPS.upgFinal · heroFinal).
    올 별3을 1회차에서 해도 1회차 동안은 단계 1(2회차가 열리는 순간 3) */
 export function allStars(d) {
   for (let c = 1; c <= maxCycle(d); c++) if ((c === 1 || (d.cyc && d.cyc[c])) && cycleStars(d, c) >= CYCLE_LEVELS * 3) return true;
   return false;
 }
-export const finalOpen = (d) => endedCycles(d) >= 2 || allStars(d);
+export const end2Done = (d) => endedCycles(d) >= 2;
+export const finalOpen = (d) => end2Done(d) && allStars(d);
 export function capStage(d) {
   if (endedCycles(d) < 1) return 1;
-  return finalOpen(d) ? 3 : 2;
+  return 2 + (end2Done(d) ? 1 : 0) + (allStars(d) ? 1 : 0);
 }
 /* 단계의 끝(강화 단계 · 영웅 레벨). 단계 1은 진행에 따라 그 안에서 열린다 */
-export const upgMaxAt = (stage) => (stage >= 3 ? CAPS.upgFinal : stage === 2 ? CAPS.upgOpen : 10);
-export const heroMaxAt = (stage) => (stage >= 3 ? CAPS.heroFinal : stage === 2 ? CAPS.heroOpen : HERO_MAX_LV);
+export const upgMaxAt = (stage) => (stage <= 1 ? 10 : Math.min(CAPS.upgFinal, CAPS.upgOpen + CAPS.upgStep * (stage - 2)));
+export const heroMaxAt = (stage) => (stage <= 1 ? HERO_MAX_LV : Math.min(CAPS.heroFinal, CAPS.heroOpen + CAPS.heroStep * (stage - 2)));
 
 /* 도감·통계 기록 */
 export function seen(data, kind, id) {

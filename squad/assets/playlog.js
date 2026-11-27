@@ -42,6 +42,7 @@ export function entryOf(s, o = {}) {
     hero: s.hero ? `${s.hero.id}:${s.hero.lv}` : '', pets: [s.pet, ...(s.pets || [])].filter(Boolean).map((p) => p.id),
     ammo: s.ammo || '', gun: B ? `${B.gt}:${(B.gl && B.gl[B.gt]) || 1}` : '', star: (q.tier | 0) + 1,
     fx, sp, spEnd, enh: B && B.enh ? B.enh : {}, relics: e && e.relics ? e.relics.slice() : [],
+    ...(e && e.fin ? { fin: { fire: e.fin.fire, def: e.fin.def } } : {}),   // 57.7 최종 강화(산 판에만)
     mut: Array.isArray(st.mutAt) ? st.mutAt.map((r) => r.slice()) : [], picks: e && Array.isArray(e.picks) ? e.picks.slice() : [],
     segs, lanes: { luck: Array.isArray(st.luck) ? st.luck.slice() : [0, 0, 0, 0], treasure: st.treasure | 0 },
     sup: o.sup || null, quit: !!o.quit,
