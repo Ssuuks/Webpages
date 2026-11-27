@@ -1,6 +1,6 @@
 /* 진행 저장 — 키는 'squad.v1' 그대로, v2는 필드를 더하기만 한다(옛 탭이 저장해도 새 필드가 남는다).
    localStorage가 막혀 있으면(사생활 보호 모드 등) 메모리로 계속 돈다. */
-import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap, PETS, PET_MAX_LV, PET_SLOTS, AMMO, RELICS, RELIC_IDS, GUNS } from './roster.js';
+import { HERO_IDS, HERO_MAX_LV, HERO_LV_HARD, heroesEarned, heroCap, CAPS, PETS, PET_MAX_LV, PET_SLOTS, AMMO, RELICS, RELIC_IDS, GUNS } from './roster.js';
 
 const KEY = 'squad.v1';
 const BAK = 'squad.bak';
@@ -272,6 +272,24 @@ export function cycleStars(d, c) {
   for (let L = 1; L <= CYCLE_LEVELS; L++) n += st[L] | 0;
   return n;
 }
+
+/* 상한 단계(ENDGAME.md 57절 — 회차마다 끝없이 풀던 상한을 2회차 안에서 끝낸다):
+   1 = 1회차(엔딩 전) — 진행에 따라 강화 10단계 · 영웅 Lv5(core.upgCap · roster.heroCap, 그대로)
+   2 = 2회차가 열림 — 진행 조건 없이 강화 CAPS.upgOpen · 영웅 CAPS.heroOpen까지
+   3 = 최종 — 2회차 엔딩 또는 어느 회차든 L1~60 모두 별 3개(올 별3): 강화 CAPS.upgFinal · 영웅 CAPS.heroFinal, 그 위로는 안 오른다.
+   올 별3을 1회차에서 해도 1회차 동안은 단계 1(2회차가 열리는 순간 3) */
+export function allStars(d) {
+  for (let c = 1; c <= maxCycle(d); c++) if ((c === 1 || (d.cyc && d.cyc[c])) && cycleStars(d, c) >= CYCLE_LEVELS * 3) return true;
+  return false;
+}
+export const finalOpen = (d) => endedCycles(d) >= 2 || allStars(d);
+export function capStage(d) {
+  if (endedCycles(d) < 1) return 1;
+  return finalOpen(d) ? 3 : 2;
+}
+/* 단계의 끝(강화 단계 · 영웅 레벨). 단계 1은 진행에 따라 그 안에서 열린다 */
+export const upgMaxAt = (stage) => (stage >= 3 ? CAPS.upgFinal : stage === 2 ? CAPS.upgOpen : 10);
+export const heroMaxAt = (stage) => (stage >= 3 ? CAPS.heroFinal : stage === 2 ? CAPS.heroOpen : HERO_MAX_LV);
 
 /* 도감·통계 기록 */
 export function seen(data, kind, id) {

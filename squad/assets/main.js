@@ -11,12 +11,12 @@ import { sfx, unlock, setSoundOn, suspend, whenAudio } from './audio.js';
 import { createMusic } from './music.js';
 import {
   load, save, wipe, normalize, probe, storageMode, keepBackup, readBackup, UPGRADES, upgCost, totalStars, seen, SAVE_V,
-  prog, endedCycles, maxCycle, upgLv, addUpg, heroLvOf, addHeroLv, cycleStars, CYCLE_LEVELS, endlessUnlocks,
+  prog, endedCycles, maxCycle, upgLv, addUpg, heroLvOf, addHeroLv, cycleStars, CYCLE_LEVELS, endlessUnlocks, capStage, finalOpen, allStars, upgMaxAt, heroMaxAt,
 } from './store.js';
 import { saveRun, loadRun, clearRun, encodeBackup, decodeBackup } from './save.js';
 import { PATCH } from './patch.js';
 import { entryOf, addLog, loadLog, clearLog, summarize, SRC_NAME, LOSS_NAME } from './playlog.js';
-import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, HERO_LV_PER_CYCLE, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, SHARD_COIN, petSpareShards, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
+import { HEROES, HERO_IDS, UNITS, UNIT_IDS, HERO_MAX_LV, CAPS, SP_LV_MAX, heroCost, heroCapC, heroesEarned, biomeOf, bossNameOf, BIOMES, PETS, PET_IDS, PET_MAX_LV, petCost, EGG, SHARD_COIN, petSpareShards, openEgg, openEggs, AMMO, AMMO_IDS, ammoOpen, ammoText, AMMO_IDS2,
   FX_LV_SOFT, FX_SLOTS, fxText, COMBOS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, OBSTACLES, BUILD, RARITY, BOSS_PAT, RELIC_TRIBE, fx2Text, SP_EVO, SP_EVO2, awk, ENH, enhStr, legK, PET_SLOTS, comboText, unitVal, fx2Val, GUNS, GUN_IDS, gunText, GUN_EVO, GUN_EVO_TEXT, SUPPLY, SUPPLY_IDS } from './roster.js';
 import {
   tagOf, hasTags, mulText, TAG_FIRE, bossEtaOf, bossClash, supportSize, restartCounts, gateAlts, rowOrdinal, nearMiss, diffParts
@@ -53,33 +53,44 @@ let heroPickFromCard = false;
 /* 회차(ENDGAME.md 4절): data.cycle = 지금 하는 회차. 판마다 run.cycle. 강화·영웅 상한은 열린 가장 높은 회차(maxCycle)와 그 진행으로 */
 const curProg = () => prog(data, data.cycle);
 const topCycle = () => maxCycle(data);
-const topProg = () => prog(data, topCycle());
 const cycName = (c) => `${c}회차`;
 /* 레벨 이름: 1회차만 있을 때는 '레벨 12', 회차가 열린 뒤에는 '2회차 레벨 12' */
 const lvName = (L, c = 1) => (c > 1 || topCycle() > 1 ? `${cycName(c)} 레벨 ${L}` : `레벨 ${L}`);
 const upgOf = (id) => upgLv(data, id);
-/* 강화 하나의 상태(회차 상한 포함): { lv, cap(지금 살 수 있는 끝), max(이 회차의 끝 = 10·회차), canBuy, locked, maxed, at(더 올리려면 깨야 하는 레벨 — 0이면 다음 회차) } */
+/* 강화 하나의 상태(57절 상한 단계 — store.capStage): { lv, cap(지금 살 수 있는 끝), max(이 단계의 끝), canBuy, locked, maxed, at(더 올리려면 깨야 하는 레벨 — 1회차만), stage }.
+   1회차는 진행에 따라 10단계까지(예전 그대로), 2회차가 열리면 진행 조건 없이 20단계, 최종(2회차 엔딩 · 올 별3) 30단계 */
 function upgInfo(u) {
-  const c = topCycle();
-  const m = topProg().maxL;
+  const stage = capStage(data);
   const lv = upgOf(u.id);
-  const max = 10 * c;
-  const cap = Math.min(max, upgCap(m, c));
+  const max = upgMaxAt(stage);
+  const m = data.maxL;
+  const cap = stage === 1 ? Math.min(max, upgCap(m, 1)) : max;
   const maxed = lv >= max;
   const locked = !maxed && lv >= cap;
   let at = 0;
-  if (locked) for (let k = m + 1; k <= CYCLE_LEVELS + 1; k++) if (upgCap(k, c) > lv) { at = k - 1; break; }
-  return { lv, cap, max, maxed, locked, canBuy: !maxed && !locked, at, cycle: c };
+  if (locked) for (let k = m + 1; k <= CYCLE_LEVELS + 1; k++) if (upgCap(k, 1) > lv) { at = k - 1; break; }
+  return { lv, cap, max, maxed, locked, canBuy: !maxed && !locked, at, stage };
 }
-/* 영웅 레벨 상한: 지금 살 수 있는 끝(cap)과 이 회차의 끝(max), 더 올리려면 깨야 하는 레벨(at — 0이면 다음 회차) */
+/* 영웅 레벨 상한: 지금 살 수 있는 끝(cap)과 이 단계의 끝(max), 더 올리려면 깨야 하는 레벨(at — 1회차만) */
 function heroLimit() {
-  const c = topCycle();
-  const m = topProg().maxL;
-  const cap = heroCapC(c, m);
-  const max = HERO_MAX_LV + HERO_LV_PER_CYCLE * (c - 1);
+  const stage = capStage(data);
+  const max = heroMaxAt(stage);
+  const m = data.maxL;
+  const cap = stage === 1 ? heroCapC(1, m) : max;
   let at = 0;
-  if (cap < max) for (let k = m + 1; k <= CYCLE_LEVELS + 1; k++) if (heroCapC(c, k) > cap) { at = k - 1; break; }
-  return { cap, max, at, cycle: c };
+  if (cap < max) for (let k = m + 1; k <= CYCLE_LEVELS + 1; k++) if (heroCapC(1, k) > cap) { at = k - 1; break; }
+  return { cap, max, at, stage };
+}
+/* 다음 상한 단계를 여는 조건(강화·영웅 화면 한 줄 — what: '30단계' · 'Lv9'). 최종이면 '' */
+function nextCapText(stage, what) {
+  if (stage === 1) return `레벨 ${CYCLE_LEVELS}${eul(CYCLE_LEVELS)} 깨고 2회차에 가면 ${what}까지 바로 열려요`;
+  if (stage === 2) {
+    const p2 = data.cyc && data.cyc[2] ? Math.min(CYCLE_LEVELS, data.cyc[2].maxL - 1) : 0;
+    let best = 0;
+    for (let c = 1; c <= topCycle(); c++) best = Math.max(best, cycleStars(data, c));
+    return `2회차를 끝내거나(지금 ${p2}/${CYCLE_LEVELS}) 한 회차를 모두 별 3개로 깨면(★ ${best}/${CYCLE_LEVELS * 3}) ${what}까지 — 최종`;
+  }
+  return '';
 }
 
 /* ---------- 조작 ---------- */
@@ -518,9 +529,9 @@ function renderHero() {
       const up = document.createElement(lvH >= cap ? 'p' : 'button');
       up.className = lvH >= cap ? 'muted hero-cap' : 'btn';
       if (lvH >= cap) {
-        // 회차로 풀리는 상한(회차마다 +2): 이 회차 안에서 더 풀릴 것이 있으면 그 레벨, 없으면 다음 회차
-        up.textContent = lim.at ? `${lvName(lim.at, lim.cycle)}${eul(lim.at)} 깨면 Lv${cap + 1}까지 올릴 수 있어요`
-          : endedCycles(data) >= 1 || lim.max > HERO_MAX_LV ? `${cycName(lim.cycle + 1)}에서 Lv${lim.max + HERO_LV_PER_CYCLE}까지 열려요` : `레벨 ${CYCLE_LEVELS}${eul(CYCLE_LEVELS)} 깨고 2회차에 가면 Lv${lim.max + HERO_LV_PER_CYCLE}까지 열려요`;
+        // 57절 상한 단계: 1회차 안에서 더 풀릴 것이 있으면 그 레벨, 없으면 다음 단계를 여는 조건, 최종이면 끝
+        up.textContent = lim.at ? `${lvName(lim.at, 1)}${eul(lim.at)} 깨면 Lv${cap + 1}까지 올릴 수 있어요`
+          : lim.stage >= 3 ? `최종 레벨이에요(Lv${CAPS.heroFinal})` : nextCapText(lim.stage, `Lv${heroMaxAt(lim.stage + 1)}`);
       } else {
         up.innerHTML = `Lv${lvH} → Lv${lvH + 1} · <span class="coinchip">${cost}</span>`;
         up.disabled = data.coins < cost;
@@ -982,7 +993,13 @@ function openEnding(c) {
     ['최대 병력', `${fmtN(Math.floor(st.maxN) || 0)}명`],
   ];
   $('endStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
-  $('endNextInfo').textContent = `${cycName(c + 1)}: 레벨 1부터 다시! 적이 더 세지고, 강화는 ${10 * (c + 1)}단계·영웅은 Lv${HERO_MAX_LV + HERO_LV_PER_CYCLE * c}까지 더 올릴 수 있어요. 지난 회차 레벨은 레벨 화면에서 다시 할 수 있어요.`;
+  // 57절 상한 단계: 1회차 엔딩 = 진행 조건 없이 20단계 · Lv7, 2회차 엔딩(또는 올 별3) = 최종 30단계 · Lv9, 그 뒤 회차는 상한이 더 안 오른다
+  const capLine = c === 1 ? `강화는 ${CAPS.upgOpen}단계 · 영웅은 Lv${CAPS.heroOpen}까지 바로 올릴 수 있어요${finalOpen(data) ? '' : `(2회차를 끝내거나 한 회차를 모두 별 3개로 깨면 최종 ${CAPS.upgFinal}단계 · Lv${CAPS.heroFinal})`}`
+    : c === 2 ? `최종 상한이 열렸어요 — 강화 ${CAPS.upgFinal}단계 · 영웅 Lv${CAPS.heroFinal}`
+    : '';
+  // 4회차부터는 기대 강화가 최종 상한 그대로(core.expectAt) — 회차마다 더 세지지 않는다
+  const foeLine = c <= 2 ? '적이 더 세져요' : c === 3 ? `적이 최종 강화(${CAPS.upgFinal}단계 · Lv${CAPS.heroFinal}) 기준으로 세져요` : '지난 회차와 같은 세기예요';
+  $('endNextInfo').textContent = `${cycName(c + 1)}: 레벨 1부터 다시! ${foeLine}. ${capLine ? capLine + '. ' : ''}지난 회차 레벨은 레벨 화면에서 다시 할 수 있어요.`;
   // 2회차 엔딩: 무한모드에 넷째 특수병 화염병이 합류한다(단계 해금 4단계 — store.endlessUnlocks의 flame, 끝낸 회차 2 이상)
   $('endEndlessInfo').textContent = c === 2 && endlessUnlocks(data, CARD.stageMax).flame ? `화염병 합류! 무한모드의 특수병 카드·철창에서 만나요 — ${UNITS.flame.line} 뭉치와 함께면 돌격 나팔 동안 불 지대가 넓어져요.`
     : c > 1 ? '무한모드: 죽을 때까지 이어지는 한 판 — 보스마다 카드 셋 중 하나를 골라요. 강화가 오른 만큼 더 멀리 가요.'
@@ -1064,14 +1081,14 @@ function renderUpg() {
     const cost = upgCost(lvU);
     const card = document.createElement('div');
     card.className = 'upg' + (locked || maxed ? ' locked' : '');
-    // 점 열 개는 지금 올리는 열 단계(1~10, 11~20 …) — 회차마다 +10단계가 풀린다
+    // 점 열 개는 지금 올리는 열 단계(1~10, 11~20, 21~30) — 57절 상한 단계마다 +10단계가 풀린다
     const dec = Math.floor(Math.min(lvU, st.max - 1) / 10) * 10;
     const pip = (i) => (dec + i < lvU ? 'on' : dec + i >= Math.max(st.cap, lvU) ? 'cap' : '');
     card.innerHTML = `
       <div class="upg-head"><b>${u.name}${lvU > 10 || st.max > 10 ? ` <small>${lvU}단계</small>` : ''}</b><span class="pips" aria-hidden="true">${Array.from({ length: u.max }, (_, i) => `<i class="${pip(i)}"></i>`).join('')}</span></div>
       <p class="upg-eff">${u.effect(lvU)}${maxed || locked ? '' : ` → <em>${u.effect(lvU + 1)}</em>`}</p>`;
-    const nextCyc = endedCycles(data) >= 1 ? `${cycName(st.cycle + 1)}에서 ${st.max + 10}단계까지 열려요` : `레벨 ${CYCLE_LEVELS}${eul(CYCLE_LEVELS)} 깨고 2회차에 가면 ${st.max + 10}단계까지 열려요`;
-    const capText = maxed ? nextCyc : st.at ? `${lvName(st.at, st.cycle)}${eul(st.at)} 깨면 더 올릴 수 있어요` : '지금은 더 올릴 수 없어요';
+    const nextCyc = st.stage >= 3 ? `최종 단계예요(${CAPS.upgFinal}단계)` : nextCapText(st.stage, `${upgMaxAt(st.stage + 1)}단계`);
+    const capText = maxed ? nextCyc : st.at ? `${lvName(st.at, 1)}${eul(st.at)} 깨면 더 올릴 수 있어요` : '지금은 더 올릴 수 없어요';
     if (locked || maxed) {
       const note = document.createElement('p');
       note.className = 'upg-cap';
@@ -3285,6 +3302,7 @@ function finish() {
   const cyc = (run && run.cycle) || 1;
   const P = prog(data, cyc);
   const prevStars = P.stars[L] | 0;
+  const finBefore = finalOpen(data);   // 57절: 이 판으로 최종 상한(올 별3)이 열렸는지 — 결과 화면 한 줄
   let coins = paid ? coinsFor(lv, s, won, stars, 10 * upgOf('coin')) * petCoinMul(s) : 0;
   // 펫 알: 2회차부터, 대왕 레벨(10의 배수)을 그 회차에서 처음 깰 때
   const egg = paid && won && cyc >= 2 && L % 10 === 0 && !prevStars;
@@ -3362,6 +3380,7 @@ function finish() {
   if (joined.length) lines.push(['새 영웅 합류', joined.map((id) => HEROES[id].name).join(', ')]);
   if (newAmmo.length) lines.push(['새 탄종 열림', newAmmo.map((id) => AMMO[id].name).join(', ') + ' — 강화 화면에서 골라요']);
   if (newGun.length) lines.push(['새 총 열림', newGun.map((id) => GUNS[id].name).join(', ') + ' — 강화 화면에서 골라요(무한모드)']);
+  if (!finBefore && finalOpen(data)) lines.push([allStars(data) ? '올 별3!' : '최종 상한 열림', endedCycles(data) >= 1 ? `강화 ${CAPS.upgFinal}단계 · 영웅 Lv${CAPS.heroFinal}까지 올릴 수 있어요` : `2회차가 열리면 강화 ${CAPS.upgFinal}단계 · 영웅 Lv${CAPS.heroFinal}까지 바로`]);
   $('resStats').innerHTML = lines.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('');
   fillResDmg(false);   // 39.3: 캠페인은 위 셋만
   renderNear(won);

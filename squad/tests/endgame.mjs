@@ -2663,18 +2663,20 @@ test('3택 1의 세기(봇 — 합격 기준): 기대 강화 10단계·집중한
 });
 
 /* ---------- 엔딩 · 회차 ---------- */
-test('회차의 기대 강화: 1회차 EXPECT + 10·(c−1)단계, 영웅 +2·(c−1)레벨 — 강화·영웅 상한도 회차마다 풀린다', () => {
+test('회차의 기대 강화: 1회차 EXPECT + 10·(c−1)단계, 영웅 +2·(c−1)레벨 — 최종 상한(57절 — 30단계 · Lv9)에서 멈춘다', () => {
+  const F = R.CAPS.upgFinal, HF = R.CAPS.heroFinal;
   for (const L of [1, 10, 30, 60]) {
     const e1 = C.expectAt(L);
     assert.deepEqual(C.expectAt(L, 1), e1);
     for (const c of [2, 3, 5]) {
       const e = C.expectAt(L, c);
-      assert.equal(e.start, e1.start + 10 * (c - 1));
-      assert.equal(e.fire, e1.fire + 10 * (c - 1));
-      assert.ok(e.heroLv >= 5 + 2 * (c - 2) && e.heroLv <= 5 + 2 * (c - 1), `L${L} ${c}회차 영웅 Lv${e.heroLv}`);
-      assert.ok(e.heroLv <= R.heroCapC(c, L), '기대 영웅 레벨은 살 수 있는 상한 안');
+      assert.equal(e.start, Math.min(F, e1.start + 10 * (c - 1)));
+      assert.equal(e.fire, Math.min(F, e1.fire + 10 * (c - 1)));
+      assert.ok(e.heroLv >= Math.min(HF, 5 + 2 * (c - 2)) && e.heroLv <= Math.min(HF, 5 + 2 * (c - 1)), `L${L} ${c}회차 영웅 Lv${e.heroLv}`);
+      assert.ok(e.heroLv <= R.heroCapC(c, L), '기대 영웅 레벨은 보정 상한 안');
       assert.ok(C.expectLoadout(L, c).hero, '2회차부터는 L1에도 영웅이 함께');
-      assert.equal(C.upgCap(L, c), 10 * (c - 1) + C.upgCap(L));
+      assert.equal(C.upgCap(L, c), Math.min(F, 10 * (c - 1) + C.upgCap(L)));
+      if (c <= 3) assert.equal(e.start, e1.start + 10 * (c - 1), '2·3회차는 예전 그대로(보정표가 보는 범위)');
     }
   }
   assert.equal(C.upgCap(60, 2), 20);
@@ -2685,6 +2687,8 @@ test('회차의 기대 강화: 1회차 EXPECT + 10·(c−1)단계, 영웅 +2·(c
   assert.equal(R.heroCapC(2, 60), 7);
   assert.equal(R.heroCapC(3, 1), 7);
   assert.equal(R.heroCapC(3, 60), 9);
+  assert.equal(R.heroCapC(5, 60), 9, '4회차부터 Lv9에서 멈춘다');
+  assert.equal(C.upgCap(60, 5), 30);
 });
 
 test('영웅 Lv6 이상: 수치는 줄어드는 폭으로 오르고, 쿨다운·회복 몫이 한계를 넘지 않는다(Lv5까지는 그대로)', () => {
@@ -5617,4 +5621,52 @@ test('56절 — 보리(개편 판): 응급 간호는 게이트 밖 모든 손실
   const s = C.newEndless({ seed: 31, ...BLD }); s.endless.bosses = 13;
   assert.equal(C.rerollNext(s), 20);
   assert.equal(C.rerollBase(s), R.BUILD.reroll);
+});
+
+test('57절 — 상한 단계: 1회차는 진행에 따라(10단계 · Lv5), 2회차가 열리면 진행 조건 없이 20단계 · Lv7, 2회차 엔딩 또는 올 별3이면 최종 30단계 · Lv9(그 위로는 안 오른다)', async () => {
+  const fs = await import('node:fs');
+  const d = S.normalize(S.defaults());
+  assert.equal(S.capStage(d), 1);
+  assert.equal(S.upgMaxAt(1), 10);
+  assert.equal(S.heroMaxAt(1), R.HERO_MAX_LV);
+  // 1회차 올 별3만으로는 1회차 동안 단계 1(2회차가 열리는 순간 3)
+  for (let L = 1; L <= S.CYCLE_LEVELS; L++) d.stars[L] = 3;
+  assert.ok(S.allStars(d) && S.finalOpen(d));
+  assert.equal(S.capStage(d), 1, '엔딩 전에는 올 별3이어도 1회차 상한');
+  d.maxL = S.CYCLE_LEVELS + 1;
+  assert.equal(S.capStage(S.normalize(d)), 3, '1회차 올 별3 + 엔딩 = 바로 최종');
+  // 1회차 엔딩(별 모자람) → 2, 2회차 L1 진행만으로 20 · Lv7
+  const e = S.normalize({ ...S.defaults(), maxL: S.CYCLE_LEVELS + 1, stars: { 1: 3, 2: 2 } });
+  assert.equal(S.endedCycles(e), 1);
+  assert.equal(S.capStage(e), 2);
+  assert.equal(S.upgMaxAt(2), R.CAPS.upgOpen);
+  assert.equal(S.heroMaxAt(2), R.CAPS.heroOpen);
+  assert.equal(R.CAPS.upgOpen, 20);
+  assert.equal(R.CAPS.heroOpen, 7);
+  // 2회차 올 별3(엔딩 전) → 3
+  const st = {};
+  for (let L = 1; L <= S.CYCLE_LEVELS; L++) st[L] = 3;
+  const f = S.normalize({ ...S.defaults(), maxL: S.CYCLE_LEVELS + 1, cycle: 2, cyc: { 2: { maxL: S.CYCLE_LEVELS, cur: S.CYCLE_LEVELS, stars: st, best: {}, fails: {} } } });
+  assert.equal(S.endedCycles(f), 1);
+  assert.equal(S.capStage(f), 3, '2회차 올 별3');
+  // 2회차 엔딩 → 3
+  const g = S.normalize({ ...S.defaults(), maxL: S.CYCLE_LEVELS + 1, cycle: 3, cyc: { 2: { maxL: S.CYCLE_LEVELS + 1, cur: S.CYCLE_LEVELS, stars: {}, best: {}, fails: {} } } });
+  assert.equal(S.endedCycles(g), 2);
+  assert.equal(S.capStage(g), 3, '2회차 엔딩');
+  assert.equal(S.upgMaxAt(3), R.CAPS.upgFinal);
+  assert.equal(S.heroMaxAt(3), R.CAPS.heroFinal);
+  assert.equal(R.CAPS.upgFinal, 30);
+  assert.equal(R.CAPS.heroFinal, 9);
+  // 최종 = 3회차의 끝(2·3회차 보정표가 보는 범위) — 보정 상한도 같은 곳에서 멈춘다
+  assert.equal(C.upgCap(S.CYCLE_LEVELS, 3), R.CAPS.upgFinal);
+  assert.equal(R.heroCapC(3, S.CYCLE_LEVELS), R.CAPS.heroFinal);
+  for (const c of [4, 6, 9]) for (const L of [1, 30, 60]) {
+    const x = C.expectAt(L, c);
+    assert.ok(x.start === 30 && x.fire === 30 && x.coin === 30 && x.heroLv === 9, `${c}회차 L${L} 기대 강화는 최종 상한 그대로`);
+  }
+  // 화면: 상한은 회차 진행이 아니라 단계로(upgInfo · heroLimit), 다음 단계 조건 한 줄
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  assert.ok(/function upgInfo[\s\S]{0,400}capStage\(data\)/.test(main) && /function heroLimit[\s\S]{0,300}capStage\(data\)/.test(main), '상한은 capStage로');
+  assert.ok(!main.includes('HERO_LV_PER_CYCLE'), '회차마다 +2 글이 남지 않는다');
+  assert.ok(main.includes('nextCapText') && main.includes('올 별3!'), '다음 단계 조건 · 결과 화면 한 줄');
 });
