@@ -54,6 +54,8 @@ let heroPickFromCard = false;
 const curProg = () => prog(data, data.cycle);
 const topCycle = () => maxCycle(data);
 const cycName = (c) => `${c}회차`;
+/* 57.6: 의무병 '방역'으로 안 받는 변이(받는 단계 0)의 글 — 독안개는 깔리지만(화면에 보인다) 병력이 안 준다 */
+const wardText = (id) => (id === 'fog' ? '안개는 깔리지만 의무병 ‘방역’으로 병력이 안 줄어요' : '의무병 ‘방역’으로 안 받아요');
 /* 레벨 이름: 1회차만 있을 때는 '레벨 12', 회차가 열린 뒤에는 '2회차 레벨 12' */
 const lvName = (L, c = 1) => (c > 1 || topCycle() > 1 ? `${cycName(c)} 레벨 ${L}` : `레벨 ${L}`);
 const upgOf = (id) => upgLv(data, id);
@@ -2612,7 +2614,7 @@ function renderPausePanes(box) {
       b.type = 'button';
       if (!l) b.classList.add('off');
       b.append(iconEl('skull', 1), `${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}${l < raw ? ' · 방역' : ''}`);
-      const it = { name: `적 변이 ${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}`, lines: [l ? MUTATIONS[id].text(l) : '', l < raw ? (l ? '의무병 ‘방역’으로 한 단계 낮게 받아요' : '의무병 ‘방역’으로 지금은 안 받아요') : ''].filter(Boolean) };
+      const it = { name: `적 변이 ${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}`, lines: [l ? MUTATIONS[id].text(l) : '', l < raw ? (l ? '의무병 ‘방역’으로 한 단계 낮게 받아요' : wardText(id)) : ''].filter(Boolean) };
       b.addEventListener('click', () => { sfx.click(); show(it); });
       row.appendChild(b);
     }
@@ -2737,7 +2739,7 @@ function renderPauseUnits() {
   // 적 변이(개편 판 — 대왕을 잡을 때마다 하나씩 쌓인다)
   if (s.endless && s.endless.mut) for (const id of MUT_IDS) {   // 55절: 방역이면 한 단계 낮게 — 안 받는 변이도 '방역'으로 보인다
     const l = mutLv(s, id), raw = mutRaw(s, id);
-    if (raw) addRow('skull', `변이 ${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}${l < raw ? ' · 방역' : ''}`, l ? MUTATIONS[id].text(l) + (l < raw ? ' · 방역으로 한 단계 낮게' : '') : '의무병 ‘방역’으로 안 받아요', '변이');
+    if (raw) addRow('skull', `변이 ${MUTATIONS[id].name}${raw > 1 ? ' Ⅱ' : ''}${l < raw ? ' · 방역' : ''}`, l ? MUTATIONS[id].text(l) + (l < raw ? ' · 방역으로 한 단계 낮게' : '') : wardText(id), '변이');
   }
   if (fx) for (const id of combosOn(s)) addRow('star', `시너지 ${COMBOS[id].name}`, comboText(id, !!bldOf(s)), '시너지');
   if (rl) for (const id of rl) {
@@ -3198,7 +3200,7 @@ function handleEvents(ev) {
       // 적 변이(대왕 뒤 — 판 끝까지 쌓인다): 다음 구간이 시작될 때 안내창으로(35절 — 예전엔 이 줄이 없어 안내가 한 번도 안 떴다)
       case 'mutation': if (MUTATIONS[e.id]) {   // 55절: 의무병 '방역'이면 한 단계 낮게(eff — 0이면 안 받는다)
         const ef = e.eff ?? e.lv, nm = `적 변이 ‘${MUTATIONS[e.id].name}${e.lv > 1 ? ' Ⅱ' : ''}’`;
-        const line = ef <= 0 ? `${nm} — 의무병 ‘방역’으로 안 받아요` : `${nm}: ${MUTATIONS[e.id].text(ef)}${ef < e.lv ? ' (방역으로 한 단계 낮게)' : ''}`;
+        const line = ef <= 0 ? `${nm} — ${wardText(e.id)}` : `${nm}: ${MUTATIONS[e.id].text(ef)}${ef < e.lv ? ' (방역으로 한 단계 낮게)' : ''}`;
         mutNote = `${mutNote ? mutNote + '\n' : ''}${line}`;
       } break;
       case 'supply': {

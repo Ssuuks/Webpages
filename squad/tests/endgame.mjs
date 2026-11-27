@@ -5670,3 +5670,29 @@ test('57절 — 상한 단계: 1회차는 진행에 따라(10단계 · Lv5), 2�
   assert.ok(!main.includes('HERO_LV_PER_CYCLE'), '회차마다 +2 글이 남지 않는다');
   assert.ok(main.includes('nextCapText') && main.includes('올 별3!'), '다음 단계 조건 · 결과 화면 한 줄');
 });
+
+test('57.6절 — 방역이 막는 독안개: 안개는 화면에 깔리고(쌓인 단계 mutRaw로 그린다) 병력은 받는 단계(mutLv)만큼만 준다 — 1단계는 안 줄고 2단계는 1단계 몫', async () => {
+  const fs = await import('node:fs');
+  // 길 가장자리(FOG_X 밖)에 1초 서 있을 때 독안개로 잃는 병사
+  const fogLoss = (mut, medicLv) => {
+    const u = C.newEndless({ seed: 31, ...BLD });
+    u.endless.mut = mut.slice();
+    u.squad.sp = medicLv ? [{ id: 9, k: 'medic', cd: 0, lv: medicLv }] : [];
+    u.squad.n = 10000; u.foes = []; u.props = []; u.rows = []; u.saws = []; u.lanes = []; u.squad.fireAcc = -99;
+    u.squad.x = R.FOG_X + 1.2;
+    const n0 = u.squad.n;
+    let fog = 0;
+    for (let i = 0; i < Math.round(1 / C.DT); i++) { u.squad.x = R.FOG_X + 1.2; u.squad.vx = 0; C.step(u, { dir: 0 }); for (const e of u.ev) if (e.t === 'loss' && e.cause === 'fog') fog += e.n; }
+    return { fog, n0 };
+  };
+  const bare = fogLoss(['fog'], 0), warded = fogLoss(['fog'], 5), two = fogLoss(['fog', 'rush', 'fog'], 5);
+  assert.ok(bare.fog > 0, `방역 없으면 독안개에 잃는다(${bare.fog})`);
+  assert.equal(warded.fog, 0, '방역이면 1단계 독안개에 안 잃는다');
+  assert.ok(Math.abs(two.fog - bare.fog) <= Math.max(2, 0.05 * bare.fog), `2단계 + 방역 = 1단계 몫(${two.fog} ≈ ${bare.fog})`);
+  // 화면: 안개는 쌓인 단계로 그리고(방역이어도 보인다), 막는 안개 안이면 반짝임 · 글은 '안개는 깔리지만'
+  const rd = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  assert.ok(/if \(mutRaw\(s, 'fog'\) && \(s\.phase === 'run'/.test(rd), '독안개는 mutRaw로 그린다');
+  assert.ok(/!mutLv\(s, 'fog'\) && Math\.abs\(q\.x\) > FOG_X/.test(rd), '방역이 막는 안개 안의 반짝임');
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  assert.ok(main.includes('안개는 깔리지만') && (main.match(/wardText\(/g) || []).length >= 3, '안내 · 일시정지 글');
+});
