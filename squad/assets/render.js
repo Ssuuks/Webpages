@@ -3455,7 +3455,7 @@ export function createRenderer(cvs) {
         continue;
       }
       if (b.g === 'm') {   // 저격 예광탄(21절): 길고 밝은 줄 + 하늘색 머리
-        if (!project(view, b.x - (b.dx || 0) * 5, 0.75, b.z + ext - 5)) continue;   // 43절: 휘어 가는 총알은 꼬리가 온 쪽으로 기운다
+        if (!project(view, b.x - (b.dx || 0) * 5, 0.75, b.z + ext - 5)) continue;   // 43 · 63절: 비스듬히 가는 저격 총알은 꼬리가 온 쪽으로 기운다
         const len = Math.max(3, Math.round(P.y) - hy), tx = Math.round(P.x) - hx;
         if (tx) {   // 기운 꼬리: 줄마다 옆으로 밀어 그린다(도트 결)
           for (let k = 0; k < len; k++) { const ox = Math.round((tx * k) / len); ctx.fillStyle = OUT; ctx.fillRect(hx + ox - 1, hy + k, 4, 1); }

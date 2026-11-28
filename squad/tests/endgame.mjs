@@ -4635,18 +4635,17 @@ test('21.2 — 산탄총: 초당 4번 · 펠릿 3 × volleySize(36까지) · 퍼
   const wall = (gun) => { const w = gunState(gun); w.squad.fireAcc = -99; const p = { id: 99810, kind: 'wall', x0: -2, x1: 2, z: w.squad.z + 5, hp: 1e9, max: 1e9, alive: true, hitT: -9 }; w.props = [p]; w.bullets = [{ x: 0, z: p.z - 0.3, d: 4, dmg: 100, base: 100, hm: 1, ...(gun === 'shotgun' ? { g: 's', r: K.range } : {}) }]; C.step(w, { dir: 0 }); return 1e9 - p.hp; };
   assert.ok(Math.abs(wall('shotgun') / wall('rifle') - K.wall) < 1e-6, `벽 ${wall('shotgun')} / ${wall('rifle')}`);
 });
-test('21.2.1 — 저격총: 옆 ±(R + aim) 안 체력이 가장 큰 적을 노려 따라가고, 남는 피해는 같은 줄 뒤 적에게 이어 간다(관통 예산), 보스 ×boss. Lv5 헤드샷·Lv10 터지는 한 발', () => {
+test('21.2.1 — 저격총: 옆 ±(R + aim) 안 체력이 가장 큰 적을 노려 곧게 쏘고(63절), 남는 피해는 같은 줄 뒤 적에게 이어 간다(관통 예산), 보스 ×boss. Lv5 헤드샷·Lv10 터지는 한 발', () => {
   const K = R.GUNK.marksman;
   const u = gunState('marksman', 5, (w) => { w.squad.n = 100; });
-  const R0 = C.radius(u.squad.n);
+  const R0 = Math.min(R.BUILD.narrow, C.radius(u.squad.n));   // 개편 판의 몸(step이 좁힌다 — 앞 시험 순서와 상관없게)
   const small = gfoe(u, 99820, 20, 50, { x: u.squad.x - 0.5 }), big = gfoe(u, 99821, 25, 5000, { x: u.squad.x + R0 + K.aim - 0.2 }), out = gfoe(u, 99822, 25, 9e9, { x: u.squad.x - R0 - K.aim - 0.5 });
   u.foes = [small, big, out];
   C.step(u, { dir: 0 });
   assert.equal(u.bullets.length, 1, '병력 400 아래는 한 발');
-  assert.ok(u.bullets[0].tg === big.id && u.bullets[0].tx === big.x && u.bullets[0].r === 50, '조준 폭 안 가장 센 적(밖의 더 센 적은 아니다)');
-  assert.ok(Math.abs(u.bullets[0].x - u.squad.x) <= R0 + 1, `43절: 분대 앞에서 쏜다(표적 자리에서 생기지 않는다) ${(u.bullets[0].x - u.squad.x).toFixed(2)}`);
-  big.x += 0.4; u.squad.fireAcc = -99; for (let i = 0; i < 12; i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); }
-  assert.ok(Math.abs(u.bullets[0].x - big.x) < 1e-9, '휘어 가서 조준한 적을 따라간다');
+  const b0 = u.bullets[0];
+  assert.ok(b0.dx > 0 && Math.abs(b0.x + b0.dx * (big.z - b0.z) - big.x) < 1e-6 && b0.r === 50, `조준 폭 안 가장 센 적으로 곧게(밖의 더 센 적은 아니다) dx ${b0.dx}`);
+  assert.ok(Math.abs(b0.x - u.squad.x) <= R0 + R.GUNK.marksman.slope * C.BULLET_SPEED * C.DT + 1e-9, `43절: 분대 앞에서 쏜다(표적 자리에서 생기지 않는다) ${(b0.x - u.squad.x).toFixed(2)}`);
   // 관통 예산: 앞 적(체력 30)을 잡고 남은 70이 뒤 적에게
   const w = gunState('marksman'); w.squad.fireAcc = -99;
   const a = gfoe(w, 99830, 6, 30), b = gfoe(w, 99831, 6.3, 1e9);
@@ -4659,6 +4658,37 @@ test('21.2.1 — 저격총: 옆 ±(R + aim) 안 체력이 가장 큰 적을 노�
   // Lv5 헤드샷: 맞은 뒤 체력이 head 몫 아래면 쓰러진다(거구·정예는 아니다)
   const head = (kind) => { const z = gunState('marksman', 5, (q) => { q.endless.bld.gl = { marksman: 5 }; }); z.squad.fireAcc = -99; const f = gfoe(z, 99840, 6, 1000, { kind }); z.foes = [f]; z.bullets = [{ x: f.x, z: f.z - 0.2, d: 5, dmg: 1000 * (1 - R.gunVal('marksman', 5).head) + 5, hm: 1, g: 'm', thru: 1, r: 50 }]; C.step(z, { dir: 0 }); return f.alive; };
   assert.deepEqual([head('grunt'), head('brute')], [false, true]);
+});
+test('63절 — 저격 총알은 곧게: 쏠 때 표적이 있던 자리로 기울기 slope까지, 따라가지 않는다(움직인 적은 빗나간다), 그 기울기로 못 닿는 가까운 옆 적은 노리지 않는다', () => {
+  const K = R.GUNK.marksman, sl = R.gunVal('marksman', 1).slope;
+  assert.ok(sl === K.slope && sl > 0 && sl <= 0.2, `기울기 ${sl}`);
+  // 따라가지 않는다: 쏜 뒤 표적이 옆으로 1m 비키면 총알은 처음 줄 그대로 날아가 빗나간다(체력 그대로)
+  const u = gunState('marksman', 5, (w) => { w.squad.n = 100; });
+  const R0 = Math.min(R.BUILD.narrow, C.radius(u.squad.n));
+  const f = gfoe(u, 99860, 20, 1e6, { x: u.squad.x + R0 + 1 });
+  u.foes = [f];
+  C.step(u, { dir: 0 });
+  const b = u.bullets[0], x0 = b.x, z0 = b.z, dx = b.dx;
+  assert.ok(dx > 0 && dx <= sl + 1e-9, `표적 쪽으로 기운다 ${dx}`);
+  f.x += 1;
+  for (let i = 0; i < 40 && u.bullets.includes(b); i++) { u.squad.fireAcc = -99; C.step(u, { dir: 0 }); if (u.bullets.includes(b)) assert.ok(Math.abs(b.x - (x0 + dx * (b.z - z0))) < 1e-6, '곧은 줄 위'); }
+  assert.equal(f.hp, 1e6, '비킨 적은 안 맞는다(유도 없음)');
+  // 기울기로 닿는 적만: 가까운 옆(몸 밖 1.3m, 5m 앞 — 기울기 0.3이 필요) 센 적보다 멀리 닿는 약한 적
+  const w = gunState('marksman', 5, (v) => { v.squad.n = 100; });
+  const R1 = Math.min(R.BUILD.narrow, C.radius(w.squad.n));
+  const near = gfoe(w, 99861, 5, 9e6, { x: w.squad.x + R1 + 1.3 }), far = gfoe(w, 99862, 30, 50, { x: w.squad.x + R1 + 1.3 });
+  w.foes = [near, far];
+  C.step(w, { dir: 0 });
+  const c = w.bullets[0];
+  assert.ok(Math.abs(c.x + c.dx * (far.z - c.z) - far.x) < 1e-6, `가까운 옆 적이 아니라 닿는 먼 적을 노린다 dx ${c.dx}`);
+  // 정면(노릴 적 · 보스 없음)은 곧게 앞으로
+  const e = gunState('marksman', 5, (v) => { v.squad.n = 100; });
+  C.step(e, { dir: 0 });
+  assert.ok(!e.bullets[0].dx, '정면은 기울지 않는다');
+  // 예전 저장(v2.50.1까지)의 휘어 가던 총알(tx · tg · 틱마다 바뀐 dx)은 이어하기에서 곧게 앞으로
+  const old = gunState('marksman'); old.bullets = [{ x: 0.5, z: old.squad.z + 3, d: 2, dmg: 10, hm: 1, g: 'm', tx: 2, tg: 99870, dx: 0.6 }];
+  const back = C.restore(C.snapshot(old));
+  assert.ok(back && !('tx' in back.bullets[0]) && !('tg' in back.bullets[0]) && back.bullets[0].dx === 0, JSON.stringify(back && back.bullets[0]));
 });
 test('21.9 — 총 Lv 카드: 그 총의 Lv +1(각성 전 Lv5 상한), 희귀·전설이면 총 강화. 총 카드(★)와 따로 나온다', () => {
   const base = bldRun(31, 1, { co: { gun: 'shotgun' } });

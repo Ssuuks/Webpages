@@ -615,7 +615,7 @@ function fx2Base(id, lv) {
 export const GUNS = {
   rifle: { name: '소총', stars: 0, color: '#FFE38A', line: '무난한 기본 총', text: () => '분대 폭에 고르게 · 사거리 30m' },
   shotgun: { name: '산탄총', stars: 50, color: '#FF8A5B', line: '가까이 · 넓게 · 세게 — 처음부터 센 총', text: () => `옆 칸까지 퍼지는 펠릿 · 피해 ×${GUNK.shotgun.dmg}(${GUNK.shotgun.near}m 넘으면 줄어 ${GUNK.shotgun.range}m에서 ${apc(GUNK.shotgun.fall)}%) · 벽·장갑문 ×${GUNK.shotgun.wall} · 상자·철창 ×${GUNK.shotgun.crate}` },
-  marksman: { name: '저격총', stars: 90, color: '#7FE3FF', line: '멀리 · 한 점 · 무겁게 — 늦게 크는 총', text: () => `옆 ±${GUNK.marksman.aim}m 안 가장 센 적을 노려 초당 ${GUNK.marksman.hz}발 · 사거리 50m · 보스 ×${GUNK.marksman.boss} · 처음엔 약하고 총 Lv마다 피해가 크게 올라요 · Lv3부터 체력 20% 아래 좀비는 한 발에 · 벽·상자에는 약해요(분대 화력의 ${apc(GUNK.marksman.obst)}%)` },
+  marksman: { name: '저격총', stars: 90, color: '#7FE3FF', line: '멀리 · 한 점 · 무겁게 — 늦게 크는 총', text: () => `옆 ±${GUNK.marksman.aim}m 안 가장 센 적을 노려 곧게 초당 ${GUNK.marksman.hz}발(따라가지 않아요) · 사거리 50m · 보스 ×${GUNK.marksman.boss} · 처음엔 약하고 총 Lv마다 피해가 크게 올라요 · Lv3부터 체력 20% 아래 좀비는 한 발에 · 벽·상자에는 약해요(분대 화력의 ${apc(GUNK.marksman.obst)}%)` },
 };
 export const GUN_IDS = Object.keys(GUNS);
 export const GUN_EVO = { rifle: '점사', shotgun: '슬러그', marksman: '관통' };
@@ -626,7 +626,7 @@ const GUN_EVO2_TEXT = { rifle: '점사가 남는 피해를 뒤로 이어 간다(
 /* 총의 바탕 수치(Lv1) — 봇으로 맞춘다(21.12). 산탄: 피해·퍼짐·사거리·감쇠(near m부터 range에서 fall까지)·벽 / 저격: 초당 발·조준 폭·피해·보스 */
 export const GUNK = {
   shotgun: { dmg: 2, grow: 0.08, spread: 1.4, range: 24, near: 8, fall: 0.6, wall: 2.5, crate: 1.5 },   // 58절: 산탄/로켓류 — 벽·장갑문 ×2 → 2.5(Lv3 ×1.25), 상자·철창 ×1 → crate   // 48절 초반형: 바탕 1.5 → 2, 각성 몫 0.2 → grow(0.08)·(a−1) — 봇 16판 1~6구간 보스전 7.6 → 6.4초(소총 6.5), 31구간~ 11.4초(소총 9.9)   // 21.12: 1.4·22m·40%·×1.6이면 20.9구간(소총 29.4) — 1.6·24m·60%·×2로 28.4, 총 Lv 카드가 들어간 뒤 32.3(소총 27.5)이라 1.5·Lv4 감쇠 +2m로 28.3
-  marksman: { hz: 3, aim: 1.5, dmg: 0.5, lv: 0.08, awk: 0.6, head: 3, thru: 5, boss: 1.6, obst: 0.4 },   // 58절: 저격류 — 장애물(벽·장갑문·상자·철창)에는 같은 화력의 소총 총알 × obst(총 Lv로 오른 피해 배수는 안 든다 — 좀비·보스 피해는 그대로)   // 48절 후반형: 피해 0.6 → 0.5 × (1 + lv·(Lv−1), Lv5까지) × (1 + awk·(각성 − 1)), 헤드샷 Lv head(3), 넘침 관통 Lv thru(5 — 진화)   // 21.12: 조준 ±2.5m·피해 ×1이면 37.5구간(너무 셌다) — ±1.5m·×0.6·보스 ×1.6으로 29.6
+  marksman: { hz: 3, aim: 1.5, dmg: 0.5, lv: 0.08, awk: 0.6, head: 3, thru: 5, boss: 1.6, obst: 0.4, slope: 0.15 },   // 63절: slope — 총알은 쏠 때 표적이 있던 자리로 곧게(앞으로 1m에 옆 slope m까지, 따라가지 않는다 — 예전 43절 0.6으로 휘며 따라감), 그 기울기로 닿는 적만 노린다   // 58절: 저격류 — 장애물(벽·장갑문·상자·철창)에는 같은 화력의 소총 총알 × obst(총 Lv로 오른 피해 배수는 안 든다 — 좀비·보스 피해는 그대로)   // 48절 후반형: 피해 0.6 → 0.5 × (1 + lv·(Lv−1), Lv5까지) × (1 + awk·(각성 − 1)), 헤드샷 Lv head(3), 넘침 관통 Lv thru(5 — 진화)   // 21.12: 조준 ±2.5m·피해 ×1이면 37.5구간(너무 셌다) — ±1.5m·×0.6·보스 ×1.6으로 29.6
 };
 export function gunVal(id, lv) {
   const L = Math.max(1, Math.floor(lv) || 1), l = Math.min(BUILD.evo, L), a = awk(L);
@@ -641,7 +641,7 @@ export function gunVal(id, lv) {
     const hRaw = l >= K.head ? 0.2 + 0.1 * (a - 1) : 0, over = Math.max(0, hRaw - 0.5);   // 헤드샷(Lv3 — 48절) 문턱 50% 상한 → 넘친 몫은 피해로(21.10)
     const dmg = K.dmg * (1 + K.lv * (l - 1)) * (1 + K.awk * (a - 1)) * (1 + 0.5 * over);   // 48절 후반형: 처음엔 약하고 Lv마다 크게
     const ob = K.obst / r3(dmg);   // 58절: 총알 피해(dmg배)가 장애물에는 obst배로 — 화력 D의 obst만
-    return { hz: r3(l >= 4 ? K.hz * 1.2 : K.hz), rounds: true, spread: 0, aim: l >= 2 ? K.aim + 1 : K.aim, range: 50, thru: l >= K.thru, dmg: r3(dmg), wall: ob, crate: ob, obst: K.obst, boss: r3((l >= 3 ? K.boss + 0.3 : K.boss) + 0.3 * (a - 1)), head: r3(Math.min(0.5, hRaw)), pop: evo2 ? 0.5 : 0, over: r3(over), evo, evo2, a };
+    return { hz: r3(l >= 4 ? K.hz * 1.2 : K.hz), rounds: true, spread: 0, aim: l >= 2 ? K.aim + 1 : K.aim, slope: K.slope, range: 50, thru: l >= K.thru, dmg: r3(dmg), wall: ob, crate: ob, obst: K.obst, boss: r3((l >= 3 ? K.boss + 0.3 : K.boss) + 0.3 * (a - 1)), head: r3(Math.min(0.5, hRaw)), pop: evo2 ? 0.5 : 0, over: r3(over), evo, evo2, a };
   }
   const hRaw = (l >= 2 ? 11 : 10) * (1 + 0.3 * (a - 1)), over = Math.max(0, hRaw - 18);   // 소총: 쏘는 속도 초당 18 상한 → 넘친 몫은 피해로
   return { hz: r3(Math.min(18, hRaw)), spread: l >= 3 ? 0.8 : 0.3, range: l >= 4 ? 35 : 30, dmg: r3(1 + over / 18), wall: 1, crate: 1, boss: 1, burst: evo ? { every: 4, k: r3(2 + 0.5 * (a - 1)), thru: evo2 } : null, over: r3(over), evo, evo2, a };

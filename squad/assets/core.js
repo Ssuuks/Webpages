@@ -2867,7 +2867,7 @@ export function restore(o) {
       }
     }
   }
-  for (const b of o.bullets) if (typeof b.hm !== 'number') b.hm = 1;
+  for (const b of o.bullets) { if (typeof b.hm !== 'number') b.hm = 1; if (b.tx != null || b.tg != null) { delete b.tx; delete b.tg; b.dx = 0; } }   // 63절: 예전(v2.50.1까지) 저장의 휘어 가던 저격 총알은 곧게 앞으로
   // 화염병(4단계): 화염병 줄을 연 판에만 — 아닌 판(손댄 저장)의 화염병·불 지대는 버린다. 불 지대는 숫자가 성한 것만(남은 시간이 있는 것), 비면 필드도 없게
   if (!flameOn(o)) q.sp = q.sp.filter((m) => m.k !== 'flame');
   if (o.flames !== undefined) {
@@ -3660,17 +3660,20 @@ export const PET_CHEER_CD = 4;   // 무한모드: '기운 내'가 한 번 차면
 export const PET_CHEER_E = 0.2;   // 무한모드의 '기운 내' 한 번(캠페인은 PET_CHEER) — 쉬는 시간과 함께 게이지가 초당 많아야 5%p 더 찬다(기본 충전 16초 ≈ 초당 6%p)
 export const PET_FAR_AVG = 0.5;
 export const PET_WIDE_AVG = 0.2;
-/* 저격총의 조준(21.2.1): 분대 앞 사거리 안 · 옆 ±(R + aim) 안에서 체력이 가장 큰 적부터 k발에 하나씩(같은 적은 한 번). 적이 모자라면 보스(사거리 안), 그다음은 정면(분대가 선 게이트 칸) */
+/* 저격총의 조준(21.2.1): 분대 앞 사거리 안 · 옆 ±(R + aim) 안에서 체력이 가장 큰 적부터 k발에 하나씩(같은 적은 한 번). 적이 모자라면 보스(사거리 안), 그다음은 정면(분대가 선 게이트 칸).
+   63절: 총알은 분대 몸 폭 안(q.x ± R)에서 나가 표적이 **그 순간 있던 자리**로 곧게 난다 — 기울기 gv.slope(앞으로 1m에 옆 m)로 닿는 적만 노린다(몸 밖 2.5m 옆 적은 17m 앞부터).
+   돌려주는 것: { x: 노린 x, z: 노린 z(정면이면 null), id: 노린 적(시험이 본다 — 총알은 따라가지 않는다) } */
+const mkMuzzleZ = (q, R) => q.z + 0.4 * R;   // 저격 총알이 생기는 z(fire와 같게)
 function gunAims(s, R, gv, k) {
-  const q = s.squad, out = [], used = new Set();
+  const q = s.squad, out = [], used = new Set(), z0 = mkMuzzleZ(q, R), sl = gv.slope || Infinity;
   const cand = [];
-  for (const f of s.foes) if (f.alive && f.z > q.z + 0.5 && f.z - q.z <= gv.range && Math.abs(f.x - q.x) <= R + gv.aim) cand.push(f);
+  for (const f of s.foes) if (f.alive && f.z > q.z + 0.5 && f.z - q.z <= gv.range && Math.abs(f.x - q.x) <= R + gv.aim && Math.max(0, Math.abs(f.x - q.x) - R) <= sl * (f.z - z0)) cand.push(f);
   cand.sort((a, c) => c.hp - a.hp || a.id - c.id);
-  for (const f of cand) { if (out.length >= k) break; if (!used.has(f.id)) { used.add(f.id); out.push({ x: f.x, tg: f.id }); } }
+  for (const f of cand) { if (out.length >= k) break; if (!used.has(f.id)) { used.add(f.id); out.push({ x: f.x, z: f.z, id: f.id }); } }
   const bo = s.boss;
   while (out.length < k) {
-    if (bo && bo.hp > 0 && bo.z - q.z <= gv.range) out.push({ x: clamp(bo.x + (out.length % 2 ? 0.5 : -0.5) * (out.length > 0 ? 1 : 0), bo.x - BOSS_HIT + 0.1, bo.x + BOSS_HIT - 0.1), tg: 0 });
-    else out.push({ x: q.x + (out.length === 0 ? 0 : (out.length % 2 ? 0.6 : -0.6)), tg: 0 });
+    if (bo && bo.hp > 0 && bo.z - q.z <= gv.range) out.push({ x: clamp(bo.x + (out.length % 2 ? 0.5 : -0.5) * (out.length > 0 ? 1 : 0), bo.x - BOSS_HIT + 0.1, bo.x + BOSS_HIT - 0.1), z: bo.z - 1, id: 0 });
+    else out.push({ x: q.x + (out.length === 0 ? 0 : (out.length % 2 ? 0.6 : -0.6)), z: null, id: 0 });
   }
   return out;
 }
@@ -3727,12 +3730,12 @@ function fire(s, R) {
       // 고르게 퍼뜨리되 매번 조금씩 어긋나게(황금비 수열 — 난수를 쓰지 않는다)
       const j = ((q.volley * 0.618034 + i * 0.381966) % 1) - 0.5;
       let x = q.x - span + ((i + 0.5 + j * 0.8) / b) * 2 * span;
-      if (aims) x = clamp(aims[i].x, q.x - R, q.x + R);   // 43절: 저격총은 분대 앞(몸 폭 안)에서 쏘고 표적 쪽으로 휘어 간다 — 표적 자리에서 총알이 생기지 않게
-      const bl = { x, z: q.z + 0.4 * R, d: 0, dmg, hm };
+      if (aims) x = clamp(aims[i].x, q.x - R, q.x + R);   // 43절: 저격총은 분대 앞(몸 폭 안)에서 쏜다 — 표적 자리에서 총알이 생기지 않게
+      const bl = { x, z: mkMuzzleZ(q, R), d: 0, dmg, hm };
       if (far || rng) bl.r = (rng || BULLET_RANGE) * (far ? PET_FAR : 1);
       if (gv && G.id !== 'rifle') {
         if (G.id === 'shotgun') { bl.g = 's'; bl.base = dmg; if (gv.slug) bl.slug = gv.slug / b; }   // 산탄: 거리로 줄어드는 피해(bulletsUpdate), 슬러그는 펠릿마다 나눠 민다
-        else { bl.g = 'm'; if (gv.thru) bl.thru = 1; bl.tx = aims[i].x; if (aims[i].tg) bl.tg = aims[i].tg; }   // 저격: 조준한 적(tx)을 따라 휘어 간다 · 넘침 관통은 Lv5(진화)부터(48절)
+        else { bl.g = 'm'; if (gv.thru) bl.thru = 1; const a = aims[i]; if (a.z != null && a.x !== x) bl.dx = clamp((a.x - x) / Math.max(0.5, a.z - bl.z), -gv.slope, gv.slope); }   // 63절: 저격 — 표적이 그 순간 있던 자리로 곧게(기울기 dx, 따라가지 않는다 — 움직인 적은 빗나간다) · 넘침 관통은 Lv5(진화)부터(48절)
       }
       if (bst && bst.thru) bl.thru = 1;   // 소총 Lv10 관통 점사
       if (pCrit && !pCrit.avg && rand(pCrit) < ppC) { bl.dmg = dmg * PET_CRIT; bl.c = 1; crits++; }
@@ -3757,8 +3760,6 @@ function fire(s, R) {
   }
 }
 
-/* 43절: 저격총 총알이 표적 쪽으로 휘는 기울기(앞으로 1m에 옆으로 m) — 조준 폭 끝(분대 몸 밖 2.5m)의 적도 6m 앞이면 닿는다 */
-const MK_STEER = 0.6;
 /* 39.1: 넘침 관통으로 쓰러뜨리는 동안 1 — 쓰러질 때 탄 효과(유폭·얼음 번짐·전염·치료·산성 웅덩이)를 안 낸다 */
 let noFx = 0;
 function bulletsUpdate(s) {
@@ -3784,8 +3785,7 @@ function bulletsUpdate(s) {
   for (let i = 0; i < list.length; i++) {
     const b = list[i];
     if (b.g === 's' && gw) b.dmg = b.base * (b.d <= gw.near ? 1 : 1 - (1 - gw.fall) * Math.min(1, (b.d - gw.near) / Math.max(1, gw.range - gw.near)));   // 산탄: near m 뒤로 range에서 fall까지 준다
-    if (b.tg) { const f = near.find((o) => o.id === b.tg); if (f && f.alive) b.tx = f.x; else b.tg = 0; }   // 저격: 조준한 적을 따라간다
-    if (b.tx != null) { const m = adv * MK_STEER, dx = clamp(b.tx - b.x, -m, m); b.x += dx; b.dx = dx / adv; if (!b.tg && Math.abs(b.tx - b.x) < 1e-6) delete b.tx; }   // 43절: 옆으로는 앞으로 1m에 MK_STEER m까지 — 분대 앞에서 표적 쪽으로 휘어 간다
+    if (b.dx) b.x += b.dx * adv;   // 63절: 저격 총알은 쏠 때 정한 기울기(앞으로 1m에 옆 dx m)로 곧게 — 표적을 따라가지 않는다(예전 43절: 틱마다 표적 x로 0.6씩 휘었다)
     const z0 = b.z;
     const z1 = z0 + adv;
     let bestZ = Infinity;
@@ -3834,7 +3834,7 @@ function bulletsUpdate(s) {
       if (kill && b.g === 'm' && gw.pop) fxBoom(s, f.x, f.z, 1.6, f.max * gw.pop, f);   // 터지는 한 발(41절: 저격총 자체의 능력이라 넘침으로 쓰러뜨린 적도 터진다 — 탄 효과만 첫 상대에게)
       if (b.slug && f.alive) f.z += b.slug;   // 슬러그: 맨 앞(맞은) 적을 밀어낸다
       const left = kill && b.thru ? b.dmg - hp0 / mul : 0;
-      if (left > b.dmg * 0.02) { b.th = 1; b.dmg = left; if (b.g === 's') b.base = left; b.tg = 0; delete b.tx; b.dx = 0; b.z = f.z + 0.01; list[w++] = b; }   // 남은 피해로 계속 날아간다
+      if (left > b.dmg * 0.02) { b.th = 1; b.dmg = left; if (b.g === 's') b.base = left; b.z = f.z + 0.01; list[w++] = b; }   // 남은 피해로 계속 날아간다(저격은 같은 기울기로 — 63절)
       continue;
     }
     if (B2 && hitKind === 2) { const wd = hitObj.kind === 'wall' || hitObj.kind === 'door'; if (wd && B2.acid) acidAdd(s, hitObj, B2); hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK : 1)); if (wd && B2.pierce && B2.pierce >= 10) wallThru(s, b, hitObj, near, B2.pierce); if (wd && legOn(s, 'pierce')) ricochet(s, b, hitObj); continue; }   // 관통 Lv10 · 전설 강화 '벽 뚫기'
