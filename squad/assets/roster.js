@@ -120,6 +120,28 @@ export const HORN = { reach: 16, side: 3, push: 4, stun: 1, boss: 0.6 };
 export const HERO_MAX_LV = 5;          // 1회차의 레벨 상한(수치 num의 [Lv1, Lv5]가 가리키는 끝)
 export const HERO_LV_PER_CYCLE = 2;    // 회차마다 상한 +2 (Lv5 → 7 → 9 …, ENDGAME.md 4절)
 export const HERO_LV_HARD = 99;        // 저장·시뮬레이션이 받아들이는 가장 높은 레벨
+/* 상한 해제(ENDGAME.md 57절 — 회차마다 끝없이 +10단계 · +2레벨을 멈춘다):
+   1회차(엔딩 전) = 진행에 따라 강화 10단계 · 영웅 Lv5(그대로), 2회차가 열리면 진행 조건 없이 open까지 바로,
+   그 뒤 보상 둘이 한 칸씩(57.7 — 단계적으로, 순서 상관없이): 2회차 엔딩 +step, 한 회차 L1~60 모두 별 3개(올 별3) +step —
+   둘 다면 최종(final) = 3회차의 끝(30 · Lv9 — 2·3회차 보정표가 보는 범위 그대로). 그 위로는 오르지 않는다 */
+export const CAPS = { upgOpen: 20, upgStep: 5, upgFinal: 30, heroOpen: HERO_MAX_LV + HERO_LV_PER_CYCLE, heroStep: 1, heroFinal: HERO_MAX_LV + 2 * HERO_LV_PER_CYCLE };
+/* 최종 강화(ENDGAME.md 57.7 — 무한모드 개편 판에만, 캠페인 · 보정 · 별 기준은 그대로): 강화가 최종(CAPS.upgFinal)이면 그 칸이 '+N'으로 끝없이 이어진다.
+   fire: 분대 화력 ×fire^N(곱 — 판의 화력 단계 s.fireLv를 그만큼 올려 dps 전부에. 위협을 만드는 기준 화력에는 안 든다)
+   def: 게이트 밖 모든 손실 ÷(1 + def·N)(좀비 · 보스 · 톱날 · 벽 · 상자 · 독안개 · 웅덩이)
+   coin: 무한모드 정산 코인 +coin·N %p(보급 강화의 % 에 더한다 — 판에는 안 든다)
+   값 +N → +N+1 = base × grow^N(+1 5,000 · +10 3.1만 · +20 19만). 강화 id(start · fire · coin)마다 하나 — 시작 병력 칸이 방호(무한모드는 시작 병력이 거의 안 든다) */
+export const FIN = { fire: 1.02, def: 0.03, coin: 5, base: 5000, grow: 1.2 };
+export const finCost = (n) => Math.round(FIN.base * Math.pow(FIN.grow, Math.max(0, n | 0)));
+const finPc = (x) => Math.round(x * 100);
+/* what: 무엇이 · v(n): 그 +N의 값(짧게) · text(n): 한 줄 */
+export const FINALS = {
+  start: { name: '최종 방호', what: '게이트 밖에서 잃는 병사', v: (n) => `−${finPc(1 - 1 / (1 + FIN.def * n))}%` },
+  fire: { name: '최종 화력', what: '분대 화력', v: (n) => `+${finPc(Math.pow(FIN.fire, n) - 1)}%` },
+  coin: { name: '최종 보급', what: '받는 코인', v: (n) => `+${FIN.coin * n}%` },
+};
+for (const F of Object.values(FINALS)) F.text = (n) => `무한모드에서 ${F.what} ${F.v(n)}`;
+/* 최종 화력 N이면 판의 화력 단계(dps의 1 + 0.05·단계)를 이만큼으로 — (1 + 0.05·F) × fire^N = 1 + 0.05·F' */
+export const finFireLv = (F, n) => (n > 0 ? ((1 + 0.05 * F) * Math.pow(FIN.fire, n) - 1) / 0.05 : F);
 /* 유효 레벨: Lv5까지는 레벨 그대로, 그 위는 줄어드는 폭으로(끝 9) — e(6) 5.8, e(7) 6.44, e(9) 7.36, e(11) 7.95.
    수치(선형 보간)·스킬 쿨다운·나비의 보스전 한도가 모두 이 값을 쓴다: Lv5 너머로 선형 연장하면 쿨다운이 0 아래로, 회복 몫이 한계 위로 간다 */
 export function heroEff(lv) {
@@ -141,11 +163,13 @@ export function heroCost(lv) { return lv >= HERO_MAX_LV ? 200 * lv + 200 : HERO_
 export function heroCap(maxL) { return Math.min(HERO_MAX_LV, 2 + Math.floor((Math.max(1, maxL) - 1) / 10)); }
 /* 회차 c(열린 가장 높은 회차)와 그 회차의 진행(maxL)에서 새로 살 수 있는 영웅 레벨 상한: 회차마다 +2.
    앞 회차에서 다 풀린 상한(5 + 2·(c−2)) 아래로는 내려가지 않는다 — 2회차는 L21에 Lv6, L31에 Lv7 */
+/* 57절: 보정(core.expectAt · capLoadout)이 보는 상한 — CAPS.heroFinal(Lv9) 위로는 안 오른다(2·3회차는 그대로, 4회차부터 Lv9).
+   살 수 있는 상한은 store.capStage(main.heroLimit) — 2회차가 열리면 진행 조건 없이 */
 export function heroCapC(cycle, maxL) {
   const c = Math.max(1, cycle | 0);
   if (c === 1) return heroCap(maxL);
   const up = HERO_LV_PER_CYCLE * (c - 1);
-  return Math.max(HERO_MAX_LV + up - HERO_LV_PER_CYCLE, Math.min(HERO_MAX_LV + up, up + heroCap(maxL)));
+  return Math.min(CAPS.heroFinal, Math.max(HERO_MAX_LV + up - HERO_LV_PER_CYCLE, Math.min(HERO_MAX_LV + up, up + heroCap(maxL))));
 }
 
 /* 진행으로 합류한 영웅 목록(지난 진행에도 소급) */

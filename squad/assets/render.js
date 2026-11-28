@@ -2,7 +2,7 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, LANE_X, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, mutLv, relicOn, TERRAIN, forkPeek, tierMax, nMax, radiusCap, enhN } from './core.js';
+import { FORK_TAPER, LANE_X, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, mutLv, mutRaw, laneAt, relicOn, TERRAIN, forkPeek, tierMax, nMax, radiusCap, enhN } from './core.js';
 import { HEROES, biomeOf, bossNameOf, OBSTACLES, unitVal, FOG_X } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, BIOME_GROUP, biomeSheets, PET_ART } from './pix/art.js';
@@ -3860,8 +3860,9 @@ export function createRenderer(cvs) {
       groundQuad(-ROAD, ROAD, q.z - SQUAD_DEPTH * radius(q.n) - 0.4, b.z + 0.3, 0.025);
       ctx.globalAlpha = 1;
     }
-    // 독안개(변이): 길 가장자리(가운데에서 FOG_X m 밖)가 초록으로 깔리고 천천히 일렁인다 — 닿으면 병력이 준다(core.fogUpdate)
-    if (mutLv(s, 'fog') && (s.phase === 'run' || s.phase === 'arena')) {
+    // 독안개(변이): 길 가장자리(가운데에서 FOG_X m 밖)가 초록으로 깔리고 천천히 일렁인다 — 닿으면 병력이 준다(core.fogUpdate).
+    // 57.6: 의무병 '방역'으로 받는 단계가 0이어도(1단계 독안개) 안개는 그대로 깔린다 — 쌓인 단계(mutRaw)로 그리고, 병력은 받는 단계(mutLv)만큼만 준다
+    if (mutRaw(s, 'fog') && (s.phase === 'run' || s.phase === 'arena')) {
       ctx.fillStyle = '#7CD26A';
       ctx.globalAlpha = 0.2 + 0.08 * Math.sin(time * 2.4);
       // 39.4: 칸막이 구간(행운 길·미로)에는 독안개가 없다 — 그 구간을 비워 그린다
@@ -3873,6 +3874,11 @@ export function createRenderer(cvs) {
         za = Math.max(za, l.z1);
       }
       ctx.globalAlpha = 1;
+      // 방역이 막는 안개(받는 단계 0) 안에 서 있으면: 안개 쪽 분대 끝에 하늘빛 반짝임이 튄다 — 안개는 보이지만 병력이 안 준다는 것이 보이게
+      if (!mutLv(s, 'fog') && Math.abs(q.x) > FOG_X && !laneAt(s, q.z)) {
+        const Rq = radius(Math.max(1, q.n)), side = Math.sign(q.x) || 1;
+        for (let k = beats(14); k > 0; k--) part(q.x + side * Rq * (0.6 + Math.random() * 0.5), 0.3 + Math.random() * 1.2, q.z + (Math.random() - 0.5) * Rq, side * 0.6, 1.6 + Math.random(), 0, 0.5, Math.random() < 0.5 ? '#BFF3FF' : '#FFFFFF', 1, 0);
+      }
     }
     if (s.divs) for (const d of s.divs) drawDivider(d);
     if (s.lanes) for (const l of s.lanes) drawLaneWalls(l);   // 칸막이 구간(22절)

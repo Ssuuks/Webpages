@@ -2663,18 +2663,20 @@ test('3택 1의 세기(봇 — 합격 기준): 기대 강화 10단계·집중한
 });
 
 /* ---------- 엔딩 · 회차 ---------- */
-test('회차의 기대 강화: 1회차 EXPECT + 10·(c−1)단계, 영웅 +2·(c−1)레벨 — 강화·영웅 상한도 회차마다 풀린다', () => {
+test('회차의 기대 강화: 1회차 EXPECT + 10·(c−1)단계, 영웅 +2·(c−1)레벨 — 최종 상한(57절 — 30단계 · Lv9)에서 멈춘다', () => {
+  const F = R.CAPS.upgFinal, HF = R.CAPS.heroFinal;
   for (const L of [1, 10, 30, 60]) {
     const e1 = C.expectAt(L);
     assert.deepEqual(C.expectAt(L, 1), e1);
     for (const c of [2, 3, 5]) {
       const e = C.expectAt(L, c);
-      assert.equal(e.start, e1.start + 10 * (c - 1));
-      assert.equal(e.fire, e1.fire + 10 * (c - 1));
-      assert.ok(e.heroLv >= 5 + 2 * (c - 2) && e.heroLv <= 5 + 2 * (c - 1), `L${L} ${c}회차 영웅 Lv${e.heroLv}`);
-      assert.ok(e.heroLv <= R.heroCapC(c, L), '기대 영웅 레벨은 살 수 있는 상한 안');
+      assert.equal(e.start, Math.min(F, e1.start + 10 * (c - 1)));
+      assert.equal(e.fire, Math.min(F, e1.fire + 10 * (c - 1)));
+      assert.ok(e.heroLv >= Math.min(HF, 5 + 2 * (c - 2)) && e.heroLv <= Math.min(HF, 5 + 2 * (c - 1)), `L${L} ${c}회차 영웅 Lv${e.heroLv}`);
+      assert.ok(e.heroLv <= R.heroCapC(c, L), '기대 영웅 레벨은 보정 상한 안');
       assert.ok(C.expectLoadout(L, c).hero, '2회차부터는 L1에도 영웅이 함께');
-      assert.equal(C.upgCap(L, c), 10 * (c - 1) + C.upgCap(L));
+      assert.equal(C.upgCap(L, c), Math.min(F, 10 * (c - 1) + C.upgCap(L)));
+      if (c <= 3) assert.equal(e.start, e1.start + 10 * (c - 1), '2·3회차는 예전 그대로(보정표가 보는 범위)');
     }
   }
   assert.equal(C.upgCap(60, 2), 20);
@@ -2685,6 +2687,8 @@ test('회차의 기대 강화: 1회차 EXPECT + 10·(c−1)단계, 영웅 +2·(c
   assert.equal(R.heroCapC(2, 60), 7);
   assert.equal(R.heroCapC(3, 1), 7);
   assert.equal(R.heroCapC(3, 60), 9);
+  assert.equal(R.heroCapC(5, 60), 9, '4회차부터 Lv9에서 멈춘다');
+  assert.equal(C.upgCap(60, 5), 30);
 });
 
 test('영웅 Lv6 이상: 수치는 줄어드는 폭으로 오르고, 쿨다운·회복 몫이 한계를 넘지 않는다(Lv5까지는 그대로)', () => {
@@ -5617,4 +5621,128 @@ test('56절 — 보리(개편 판): 응급 간호는 게이트 밖 모든 손실
   const s = C.newEndless({ seed: 31, ...BLD }); s.endless.bosses = 13;
   assert.equal(C.rerollNext(s), 20);
   assert.equal(C.rerollBase(s), R.BUILD.reroll);
+});
+
+test('57절 · 57.7 — 상한 단계: 1회차는 진행에 따라(10단계 · Lv5), 2회차가 열리면 진행 조건 없이 20단계 · Lv7, 2회차 엔딩 · 올 별3이 한 칸씩(+5단계 · +1레벨) — 둘 다면 최종 30단계 · Lv9(그 위로는 안 오른다)', async () => {
+  const fs = await import('node:fs');
+  const all3 = () => { const o = {}; for (let L = 1; L <= S.CYCLE_LEVELS; L++) o[L] = 3; return o; };
+  const d = S.normalize(S.defaults());
+  assert.equal(S.capStage(d), 1);
+  assert.equal(S.upgMaxAt(1), 10);
+  assert.equal(S.heroMaxAt(1), R.HERO_MAX_LV);
+  assert.deepEqual([R.CAPS.upgOpen, R.CAPS.upgStep, R.CAPS.upgFinal, R.CAPS.heroOpen, R.CAPS.heroStep, R.CAPS.heroFinal], [20, 5, 30, 7, 1, 9]);
+  assert.deepEqual([2, 3, 4].map(S.upgMaxAt), [20, 25, 30]);
+  assert.deepEqual([2, 3, 4].map(S.heroMaxAt), [7, 8, 9]);
+  // 1회차 올 별3만으로는 1회차 동안 단계 1, 엔딩하면 2 + 올 별3 한 칸 = 3
+  d.stars = all3();
+  assert.ok(S.allStars(d) && !S.finalOpen(d));
+  assert.equal(S.capStage(d), 1, '엔딩 전에는 올 별3이어도 1회차 상한');
+  d.maxL = S.CYCLE_LEVELS + 1;
+  assert.equal(S.capStage(S.normalize(d)), 3, '1회차 올 별3 + 엔딩 = 25단계 · Lv8');
+  // 1회차 엔딩(별 모자람) → 2: 2회차 L1 진행만으로 20 · Lv7
+  const e = S.normalize({ ...S.defaults(), maxL: S.CYCLE_LEVELS + 1, stars: { 1: 3, 2: 2 } });
+  assert.equal(S.endedCycles(e), 1);
+  assert.equal(S.capStage(e), 2);
+  // 2회차 올 별3(엔딩 전) → 3
+  const f = S.normalize({ ...S.defaults(), maxL: S.CYCLE_LEVELS + 1, cycle: 2, cyc: { 2: { maxL: S.CYCLE_LEVELS, cur: S.CYCLE_LEVELS, stars: all3(), best: {}, fails: {} } } });
+  assert.equal(S.endedCycles(f), 1);
+  assert.ok(S.allStars(f) && !S.end2Done(f));
+  assert.equal(S.capStage(f), 3, '2회차 올 별3 한 칸');
+  // 2회차 엔딩만 → 3, 엔딩 + 올 별3 → 4(최종)
+  const g = S.normalize({ ...S.defaults(), maxL: S.CYCLE_LEVELS + 1, cycle: 3, cyc: { 2: { maxL: S.CYCLE_LEVELS + 1, cur: S.CYCLE_LEVELS, stars: {}, best: {}, fails: {} } } });
+  assert.equal(S.endedCycles(g), 2);
+  assert.ok(S.end2Done(g) && !S.finalOpen(g));
+  assert.equal(S.capStage(g), 3, '2회차 엔딩 한 칸');
+  const h = S.normalize({ ...S.defaults(), maxL: S.CYCLE_LEVELS + 1, stars: all3(), cycle: 3, cyc: { 2: { maxL: S.CYCLE_LEVELS + 1, cur: S.CYCLE_LEVELS, stars: {}, best: {}, fails: {} } } });
+  assert.ok(S.finalOpen(h));
+  assert.equal(S.capStage(h), 4, '둘 다 = 최종');
+  assert.equal(S.upgMaxAt(S.capStage(h)), R.CAPS.upgFinal);
+  assert.equal(S.heroMaxAt(S.capStage(h)), R.CAPS.heroFinal);
+  // 최종 = 3회차의 끝(2·3회차 보정표가 보는 범위) — 보정 상한도 같은 곳에서 멈춘다
+  assert.equal(C.upgCap(S.CYCLE_LEVELS, 3), R.CAPS.upgFinal);
+  assert.equal(R.heroCapC(3, S.CYCLE_LEVELS), R.CAPS.heroFinal);
+  for (const c of [4, 6, 9]) for (const L of [1, 30, 60]) {
+    const x = C.expectAt(L, c);
+    assert.ok(x.start === 30 && x.fire === 30 && x.coin === 30 && x.heroLv === 9, `${c}회차 L${L} 기대 강화는 최종 상한 그대로`);
+  }
+  // 화면: 상한은 회차 진행이 아니라 단계로(upgInfo · heroLimit), 다음 단계 조건 한 줄(남은 보상만)
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  assert.ok(/function upgInfo[\s\S]{0,400}capStage\(data\)/.test(main) && /function heroLimit[\s\S]{0,300}capStage\(data\)/.test(main), '상한은 capStage로');
+  assert.ok(!main.includes('HERO_LV_PER_CYCLE'), '회차마다 +2 글이 남지 않는다');
+  assert.ok(main.includes('nextCapText') && main.includes('올 별3!') && main.includes('2회차 엔딩 보상'), '다음 단계 조건 · 결과 · 엔딩 화면 글');
+});
+
+test('57.6절 — 방역이 막는 독안개: 안개는 화면에 깔리고(쌓인 단계 mutRaw로 그린다) 병력은 받는 단계(mutLv)만큼만 준다 — 1단계는 안 줄고 2단계는 1단계 몫', async () => {
+  const fs = await import('node:fs');
+  // 길 가장자리(FOG_X 밖)에 1초 서 있을 때 독안개로 잃는 병사
+  const fogLoss = (mut, medicLv) => {
+    const u = C.newEndless({ seed: 31, ...BLD });
+    u.endless.mut = mut.slice();
+    u.squad.sp = medicLv ? [{ id: 9, k: 'medic', cd: 0, lv: medicLv }] : [];
+    u.squad.n = 10000; u.foes = []; u.props = []; u.rows = []; u.saws = []; u.lanes = []; u.squad.fireAcc = -99;
+    u.squad.x = R.FOG_X + 1.2;
+    const n0 = u.squad.n;
+    let fog = 0;
+    for (let i = 0; i < Math.round(1 / C.DT); i++) { u.squad.x = R.FOG_X + 1.2; u.squad.vx = 0; C.step(u, { dir: 0 }); for (const e of u.ev) if (e.t === 'loss' && e.cause === 'fog') fog += e.n; }
+    return { fog, n0 };
+  };
+  const bare = fogLoss(['fog'], 0), warded = fogLoss(['fog'], 5), two = fogLoss(['fog', 'rush', 'fog'], 5);
+  assert.ok(bare.fog > 0, `방역 없으면 독안개에 잃는다(${bare.fog})`);
+  assert.equal(warded.fog, 0, '방역이면 1단계 독안개에 안 잃는다');
+  assert.ok(Math.abs(two.fog - bare.fog) <= Math.max(2, 0.05 * bare.fog), `2단계 + 방역 = 1단계 몫(${two.fog} ≈ ${bare.fog})`);
+  // 화면: 안개는 쌓인 단계로 그리고(방역이어도 보인다), 막는 안개 안이면 반짝임 · 글은 '안개는 깔리지만'
+  const rd = fs.readFileSync(new URL('../assets/render.js', import.meta.url), 'utf8');
+  assert.ok(/if \(mutRaw\(s, 'fog'\) && \(s\.phase === 'run'/.test(rd), '독안개는 mutRaw로 그린다');
+  assert.ok(/!mutLv\(s, 'fog'\) && Math\.abs\(q\.x\) > FOG_X/.test(rd), '방역이 막는 안개 안의 반짝임');
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  assert.ok(main.includes('안개는 깔리지만') && (main.match(/wardText\(/g) || []).length >= 3, '안내 · 일시정지 글');
+});
+
+test('57.7절 — 최종 강화(무한모드 개편 판에만): 값 5,000 × 1.2^N · 30단계에 열린다 · 화력은 판의 화력 단계를 ×1.02^N만큼(첫 구간 위협은 그대로) · 방호는 게이트 밖 손실 ÷(1 + 0.03N) · 안 산 판은 상태 · 지문 그대로 · 이어하기', async () => {
+  const fs = await import('node:fs');
+  assert.deepEqual([0, 1, 10, 20].map(R.finCost), [5000, 6000, 30959, 191688]);
+  assert.deepEqual([R.FIN.fire, R.FIN.def, R.FIN.coin], [1.02, 0.03, 5]);
+  assert.ok(R.FINALS.fire.text(10).includes('+22%') && R.FINALS.start.text(10).includes('−23%') && R.FINALS.coin.text(10).includes('+50%'));
+  // 저장: 아는 칸만 0 이상 정수, 30단계에 열린다
+  const d = S.normalize({ ...S.defaults(), fin: { fire: '4', start: -3, coin: 2.7, bad: 9 }, upg: { start: 10, fire: 10, coin: 10 }, upgX: { start: 20, fire: 19, coin: 0 } });
+  assert.deepEqual(d.fin, { start: 0, fire: 4, coin: 2 });
+  assert.ok(S.finOpenFor(d, 'start') && !S.finOpenFor(d, 'fire') && !S.finOpenFor(d, 'coin'));
+  S.addFin(d, 'start');
+  assert.equal(S.finLv(d, 'start'), 1);
+  assert.deepEqual(S.normalize(S.defaults()).fin, { start: 0, fire: 0, coin: 0 });
+  // 판: 안 산 판(0)은 필드 없이 상태 · 지문이 그대로
+  const a = C.newEndless({ seed: 31, ...BLD }), b = C.newEndless({ seed: 31, ...BLD, fin: { fire: 0, def: 0 } });
+  assert.equal(b.endless.fin, undefined);
+  assert.equal(C.stateHash(a), C.stateHash(b));
+  // 화력 +10: 판의 화력 단계 = (1 + 0.05F)·1.02^10 − 1)/0.05, 첫 구간(이미 만든 위협)은 그대로
+  const f = C.newEndless({ seed: 31, ...BLD, fin: { fire: 10 } });
+  assert.deepEqual(f.endless.fin, { fire: 10, def: 0 });
+  assert.ok(Math.abs(C.dps(100, 0, f.fireLv) / C.dps(100, 0, a.fireLv) - Math.pow(1.02, 10)) < 1e-9, '분대 화력 ×1.02^10');
+  assert.deepEqual(f.foes.map((x) => x.hp), a.foes.map((x) => x.hp), '첫 구간 위협 그대로');
+  // 방호 +10: 벽에 잃는 병사 ÷1.3(게이트는 안 든다 — 코드)
+  const wall = (fin) => {
+    const u = C.newEndless({ seed: 31, ...BLD, ...(fin ? { fin } : {}) });
+    u.endless.fx = {}; u.squad.n = 1000; u.squad.sp = []; u.foes = []; u.squad.pool = 0; u.squad.fireAcc = -99;
+    u.props = [{ id: 99702, kind: 'wall', x0: -5, x1: 5, z: u.squad.z + 0.2, hp: 2000, max: 2000, alive: true, hitT: -9 }];
+    const n0 = u.squad.n; C.step(u, { dir: 0 }); return n0 - u.squad.n;
+  };
+  const w0 = wall(null), w10 = wall({ def: 10 });
+  assert.ok(w0 > 0 && Math.abs(w10 - w0 / 1.3) <= 1, `벽 손실 ${w0} → ${w10}`);
+  const core = fs.readFileSync(new URL('../assets/core.js', import.meta.url), 'utf8');
+  assert.ok(/fd > 0 && cause !== 'gate'/.test(core), '방호는 게이트 손실에 안 든다');
+  // 캠페인 · 앞 단계 판에는 없다
+  const old = C.newEndless({ seed: 31, start: 40, fire: 30, unl: 3, fin: { fire: 10, def: 10 } });
+  assert.equal(old.endless.fin, undefined, '개편 판이 아니면 없다');
+  assert.equal(old.fireLv, 30);
+  // 이어하기: 그대로 돌아오고, 개편 판이 아닌 스냅숏의 fin은 버린다
+  const g = C.newEndless({ seed: 31, ...BLD, fin: { fire: 7, def: 4 } });
+  const r = C.restore(C.snapshot(g));
+  assert.deepEqual(r.endless.fin, { fire: 7, def: 4 });
+  assert.equal(C.stateHash(r), C.stateHash(g));
+  const bad = C.snapshot(g); bad.endless.fin = { fire: -5, def: 'x' };
+  assert.equal(C.restore(bad).endless.fin, undefined);
+  // 화면 · 정산: 출격에 run.fin, 코인 +FIN.coin%p, 강화 칸이 +N으로
+  const main = fs.readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  assert.ok(main.includes('fin: run.fin') && main.includes("FIN.coin * finLv(data, 'coin')") && main.includes('finOpenFor(data, u.id) && FINALS[u.id]'), '출격 · 정산 · 강화 칸 배선');
+  assert.ok(!/coinsFor\([^)]*FIN/.test(main), '캠페인 코인에는 안 든다');
 });

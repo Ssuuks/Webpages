@@ -1,4 +1,4 @@
-import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, SUPPLY, BOSS_FLOOR, GUNS, GUN_IDS, gunVal, HORN } from './roster.js';
+import { HEROES, UNITS, heroVal, unitVal, synergyOf, SP_LV_MAX, heroEff, heroCapC, HERO_LV_HARD, CAPS, FIN, finFireLv, PETS, petP, PET_MAX_LV , AMMO, AMMO_IDS, AMMO_IDS2, FX_NEW, fxK, FX_SLOTS, FX_BASE_LV, fxVal, COMBOS, COMBO_IDS, RELICS, RELIC_IDS, MUTATIONS, MUT_IDS, MUT_MAX_LV, FOG_X, FX_HEAT, EGG, OBSTACLES, OBSTACLE_IDS, BUILD, fx2Val, SP_EVO, SP_EVO2, awk, FX_FREEZE, ENH, enhStr, legK, FX_CHAIN, COMBO_IDS2, comboV, BOSS_PAT, BOSS_PAT_IDS, BOSS_PAT_UPTEXT, BOSS_KNOCK, SUPPLY, BOSS_FLOOR, GUNS, GUN_IDS, gunVal, HORN } from './roster.js';
 import { CAL } from './caltable.js';
 import { CYC } from './cyctable.js';
 
@@ -391,14 +391,16 @@ function draftExpect(l) {
   return { start: u, fire: u, coin: u, hero: l >= UNLOCK.hero ? 'mungchi' : '', heroLv: l >= UNLOCK.hero ? Math.max(1, heroCapAt(l) - 1) : 0 };
 }
 /* 회차 c(2부터)의 기대 강화 = 1회차 EXPECT + 10·(c−1)단계, 영웅 +2·(c−1)레벨(ENDGAME.md 4절) — 앞 회차에서 다 올린 레벨(5 + 2·(c−2)) 아래로는 보지 않는다.
-   회차의 값 곡선(store.upgCost)이 1회차의 걸음을 되풀이하게 되어 있어 강화가 붙는 순서도 1회차와 같다고 본다 */
+   회차의 값 곡선(store.upgCost)이 1회차의 걸음을 되풀이하게 되어 있어 강화가 붙는 순서도 1회차와 같다고 본다.
+   57절: 최종 상한(강화 CAPS.upgFinal · 영웅 CAPS.heroFinal) 위로는 보지 않는다 — 2·3회차는 그대로(3회차 L60이 30 · Lv9), 4회차부터는 최종 상한 그대로 */
 export const CYCLE_UPG = 10;
 export const CYCLE_HERO = 2;
 export function expectAt(L, c = 1) {
   if (c > 1) {
     const b = expectAt(L);
     const up = CYCLE_UPG * (c - 1);
-    return { start: b.start + up, fire: b.fire + up, coin: b.coin + up, hero: b.hero || 'mungchi', heroLv: Math.max((b.heroLv | 0) + CYCLE_HERO * (c - 1), 5 + CYCLE_HERO * (c - 2)) };
+    const F = CAPS.upgFinal;
+    return { start: Math.min(F, b.start + up), fire: Math.min(F, b.fire + up), coin: Math.min(F, b.coin + up), hero: b.hero || 'mungchi', heroLv: Math.min(CAPS.heroFinal, Math.max((b.heroLv | 0) + CYCLE_HERO * (c - 1), 5 + CYCLE_HERO * (c - 2))) };
   }
   const l = Math.max(1, Math.floor(L));
   const T = CALT && CALT.sim === SIM && CALT.expect;
@@ -425,10 +427,12 @@ export function expectLoadout(L, c = 1) {
 }
 /* 지금 진행(열린 가장 높은 레벨 maxL)에서 코인으로 '새로' 살 수 있는 강화 단계 상한 = EXPECT(maxL) + 1.
    이미 더 산 저장은 그대로 둔다(상한은 새로 사는 것만 막는다). 세 강화 모두 같은 값 */
-/* 회차 c(열린 가장 높은 회차)에서는 10·(c−1) + (그 회차 진행 maxL에 따른 1회차 식) — 회차마다 +10단계가 진행에 따라 풀린다 */
+/* 회차 c(열린 가장 높은 회차)에서는 10·(c−1) + (그 회차 진행 maxL에 따른 1회차 식) — 회차마다 +10단계가 진행에 따라 풀린다.
+   57절: 이 식은 이제 보정(배치 검사 capLoadout)과 1회차 화면만 본다 — 2회차가 열리면 살 수 있는 상한은 진행과 상관없다(store.capStage).
+   최종 상한(CAPS.upgFinal) 위로는 안 오른다(2·3회차 값은 그대로) */
 export function upgCap(maxL, c = 1) {
   const e = expectAt(maxL);
-  return (c > 1 ? CYCLE_UPG * (c - 1) : 0) + clamp(Math.max(e.start, e.fire, e.coin) + 1, 1, 10);
+  return Math.min(CAPS.upgFinal, (c > 1 ? CYCLE_UPG * (c - 1) : 0) + clamp(Math.max(e.start, e.fire, e.coin) + 1, 1, 10));
 }
 
 /* ---------- 레벨 생성 ---------- */
@@ -2026,6 +2030,9 @@ export function newEndless(opt = {}) {
       // 출격 보급품(27절 — 산 판에만 필드가 생긴다): legend = 남은 전설 보장 수, revive = 남은 부활 수
       const so = opt.supply || {};
       if (so.legend || so.revive) s.endless.sup = { legend: so.legend ? 1 : 0, revive: so.revive ? 1 : 0 };
+      // 최종 강화(57.7 — 산 판에만 필드가 생긴다): fire = 판의 화력 단계를 올린다(dps 전부 — 첫 구간 위협은 위에서 opt.fire로 이미 만들었다), def = 게이트 밖 손실 ÷(1 + FIN.def·N)(lose)
+      const fo = opt.fin || {}, ff = Math.max(0, Math.min(LV_SANE, Math.floor(Number(fo.fire) || 0))), fd = Math.max(0, Math.min(LV_SANE, Math.floor(Number(fo.def) || 0)));
+      if (ff || fd) { s.endless.fin = { fire: ff, def: fd }; if (ff) s.fireLv = finFireLv(s.fireLv, ff); }
     }
     if (s.endless.bld && s.hero && s.hero.id === 'mungchi') {   // 46.7: 개편 판은 집합 나팔(newGame이 첫 구간 칸에 건 빠르기)을 되돌린다
       const mul = heroVal('mungchi', 'pump', s.hero.lv);
@@ -2830,6 +2837,10 @@ export function restore(o) {
         e.obsSeen = Array.isArray(e.obsSeen) ? e.obsSeen.filter((k, i, l) => OBSTACLE_IDS.includes(k) && l.indexOf(k) === i) : [];
       } else { delete e.fx; delete e.obsSeen; }
       if (e.sup) { if (e.bld && typeof e.sup === 'object') e.sup = { legend: clamp(e.sup.legend | 0, 0, 1), revive: clamp(e.sup.revive | 0, 0, 1) }; else delete e.sup; }   // 출격 보급품(27절)
+      if (e.fin !== undefined) {   // 최종 강화(57.7): 개편 판만, 0 이상 정수 — 화력은 이미 s.fireLv에 들어 있다
+        const fo = e.bld && e.fin && typeof e.fin === 'object' ? { fire: clamp(Math.floor(Number(e.fin.fire) || 0), 0, LV_SANE), def: clamp(Math.floor(Number(e.fin.def) || 0), 0, LV_SANE) } : null;
+        if (fo && (fo.fire || fo.def)) e.fin = fo; else delete e.fin;
+      }
       const kinds = e.fx ? CARD.kinds2 : CARD.kinds;
       const okRelic = (c) => relicCan(e, c.r);   // 유물 카드: 열린 것 중 아직 없는 것(RELIC.max개 아래)
       const okN = (c) => c.n === 1 || c.n === 2 || c.n === 3;
@@ -2877,6 +2888,13 @@ function lose(s, k, cause, x, z, sub) {
   }
   // 개편 판의 생존 카드: 게이트 방패(구간마다 shield번 — 빨간 게이트 손실을 통째로 막는다), 방탄복(좀비·보스에게 잃는 병사 ×armor^레벨)
   const B = s.endless && s.endless.bld;
+  const fd = B && s.endless.fin ? s.endless.fin.def : 0;
+  if (fd > 0 && cause !== 'gate') {   // 최종 방호(57.7): 게이트 밖 모든 손실 ÷(1 + FIN.def·N)
+    const a = k / (1 + FIN.def * fd) + q.lossFrac;
+    k = Math.floor(a);
+    q.lossFrac = a - k;
+    if (k <= 0) return;
+  }
   if (B) {
     const medB = MED_CAUSE.has(cause) ? spLv(q, 'medic') : 0;   // 55절: 좀비 · 보스 피해에만(예전엔 독안개 · 웅덩이 · 벽 · 상자에도)
     if (medB) {   // 의무병: 좀비·보스에게 잃는 병사 ÷(1 + med × 레벨)
@@ -5902,6 +5920,7 @@ export function stateHash(s) {
   if (q.heat) h = hash(h, 'heat', q.heat.toFixed(3));
   if (s.endless && s.endless.mut && s.endless.mut.length) h = hash(h, 'mut', s.endless.mut.join(','));
   if (s.endless && s.endless.medicAt !== undefined) h = hash(h, 'medicAt', s.endless.medicAt);
+  if (s.endless && s.endless.fin) h = hash(h, 'fin', s.endless.fin.fire, s.endless.fin.def, s.fireLv.toFixed(4));   // 57.7: 산 판에만
   if (s.boss) h = hash(h, s.boss.bonus.toFixed(4));
   for (const rk of s.rockets) h = hash(h, rk.x.toFixed(4), rk.z.toFixed(4), rk.t.toFixed(4));
   if (s.hero) h = hash(h, s.hero.charge.toFixed(4), s.hero.act.toFixed(4), s.hero.cd.toFixed(4), s.hero.shot.toFixed(4));
