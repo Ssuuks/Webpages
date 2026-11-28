@@ -2065,7 +2065,7 @@ function relicNow(id) {
         else if (p.miss.length === 1 && p.have.length && COMBO_HALF.includes(c)) { half.push(`${p.have.map(pn).join('+')}(${pn(p.miss[0])} 없이)`); }
       }
       if (!on.length && !half.length) return '지금은 켜질 시너지가 없어요 — 짝이 맞는 탄·특수병을 모으면 켜져요';
-      return `지금: ${[on.length ? `${on.join('·')} 1.5배` : '', half.length ? `${half.join('·')} 절반 힘으로 새로 켜짐` : ''].filter(Boolean).join(' · ')}`;
+      return `지금: ${[on.length ? `${on.join('·')} ${RELICS.resonator.v}배` : '', half.length ? `${half.join('·')} ${pct(RELICS.resonator.half)}% 힘으로 새로 켜짐` : ''].filter(Boolean).join(' · ')}`;   // 58절: 수치는 표에서
     }
     case 'coil': return `지금 총 ★${(q.tier | 0) + 1} · 올릴 수 있는 끝 ★${tierMax(s) + 1} → ★${tierMax(s) + 2}`;
     case 'fourth': return `지금 특수병 ${q.sp.length}명`;
@@ -2129,7 +2129,7 @@ function spUp(u, lv) {
   if (u === 'medic' && bldOf(s)) return `좀비·보스에게 잃은 병사의 ${pct(unitVal('medic', 'share', lv))}%를 되살려요`;   // 55절: 개편 판은 좀비 · 보스 피해만
   if (u !== 'rocket' || !bldOf(s)) return UNITS[u].up(lv);
   const L = Math.min(lv, BUILD.evo);
-  return `${Math.round(unitVal('rocket', 'every', L) * BUILD.rocket.cd * 100) / 100}초마다 로켓(폭발 반경 ${unitVal('rocket', 'r', L)}m) — 길을 막은 벽을 먼저 뚫어요(벽 피해 ×${BUILD.rocket.wall})`;
+  return `${Math.round(unitVal('rocket', 'every', L) * BUILD.rocket.cd * 100) / 100}초마다 로켓(폭발 반경 ${unitVal('rocket', 'r', L)}m) — 길을 막은 벽을 먼저 뚫어요(벽 피해 ×${BUILD.rocket.wall} · 상자 ×${BUILD.rocket.crate})`;
 }
 const spDesc = (u) => (u === 'rocket' && bldOf(s) ? `${spUp('rocket', 1)}. 벽이 없으면 가장 큰 무리, 보스전에서는 보스`
   : u === 'medic' && bldOf(s) ? `좀비·보스에게 잃은 병사의 ${pct(unitVal('medic', 'share', 1))}%를 몇 초 뒤 되살려요(독안개·웅덩이·벽·상자·톱날은 안 돼요)` : UNITS[u].desc);   // 55절
@@ -2588,6 +2588,7 @@ function pauseStats() {
     rows.push(['사거리', `${G.v.range}m`]);
     const pw = fx.pierce ? fx2Val('pierce', fx.pierce).wall * (enhN(s, 'pierce', 'l') ? 1 + (enhN(s, 'pierce', 'l') > 1 ? 1.5 : 1) : 1) * (1 + ENH.pierce.rare.v * (enhN(s, 'pierce', 'r') ? 1 + 0.5 * (enhN(s, 'pierce', 'r') - 1) : 0)) : 1;
     rows.push(['벽·장갑문 피해', `×${r2(G.v.wall * pw)}`]);
+    if (G.v.crate !== 1) rows.push(['상자·철창 피해', `×${r2(G.v.crate)}`]);   // 58절: 저격총 ↓ · 산탄총 ↑
     rows.push(['보스 피해', `×${r2(G.v.boss * (rp ? rp.boss : 1))}`]);
   }
   const med = (q.sp.find((m) => m.k === 'medic') || {}).lv || 0;

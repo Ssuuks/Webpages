@@ -2308,10 +2308,10 @@ export const mutLv = (s, id) => {
   if (!m) return 0;
   let n = 0;
   for (const x of m) if (x === id) n++;
-  if (n && mutWard(s)) n--;   // 55절: 의무병 Lv5 '방역' — 한 단계 낮게(1단계 변이는 안 받는다)
+  if (n && id === 'fog' && mutWard(s)) n--;   // 55절: 의무병 Lv5 '방역' — 한 단계 낮게(1단계는 안 받는다). 58절: 독(독안개)에만 — 장갑·떼거리·질주·분노·두꺼운 벽은 그대로
   return Math.min(MUT_MAX_LV, n);
 };
-/* 55절: 의무병 Lv5 진화 '방역'(개편 판) — 분대에 Lv5 이상 의무병이 있는 동안 변이를 한 단계 낮게 받는다 */
+/* 55절: 의무병 Lv5 진화 '방역'(개편 판) — 분대에 Lv5 이상 의무병이 있는 동안. 58절: 독에만 — 독안개를 한 단계 낮게, 오염 웅덩이에 잃는 병사 ×SP_EVO.medic.pool */
 export const mutWard = (s) => !!(s && s.endless && s.endless.bld && s.squad && s.squad.sp.some((m) => m.k === 'medic' && (m.lv || 1) >= BUILD.evo));
 /* 변이가 쌓인 단계(방역과 상관없이 — 화면이 '방역으로 한 단계 낮게'를 보여 줄 때) */
 export const mutRaw = (s, id) => { const m = s && s.endless && s.endless.mut; let n = 0; if (m) for (const x of m) if (x === id) n++; return Math.min(MUT_MAX_LV, n); };
@@ -2362,6 +2362,15 @@ export const eggP = (s) => (relicOn(s, 'bag') ? RELICS.bag.egg : EGG.pEndless);
 function wardBlock(s, kind, id, x, z) {
   if (!relicOn(s, 'ward')) return false;
   const e = s.endless, key = kind + ':' + id;
+  if (bldOf(s)) {   // 58절(개편 판): 구간마다 톱날 RELICS.ward.saw개(그 톱날은 닿아 있는 동안 통째로) · 독침 RELICS.ward.spit번 — 따로 센다. wardId = 막은 것들(쉼표로)
+    const got = e.wardAt === e.seg ? e.wardId.split(',') : [];
+    if (got.includes(key)) return kind === 'saw';
+    if (got.filter((k) => k.startsWith(kind + ':')).length >= (RELICS.ward[kind] | 0)) return false;
+    e.wardAt = e.seg;
+    e.wardId = [...got, key].join(',');
+    emit(s, { t: 'relicUse', id: 'ward', cause: kind, x, z });
+    return true;
+  }
   if (e.wardAt === e.seg) return kind === 'saw' && e.wardId === key;
   e.wardAt = e.seg;
   e.wardId = key;
@@ -2430,7 +2439,7 @@ function relicAdd(s, id) {
    무기 단계·탄 효과 레벨·특수병 합류는 한 칸이라 그대로). 병력 수는 상자에 실어 둔다(화면·봇이 보는 숫자 = 받는 숫자) */
 function relicSeg(s) {
   const M = RELICS.megaphone, b2 = !!bldOf(s);
-  if (relicOn(s, 'megaphone')) for (const row of s.rows) for (const c of row.cells) if (c.op === 'add') c.step /= c.v0 < 0 ? M.red : b2 ? 1 : M.blue;   // 개편 판: 파란 칸은 그대로('대신' 없음)
+  if (relicOn(s, 'megaphone')) for (const row of s.rows) for (const c of row.cells) if (c.op === 'add') c.step /= c.v0 < 0 ? (b2 ? M.red2 : M.red) : b2 ? 1 : M.blue;   // 개편 판: 파란 칸은 그대로('대신' 없음), 빨간 칸 red2(58절)
   if (relicOn(s, 'scope')) for (const row of s.rows) for (const c of row.cells) if (c.op === 'add') c.step /= RELICS.scope.v;   // 황금 조준경: 쏘아 올리는 폭 ×v
   const coil = relicOn(s, 'coil') && !b2, compass = relicOn(s, 'compass');
   if (!coil && !compass) return;
@@ -2439,9 +2448,10 @@ function relicSeg(s) {
   for (const p of s.props) {
     const r = p.reward;
     if (!r || !p.alive) continue;
-    const k = (coil && r.type === 'men' ? RELICS.coil.men : 1) * (risky.has(p.id) ? RELICS.compass.v : 1);
+    const cv = b2 ? RELICS.compass.v2 : RELICS.compass.v;   // 58절: 개편 판 v2
+    const k = (coil && r.type === 'men' ? RELICS.coil.men : 1) * (risky.has(p.id) ? cv : 1);
     if (r.type === 'men' && k !== 1) r.v = Math.max(1, Math.round(r.v * k));
-    else if (risky.has(p.id) && (r.type === 'gun' || r.type === 'fx' || r.type === 'unit')) r.mul = RELICS.compass.v;
+    else if (risky.has(p.id) && (r.type === 'gun' || r.type === 'fx' || r.type === 'unit')) r.mul = cv;
   }
 }
 /* 지금 떠 있는 카드(없으면 null) */
@@ -2972,7 +2982,7 @@ function lose(s, k, cause, x, z, sub) {
     const med = spLv(q, 'medic');
     const bori = h && h.id === 'bori' ? heroVal('bori', B ? 'shareB' : 'share', h.lv) : 0;   // 56절: 개편 판 보리는 응급 간호(shareB — 게이트 밖 모든 손실)
     const share = sub === 'stomp' ? 0 : Math.min(Math.max(SHARE_MAX, med ? unitVal('medic', 'share', med) : 0), (med ? unitVal('medic', 'share', med) : 0) + bori * (med ? synergyOf(med) : 1));
-    // 개편 판(55절): 되살림은 좀비 · 보스 피해만(MED_CAUSE), Lv5 진화는 '방역'(변이 한 단계 낮게 — mutWard)
+    // 개편 판(55절): 되살림은 좀비 · 보스 피해만(MED_CAUSE), Lv5 진화는 '방역'(독안개 한 단계 낮게 · 오염 웅덩이 절반 — mutWard, 58절)
     const mLeg = 0;   // 34절: 의무병 전설은 '응급 수혈'(아래)   // 전설 강화 '기적의 손': 더 돌아온다
     if (!B || MED_CAUSE.has(cause)) q.pool += real * Math.min(1, share + mLeg);
     else if (bori && sub !== 'stomp') q.pool += real * Math.min(1, bori);   // 56절: 의무병이 못 살리는 손실(톱날 · 벽 · 상자 · 독안개 · 웅덩이)도 보리는 되살린다   // 55절: 개편 판은 좀비 · 보스에게 잃은 병사만 되살린다(Lv5 '소생' +30%p는 '방역'으로 바뀌었다)
@@ -3591,7 +3601,7 @@ function poolsUpdate(s, R) {
     if (p.t > 0) continue;   // 예고 중에 밟았다(코앞에서 잡았다) — 해 없이 지나간다. 지나는 동안 발밑에서 해로워지지 않는다
     const ov = overlap(q.x - H, q.x + H, p.x - POOL_R, p.x + POOL_R) / (2 * H);
     emit(s, { t: 'poolHit', x: p.x, z: p.z });
-    lose(s, Math.max(1, Math.ceil(POOL_HIT * ov * q.n)), 'pool', p.x, p.z);
+    lose(s, Math.max(1, Math.ceil(POOL_HIT * ov * q.n * (mutWard(s) ? SP_EVO.medic.pool : 1))), 'pool', p.x, p.z);   // 58절: 방역이면 오염 웅덩이 몫 ×pool
   }
   if (gone) { s.pools = s.pools.filter((p) => p.life > 0 && p.z >= q.z - 6); if (!s.pools.length) delete s.pools; }
 }
@@ -3756,7 +3766,7 @@ function bulletsUpdate(s) {
   const B2 = FX && s.endless.bld ? FX : null;
   const wallK = (B2 && B2.pierce ? fx2Val('pierce', B2.pierce).wall * legKs(s, 'pierce') : 1) * (1 + ENH.pierce.rare.v * enhV(s, 'pierce', 'r'));   // 전설 강화 '벽 뚫기': ×legK   // 관통 Lv3+: 벽·장갑문 피해 +50%, 희귀 강화 '터지는 총알': +30%
   const bossK = (B2 && B2.rapid ? fx2Val('rapid', B2.rapid).boss : 1) * (gw ? gw.boss : 1);   // 속사 Lv3+: 보스에게 +30%, 저격총 ×1.3~
-  const gWall = gw ? gw.wall : 1;   // 산탄총 벽·장갑문 ×1.6~
+  const gWall = gw ? gw.wall : 1, gCrate = gw && gw.crate ? gw.crate : 1;   // 58절: 총의 벽·장갑문 · 상자·철창 배수 — 산탄총 ×2.5~ · ×1.5, 저격총은 화력 D의 obst(총알 피해 배수를 되돌린다)
   const gateK = B2 && B2.cure ? fx2Val('cure', B2.cure).gate : 1;   // 치료 Lv3+: 덧셈 칸 쏘아 올리는 폭 +25%(24절)
   const hornOff = !!(s.endless && s.endless.bld);   // 46.7: 개편 판의 돌격 나팔(총알 b.hm)은 덧셈 칸에 안 든다
   const acidArm = !!(B2 && B2.acid && fx2Val('acid', B2.acid).arm);   // 부식 Lv4+: 장갑·방패도 제 피해
@@ -3788,6 +3798,7 @@ function bulletsUpdate(s) {
     for (const f of near) {
       if (!f.alive || f.z < z0 - f.r || f.z > z1 + f.r) continue;
       if (Math.abs(f.x - b.x) > f.r + 0.12) continue;
+      if (b.ph && b.ph.includes(f.id)) continue;   // 58절: 관통 탄 몫을 받은 좀비는 넘침이 건너뛴다(한 총알이 한 좀비를 두 번 치지 않는다)
       if (f.z < bestZ) { bestZ = f.z; hitKind = 3; hitObj = f; }
     }
     const bo = s.boss;
@@ -3798,7 +3809,7 @@ function bulletsUpdate(s) {
     if (gw && hitKind === 2) {   // 개편 판(총 종류): 벽·장갑문 × 총의 벽 배수, 산탄 Lv10 파편(부순 벽 뒤 4m에 벽 체력의 몫)
       const wd = hitObj.kind === 'wall' || hitObj.kind === 'door', was = hitObj.alive;
       if (wd && B2 && B2.acid) acidAdd(s, hitObj, B2);   // 부식: 벽·장갑문에도 겹
-      hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK * gWall : 1));
+      hitProp(s, hitObj, (hitObj.kind === 'door' ? b.dmg * doorMul(s) : b.dmg) * (wd ? wallK * gWall : hitObj.kind === 'drum' ? 1 : gCrate));   // 드럼통은 장애물이 아니다(터뜨리는 것)
       if (wd && was && !hitObj.alive && b.g === 's' && gw.shard) fxBoom(s, (hitObj.x0 + hitObj.x1) / 2, hitObj.z + 2.5, 3, hitObj.max * gw.shard);
       if (wd && B2 && B2.pierce && B2.pierce >= 10) wallThru(s, b, hitObj, near, B2.pierce);
       if (wd && legOn(s, 'pierce')) ricochet(s, b, hitObj);   // 34절 관통 전설 '도탄'
@@ -4055,6 +4066,7 @@ function fxHit2(s, b, f, near, fx) {
     const n = Math.min(v.n, line.length, PIERCE_MAX);
     const pv = v.pierce;
     for (let i = 0; i < n; i++) { hits.push(line[i]); hitFoe(s, line[i], b.dmg * pv * (1 + v.ramp * i), 'gun', 'pierce'); }   // Lv5: 뚫을 때마다 다음 대상 피해 +ramp
+    if (n && b.thru) b.ph = line.slice(0, n).map((o) => o.id);   // 58절: 넘침 관통 총알(저격총 Lv5 · 소총 Lv10 점사)은 이 좀비들을 건너뛰고 그 뒤로 — 관통 탄 몫과 넘침이 한 좀비에 겹치지 않는다
     if (n) emit(s, { t: 'pierce', x: b.x, z0: f.z, z1: line[n - 1].z });
   }
   if (fx.burst) {
@@ -4956,7 +4968,7 @@ function specialActB(s, m, lv, D, B) {
     if (!t) { m.cd = 0.25; return; }
     const T = Math.max(0.15, (t.z - q.z) / BUILD.rocket.speed);   // 개편 판: 빨리 날아간다
     const rk = { id: s.nextId++, x0: q.x, z0: q.z + 0.5, x: t.x, z: t.z, t: T, T, r, dmg: SP.rocket.dmg * D * pow * k * legKs(s, 'rocket'), fid: t.fid };   // 전설 강화 '융단 폭격': 피해 ×legK
-    rk.wk = BUILD.rocket.wall;   // 개편 판: 벽·장갑문에 로켓 피해 ×wall
+    rk.wk = BUILD.rocket.wall; rk.ck = BUILD.rocket.crate;   // 개편 판: 벽·장갑문에 로켓 피해 ×wall, 상자·철창 ×crate(58절 — 산탄/로켓류)
     if (evo2) rk.fire = true;
     if (legOn(s, 'rocket')) rk.cluster = 1;   // 34절 전설 '집속탄': 터질 때 작은 폭탄이 흩어진다   // 로켓병 Lv10 불씨 로켓(전설 강화면 바로): 떨어진 자리에 불 지대
     if (enhN(s, 'rocket', 'r')) rk.again = ENH.rocket.rare.v * enhV(s, 'rocket', 'r');   // 희귀 강화 '이어 터짐': 한 번 더 터진다
@@ -5069,7 +5081,7 @@ function specialsUpdate(s, R) {
       }
       for (const p of s.props) {
         if (!p.alive || p.passed || Math.abs(p.z - rk.z) > rk.r || overlap(rk.x - rk.r, rk.x + rk.r, p.x0, p.x1) <= 0) continue;
-        hitProp(s, p, (p.kind === 'door' ? rk.dmg * OBSTACLES.door.rocket : rk.dmg) * (p.kind === 'wall' || p.kind === 'door' ? rk.wk || 1 : 1));   // 장갑문에는 로켓이 잘 든다(개편 판은 벽·문 모두 ×wk — 37절: 상자·철창은 ×wk 없이)
+        hitProp(s, p, (p.kind === 'door' ? rk.dmg * OBSTACLES.door.rocket : rk.dmg) * (p.kind === 'wall' || p.kind === 'door' ? rk.wk || 1 : p.kind === 'drum' ? 1 : rk.ck || 1));   // 장갑문에는 로켓이 잘 든다(개편 판은 벽·문 모두 ×wk — 37절: 상자·철창은 ×wk 없이, 58절: 대신 ×ck)
       }
       const b = s.boss;
       if (b && b.hp > 0 && Math.abs(b.z - 1 - rk.z) < rk.r + 1 && Math.abs(b.x - rk.x) < rk.r + b.r) hitBossBonus(s, rk.dmg, 'rocket');
@@ -5103,7 +5115,8 @@ function divSteer(s, tx) {
   let side;
   if (q.z >= dv.z0) side = q.x >= 0 ? 1 : -1;
   else {
-    const can = dps(q.n, q.tier, s.fireLv) * heroDmg(s) * 0.9 * ((BULLET_RANGE - 2) / Math.max(1, q.vz));
+    const G = gunOf(s);   // 58절: 총의 벽 몫(피해 배수 × 벽 배수 — 저격총은 obst, 산탄총 ×2 × 2.5)까지 — 소총 Lv1은 1 그대로
+    const can = dps(q.n, q.tier, s.fireLv) * heroDmg(s) * 0.9 * ((BULLET_RANGE - 2) / Math.max(1, q.vz)) * (G && dv.kind !== 'horde' ? G.v.dmg * G.v.wall : 1);
     if (dv.kind === 'horde') {
       // 좀비 떼: 위험한 쪽 차선에 남은 체력 합을 벽처럼 견준다(다가오는 적이라 쏠 시간이 짧다 — FORK_HORDE의 위쪽 끝이 벽 한 장 몫)
       let H = 0;
