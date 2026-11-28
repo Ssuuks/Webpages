@@ -964,9 +964,9 @@ export const TERRAIN = { hideFrom: 13, hideDist: 16, hideBonus: 1.3, tightFrom: 
 /* 칸막이 구간(ENDGAME.md 22절 — 개편 판만, 몸이 좁아(BUILD.narrow) 세 칸에 들어간다): 길을 칸막이 둘(LANE_X)로 세 칸으로 나눈다.
    s.lanes = [{ id, k: 'luck'|'maze', z0, z1, open: [[칸막이 번호, za, zb], …] }] — 열린 곳(open)에서만 옆 칸으로 한 칸씩 건넌다. 분대·좀비 모두 칸을 못 넘는다.
    - luck 행운 길(luckFrom구간부터 luckP): 세 칸 모두 가려진 상자(소·중·대가 무작위) — 손해는 없고 무엇이 나올지가 운(18.8)
-   - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막마다 칸막이 하나에 열린 곳(open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
+   - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막이 바뀌는 곳마다 칸막이 하나에 열린 곳(앞 pre m + open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
 export const LANE_X = [-ROAD / 3, ROAD / 3];
-export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, open: 10, both: true, wallP: 0.75, trap: 0.3, big: 0.6, foeN: [4, 7] };   // 51절: 토막이 바뀌는 곳마다 칸막이 둘 다(both) 열리고 열린 곳이 7 → 10m(앞 2m부터 12m) — 좌우로 막힌 칸막이를 줄였다(열린 몫 16 → 43%)   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60% · 49절: 꽝 −15 → −30%, 미로 좀비 칸 foeN마리(3~5 → 4~6)
+export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, pre: 1, open: 3, both: false, wallP: 0.75, trap: 0.3, big: 0.6, foeN: [4, 7] };   // 59절: 열린 곳(초록)을 거의 없게 — 토막이 바뀌는 곳마다 빈 칸 쪽 칸막이 하나만(both false), 앞 1m + 3m = 4m(칸막이 길이의 43 → 7%, 초당 14m로 0.29초 — 미리 칸막이에 붙어 있어야 건넌다) · 51절: 토막이 바뀌는 곳마다 칸막이 둘 다(both) 열리고 열린 곳이 7 → 10m(앞 2m부터 12m) — 좌우로 막힌 칸막이를 줄였다(열린 몫 16 → 43%)   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60% · 49절: 꽝 −15 → −30%, 미로 좀비 칸 foeN마리(3~5 → 4~6)
 /* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로(45절: 11 → 7 → 3.5m, 줄은 모두 세 칸 — 끝 칸에서 반대쪽 끝 칸까지(5m)는 손가락 끌기(초당 16m)로도 0.31초라 달리는 동안(6구간 초당 12m) 3.75m — 한 줄 사이에 끝에서 끝으로는 못 간다, 옆 칸까지만) — 쏴서 올리는 덧셈 칸이 많고, 큰 + 줄 하나(51절 전 ×2)·÷2 줄 하나.
    숫자는 그 구간 기준 병력(bkScale)으로, 굴림은 따로(hash — 다른 청크의 배치가 밀리지 않게). 골든 값은 늘리지 않는다(잘 고르면 앞서 나가고, 못 고르면 뒤처진다)
    51절: 몰이의 ×2 줄은 큰 + 줄(jack — 기준 병력의 몫)로 — ×는 앞선 병력일수록 크게 불어나(덧셈 칸은 기준 병력이라 그대로) 한 번만 지나도 판이 뻥튀기됐다
@@ -1420,7 +1420,7 @@ const CHUNK = {
     addZone(lv, 'luck', z0, z1);
     return { len: z1 - z + 10, ng };
   },
-  /* 칸막이 미로(22절): stretch토막. 토막이 바뀌는 곳마다 칸막이가 LANES.open m 열린다(51절부터 둘 다 — LANES.both, 예전엔 빈 칸 쪽 하나만). 토막마다 '빈 칸'(벽 없음)이 하나 있고
+  /* 칸막이 미로(22절): stretch토막. 토막이 바뀌는 곳마다 칸막이가 LANES.pre + LANES.open m 열린다(51절에 둘 다 12m — 59절에 다시 빈 칸 쪽 하나만 4m). 토막마다 '빈 칸'(벽 없음)이 하나 있고
      다음 토막의 빈 칸은 그 옆이나 그대로 — 열린 곳을 따라가면 늘 벽 없이 지난다. 나머지 칸은 단단한 벽(wallP)이나 좀비 무리 */
   maze(lv, g, p, z, ng) {
     const D = threatD(lv, ng);
@@ -1434,9 +1434,9 @@ const CHUNK = {
       const kinds = ['', '', ''];
       if (i > 0) {
         const nb = free === 0 ? 1 : free === 2 ? 1 : chance(g, 0.5) ? 0 : 2;   // 옆 칸
-        const od = p.dense || 1;   // 55절: 열린 곳의 길이는 간격을 좁혀도(denseZ) 그대로 2 + LANES.open m
-        if (LANES.both) lane.open.push([0, za - 2 / od, za + LANES.open / od], [1, za - 2 / od, za + LANES.open / od]);   // 51절: 양쪽 칸막이 — 옆 칸 어디로든(굴림은 예전과 같게 nb를 그대로 굴린다)
-        else lane.open.push([Math.min(free, nb), za - 2 / od, za + LANES.open / od]);
+        const od = p.dense || 1, oa = za - LANES.pre / od, ob = za + LANES.open / od;   // 55절: 열린 곳의 길이는 간격을 좁혀도(denseZ) 그대로 LANES.pre + LANES.open m
+        if (LANES.both) lane.open.push([0, oa, ob], [1, oa, ob]);   // 51절: 양쪽 칸막이 — 옆 칸 어디로든(굴림은 예전과 같게 nb를 그대로 굴린다)
+        else lane.open.push([Math.min(free, nb), oa, ob]);   // 59절: 빈 칸과 옆 칸(nb) 사이 칸막이 하나만 — 빈 칸이 옮겨 가면(75%) 길, 그대로면(25%) 꾐
         if (chance(g, 0.75)) free = nb;
       }
       for (let c = 0; c < 3; c++) {
@@ -2177,7 +2177,7 @@ function fxDropOf(s, drop) {
   for (const a of AMMO_IDS2) if (fx[a] && (!best || fx[a] < fx[best])) best = a;
   return best;
 }
-/* 탄 효과 바꾸기: drop을 버리고 a를 Lv(drop) × keep(내림)으로 — 이어서 카드 몫 +1(fxAdd) */
+/* 탄 효과 바꾸기: drop을 버리고 a를 Lv(drop) × keep(내림)으로 — 이어서 카드 몫 +1(fxAdd). 60절부터 keep 0 — 버린 효과가 몇 레벨이든 Lv1부터 */
 function fxReplace(s, drop, a) {
   const fx = s.endless.fx, lv0 = fx[drop] | 0;
   const lv = Math.floor(lv0 * BUILD.fxSwap.keep);
@@ -3328,7 +3328,15 @@ function propsUpdate(s, R) {
     if (ov <= 0) { p.passed = true; continue; }
     p.alive = false;
     const x = (p.x0 + p.x1) / 2;
-    if (p.kind === 'drum') { drumBlast(s, p, 'touch'); continue; }   // 폭발 드럼통: 닿아도 터진다(분대는 안 다친다)
+    if (p.kind === 'drum') {   // 폭발 드럼통: 닿아도 터진다. 개편 판(60절)은 벽처럼 남은 체력 10마다 1명(걸친 몫만) — 앞 단계 판은 안 다친다(지문 그대로)
+      if (s.endless && s.endless.bld) {
+        const k = Math.max(1, Math.min(Math.ceil((p.hp / SOLDIER_HP) * Math.min(1, ov * 2)), Math.ceil(q.n * ov)));
+        emit(s, { t: 'drumHit', x, z: p.z, n: k });
+        lose(s, k, 'drum', x, p.z);
+      }
+      drumBlast(s, p, 'touch');
+      continue;
+    }
     if (p.kind === 'crate' || p.kind === 'cage') {
       // 부딪힌 병사만 잃는다: 걸친 폭의 병사(n × ov)보다 많이는 아니다(SIM 8)
       const k = Math.min(Math.ceil(((p.hp * crateHitOf(s.params)) / SOLDIER_HP) * Math.min(1, ov * 2)), Math.ceil(q.n * ov));
@@ -3535,8 +3543,8 @@ function spitEscape(s, R) {
     if (tGo > SPIT_T) continue;
     let blocked = false;
     for (const p of s.props) {
-      if (!p.alive || p.passed || p.z < q.z || p.z - q.z > SPIT_LANE_Z || p.kind === 'drum') continue;   // 드럼통은 닿아도 안 다친다
-      const cost = p.kind === 'wall' || p.kind === 'door' ? p.hp : p.hp * crateHitOf(s.params);
+      if (!p.alive || p.passed || p.z < q.z || p.z - q.z > SPIT_LANE_Z || (p.kind === 'drum' && !(s.endless && s.endless.bld))) continue;   // 드럼통은 앞 단계 판에선 닿아도 안 다친다(개편 판은 60절부터 벽처럼)
+      const cost = p.kind === 'wall' || p.kind === 'door' || p.kind === 'drum' ? p.hp : p.hp * crateHitOf(s.params);
       if (cost > slack && overlap(xt - R - SPIT_OVER, xt + R + SPIT_OVER, p.x0, p.x1) > 0) { blocked = true; break; }
     }
     if (!blocked) {
@@ -4145,7 +4153,8 @@ function hitProp(s, p, dmg) {
   }
 }
 /* 폭발 드럼통이 터진다(쏴서·로켓·분대가 닿아서·옆 드럼통이 터져서 — by 'shot'|'touch'|'chain'): 반경 r 안(가운데 거리)의 좀비에게 지금 분대 화력 × dmg초 몫
-   (방패 정예도 제 피해), 반경 안의 상자·철창은 내용물째 부서진다(보상 없음 — crateLost), 반경 안의 다른 드럼통도 터진다. 분대는 안 다친다.
+   (방패 정예도 제 피해), 반경 안의 상자·철창은 내용물째 부서진다(보상 없음 — crateLost), 반경 안의 다른 드럼통도 터진다. 폭발은 분대를 안 다친다
+   (개편 판은 60절부터 분대가 '닿아서' 터뜨리면 그 전에 벽처럼 남은 체력만큼 잃는다 — propsUpdate의 'drumHit').
    'blast' { x, z, r, by, n(맞은 좀비), lost(잃은 상자·철창) } */
 function drumBlast(s, p, by) {
   const q = s.squad;
@@ -5188,8 +5197,8 @@ export function botTarget(s, opt = {}) {
   const sawCost = s.endless && s.endless.bld
     ? q.n * SAW2.bite + (SAW2.flat + SAW2.rate * q.n) * ((2 * (0.55 * R + 0.35)) / vz) * 0.8 + 1
     : (4 + 0.35 * q.n) * ((2 * (0.55 * R + 0.35)) / vz) * 0.8 + 1;
-  // 2단계 장애물: 장갑문에 들어가는 총알 몫, 앞에 있는 폭발 드럼통(닿아도 안 다치고 보상도 없다 — 옆 상자를 같이 쏘면 상자째 터진다)
-  const dk = doorMul(s);
+  // 2단계 장애물: 장갑문에 들어가는 총알 몫, 앞에 있는 폭발 드럼통(보상은 없다 — 옆 상자를 같이 쏘면 상자째 터진다. 개편 판은 60절부터 못 터뜨리고 닿으면 벽처럼 남은 체력만큼 잃는다)
+  const dk = doorMul(s), bldDrum = !!(s.endless && s.endless.bld);
   const drums = [];
   for (const p of s.props) if (p.kind === 'drum' && p.alive && !p.passed && p.z > q.z - 1 && p.z - q.z < 40) drums.push(p);
   let row = null;
@@ -5218,12 +5227,12 @@ export function botTarget(s, opt = {}) {
     // 벽·상자·철창: 그 자리에서 쏴서 못 부수면 남은 만큼 잃는다(상자·철창은 crateHit만큼 — P10, 모든 봇이 장애물로 본다).
     // 부술 수 있으면 보상: 보통 상자는 상자를 챙기는 봇만, 앞에 게이트 줄이 보이지 않을 때. 열쇠 상자(p.key)는 누구나(opt.keys=false가 아니면)
     for (const p of s.props) {
-      if (!p.alive || p.passed || p.z < q.z || p.z > horizon + 0.5 || p.z - q.z > 34 || p.kind === 'drum') continue;
+      if (!p.alive || p.passed || p.z < q.z || p.z > horizon + 0.5 || p.z - q.z > 34 || (p.kind === 'drum' && !bldDrum)) continue;
       const t = (p.z - q.z) / vz;
       const shot = D * cover(x, p.x0, p.x1) * Math.max(0, t - travel) * 0.85;
       const ov = overlap(x - R, x + R, p.x0, p.x1) / (2 * R);
       const left = p.kind === 'door' ? p.hp - shot * dk : p.hp - shot;
-      if (p.kind === 'wall' || p.kind === 'door') {
+      if (p.kind === 'wall' || p.kind === 'door' || p.kind === 'drum') {
         if (ov > 0 && left > 0) val -= contactCost(left) * Math.min(1, ov * 2) + 1;
         continue;
       }

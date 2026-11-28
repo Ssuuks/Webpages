@@ -4704,7 +4704,7 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
         assert.deepEqual(cr.map((p) => C.laneCell((p.x0 + p.x1) / 2)).sort(), [0, 1, 2], '세 칸에 하나씩');
       }
       if (l.k === 'maze') {
-        // 토막마다 벽 없는 칸, 열린 곳은 토막이 바뀌는 곳마다 칸막이 둘 다(51절 — 예전엔 하나씩)
+        // 토막마다 벽 없는 칸, 열린 곳은 토막이 바뀌는 곳마다 칸막이 하나(59절 — 51절에는 둘 다)
         const n = L.stretch, sl = (l.z1 - l.z0 - C.FORK_TAPER) / n;
         const walls = lv.props.filter((p) => p.maze);
         for (let i = 0; i < n; i++) {
@@ -4712,9 +4712,9 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
           const blocked = new Set(walls.filter((w) => w.z >= za && w.z < za + sl).map((w) => C.laneCell((w.x0 + w.x1) / 2)));
           assert.ok(blocked.size < 3, `${seed}/${seg}구간 ${i}번째 토막이 다 막혔다`);
         }
-        assert.equal(l.open.length, 2 * (n - 1), '토막이 바뀌는 곳마다 칸막이 둘 다(51절)');
+        assert.equal(l.open.length, n - 1, '토막이 바뀌는 곳마다 칸막이 하나(59절)');
         for (const o of l.open) assert.ok(o[0] === 0 || o[0] === 1);
-        for (let i = 0; i < l.open.length; i += 2) assert.ok(l.open[i][0] !== l.open[i + 1][0] && l.open[i][1] === l.open[i + 1][1] && Math.abs(l.open[i][2] - l.open[i][1] - (L.open + 2)) < 1e-9, JSON.stringify(l.open));   // 55절: 간격을 좁혀도 열린 곳은 그대로
+        for (const o of l.open) assert.ok(Math.abs(o[2] - o[1] - (L.pre + L.open)) < 1e-9, JSON.stringify(l.open));   // 55절: 간격을 좁혀도 열린 곳은 그대로
       }
     }
   }
@@ -5352,12 +5352,12 @@ test('52절 — 바꿀 탄 효과 고르기: swapCombos가 버리면 꺼지는 �
   assert.equal(C.stateHash(s), h0, '지문 그대로');
   assert.equal(Object.keys(s.endless.fx).join(), keys0, '키 순서 그대로');
   assert.deepEqual(s.endless.fx, { pierce: 7, rapid: 6 });
-  // 카드의 버릴 후보는 레벨이 다르다(버린 Lv의 절반 + 1) — 화면은 'Lv lo~hi'
+  // 카드의 버릴 후보의 레벨: 버린 Lv × keep(내림) + 1 — 60절부터 keep 0이라 모두 Lv1(화면은 'Lv1')
   s.endless.seg = 9; s.endless.fx = { pierce: 7, burst: 3 };
   const info = C.cardInfo(s, { k: 'fx', a: 'acid', n: 1 });
   assert.ok(info.full);
-  assert.deepEqual(info.drops.map((d) => d.to), [4, 2]);
-  assert.equal(info.to, 2, '카드의 to는 가장 낮은 레벨');
+  assert.deepEqual(info.drops.map((d) => d.to), [7, 3].map((lv) => Math.floor(lv * R.BUILD.fxSwap.keep) + 1));
+  assert.equal(info.to, Math.min(...info.drops.map((d) => d.to)), '카드의 to는 가장 낮은 레벨');
 });
 
 test('45절 — 게이트 몰이: 줄 간격 동안 끝 칸에서 반대쪽 끝 칸으로는 못 간다(손가락 끌기·글쇠 모두, 몰이가 나오는 가장 느린 구간에서도) · 줄은 모두 세 칸', () => {
@@ -5878,4 +5878,96 @@ test('58절 — 유물 손질(개편 판): 넓은 탄낭 3칸 · 공명기 ×1.3
   const three = run(['ward'], (s) => { s.saws = [saw(s, 3, 9801), saw(s, 10, 9802), saw(s, 17, 9803)]; });
   assert.ok(three.n < 1000 && three.ev.length === 2, `셋째 톱날은 맞는다 ${three.n}`);
   assert.ok(R.RELICS.ward.text().includes('톱날 2개') && R.RELICS.ward.text().length < 60, R.RELICS.ward.text());
+});
+test('59절 — 칸막이 미로의 열린 곳(초록)을 거의 없게: 토막이 바뀌는 곳마다 빈 칸 쪽 칸막이 하나 · 4m(칸막이 길이의 10% 아래) — 벽 없는 칸은 그 열린 곳으로 늘 이어지고, 미리 붙어 있으면 가장 빠를 때도 건넌다', () => {
+  const L = C.LANES;
+  assert.equal(L.both, false);
+  assert.equal(L.pre + L.open, 4);
+  let mazes = 0, share = 0;
+  for (let seed = 1; seed <= 12; seed++) for (let seg = L.mazeFrom; seg <= 30; seg++) {
+    const lv = laneSeg(seg, seed);
+    for (const l of lv.lanes || []) {
+      if (l.k !== 'maze') continue;
+      mazes++;
+      const n = L.stretch, sl = (l.z1 - l.z0 - C.FORK_TAPER) / n;
+      const walls = lv.props.filter((p) => p.maze && p.kind === 'wall');
+      const wallAt = (i, c) => walls.some((w) => w.z >= l.z0 + C.FORK_TAPER + i * sl && w.z < l.z0 + C.FORK_TAPER + (i + 1) * sl && C.laneCell((w.x0 + w.x1) / 2) === c);
+      // 벽 없는 길: 첫 토막의 벽 없는 칸에서 열린 곳으로만 옮겨 가며 끝 토막까지 닿는다
+      let reach = new Set([0, 1, 2].filter((c) => !wallAt(0, c)));
+      for (let i = 1; i < n; i++) {
+        const o = l.open[i - 1], nxt = new Set();
+        for (const c of reach) { nxt.add(c); if (o[0] === c) nxt.add(c + 1); if (o[0] === c - 1) nxt.add(c - 1); }
+        reach = new Set([...nxt].filter((c) => !wallAt(i, c)));
+        assert.ok(reach.size > 0, `${seed}/${seg}구간 ${i}번째 토막에 벽 없이 못 간다 ${JSON.stringify(l.open)}`);
+      }
+      share += l.open.reduce((a, o) => a + o[2] - o[1], 0) / (2 * (l.z1 - l.z0));
+    }
+  }
+  assert.ok(mazes > 20 && share / mazes < 0.1, `미로 ${mazes} · 열린 몫 ${(100 * share / mazes).toFixed(1)}%`);
+  // 가장 빠를 때(초당 14m)도 칸막이에 붙어 있다가 누르면(키보드 · 끌기 둘 다) 4m 안에 건넌다, 열린 곳이 없으면 못 건넌다
+  const cross = (input, open) => {
+    const u = C.newEndless({ seed: 31, ...BLD });
+    u.endless.seg = 20; u.speed = 14; u.squad.n = 2000; u.props = []; u.rows = []; u.saws = []; u.foes = []; u.bullets = []; delete u.divs; delete u.pads; u.squad.fireAcc = -99;
+    const R0 = C.radius(u.squad.n), z = u.squad.z;
+    u.lanes = [{ id: 99970, k: 'maze', z0: z - 30, z1: z + 100, open: open ? [[1, z + 20, z + 20 + L.pre + L.open]] : [] }];
+    u.squad.x = C.LANE_X[1] - C.hitHalf(R0) - 0.05; u.squad.vx = 0;
+    for (let i = 0; i < 150; i++) C.step(u, u.squad.z < z + 20 - 0.3 ? { dir: 0 } : input);
+    return C.laneCell(u.squad.x);
+  };
+  assert.equal(cross({ dir: 1 }, true), 2, '키보드');
+  assert.equal(cross({ tx: C.EDGE }, true), 2, '끌기');
+  assert.equal(cross({ dir: 1 }, false), 1, '닫힌 칸막이');
+  // 처음 안내 글이 새 규칙을 말한다(예전 글을 본 사람에게도 한 번 더 — mazeLane2)
+  const main = require_('node:fs').readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  assert.ok(main.includes("tip('mazeLane2'") && !main.includes('양쪽 칸막이가 열려요'));
+});
+test('60절 — 탄 효과를 바꾸면 버린 효과가 몇 레벨이든 새 효과는 Lv1부터 · 폭발 드럼통은 닿으면 터지며 벽처럼 남은 체력만큼 잃는다(개편 판 — 앞 단계 판은 그대로 안 다친다) · 봇은 못 터뜨릴 드럼통을 피한다', () => {
+  // 탄 바꾸기: Lv9를 버려도 · Lv2를 버려도 새 효과는 Lv1
+  assert.equal(R.BUILD.fxSwap.keep, 0);
+  for (const lv of [2, 5, 9]) {
+    const s = C.newEndless({ seed: 31, ...BLD, ammoOpen: R.AMMO_IDS2 });
+    s.endless.seg = 9;
+    s.endless.fx = {};
+    for (const a of R.AMMO_IDS2) { if (C.fxFull(s, R.AMMO_IDS2[R.AMMO_IDS2.length - 1])) break; s.endless.fx[a] = Object.keys(s.endless.fx).length ? 4 : lv; }
+    const fresh = R.AMMO_IDS2.find((a) => !s.endless.fx[a]);
+    const drop = Object.keys(s.endless.fx)[0];
+    assert.ok(C.fxFull(s, fresh), `칸이 찼다 ${JSON.stringify(s.endless.fx)}`);
+    s.endless.offer = [{ k: 'fx', a: fresh, n: 1 }];
+    const info = C.cardInfo(s, s.endless.offer[0]);
+    assert.ok(info.full && info.drops.every((d) => d.to === 1), JSON.stringify(info.drops));
+    C.pickCard(s, 0, { drop });
+    assert.equal(s.endless.fx[fresh], 1, `Lv${lv}을 버려도 Lv1`);
+    assert.ok(!s.endless.fx[drop]);
+  }
+  const main = require_('node:fs').readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  assert.ok(main.includes('Lv1부터 시작해요'), '바꾸기 화면 글');
+  // 드럼통에 닿으면: 개편 판은 남은 체력 10마다 1명(걸친 몫) + 'drumHit', 폭발은 그대로('blast' by touch — 둘레 좀비)
+  const touch = (opt, hp) => {
+    const s = C.newEndless({ seed: 7, ...opt });
+    s.rows = []; s.props = []; s.saws = []; s.foes = []; s.bullets = []; delete s.divs; delete s.lanes; delete s.pads; s.squad.fireAcc = -99; s.squad.sp = []; s.hero = null;
+    s.squad.n = 2000; s.squad.x = 0;
+    s.props = [{ id: 9900, kind: 'drum', x0: -0.45, x1: 0.45, z: s.squad.z + 0.6, hp, max: hp, alive: true, hitT: -9 }];
+    const n0 = s.squad.n;
+    C.step(s, { dir: 0 });
+    const H = C.hitHalf(C.radius(n0)), ov = Math.min(H, 0.45) * 2 / (2 * H);
+    return { lost: n0 - s.squad.n, ev: s.ev.filter((e) => e.t === 'drumHit' || e.t === 'blast').map((e) => e.t + ':' + (e.by || e.n)), want: Math.max(1, Math.min(Math.ceil((hp / C.SOLDIER_HP) * Math.min(1, ov * 2)), Math.ceil(n0 * ov))) };
+  };
+  const a = touch(BLD, 3000);
+  assert.ok(a.want > 1 && a.lost === a.want, JSON.stringify(a));
+  assert.deepEqual(a.ev, [`drumHit:${a.want}`, 'blast:touch']);
+  const b = touch(CARD2, 3000);
+  assert.deepEqual([b.lost, b.ev], [0, ['blast:touch']], '앞 단계 판은 닿아도 안 다친다(지문 그대로)');
+  // 봇: 개편 판에서 못 터뜨릴 드럼통(체력이 아주 큼)은 피하고, 쉽게 터지는 드럼통은 쏴서 터뜨리고 지나간다 — 앞 단계 판은 그대로 안 피한다
+  const aim = (opt, hp) => {
+    const s = C.newEndless({ seed: 7, ...opt });
+    s.rows = []; s.props = []; s.saws = []; s.foes = []; s.bullets = []; delete s.divs; delete s.lanes; delete s.pads;
+    s.squad.n = 12; s.squad.x = 0;
+    s.props = [{ id: 9901, kind: 'drum', x0: -0.45, x1: 0.45, z: s.squad.z + 20, hp, max: hp, alive: true, hitT: -9 }];
+    return C.botTarget(s);
+  };
+  const span = C.hitHalf(C.radius(12));
+  assert.ok(Math.abs(aim(BLD, 1e9)) - span >= 0.45, `개편 판: 못 터뜨릴 드럼통을 피한다(${aim(BLD, 1e9)})`);
+  assert.equal(aim(BLD, 1), 0, '쉽게 터지면 그대로');
+  assert.equal(aim(CARD2, 1e9), 0, '앞 단계 판은 안 피한다');
+  assert.ok(R.OBSTACLES.drum.text().includes('닿으면 터지며 남은 체력만큼'));
 });
