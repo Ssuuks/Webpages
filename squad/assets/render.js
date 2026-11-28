@@ -1258,6 +1258,11 @@ export function createRenderer(cvs) {
           screenFlash(0.22, '232,56,79');
           shake(0.35);
           break;
+        case 'drumHit':   // 60절 드럼통에 닿아 터졌다(개편 판): 폭발은 'blast'가 그리고, 여기는 분대가 다친 것 — 핏방울 · 붉은 번쩍임
+          burst(q.x, 0.8, q.z, 12, FX_COL.blood, 3, 3);
+          screenFlash(0.3, '232,56,79');
+          shake(0.5);
+          break;
         case 'wallCrash':
           burst(e.x, 0.9, e.z, 22, e.kind === 'door' ? FX_COL.iron : FX_COL.stone, 4, 4, 0.7);
           burst(q.x, 0.8, q.z, 10, FX_COL.blood, 3, 3);
@@ -1574,7 +1579,7 @@ export function createRenderer(cvs) {
           break;
         }
         case 'blast': {
-          // 폭발 드럼통(무한모드 2단계): 큰 펑 셋 + 실제 반경(e.r)까지 번지는 불꽃 고리 두 겹 + 빨간 통 조각 + 오래 남는 그을음. 분대는 안 다친다(붉은 번쩍임 없이 주황)
+          // 폭발 드럼통(무한모드 2단계): 큰 펑 셋 + 실제 반경(e.r)까지 번지는 불꽃 고리 두 겹 + 빨간 통 조각 + 오래 남는 그을음. 폭발은 분대를 안 다친다(붉은 번쩍임 없이 주황 — 닿아서 다친 몫은 'drumHit')
           const br = e.r || OBSTACLES.drum.r;
           lastBlast = { x: e.x, z: e.z, t: time };
           fx('boom', e.x, 0.9, e.z, 0.45);

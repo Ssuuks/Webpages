@@ -2412,7 +2412,7 @@ function showDrop(i, info) {
     b.append(icn, body);
     b.setAttribute('aria-label', `${kindTxt}: ${ch.textContent}. ${lines.filter((l) => l[0]).map((l) => l[0]).join('. ')}`);
   };
-  // 위: 새로 얻는 효과 — 누르는 카드가 아니다(한 번만 싣는다). 레벨은 버리는 효과에 따라 달라서(버린 Lv의 절반 + 1) 가장 낮은 레벨의 글,
+  // 위: 새로 얻는 효과 — 누르는 카드가 아니다(한 번만 싣는다). 레벨은 버리는 효과 Lv × keep(내림) + 1(60절부터 keep 0 — 늘 Lv1)이라 가장 낮은 레벨의 글,
   // 그보다 높은 레벨이 있으면 레벨마다 더 얻는 것만 한 줄씩(아래 카드에 되풀이하지 않는다)
   const lvs = [...new Set(info.drops.map((d) => d.to))].sort((x, y) => x - y), lo = lvs[0], hi = lvs[lvs.length - 1];
   const capped = info.drops.some((d) => Math.floor(d.lv * BUILD.fxSwap.keep) + 1 > d.to);
@@ -2421,7 +2421,7 @@ function showDrop(i, info) {
   fill(g, colOf(info.a), 'fx_' + info.a, '새로 얻는 효과', ['', nm, lo === hi ? ` Lv${lo}` : ` Lv${lo}~${hi}`], [
     [lo === hi ? fxT(info.a, lo) : `Lv${lo}: ${fxT(info.a, lo)}`, 'pick-det'],
     ...lvs.slice(1).map((lv, j) => [`Lv${lv}이면 더: ${diffParts(fxT(info.a, lvs[j]), fxT(info.a, lv)).hi.map((t) => t.replace(/^새로: /, '')).join(' · ')}`, 'pick-delta']),
-    [`레벨 = 버리는 효과 Lv의 절반(내림) + 1${capped ? ` · 각성 전에는 Lv${BUILD.evo}까지` : ''}`, 'pick-rule'],
+    [BUILD.fxSwap.keep > 0 ? `레벨 = 버리는 효과 Lv × ${BUILD.fxSwap.keep}(내림) + 1${capped ? ` · 각성 전에는 Lv${BUILD.evo}까지` : ''}` : '바꾸면 버리는 효과가 몇 레벨이든 Lv1부터 시작해요', 'pick-rule'],
   ]);
   g.hidden = false;
   // 아래: 버릴 효과마다 — 지금 그 효과(잃는 것) · 꺼지고 켜지는 시너지
@@ -3146,6 +3146,7 @@ function handleEvents(ev) {
         break;
       }
       case 'blast': sfx.boom(); vibe(e.by === 'chain' ? 15 : 30); break;
+      case 'drumHit': vibe(60); tip('drumHit', `드럼통에 닿으면 바로 터지면서 남은 체력만큼 병사를 잃어요(이번 −${e.n}) — 멀리서 쏴서 먼저 터뜨려요`); break;   // 60절
       case 'luckSeal': if (!data.tips.luckSeal) toast('행운 길은 셋 중 하나 — 나머지 상자는 잠겼어요', 1800); data.tips.luckSeal = 1; break;
       case 'crateLost': {
         // 폭발 드럼통 둘레의 상자·철창이 내용물째 부서졌다(보상 없음) — 왜 못 받았는지

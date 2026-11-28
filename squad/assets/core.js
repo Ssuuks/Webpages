@@ -2177,7 +2177,7 @@ function fxDropOf(s, drop) {
   for (const a of AMMO_IDS2) if (fx[a] && (!best || fx[a] < fx[best])) best = a;
   return best;
 }
-/* 탄 효과 바꾸기: drop을 버리고 a를 Lv(drop) × keep(내림)으로 — 이어서 카드 몫 +1(fxAdd) */
+/* 탄 효과 바꾸기: drop을 버리고 a를 Lv(drop) × keep(내림)으로 — 이어서 카드 몫 +1(fxAdd). 60절부터 keep 0 — 버린 효과가 몇 레벨이든 Lv1부터 */
 function fxReplace(s, drop, a) {
   const fx = s.endless.fx, lv0 = fx[drop] | 0;
   const lv = Math.floor(lv0 * BUILD.fxSwap.keep);
@@ -3328,7 +3328,15 @@ function propsUpdate(s, R) {
     if (ov <= 0) { p.passed = true; continue; }
     p.alive = false;
     const x = (p.x0 + p.x1) / 2;
-    if (p.kind === 'drum') { drumBlast(s, p, 'touch'); continue; }   // 폭발 드럼통: 닿아도 터진다(분대는 안 다친다)
+    if (p.kind === 'drum') {   // 폭발 드럼통: 닿아도 터진다. 개편 판(60절)은 벽처럼 남은 체력 10마다 1명(걸친 몫만) — 앞 단계 판은 안 다친다(지문 그대로)
+      if (s.endless && s.endless.bld) {
+        const k = Math.max(1, Math.min(Math.ceil((p.hp / SOLDIER_HP) * Math.min(1, ov * 2)), Math.ceil(q.n * ov)));
+        emit(s, { t: 'drumHit', x, z: p.z, n: k });
+        lose(s, k, 'drum', x, p.z);
+      }
+      drumBlast(s, p, 'touch');
+      continue;
+    }
     if (p.kind === 'crate' || p.kind === 'cage') {
       // 부딪힌 병사만 잃는다: 걸친 폭의 병사(n × ov)보다 많이는 아니다(SIM 8)
       const k = Math.min(Math.ceil(((p.hp * crateHitOf(s.params)) / SOLDIER_HP) * Math.min(1, ov * 2)), Math.ceil(q.n * ov));
@@ -3535,8 +3543,8 @@ function spitEscape(s, R) {
     if (tGo > SPIT_T) continue;
     let blocked = false;
     for (const p of s.props) {
-      if (!p.alive || p.passed || p.z < q.z || p.z - q.z > SPIT_LANE_Z || p.kind === 'drum') continue;   // 드럼통은 닿아도 안 다친다
-      const cost = p.kind === 'wall' || p.kind === 'door' ? p.hp : p.hp * crateHitOf(s.params);
+      if (!p.alive || p.passed || p.z < q.z || p.z - q.z > SPIT_LANE_Z || (p.kind === 'drum' && !(s.endless && s.endless.bld))) continue;   // 드럼통은 앞 단계 판에선 닿아도 안 다친다(개편 판은 60절부터 벽처럼)
+      const cost = p.kind === 'wall' || p.kind === 'door' || p.kind === 'drum' ? p.hp : p.hp * crateHitOf(s.params);
       if (cost > slack && overlap(xt - R - SPIT_OVER, xt + R + SPIT_OVER, p.x0, p.x1) > 0) { blocked = true; break; }
     }
     if (!blocked) {
@@ -4145,7 +4153,8 @@ function hitProp(s, p, dmg) {
   }
 }
 /* 폭발 드럼통이 터진다(쏴서·로켓·분대가 닿아서·옆 드럼통이 터져서 — by 'shot'|'touch'|'chain'): 반경 r 안(가운데 거리)의 좀비에게 지금 분대 화력 × dmg초 몫
-   (방패 정예도 제 피해), 반경 안의 상자·철창은 내용물째 부서진다(보상 없음 — crateLost), 반경 안의 다른 드럼통도 터진다. 분대는 안 다친다.
+   (방패 정예도 제 피해), 반경 안의 상자·철창은 내용물째 부서진다(보상 없음 — crateLost), 반경 안의 다른 드럼통도 터진다. 폭발은 분대를 안 다친다
+   (개편 판은 60절부터 분대가 '닿아서' 터뜨리면 그 전에 벽처럼 남은 체력만큼 잃는다 — propsUpdate의 'drumHit').
    'blast' { x, z, r, by, n(맞은 좀비), lost(잃은 상자·철창) } */
 function drumBlast(s, p, by) {
   const q = s.squad;
@@ -5188,8 +5197,8 @@ export function botTarget(s, opt = {}) {
   const sawCost = s.endless && s.endless.bld
     ? q.n * SAW2.bite + (SAW2.flat + SAW2.rate * q.n) * ((2 * (0.55 * R + 0.35)) / vz) * 0.8 + 1
     : (4 + 0.35 * q.n) * ((2 * (0.55 * R + 0.35)) / vz) * 0.8 + 1;
-  // 2단계 장애물: 장갑문에 들어가는 총알 몫, 앞에 있는 폭발 드럼통(닿아도 안 다치고 보상도 없다 — 옆 상자를 같이 쏘면 상자째 터진다)
-  const dk = doorMul(s);
+  // 2단계 장애물: 장갑문에 들어가는 총알 몫, 앞에 있는 폭발 드럼통(보상은 없다 — 옆 상자를 같이 쏘면 상자째 터진다. 개편 판은 60절부터 못 터뜨리고 닿으면 벽처럼 남은 체력만큼 잃는다)
+  const dk = doorMul(s), bldDrum = !!(s.endless && s.endless.bld);
   const drums = [];
   for (const p of s.props) if (p.kind === 'drum' && p.alive && !p.passed && p.z > q.z - 1 && p.z - q.z < 40) drums.push(p);
   let row = null;
@@ -5218,12 +5227,12 @@ export function botTarget(s, opt = {}) {
     // 벽·상자·철창: 그 자리에서 쏴서 못 부수면 남은 만큼 잃는다(상자·철창은 crateHit만큼 — P10, 모든 봇이 장애물로 본다).
     // 부술 수 있으면 보상: 보통 상자는 상자를 챙기는 봇만, 앞에 게이트 줄이 보이지 않을 때. 열쇠 상자(p.key)는 누구나(opt.keys=false가 아니면)
     for (const p of s.props) {
-      if (!p.alive || p.passed || p.z < q.z || p.z > horizon + 0.5 || p.z - q.z > 34 || p.kind === 'drum') continue;
+      if (!p.alive || p.passed || p.z < q.z || p.z > horizon + 0.5 || p.z - q.z > 34 || (p.kind === 'drum' && !bldDrum)) continue;
       const t = (p.z - q.z) / vz;
       const shot = D * cover(x, p.x0, p.x1) * Math.max(0, t - travel) * 0.85;
       const ov = overlap(x - R, x + R, p.x0, p.x1) / (2 * R);
       const left = p.kind === 'door' ? p.hp - shot * dk : p.hp - shot;
-      if (p.kind === 'wall' || p.kind === 'door') {
+      if (p.kind === 'wall' || p.kind === 'door' || p.kind === 'drum') {
         if (ov > 0 && left > 0) val -= contactCost(left) * Math.min(1, ov * 2) + 1;
         continue;
       }
