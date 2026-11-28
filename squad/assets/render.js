@@ -2,7 +2,7 @@
    가로 약 190px의 낮은 해상도 버퍼에 그리고, 브라우저가 CSS image-rendering: pixelated 로 정수배 확대한다.
    이펙트(파편·떠오르는 숫자·흔들림)와 렌더러 전용 상태(축소 단계·번쩍임 제한)는 모두 여기서만 산다. */
 import { makeView, fitView, project, P } from './view.js';
-import { FORK_TAPER, LANE_X, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, mutLv, mutRaw, laneAt, relicOn, TERRAIN, forkPeek, tierMax, nMax, radiusCap, enhN } from './core.js';
+import { FORK_TAPER, LANE_X, ROAD, radius, cellGood, applyOp, pickCell, BULLET_SPEED, DT, slamZone, SPIT_R, POOL_R, SQUAD_DEPTH, hitShapes, levelTag, fxCan, doorMul, shieldMul, mutLv, mutRaw, laneAt, relicOn, TERRAIN, hideDistOf, forkPeek, tierMax, nMax, radiusCap, enhN } from './core.js';
 import { HEROES, biomeOf, bossNameOf, OBSTACLES, unitVal, FOG_X } from './roster.js';
 import { gateAlts } from './insight.js';
 import { BIOME, HERO_ART, UNIT_ART, CAPTIVE_ART, OUT, WORLD_H, SHEETS, ICONS, ICON_PAL_EXPORT, PAL, skinOf, FOE_BURST, BOSS_SKIN, BOSS_CROWN, BOSS_FX, BOSS_TIER, BIOME_ONLY, BIOME_GROUP, biomeSheets, PET_ART } from './pix/art.js';
@@ -2276,7 +2276,7 @@ export function createRenderer(cvs) {
     }
   }
   /* 늦게 보이는 길(지형 — 갈림길 위험한 쪽 벽·문): 분대가 TERRAIN.hideDist m 안에 들어서야 숫자가 보인다. 나침반(유물)이면 처음부터 보인다 */
-  const hideNum = (s, p) => p.hide === true && p.z - s.squad.z > TERRAIN.hideDist && !relicOn(s, 'compass');
+  const hideNum = (s, p) => p.hide === true && p.z - s.squad.z > hideDistOf(s.speed) && !relicOn(s, 'compass');   // 64절: 빠르면 그만큼 멀리서
   function drawWall(s, p) {
     const top = boxFaces(p, WALL_H);
     if (!top) return;

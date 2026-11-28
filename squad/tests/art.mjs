@@ -1104,7 +1104,7 @@ test('유물 그림: relic_<id> 아이콘(9×9, 실루엣이 서로·다른 아�
   assert.match(main, /chip\.className = 'sp-chip relic-chip';/);
   assert.doesNotMatch(main, /bannerOn|const ban\b/, '휘장이 빠져 칩이 금빛이 되는 일은 없다');
   // 늦게 보이는 길(지형): 벽·문 숫자를 가린다 — 가까이 가거나 나침반이면 보인다
-  assert.match(src, /const hideNum = \(s, p\) => p\.hide === true && p\.z - s\.squad\.z > TERRAIN\.hideDist && !relicOn\(s, 'compass'\);/);
+  assert.match(src, /const hideNum = \(s, p\) => p\.hide === true && p\.z - s\.squad\.z > hideDistOf\(s\.speed\) && !relicOn\(s, 'compass'\);/);
   assert.equal((src.match(/const t = hideNum\(s, p\) \? '\?' : String\(Math\.max\(1, Math\.ceil\(p\.hp\)\)\);/g) || []).length, 2, '벽·문 둘 다');
   assert.match(main, /가려진 길! 벽 숫자는 가까이 가야 보여요/);
   assert.match(main, /case 'relicUse':\s*[^]*?if \(e\.id === 'ward'\) \{[^]*?sfx\.power\(1\);[^]*?toast\(/, '방패막: 소리·진동·알림');
