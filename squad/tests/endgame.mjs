@@ -4316,7 +4316,8 @@ test('23.4 — 대왕: 체력 문턱(75·50·25%)마다 특수 패턴 하나를 
     const s = C.newEndless({ seed: 31, ...BLD });
     const pol = makeBot('strong', 1031, { skill: true });
     s.squad.n = 30000;
-    for (let g = 0; g < 600000 && !(s.boss && s.endless.seg >= seg); g++) { const of = C.offerOf(s); if (of) { C.pickCard(s, 0); continue; } if (s.endless.seg < seg && s.phase === 'arena' && s.boss && !s.boss.dead) s.boss.hp = 0; C.step(s, pol(s)); }
+    // 가는 길은 대왕에 닿기 위한 받침 — 앞 보스는 바로 잡고, 병력은 30,000 아래로 안 내려가게 채운다(60절: 드럼통 손실로 흐름이 바뀌어 18구간 대왕 앞에서 전멸한 판이 나왔다 — 48절과 같은 까닭)
+    for (let g = 0; g < 600000 && !(s.boss && s.endless.seg >= seg); g++) { const of = C.offerOf(s); if (of) { C.pickCard(s, 0); continue; } if (s.endless.seg < seg && s.phase === 'arena' && s.boss && !s.boss.dead) s.boss.hp = 0; if (s.squad.n < 30000) s.squad.n = 30000; C.step(s, pol(s)); }
     const b = s.boss;
     assert.ok(b && b.king && b.all.length === 5, `${seg}구간 대왕`);
     const sp = b.all.filter((k) => k !== 'slam');
