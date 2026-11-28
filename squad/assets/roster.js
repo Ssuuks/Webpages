@@ -681,7 +681,7 @@ export const ENH = {
   },
   frost: {
     rare: { name: '얼음 폭탄', v: 0.5, text: (k, k0) => `느려진 좀비가 닿으면 터져 둘레에 제 체력의 ${ka((x) => `${apc(ENH.frost.rare.v * x)}%`, k, k0)}` },
-    legend: { name: '얼음 갑옷', text: () => '느려진 좀비는 닿으면 얼어 부서져요 — 병사를 안 잃어요' },
+    legend: { name: '얼음 갑옷', v: 0.5, max: 0.75, text: () => `느려진 좀비는 닿으면 얼어 부서져요 — 잃는 병사 −${apc(ENH.frost.legend.v)}%` },   // 61절: 예전엔 0명(좀비 피해가 거의 안 들어왔다) → −v, 또 뽑으면 ×legK2(두 장 −75% — max에서 멈춘다)
   },
   sniper: {
     rare: { name: '사기 충전', v: 0.05, text: (k, k0) => `저격으로 잡으면 영웅 게이지 ${ka((x) => `+${apc(ENH.sniper.rare.v * x)}%`, k, k0)}` },

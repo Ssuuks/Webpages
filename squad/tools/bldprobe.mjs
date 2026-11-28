@@ -4,6 +4,7 @@
    SET='BUILD.thr.step=1.06,BUILD.wall.cut=0.5' 처럼 roster.js 표 값을 바꿔 본다. V=1이면 판마다 죽은 곳.
    탄은 일곱이 다 열린 판(24절 — AMMO4=1이면 예전 넷), AMMO=shock 출격 탄, RELICS=loot+scope 처음부터 쥔 유물(유물 하나씩 재기 — 24.4).
    FIN=fire:10+def:10 이면 최종 강화(57.7 — 화력 · 방호 +N)를 단 판.
+   ENH=frost:l+pierce:r 이면 처음부터 쥔 카드 강화(대상:등급 l 전설 · r 희귀 — 61절: 전설 하나씩 재기).
    다른 판(예: git worktree로 꺼낸 예전 코드)을 재려면 첫 인자로 그 squad 폴더 */
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import os from 'node:os';
@@ -45,6 +46,7 @@ if (isMainThread) {
   for (const kv of (process.env.SET || '').split(',').filter(Boolean)) { const [k, v] = kv.split('='); const ps = k.split('.'); let o = R; for (const x of ps.slice(0, -1)) o = o[x]; o[ps[ps.length - 1]] = Number(v); }
   const opt = { seed: 77 + i * 13, start: C.START_N + 60, fire: 30, hero: { id: 'mungchi', lv: 5 }, unl: 3, ammoOpen: process.env.AMMO4 ? R.AMMO_IDS : R.AMMO_IDS2, relicsOpen: R.RELIC_IDS.slice(), flame: true, build: 2, ...(process.env.AMMO ? { ammo: process.env.AMMO } : {}), ...(process.env.RELICS ? { relics: process.env.RELICS.split('+') } : {}), ...(process.env.GUN ? { gun: process.env.GUN } : {}), ...(process.env.FIN ? { fin: Object.fromEntries(process.env.FIN.split('+').map((kv) => { const [k, v] = kv.split(':'); return [k, +v]; })) } : {}) };
   const s = C.newEndless(opt);
+  for (const kv of (process.env.ENH || '').split('+').filter(Boolean)) { const [id, k] = kv.split(':'); const B = s.endless.bld; B.enh = B.enh || {}; B.enh[id] = B.enh[id] || { r: 0, l: 0 }; B.enh[id][k === 'r' ? 'r' : 'l']++; }
   const pol = makeBot(bot, 1000 + i, { skill: true });
   const pick = T.makePicker(picker, 2000 + i);
   const out = { o1: 0, o2: 0, o3: 0, loss: {}, bt: {}, bosses: 0, wall: {}, rk: 0, rkWall: 0, c1: 0, c2: 0, c3: 0, bossT: 0, pat: {} };
