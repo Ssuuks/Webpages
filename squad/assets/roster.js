@@ -348,7 +348,7 @@ export const COMBOS = {
 };
 export const COMBO_IDS = Object.keys(COMBOS);
 
-/* 장애물(단계 해금 2단계 — 2단계를 연 무한모드 판의 4구간부터, core.js RUN_ORDER.obstacle) [수치는 초안]. 보통탄만으로도 넘을 길은 늘 있고,
+/* 장애물(단계 해금 2단계 — 2단계를 연 무한모드 판의 4구간부터, core.js RUN_ORDER.obstacle · 개편 판은 2구간부터 — BUILD.obstFrom) [수치는 초안]. 보통탄만으로도 넘을 길은 늘 있고,
    탄 효과는 '더 쉬운 길'을 연다. 화면에 보이는 수치는 여기에 두고 core.js가 읽는다(글도 이 값에서 — 수치를 고치면 글도 따라간다). 자리·개수는 core.js OBST.
    - door 장갑문: 갈림길 위험한 쪽의 셋째 패턴(벽 · 좀비 떼 · 장갑문). 체력 = 벽 식 × hp. 받는 피해 배수 — gun 보통 총알, pierce 관통 효과(레벨 상관없이),
      burst 작렬 효과(Lv2 = 탄종 값 100%에서 이 값, Lv1은 gun과의 사이 값, Lv3도 이 값까지), rocket 로켓. 가진 효과 중 가장 큰 배수
@@ -437,7 +437,10 @@ export const BUILD = {
   bk: { on: true, mul: 1.5, gain: 0.2 },   // 덧셈 칸 = 구간 기준 병력 B(k) = segFloor(k) × mul에 비례(18.8 — 순간 병력이 아니다). gain: 만들 때 + 칸의 이득 축소(예전 ENDLESS.gk — 개편 판은 이 값을 쓴다; 없애면 골든 패스가 커져 보스가 세지고 도달 구간이 28 → 13으로 떨어졌다)
   thr: { from: 4, step: 1.025 },   // 46.8: 지형(함정 길·가속 발판·새 적 셋)을 넣고 숫자 곡선을 한 칸 누름 1.03 → 1.025(32판 think — 지형만 22.9 · 누름 25.4, 중앙 17 그대로; 봇은 톱날·자폭을 거의 다 피해 사람에게는 지형 몫이 더 크다). 24절: 23·24절 뒤(7구간부터 모든 보스가 강화판 · 대왕 체력 ×1.5 · 새 탄·유물 — 1.04에서 25.3, 32판) 1.03 → 28.5. 20절: 로켓·벽·각성·전설 뒤 1.06 → 34.7 · 1.08 → 26.8, 그 뒤 18구간 골든 패스 무너짐을 고치고(20.1) 좁은 몸(20.2)을 넣자 1.08 → 14.0 · 1.06 → 22.1 · 1.04 → 28.1(16판 think — 손보기 전 1.06에서 26.9)
     // 측정(32판 think/아무거나): 세트·깊이 보상을 없앤 뒤 1.0 → 40.3/34.4 · 1.03 → 31.3/27.7 · 1.06 → 26.6/22.8 · 1.085 → 21.6/18.3. 1.06으로 25 근처(ENDGAME.md 18.4)
-  early: 1,             // 앞 구간의 위협을 실제 강화(ENDLESS.fire를 넘는 몫)로 만드는 구간 수(bldFe — 1구간은 전부, early구간에 기준으로 돌아간다. ENDGAME.md 19.1)
+  early: 6,             // 앞 구간의 위협을 실제 강화(ENDLESS.fire를 넘는 몫)로 만드는 구간 수(bldFe — 1구간은 전부, early구간에 걸쳐 기준으로 돌아간다. ENDGAME.md 19.1). 64절: 1 → 6(강화 30이면 2구간 적이 1구간보다 약하던 낙차 — 첫 바퀴에 걸쳐 천천히)
+  obstFrom: 2,          // 64절: 개편 판의 장애물(장갑문 · 드럼통 · 방패 정예)은 2구간부터(앞 단계 판은 core.RUN_ORDER.obstacle 4 그대로)
+  rampFire: { lo: 10, hi: 20, min: 0.25 },   // 64절: 경사(ramp)는 화력 단계 lo 이하면 몫의 min(강화 10: 2구간 ×1.06 · 3구간 ×1.1), hi부터 전부 — 1회차 강화의 판은 예전에도 2·3구간이 아팠다(강화 10 · sloppy0.3 2·3구간 사망: 예전 15% · min 0.5 27% · 0.25 19% · 0 19%)
+  ramp: [1, 1.25, 1.4, 1.4, 1.4, 1.1, 1.3],   // 64절: 구간 k(1부터)의 위협 덧배수(마지막 값이 그 뒤로 이어진다 — bldThreat). 카드 화력이 가장 크게 오르는 앞 구간을 따라잡는다(62절 E6 — 2·3구간에도 죽을 수 있게). 6구간(대왕)은 체력 ×1.5 · 판 위협 ×1.3이 있어 ×1.1(1.25면 강화 20 대왕 사망 6 → 11/32)
   earlyK: 0.75,         // 그 구간에서 강화가 기준을 넘는 몫을 얼마나 따라가나(1 = 전부 — 첫 구간이 너무 빡빡해 집중한 사람도 무너진 값)
   evo: 5,               // 탄 효과가 진화하는 레벨
   awakeFrom: 7,         // 각성(Lv6~10)·숙련이 열리는 구간(첫 대왕 뒤 — 예전 13: Lv5에 너무 일찍 닿아 성장이 멈춘 느낌이었다, ENDGAME.md 20절). 그 전에는 Lv5가 상한
@@ -462,7 +465,7 @@ export const BUILD = {
   med: 0.048,           // 의무병 레벨마다 좀비·보스에게 잃는 병사 ÷(1 + med × 레벨)(깊이 보상을 없애며 Lv5 값이 그대로이도록 올렸다)
   spBoss: 0.06,         // 특수병 레벨 1당 보스전 추가 피해 한도(예전 0.02)
   spCrate: 0.1,   // 58절: 0.3 → 0.1(저격류는 장애물에 작게 — 사람 판 저격수 Lv16 한 발이 상자를 바로 녹였다)   // 37절: 개편 판 저격수가 상자·철창을 칠 때 몫(저격은 한 발이 커서 그대로면 상자가 바로 녹는다)
-  rocket: { cd: 0.6, speed: 55, wallZ: 26, wall: 3, crate: 1.5, twin: 0.6, fire: { w: 1, T: 1.2, d: 0.25 } },   // fire: 불씨 로켓(Lv10)의 불 지대 — 폭 반경×w, T초, 초당 로켓 피해×d(34절: 예전 1.6·2·0.4)   // twin: Lv5 쌍발의 둘째 로켓 피해 몫(33절 — 예전 1)
+  rocket: { cd: 0.6, speed: 55, wallZ: 26, wall: 1.5, crate: 1.5, twin: 0.6, fire: { w: 1, T: 1.2, d: 0.25 } },   // fire: 불씨 로켓(Lv10)의 불 지대 — 폭 반경×w, T초, 초당 로켓 피해×d(34절: 예전 1.6·2·0.4)   // twin: Lv5 쌍발의 둘째 로켓 피해 몫(33절 — 예전 1)   // 64절: wall 3 → 1.5(Lv5 로켓병이 벽에 분대 화력의 3.6배 → 1.8배 — 단단한 벽이 0.5초에 녹았다)
   wall: { from: 6, cut: 0.6, lo: 0.05 },   // cut 0.5 → 0.6(20.1 뒤 — 25구간~ 벽 파괴율이 40%로 내려갔다)
   bossHp: { from: 7, k: 0, max: 2.5, king: 1.5 },   // king: 대왕 체력 ×(23.4 — 문턱 셋을 지나며 특수 패턴 넷을 다 보여 주려면 대왕전 12~18초가 필요하다)   // 개편 판 보스 체력 덧배수 = min(max, 1 + k × (구간 − from + 1)). 보스전이 3초 안팎(후반 0.5초)으로 끝났던 진짜 까닭은 18구간쯤부터 골든 패스가 무너진 것(20.1) — 고친 뒤 보스전이 6~12초라 k = 0(손잡이만 남김)
   narrow: 1.4,          // 개편 판 분대 몸 반지름 상한(보통 2.4 — 몸 폭 4.8m가 세 칸 길(3.3m)에 안 들어갔다. 1.4면 맞는 폭 ±1.28m — ENDGAME.md 20.2)
@@ -615,7 +618,7 @@ function fx2Base(id, lv) {
 export const GUNS = {
   rifle: { name: '소총', stars: 0, color: '#FFE38A', line: '무난한 기본 총', text: () => '분대 폭에 고르게 · 사거리 30m' },
   shotgun: { name: '산탄총', stars: 50, color: '#FF8A5B', line: '가까이 · 넓게 · 세게 — 처음부터 센 총', text: () => `옆 칸까지 퍼지는 펠릿 · 피해 ×${GUNK.shotgun.dmg}(${GUNK.shotgun.near}m 넘으면 줄어 ${GUNK.shotgun.range}m에서 ${apc(GUNK.shotgun.fall)}%) · 벽·장갑문 ×${GUNK.shotgun.wall} · 상자·철창 ×${GUNK.shotgun.crate}` },
-  marksman: { name: '저격총', stars: 90, color: '#7FE3FF', line: '멀리 · 한 점 · 무겁게 — 늦게 크는 총', text: () => `옆 ±${GUNK.marksman.aim}m 안 가장 센 적을 노려 초당 ${GUNK.marksman.hz}발 · 사거리 50m · 보스 ×${GUNK.marksman.boss} · 처음엔 약하고 총 Lv마다 피해가 크게 올라요 · Lv3부터 체력 20% 아래 좀비는 한 발에 · 벽·상자에는 약해요(분대 화력의 ${apc(GUNK.marksman.obst)}%)` },
+  marksman: { name: '저격총', stars: 90, color: '#7FE3FF', line: '멀리 · 한 점 · 무겁게 — 늦게 크는 총', text: () => `옆 ±${GUNK.marksman.aim}m 안 가장 센 적을 노려 곧게 초당 ${GUNK.marksman.hz}발(따라가지 않아요) · 사거리 50m · 보스 ×${GUNK.marksman.boss} · 처음엔 약하고 총 Lv마다 피해가 크게 올라요 · Lv3부터 체력 20% 아래 좀비는 한 발에 · 벽·상자에는 약해요(분대 화력의 ${apc(GUNK.marksman.obst)}%)` },
 };
 export const GUN_IDS = Object.keys(GUNS);
 export const GUN_EVO = { rifle: '점사', shotgun: '슬러그', marksman: '관통' };
@@ -626,7 +629,7 @@ const GUN_EVO2_TEXT = { rifle: '점사가 남는 피해를 뒤로 이어 간다(
 /* 총의 바탕 수치(Lv1) — 봇으로 맞춘다(21.12). 산탄: 피해·퍼짐·사거리·감쇠(near m부터 range에서 fall까지)·벽 / 저격: 초당 발·조준 폭·피해·보스 */
 export const GUNK = {
   shotgun: { dmg: 2, grow: 0.08, spread: 1.4, range: 24, near: 8, fall: 0.6, wall: 2.5, crate: 1.5 },   // 58절: 산탄/로켓류 — 벽·장갑문 ×2 → 2.5(Lv3 ×1.25), 상자·철창 ×1 → crate   // 48절 초반형: 바탕 1.5 → 2, 각성 몫 0.2 → grow(0.08)·(a−1) — 봇 16판 1~6구간 보스전 7.6 → 6.4초(소총 6.5), 31구간~ 11.4초(소총 9.9)   // 21.12: 1.4·22m·40%·×1.6이면 20.9구간(소총 29.4) — 1.6·24m·60%·×2로 28.4, 총 Lv 카드가 들어간 뒤 32.3(소총 27.5)이라 1.5·Lv4 감쇠 +2m로 28.3
-  marksman: { hz: 3, aim: 1.5, dmg: 0.5, lv: 0.08, awk: 0.6, head: 3, thru: 5, boss: 1.6, obst: 0.4 },   // 58절: 저격류 — 장애물(벽·장갑문·상자·철창)에는 같은 화력의 소총 총알 × obst(총 Lv로 오른 피해 배수는 안 든다 — 좀비·보스 피해는 그대로)   // 48절 후반형: 피해 0.6 → 0.5 × (1 + lv·(Lv−1), Lv5까지) × (1 + awk·(각성 − 1)), 헤드샷 Lv head(3), 넘침 관통 Lv thru(5 — 진화)   // 21.12: 조준 ±2.5m·피해 ×1이면 37.5구간(너무 셌다) — ±1.5m·×0.6·보스 ×1.6으로 29.6
+  marksman: { hz: 3, aim: 1.5, dmg: 0.5, lv: 0.08, awk: 0.6, head: 3, thru: 5, boss: 1.6, obst: 0.4, slope: 0.15 },   // 63절: slope — 총알은 쏠 때 표적이 있던 자리로 곧게(앞으로 1m에 옆 slope m까지, 따라가지 않는다 — 예전 43절 0.6으로 휘며 따라감), 그 기울기로 닿는 적만 노린다   // 58절: 저격류 — 장애물(벽·장갑문·상자·철창)에는 같은 화력의 소총 총알 × obst(총 Lv로 오른 피해 배수는 안 든다 — 좀비·보스 피해는 그대로)   // 48절 후반형: 피해 0.6 → 0.5 × (1 + lv·(Lv−1), Lv5까지) × (1 + awk·(각성 − 1)), 헤드샷 Lv head(3), 넘침 관통 Lv thru(5 — 진화)   // 21.12: 조준 ±2.5m·피해 ×1이면 37.5구간(너무 셌다) — ±1.5m·×0.6·보스 ×1.6으로 29.6
 };
 export function gunVal(id, lv) {
   const L = Math.max(1, Math.floor(lv) || 1), l = Math.min(BUILD.evo, L), a = awk(L);
@@ -641,7 +644,7 @@ export function gunVal(id, lv) {
     const hRaw = l >= K.head ? 0.2 + 0.1 * (a - 1) : 0, over = Math.max(0, hRaw - 0.5);   // 헤드샷(Lv3 — 48절) 문턱 50% 상한 → 넘친 몫은 피해로(21.10)
     const dmg = K.dmg * (1 + K.lv * (l - 1)) * (1 + K.awk * (a - 1)) * (1 + 0.5 * over);   // 48절 후반형: 처음엔 약하고 Lv마다 크게
     const ob = K.obst / r3(dmg);   // 58절: 총알 피해(dmg배)가 장애물에는 obst배로 — 화력 D의 obst만
-    return { hz: r3(l >= 4 ? K.hz * 1.2 : K.hz), rounds: true, spread: 0, aim: l >= 2 ? K.aim + 1 : K.aim, range: 50, thru: l >= K.thru, dmg: r3(dmg), wall: ob, crate: ob, obst: K.obst, boss: r3((l >= 3 ? K.boss + 0.3 : K.boss) + 0.3 * (a - 1)), head: r3(Math.min(0.5, hRaw)), pop: evo2 ? 0.5 : 0, over: r3(over), evo, evo2, a };
+    return { hz: r3(l >= 4 ? K.hz * 1.2 : K.hz), rounds: true, spread: 0, aim: l >= 2 ? K.aim + 1 : K.aim, slope: K.slope, range: 50, thru: l >= K.thru, dmg: r3(dmg), wall: ob, crate: ob, obst: K.obst, boss: r3((l >= 3 ? K.boss + 0.3 : K.boss) + 0.3 * (a - 1)), head: r3(Math.min(0.5, hRaw)), pop: evo2 ? 0.5 : 0, over: r3(over), evo, evo2, a };
   }
   const hRaw = (l >= 2 ? 11 : 10) * (1 + 0.3 * (a - 1)), over = Math.max(0, hRaw - 18);   // 소총: 쏘는 속도 초당 18 상한 → 넘친 몫은 피해로
   return { hz: r3(Math.min(18, hRaw)), spread: l >= 3 ? 0.8 : 0.3, range: l >= 4 ? 35 : 30, dmg: r3(1 + over / 18), wall: 1, crate: 1, boss: 1, burst: evo ? { every: 4, k: r3(2 + 0.5 * (a - 1)), thru: evo2 } : null, over: r3(over), evo, evo2, a };
