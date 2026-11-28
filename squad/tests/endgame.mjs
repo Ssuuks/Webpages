@@ -4034,9 +4034,15 @@ test('카드 강화 효과 16종(개편 판): 희귀 8 — 터지는 총알·불
   assert.deepEqual([bomb(undefined), bomb(E('frost', 'r'))], [0, 300]);
   const stuck = (enh) => { const u = mk({ frost: 1 }, enh); const a = foe(u, 99350, 30, 1e9, { spd: 2, slowT: u.t + 99 }), b = foe(u, 99351, 30.5, 1e9, { spd: 2, slowT: u.t + 99, x: 0.2 }); u.foes = [a, b]; const z0 = b.z; C.step(u, { dir: 0 }); return z0 - b.z; };
   assert.ok(stuck(undefined) > 0 && stuck(E('frost', 'l')) > 0, '얼음 정체는 없다(34절)');
-  // 얼음 갑옷(빙결 전설 — 34절): 느려진 좀비는 닿아도 병사를 안 잃는다
-  const armor = (enh) => { const u = mk({ frost: 1 }, enh); const f = foe(u, 99352, 0.1, 600, { spd: 1, slowT: u.t + 5 }); u.foes = [f]; const n0 = u.squad.n; C.step(u, { dir: 0 }); return n0 - u.squad.n; };
-  assert.ok(armor(undefined) > 0 && armor(E('frost', 'l')) === 0, `얼음 갑옷 ${armor(undefined)} → ${armor(E('frost', 'l'))}`);
+  // 얼음 갑옷(빙결 전설 — 34절, 61절): 느려진 좀비에게 잃는 병사 −50%(두 장 −75%에서 멈춘다 — 예전엔 0명), 닿으면 얼어 부서지는 그림은 그대로, 느려지지 않은 좀비는 그대로
+  const armor = (enh, hp = 600, slow = true) => { const u = mk({ frost: 1 }, enh); const f = foe(u, 99352, 0.1, hp, { spd: 1, ...(slow ? { slowT: u.t + 5 } : {}) }); u.foes = [f]; const n0 = u.squad.n; C.step(u, { dir: 0 }); return [n0 - u.squad.n, u.ev.filter((e) => e.t === 'shatter' && e.r === 1.2).length]; };
+  assert.deepEqual([R.ENH.frost.legend.v, R.ENH.frost.legend.max], [0.5, 0.75]);
+  const a0 = armor(undefined)[0];
+  assert.ok(a0 >= 40, `강화 없이 ${a0}`);
+  assert.deepEqual([armor(undefined), armor(E('frost', 'l')), armor(E('frost', 'l', 2)), armor(E('frost', 'l', 3))], [[a0, 0], [Math.round(a0 * 0.5), 1], [Math.round(a0 * 0.25), 1], [Math.round(a0 * 0.25), 1]], `얼음 갑옷: ${a0} → −50% · 두 장 −75% · 세 장도 −75%`);
+  assert.deepEqual([armor(undefined, 600, false), armor(E('frost', 'l'), 600, false)], [[a0, 0], [a0, 0]], '느려지지 않은 좀비는 그대로');
+  assert.deepEqual(armor(E('frost', 'l', 2), 10)[0], 1, '닿으면 적어도 1명은 잃는다');
+  assert.ok(/−50%/.test(R.ENH.frost.legend.text()) && !/안 잃/.test(R.ENH.frost.legend.text()), R.ENH.frost.legend.text());
   // 사기 충전(저격 희귀): 저격으로 잡으면 영웅 게이지 +5% / 꿰뚫는 저격(저격 전설)
   const charge = (enh) => { const u = mk({}, enh); u.squad.sp = [{ id: 7, k: 'sniper', cd: 0, lv: 1 }]; u.foes = [foe(u, 99360, 20, 1)]; u.hero.charge = 0; const c0 = u.hero.charge; C.step(u, { dir: 0 }); return u.hero.charge - c0; };
   assert.ok(charge(E('sniper', 'r')) - charge(undefined) > 0.049, `사기 충전 ${charge(undefined)} → ${charge(E('sniper', 'r'))}`);

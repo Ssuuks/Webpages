@@ -148,6 +148,7 @@ const legKs = () => 1;   // 34절: 전설 강화는 더 이상 핵심 수치를 
 /* 34절 전설 강화: 켜졌나 · 세기(한 장 1, 두 장 1.5, 세 장 2) */
 const legOn = (s, id) => !!bldOf(s) && enhN(s, id, 'l') > 0;
 const legK2 = (s, id) => enhStr(enhN(s, id, 'l'));
+const frostArmor = (s) => Math.min(ENH.frost.legend.max, ENH.frost.legend.v * legK2(s, 'frost'));   // 61절 빙결 전설 '얼음 갑옷': 느려진 좀비에게 잃는 병사를 덜어 내는 몫(한 장 50% · 두 장 75%에서 멈춘다)
 /* 총 Lv 카드가 나올 수 있나: 각성 전에는 Lv5가 상한(탄과 같다) */
 export const gunLvCan = (s) => { const B = s && s.endless && s.endless.bld; if (!B || !B.gt) return false; const lv = (B.gl && B.gl[B.gt]) || 1; return awakeOn(s) || lv < BUILD.evo; };
 /* 개편 판의 총(ENDGAME.md 21절): { id, lv, v } — v는 그 총 Lv의 사격 규칙(roster.gunVal) + 총 강화(희귀·전설). 개편 판이 아니면 null(예전 총 그대로) */
@@ -3430,8 +3431,8 @@ function foesUpdate(s, R) {
       if (f.elite === 'bomb') { cost += Math.max(1, Math.round(q.n * FOE2.bomb.hit)); bombBlast(s, f, true); }   // 자폭 좀비(46.6): 닿으면 터진다
       if (s.hero && s.hero.id === 'mungchi' && s.endless && s.endless.bld) cost = Math.max(1, Math.round(cost * (1 - heroVal('mungchi', 'guard', s.hero.lv))));   // 46.7 뭉치 '돌격 대형'
       if (f.slowT > s.t && fx && s.endless.bld && fx.frost) cost = Math.max(1, Math.round(cost * fx2Val('frost', fx.frost).loss));   // 빙결 Lv3+: 느려진 좀비에게 잃는 병사 −30%
-      if (f.slowT > s.t && legOn(s, 'frost')) { cost = 0; emit(s, { t: 'shatter', x: f.x, z: f.z, r: 1.2, k: 2 }); }   // 34절 전설 '얼음 갑옷': 느려진 좀비는 닿으면 얼어 부서진다(안 잃는다)
-      else if (legOn(s, 'flame') && s.flames && s.flames.some((zn) => inFire(zn, q.x, q.z))) cost = Math.max(1, Math.round(cost * (1 - ENH.flame.legend.v)));   // 34절 전설 '불꽃 방패'
+      if (f.slowT > s.t && legOn(s, 'frost')) { cost = Math.max(1, Math.round(cost * (1 - frostArmor(s)))); emit(s, { t: 'shatter', x: f.x, z: f.z, r: 1.2, k: 2 }); }   // 34절 전설 '얼음 갑옷': 느려진 좀비는 닿으면 얼어 부서진다 — 61절: 안 잃던 것을 −50%(두 장 −75%)로
+      if (legOn(s, 'flame') && s.flames && s.flames.some((zn) => inFire(zn, q.x, q.z))) cost = Math.max(1, Math.round(cost * (1 - ENH.flame.legend.v)));   // 34절 전설 '불꽃 방패'
       const medic = f.slowT > s.t && s.endless && s.endless.bld && comboOn(s, 'frostMedic');   // (큰 피해는 특수병을 쓰러뜨리므로 맞기 전에 본다)
       if (cost > 0) lose(s, cost, s.phase === 'arena' ? 'summon' : f.elite === 'bomb' ? 'bomb' : f.kind === 'brute' ? 'brute' : 'foe', f.x, f.z);
       if (f.slowT > s.t && s.endless && s.endless.bld && fx.frost) {   // 느려진 좀비가 닿으면 터진다: 희귀 강화 '얼음 폭탄' + 빙결 넘침(21.10 — 느려지는 시간이 4초를 넘친 몫)
