@@ -4704,7 +4704,7 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
         assert.deepEqual(cr.map((p) => C.laneCell((p.x0 + p.x1) / 2)).sort(), [0, 1, 2], '세 칸에 하나씩');
       }
       if (l.k === 'maze') {
-        // 토막마다 벽 없는 칸, 열린 곳은 토막이 바뀌는 곳마다 칸막이 둘 다(51절 — 예전엔 하나씩)
+        // 토막마다 벽 없는 칸, 열린 곳은 토막이 바뀌는 곳마다 칸막이 하나(59절 — 51절에는 둘 다)
         const n = L.stretch, sl = (l.z1 - l.z0 - C.FORK_TAPER) / n;
         const walls = lv.props.filter((p) => p.maze);
         for (let i = 0; i < n; i++) {
@@ -4712,9 +4712,9 @@ test('22 — 칸막이 구간은 개편 판(지형)에만: 미로는 mazeFrom구
           const blocked = new Set(walls.filter((w) => w.z >= za && w.z < za + sl).map((w) => C.laneCell((w.x0 + w.x1) / 2)));
           assert.ok(blocked.size < 3, `${seed}/${seg}구간 ${i}번째 토막이 다 막혔다`);
         }
-        assert.equal(l.open.length, 2 * (n - 1), '토막이 바뀌는 곳마다 칸막이 둘 다(51절)');
+        assert.equal(l.open.length, n - 1, '토막이 바뀌는 곳마다 칸막이 하나(59절)');
         for (const o of l.open) assert.ok(o[0] === 0 || o[0] === 1);
-        for (let i = 0; i < l.open.length; i += 2) assert.ok(l.open[i][0] !== l.open[i + 1][0] && l.open[i][1] === l.open[i + 1][1] && Math.abs(l.open[i][2] - l.open[i][1] - (L.open + 2)) < 1e-9, JSON.stringify(l.open));   // 55절: 간격을 좁혀도 열린 곳은 그대로
+        for (const o of l.open) assert.ok(Math.abs(o[2] - o[1] - (L.pre + L.open)) < 1e-9, JSON.stringify(l.open));   // 55절: 간격을 좁혀도 열린 곳은 그대로
       }
     }
   }
@@ -5878,4 +5878,46 @@ test('58절 — 유물 손질(개편 판): 넓은 탄낭 3칸 · 공명기 ×1.3
   const three = run(['ward'], (s) => { s.saws = [saw(s, 3, 9801), saw(s, 10, 9802), saw(s, 17, 9803)]; });
   assert.ok(three.n < 1000 && three.ev.length === 2, `셋째 톱날은 맞는다 ${three.n}`);
   assert.ok(R.RELICS.ward.text().includes('톱날 2개') && R.RELICS.ward.text().length < 60, R.RELICS.ward.text());
+});
+test('59절 — 칸막이 미로의 열린 곳(초록)을 거의 없게: 토막이 바뀌는 곳마다 빈 칸 쪽 칸막이 하나 · 4m(칸막이 길이의 10% 아래) — 벽 없는 칸은 그 열린 곳으로 늘 이어지고, 미리 붙어 있으면 가장 빠를 때도 건넌다', () => {
+  const L = C.LANES;
+  assert.equal(L.both, false);
+  assert.equal(L.pre + L.open, 4);
+  let mazes = 0, share = 0;
+  for (let seed = 1; seed <= 12; seed++) for (let seg = L.mazeFrom; seg <= 30; seg++) {
+    const lv = laneSeg(seg, seed);
+    for (const l of lv.lanes || []) {
+      if (l.k !== 'maze') continue;
+      mazes++;
+      const n = L.stretch, sl = (l.z1 - l.z0 - C.FORK_TAPER) / n;
+      const walls = lv.props.filter((p) => p.maze && p.kind === 'wall');
+      const wallAt = (i, c) => walls.some((w) => w.z >= l.z0 + C.FORK_TAPER + i * sl && w.z < l.z0 + C.FORK_TAPER + (i + 1) * sl && C.laneCell((w.x0 + w.x1) / 2) === c);
+      // 벽 없는 길: 첫 토막의 벽 없는 칸에서 열린 곳으로만 옮겨 가며 끝 토막까지 닿는다
+      let reach = new Set([0, 1, 2].filter((c) => !wallAt(0, c)));
+      for (let i = 1; i < n; i++) {
+        const o = l.open[i - 1], nxt = new Set();
+        for (const c of reach) { nxt.add(c); if (o[0] === c) nxt.add(c + 1); if (o[0] === c - 1) nxt.add(c - 1); }
+        reach = new Set([...nxt].filter((c) => !wallAt(i, c)));
+        assert.ok(reach.size > 0, `${seed}/${seg}구간 ${i}번째 토막에 벽 없이 못 간다 ${JSON.stringify(l.open)}`);
+      }
+      share += l.open.reduce((a, o) => a + o[2] - o[1], 0) / (2 * (l.z1 - l.z0));
+    }
+  }
+  assert.ok(mazes > 20 && share / mazes < 0.1, `미로 ${mazes} · 열린 몫 ${(100 * share / mazes).toFixed(1)}%`);
+  // 가장 빠를 때(초당 14m)도 칸막이에 붙어 있다가 누르면(키보드 · 끌기 둘 다) 4m 안에 건넌다, 열린 곳이 없으면 못 건넌다
+  const cross = (input, open) => {
+    const u = C.newEndless({ seed: 31, ...BLD });
+    u.endless.seg = 20; u.speed = 14; u.squad.n = 2000; u.props = []; u.rows = []; u.saws = []; u.foes = []; u.bullets = []; delete u.divs; delete u.pads; u.squad.fireAcc = -99;
+    const R0 = C.radius(u.squad.n), z = u.squad.z;
+    u.lanes = [{ id: 99970, k: 'maze', z0: z - 30, z1: z + 100, open: open ? [[1, z + 20, z + 20 + L.pre + L.open]] : [] }];
+    u.squad.x = C.LANE_X[1] - C.hitHalf(R0) - 0.05; u.squad.vx = 0;
+    for (let i = 0; i < 150; i++) C.step(u, u.squad.z < z + 20 - 0.3 ? { dir: 0 } : input);
+    return C.laneCell(u.squad.x);
+  };
+  assert.equal(cross({ dir: 1 }, true), 2, '키보드');
+  assert.equal(cross({ tx: C.EDGE }, true), 2, '끌기');
+  assert.equal(cross({ dir: 1 }, false), 1, '닫힌 칸막이');
+  // 처음 안내 글이 새 규칙을 말한다(예전 글을 본 사람에게도 한 번 더 — mazeLane2)
+  const main = require_('node:fs').readFileSync(new URL('../assets/main.js', import.meta.url), 'utf8');
+  assert.ok(main.includes("tip('mazeLane2'") && !main.includes('양쪽 칸막이가 열려요'));
 });

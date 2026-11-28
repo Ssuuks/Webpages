@@ -964,9 +964,9 @@ export const TERRAIN = { hideFrom: 13, hideDist: 16, hideBonus: 1.3, tightFrom: 
 /* 칸막이 구간(ENDGAME.md 22절 — 개편 판만, 몸이 좁아(BUILD.narrow) 세 칸에 들어간다): 길을 칸막이 둘(LANE_X)로 세 칸으로 나눈다.
    s.lanes = [{ id, k: 'luck'|'maze', z0, z1, open: [[칸막이 번호, za, zb], …] }] — 열린 곳(open)에서만 옆 칸으로 한 칸씩 건넌다. 분대·좀비 모두 칸을 못 넘는다.
    - luck 행운 길(luckFrom구간부터 luckP): 세 칸 모두 가려진 상자(소·중·대가 무작위) — 손해는 없고 무엇이 나올지가 운(18.8)
-   - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막마다 칸막이 하나에 열린 곳(open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
+   - maze 칸막이 미로(mazeFrom구간부터 mazeP): stretch토막, 토막이 바뀌는 곳마다 칸막이 하나에 열린 곳(앞 pre m + open m) — 막힌 칸(벽)·좀비 칸, 늘 이어지는 빈 칸이 있다 */
 export const LANE_X = [-ROAD / 3, ROAD / 3];
-export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, open: 10, both: true, wallP: 0.75, trap: 0.3, big: 0.6, foeN: [4, 7] };   // 51절: 토막이 바뀌는 곳마다 칸막이 둘 다(both) 열리고 열린 곳이 7 → 10m(앞 2m부터 12m) — 좌우로 막힌 칸막이를 줄였다(열린 몫 16 → 43%)   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60% · 49절: 꽝 −15 → −30%, 미로 좀비 칸 foeN마리(3~5 → 4~6)
+export const LANES = { luckFrom: 13, luckP: 0.35, mazeFrom: 9, mazeP: 0.4, luckLen: 48, mazeLen: 84, stretch: 4, pre: 1, open: 3, both: false, wallP: 0.75, trap: 0.3, big: 0.6, foeN: [4, 7] };   // 59절: 열린 곳(초록)을 거의 없게 — 토막이 바뀌는 곳마다 빈 칸 쪽 칸막이 하나만(both false), 앞 1m + 3m = 4m(칸막이 길이의 43 → 7%, 초당 14m로 0.29초 — 미리 칸막이에 붙어 있어야 건넌다) · 51절: 토막이 바뀌는 곳마다 칸막이 둘 다(both) 열리고 열린 곳이 7 → 10m(앞 2m부터 12m) — 좌우로 막힌 칸막이를 줄였다(열린 몫 16 → 43%)   // 39.4: 행운 길 34 → 48m(들어가며 고르고 오래 간다) · 39.6: 꽝(trap — 병력 −15%) · 대는 병력 +60% · 49절: 꽝 −15 → −30%, 미로 좀비 칸 foeN마리(3~5 → 4~6)
 /* 게이트 몰이(39.5 — 개편 판만): rushFrom구간부터 rushP로 보스 앞 몰이 전에 한 번. 게이트 n줄이 gap m 간격으로(45절: 11 → 7 → 3.5m, 줄은 모두 세 칸 — 끝 칸에서 반대쪽 끝 칸까지(5m)는 손가락 끌기(초당 16m)로도 0.31초라 달리는 동안(6구간 초당 12m) 3.75m — 한 줄 사이에 끝에서 끝으로는 못 간다, 옆 칸까지만) — 쏴서 올리는 덧셈 칸이 많고, 큰 + 줄 하나(51절 전 ×2)·÷2 줄 하나.
    숫자는 그 구간 기준 병력(bkScale)으로, 굴림은 따로(hash — 다른 청크의 배치가 밀리지 않게). 골든 값은 늘리지 않는다(잘 고르면 앞서 나가고, 못 고르면 뒤처진다)
    51절: 몰이의 ×2 줄은 큰 + 줄(jack — 기준 병력의 몫)로 — ×는 앞선 병력일수록 크게 불어나(덧셈 칸은 기준 병력이라 그대로) 한 번만 지나도 판이 뻥튀기됐다
@@ -1420,7 +1420,7 @@ const CHUNK = {
     addZone(lv, 'luck', z0, z1);
     return { len: z1 - z + 10, ng };
   },
-  /* 칸막이 미로(22절): stretch토막. 토막이 바뀌는 곳마다 칸막이가 LANES.open m 열린다(51절부터 둘 다 — LANES.both, 예전엔 빈 칸 쪽 하나만). 토막마다 '빈 칸'(벽 없음)이 하나 있고
+  /* 칸막이 미로(22절): stretch토막. 토막이 바뀌는 곳마다 칸막이가 LANES.pre + LANES.open m 열린다(51절에 둘 다 12m — 59절에 다시 빈 칸 쪽 하나만 4m). 토막마다 '빈 칸'(벽 없음)이 하나 있고
      다음 토막의 빈 칸은 그 옆이나 그대로 — 열린 곳을 따라가면 늘 벽 없이 지난다. 나머지 칸은 단단한 벽(wallP)이나 좀비 무리 */
   maze(lv, g, p, z, ng) {
     const D = threatD(lv, ng);
@@ -1434,9 +1434,9 @@ const CHUNK = {
       const kinds = ['', '', ''];
       if (i > 0) {
         const nb = free === 0 ? 1 : free === 2 ? 1 : chance(g, 0.5) ? 0 : 2;   // 옆 칸
-        const od = p.dense || 1;   // 55절: 열린 곳의 길이는 간격을 좁혀도(denseZ) 그대로 2 + LANES.open m
-        if (LANES.both) lane.open.push([0, za - 2 / od, za + LANES.open / od], [1, za - 2 / od, za + LANES.open / od]);   // 51절: 양쪽 칸막이 — 옆 칸 어디로든(굴림은 예전과 같게 nb를 그대로 굴린다)
-        else lane.open.push([Math.min(free, nb), za - 2 / od, za + LANES.open / od]);
+        const od = p.dense || 1, oa = za - LANES.pre / od, ob = za + LANES.open / od;   // 55절: 열린 곳의 길이는 간격을 좁혀도(denseZ) 그대로 LANES.pre + LANES.open m
+        if (LANES.both) lane.open.push([0, oa, ob], [1, oa, ob]);   // 51절: 양쪽 칸막이 — 옆 칸 어디로든(굴림은 예전과 같게 nb를 그대로 굴린다)
+        else lane.open.push([Math.min(free, nb), oa, ob]);   // 59절: 빈 칸과 옆 칸(nb) 사이 칸막이 하나만 — 빈 칸이 옮겨 가면(75%) 길, 그대로면(25%) 꾐
         if (chance(g, 0.75)) free = nb;
       }
       for (let c = 0; c < 3; c++) {

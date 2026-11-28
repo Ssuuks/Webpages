@@ -3033,8 +3033,8 @@ function handleEvents(ev) {
         break;
       case 'lanes':   // 칸막이 구간(22절): 처음엔 멈추고 설명, 그 뒤로는 짧게
         if (e.k === 'luck') { if (!data.tips.luckLane2) tip('luckLane2', '행운 길! 세 칸 끝에 가려진 상자가 하나씩 — 꽝·중·대 중 무엇일지는 운이에요. 상자는 셋 중 하나만: 하나를 열면 나머지 둘은 잠겨요. 들어가면 옆 칸으로 못 넘어가요.', true, '행운 길'); else toast('행운 길 — 칸을 골라요', 1400); }
-        else if (!data.tips.mazeLane) tip('mazeLane', '칸막이 미로! 칸막이 안에서는 제 칸에만 있어요(좀비도 못 넘어와요). 토막이 바뀌는 곳마다 양쪽 칸막이가 열려요(바닥 초록) — 거기서 옆 칸으로 건너요. 벽 없는 칸이 늘 이어져 있어요.', true, '칸막이 미로');
-        else toast('칸막이 미로 — 초록 열린 곳에서 옆 칸으로', 1400);
+        else if (!data.tips.mazeLane2) tip('mazeLane2', '칸막이 미로! 칸막이 안에서는 제 칸에만 있어요(좀비도 못 넘어와요). 토막이 바뀌는 곳마다 칸막이 한 곳이 아주 잠깐만 열려요(짧은 초록) — 미리 그쪽 칸막이에 붙어 있다가 열리는 순간 건너요. 들어갈 때 칸을 잘 고르세요.', true, '칸막이 미로');   // 59절: 열린 곳이 4m로 — 예전 글(mazeLane)을 본 사람에게도 한 번 더
+        else toast('칸막이 미로 — 초록은 아주 짧아요, 미리 붙어 있다가 건너요', 1600);
         break;
       case 'zone': if (s && s.endless) showZone(e); break;   // 46.3
       case 'boost':   // 46.1 가속 발판

@@ -3911,15 +3911,25 @@ export function createRenderer(cvs) {
     const top = l.k === 'luck' ? '#7CFF8A' : '#FFD84A';
     for (let di = 0; di < 2; di++) {
       const x = LANE_X[di];
+      const gaps = l.open.filter((o) => o[0] === di && o[2] > l.z0 && o[1] < l.z1);
+      // 59절: 열린 곳은 짧다(4m) — 2m 토막으로 반올림하지 않고 열린 길이 그대로 비우고, 그 자리 바닥에 초록 띠(가장자리까지 꽉)
+      for (const o of gaps) {
+        const a = Math.max(l.z0, o[1]), b = Math.min(l.z1, o[2]);
+        if (b < zN || a > zF) continue;
+        ctx.fillStyle = '#3FE07A'; groundQuad(x - 0.55, x + 0.55, a, b, 0.015);
+      }
       for (let z = l.z0, i = 0; z < l.z1; z += 2, i++) {
         const z2 = Math.min(l.z1, z + 2);
         if (z2 < zN || z > zF) continue;
-        const open = l.open.some((o) => o[0] === di && z + 1 >= o[1] && z + 1 <= o[2]);
-        if (open) { ctx.fillStyle = '#3FE07A'; groundQuad(x - 0.5, x + 0.5, z + 0.6, z + 1.4, 0.015); continue; }   // 열린 곳: 바닥 초록 띠
+        // 토막에서 열린 곳을 뺀 조각들(열린 곳이 토막 가운데면 둘)
+        let pcs = [[z, z2]];
+        for (const o of gaps) pcs = pcs.flatMap(([a, b]) => (o[2] <= a || o[1] >= b ? [[a, b]] : [[a, o[1]], [o[2], b]].filter(([u, v]) => v - u > 0.05)));
         const nose = Math.min(1, (z - l.z0) / FORK_TAPER + 0.25);
-        ctx.fillStyle = '#2A2E3A'; groundQuad(x - 0.3 * nose, x + 0.3 * nose, z, z2, 0.02);
-        ctx.fillStyle = '#7C8494'; groundQuad(x - 0.22 * nose, x + 0.22 * nose, z, z2, 0.3);
-        ctx.fillStyle = i & 1 ? '#2A2E3A' : top; groundQuad(-0.17 * nose + x, x + 0.17 * nose, z, z2, 0.6);
+        for (const [a, b] of pcs) {
+          ctx.fillStyle = '#2A2E3A'; groundQuad(x - 0.3 * nose, x + 0.3 * nose, a, b, 0.02);
+          ctx.fillStyle = '#7C8494'; groundQuad(x - 0.22 * nose, x + 0.22 * nose, a, b, 0.3);
+          ctx.fillStyle = i & 1 ? '#2A2E3A' : top; groundQuad(-0.17 * nose + x, x + 0.17 * nose, a, b, 0.6);
+        }
       }
     }
   }
